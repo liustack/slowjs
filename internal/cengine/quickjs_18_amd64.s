@@ -4,6 +4,31 @@
 #include "textflag.h"
 #include "funcdata.h"
 
+TEXT ·JS_IsLiveObject(SB), NOSPLIT|NOFRAME, $0-32
+	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	MOVQ (TLS), R14
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
+	PCALIGN $16
+	MOVQ a0+0(FP), R12
+	MOVQ a1+8(FP), R13
+	MOVQ a2+16(FP), R14
+	MOVQ a3+24(FP), R15
+	QUAD $0x0274ffff8341c031
+	QUAD $0x1046f641c0310ceb
+	BYTE $0x04
+	BYTE $0x0f
+	BYTE $0x94
+	BYTE $0xc0
+	BYTE $0xeb
+	BYTE $0xf2
+	RET
+
 TEXT ·JS_ComputeMemoryUsage(SB), $272-24
 	NO_LOCAL_POINTERS
 #ifdef GOOS_windows
