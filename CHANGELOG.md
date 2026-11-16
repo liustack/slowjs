@@ -4,14 +4,17 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 
 ## [Unreleased]
 
+## [v0.31.3] - 2026-11-16
+
 ### Changed
 
+- tifa's store pages render in 4.2% less time than with v0.31.2, its workbench pages in 3.5% less, React's page in 2.7% less and the MUI pages in 1.7% less, with the changes below and a profile trained again on them (against v0.31.2 trained the same way, linux/amd64, an AMD EPYC 7B13, the mean of 16 code layouts), and the V8 suite scores 12.9% higher, RegExp 64.8% ([performance.md](docs/performance.md#v0313-against-v0312)). Both sides ran the pinned pages remade from tifa 63a2099e, which do less work in a render, so these numbers are not to be set beside those of earlier releases.
 - Loops and the code around them run fewer register instructions: a `for` or `while` loop reads its test again at the end of the body, and `++k`, a chained assignment and a destructuring that renames its fields leave out their copies. The NavierStokes benchmark runs 8.4% fewer instructions and tifa's pages 0.1% to 0.5% fewer.
 - `JSON.stringify` with no replacer and no indent writes plain objects and arrays straight from their shapes. A react-intl page, which makes a memo key with it for every formatter, runs 16% fewer instructions, and writing 300 orders as a loader does takes two thirds fewer ([changes](docs/changes/README.md#json)).
 - A string made while the script runs, such as one from `join` or `JSON.parse`, finds a property as fast as a key written in the source from its second use as a key on: 398 instructions a read, not 901 ([changes](docs/changes/README.md#strings)).
 - A closure is one block of memory where it took three, a full collection marks closures and arrays without a call through the class table, and a function with no name of its own takes its name in place. With the profile trained again, the TanStack Table page runs 8.2% fewer instructions and TanStack Query 6.2% fewer ([performance.md](docs/performance.md#closures-in-one-block)).
 - `split`, `replace` with a function and `match` by a regexp that nothing changed find their matches without calls of `exec`, and a regexp that starts with `\s` skips to where a match can start: the RegExp benchmark of the V8 suite runs 44% fewer instructions ([performance.md](docs/performance.md#split-replace-with-a-function-and-match-without-exec)). A regexp whose flag getters or `exec` a script replaced is now told apart by the slots of its shape, so `replace` by it calls them as the specification says.
-- A read of a property by name keeps, at each place in the code, where it last found the property, on the object or on its prototype, and looks there first. On a linux/amd64 machine with an AMD EPYC 7B13, React and workbench pages take about 2% less time, the store pages up to 2.4% less and the V8 suite 2.4% less, for 0.4% to 1.4% more memory in a VM. Known limit: Splay of the V8 suite takes about 3% more time.
+- A read of a property by name keeps, at each place in the code, where it last found the property, on the object or on its prototype, and looks there first. On a linux/amd64 machine with an AMD EPYC 7B13, React and workbench pages take about 2% less time, the store pages up to 2.4% less and the V8 suite 2.4% less, for 0.4% to 1.4% more memory in a VM.
 
 ### Fixed
 
@@ -796,7 +799,8 @@ The first release of the fork, from modernc.org/quickjs v0.25.0 and libquickjs v
 - A VM that runs out of memory inside `JSON.parse`, or anything else that converts a string with non-ASCII characters to UTF-8, no longer leaks that string.
 - `VM.Call` and `VM.CallValue` report the exception thrown while evaluating the function expression instead of `cannot call a non-function`.
 
-[Unreleased]: https://github.com/liustack/slowjs/compare/v0.31.2...main
+[Unreleased]: https://github.com/liustack/slowjs/compare/v0.31.3...main
+[v0.31.3]: https://github.com/liustack/slowjs/compare/v0.31.2...v0.31.3
 [v0.31.2]: https://github.com/liustack/slowjs/compare/v0.31.1...v0.31.2
 [v0.31.1]: https://github.com/liustack/slowjs/compare/v0.31.0...v0.31.1
 [v0.31.0]: https://github.com/liustack/slowjs/compare/v0.30.7...v0.31.0
