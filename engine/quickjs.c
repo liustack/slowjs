@@ -4683,6 +4683,27 @@ static JSAtom __JS_FindAtom(JSRuntime *rt, const char *str, size_t len,
     return JS_ATOM_NULL;
 }
 
+/* The string atom of the characters of p, with no reference taken, or
+   JS_ATOM_NULL when the table has none: then no object has a property of
+   that name. Finds what __JS_NewAtom finds for p (the same hash and
+   compare) and makes nothing. p is a string that is no atom, shorter than
+   JS_ROPE_STEP, as the hash reads no interrupt flag. */
+static JSAtom js_find_string_atom(JSRuntime *rt, const JSString *p)
+{
+    uint32_t h, i;
+    JSAtomStruct *q;
+
+    h = hash_string(p, JS_ATOM_TYPE_STRING) & JS_ATOM_HASH_MASK;
+    for (i = rt->atom_hash[h & (rt->atom_hash_size - 1)]; i != 0;
+         i = q->hash_next) {
+        q = rt->atom_array[i];
+        if (q->hash == h && q->atom_type == JS_ATOM_TYPE_STRING &&
+            q->len == p->len && js_string_memcmp(q, 0, p, 0, p->len) == 0)
+            return i;
+    }
+    return JS_ATOM_NULL;
+}
+
 static void JS_FreeAtomStruct(JSRuntime *rt, JSAtomStruct *p)
 {
 #if 0   /* JS_ATOM_NULL is not refcounted: __JS_AtomIsConst() includes 0 */
