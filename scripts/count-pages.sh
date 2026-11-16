@@ -145,7 +145,7 @@ htmlhash() {
 	local o=$out/raw/$side-$page
 	# shellcheck disable=SC2046
 	if ! (cd "$out/raw" && GOMAXPROCS=1 "$bin/$side@0.0" -test.run '^$' -test.bench Pages -test.benchtime 1x \
-		-repo "$repo" $(args "$kind" "$page" "$out") -warm 0 -timed 1 -hash) >"$o.hash.log" 2>&1; then
+		-repo "$repo" $(args "$kind" "$page" "$out") -warm 0 -timed 1 -hash -evaltimeout 1h) >"$o.hash.log" 2>&1; then
 		tail -n 30 "$o.hash.log" >&2
 		die "$side $page: the native run failed"
 	fi
