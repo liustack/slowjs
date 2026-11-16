@@ -68,3 +68,37 @@ func keptStates() int {
 	states.Range(func(any, any) bool { n++; return true })
 	return n
 }
+
+// TestRegisterFailsAgain calls Register 10,000 times on a VM where it fails
+// after url.js has started: a page made URL a property that cannot be
+// redefined. A failed Register leaves one state and one close function for
+// the VM, however often it is tried, and Close removes the state.
+func TestRegisterFailsAgain(t *testing.T) {
+	vm, err := slowjs.NewVM()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer vm.Close()
+	evalString(t, vm, `Object.defineProperty(globalThis, "URL", {value: 0}); ""`)
+	if err := Register(vm); err == nil {
+		t.Fatal("Register took a VM whose URL cannot be redefined")
+	}
+	before := heapAfterGC()
+	for range 10000 {
+		if err := Register(vm); err == nil {
+			t.Fatal("Register took a VM whose URL cannot be redefined")
+		}
+	}
+	// a close function and its place in the list of the VM take 24 bytes
+	// or more, so 10,000 of them would take 240 KB
+	if after := heapAfterGC(); after > before+64<<10 {
+		t.Errorf("10,000 failed Registers grew the Go heap from %d to %d bytes", before, after)
+	}
+	if n := keptStates(); n != 1 {
+		t.Errorf("the package keeps %d states for one VM", n)
+	}
+	vm.Close()
+	if n := keptStates(); n != 0 {
+		t.Errorf("after Close the package keeps %d states", n)
+	}
+}

@@ -6,6 +6,7 @@
 package url
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 
@@ -91,23 +92,41 @@ func keptPerVM(t *testing.T, js string) int64 {
 	return (int64(heapAfterGC()) - int64(before)) / n
 }
 
-// TestKeptIsBounded checks that what a VM keeps is under 4 KiB however long
-// the inputs that made it were: a short href made from a long path that ".."
-// took back, a short query after a long path in the buffer of the parser, a
-// long base, and setters that made a long path and then a short one. It
-// counts the Go heap each VM holds against VMs that made a short URL.
+// TestKeptIsBounded checks that what a VM keeps stays under keptMost however
+// long the inputs that made it were: a short href made from a long path that
+// ".." took back, a short query after a long path in the buffer of the
+// parser, a long base, setters that made a long path and then a short one,
+// and bases and records that keep the most the limits allow. It counts the Go
+// heap each VM holds against VMs that made no URL.
 func TestKeptIsBounded(t *testing.T) {
-	short := keptPerVM(t, `new URL("/x?q#f", "http://h/").href`)
+	none := keptPerVM(t, `""`)
 	long := `"a".repeat(60000)`
+	limits := strings.NewReplacer("maxBase", strconv.Itoa(maxBaseBytes), "maxKept", strconv.Itoa(maxKeptBytes))
 	for _, js := range []string{
+		`new URL("/x?q#f", "http://h/").href`,
 		`new URL("http://h/" + ` + long + ` + "/..").href`,
 		`new URL("http://h/" + ` + long + ` + "/..?q#f").href`,
 		`new URL("http://h/" + "a".repeat(30000) + "/../x/" + "b".repeat(30000) + "/..?q#f").href`,
 		`new URL("y", "http://h/" + ` + long + ` + "/../").href`,
 		`var u = new URL("http://h/"); u.pathname = "/" + ` + long + `; u.pathname = "/z/" + ` + long + ` + "/.."; u.href`,
 		`var v = new URL("http://h/x"); v.hash = "#" + ` + long + `; v.hash = "#a"; v.search = "?" + "%".repeat(300); v.search = "?b"; v.href`,
+		// a base of 256 bytes whose path is 740 bytes, and a record of 1,001
+		// bytes whose path is 992 bytes in a buffer of 2,048
+		`URL.canParse("http://x/", "http://h/" + "\x01".repeat(246) + "/");
+			new URL("http://h/" + "a".repeat(991) + "/" + "b".repeat(800) + "/..").href`,
+		// the most a base and a record keep: an href at each limit, a path
+		// left in a buffer of about twice its length, a long query and fragment
+		`URL.canParse("http://x/", "http://h/" + "\x01".repeat((maxBase - 10) / 3) + "/");
+			new URL("http://h/" + "a".repeat(maxKept - 11) + "/" + "b".repeat(maxKept) + "/..").href`,
+		`URL.canParse("http://x/", "http://h/" + "a".repeat(maxBase - 9));
+			new URL("http://h/" + "a".repeat(maxKept / 4) + "/" + "b".repeat(maxKept) + "/..?" + "c".repeat(maxKept / 2) + "#" + "d".repeat(maxKept / 4 - 20)).href`,
+		`URL.canParse("http://x/", "sc:" + "a".repeat(maxBase - 3));
+			new URL("sc:" + "a".repeat(maxKept / 2) + "?" + "b".repeat(maxKept / 2 - 10)).href`,
 	} {
-		if n := keptPerVM(t, js) - short; n >= 4096 {
+		js = limits.Replace(js)
+		n := keptPerVM(t, js) - none
+		t.Logf("%.60q: %d", js, n)
+		if n >= keptMost {
 			t.Errorf("%.70s: each VM holds %d bytes more", js, n)
 		}
 	}
