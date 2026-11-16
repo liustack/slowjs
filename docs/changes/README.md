@@ -66,6 +66,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | `++k` or `--k` of a local that is also read below it (`x[k] = x[++k]`) writes the local in its INC or DEC, with no copy into the local after it | Unreleased | [c-engine.md](c-engine.md#the-register-interpreter) |
 | A chained assignment into a local (`l = x[k] = v`, `l = o.f = v`) puts the value into the local first and the element or field takes it from there, with no copies, where no closure reads the local and no catch is around | Unreleased | [c-engine.md](c-engine.md#the-register-interpreter) |
 | A `for` or `while` loop whose test is a compare of locals, arguments, closure variables, constants or fields runs its test again at the end of the body and jumps back from there, in place of a jump to the test at the top: one dispatch less a turn, and the interrupt is still read on every jump back | Unreleased | [c-engine.md](c-engine.md#the-register-interpreter) |
+| A full collection marks closures and arrays with no call through the class table, and the mark and the finalizer of a closure skip its closure variables when all of them are cells | Unreleased | `js_bytecode_function_mark_in` and `js_array_mark_in` in [quickjs.c](../../engine/quickjs.c) |
 
 ## The generator
 
@@ -333,6 +334,8 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A define that changes the flags of a property that is there makes the shape the object's own before it changes anything, so a define that runs out of memory leaves the property, the length of an array included. A refused define copies nothing, and shortening an array past index 2^31 - 1 makes no names | v0.31.1 | [objects-and-shapes.md](objects-and-shapes.md#a-define-that-changes-the-flags-of-a-property-fails-before-it-changes-anything) |
 | A shape that an object finds for its next key keeps the shape the object left, so that the objects of a constructor find every shape the objects before them went through | v0.31.1 | [objects-and-shapes.md](objects-and-shapes.md#objects-of-a-constructor-find-the-shapes-the-objects-before-them-went-through) |
 | `new f()` takes the prototype of the object it makes from the own `prototype` of `f` in its shape when that is a plain data property that holds an object, without the generic read, and reads the interrupt flag once, as a call does | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#objects-of-a-constructor-find-the-shapes-the-objects-before-them-went-through) |
+| A closure is one block: the function object, its properties and its closure variables, where it took three | Unreleased | `js_new_function_object` in [quickjs.c](../../engine/quickjs.c) |
+| `set_name` gives a closure with no name of its own the name in place, without the generic define | Unreleased | `js_object_name_in_place` in [quickjs.c](../../engine/quickjs.c) |
 
 ## Memory
 

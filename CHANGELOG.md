@@ -26,6 +26,7 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 - Loops and the code around them run fewer register instructions: a `for` or `while` loop reads its test again at the end of the body, and `++k`, a chained assignment and a destructuring that renames its fields leave out their copies. The NavierStokes benchmark runs 8.4% fewer instructions and tifa's pages 0.1% to 0.5% fewer.
 - `JSON.stringify` with no replacer and no indent writes plain objects and arrays straight from their shapes. A react-intl page, which makes a memo key with it for every formatter, runs 16% fewer instructions, and writing 300 orders as a loader does takes two thirds fewer ([changes](docs/changes/README.md#json)).
 - A string made while the script runs, such as one from `join` or `JSON.parse`, finds a property as fast as a key written in the source from its second use as a key on: 398 instructions a read, not 901 ([changes](docs/changes/README.md#strings)).
+- A closure is one block of memory where it took three, a full collection marks closures and arrays without a call through the class table, and a function with no name of its own takes its name in place. With the profile trained again, the TanStack Table page runs 8.2% fewer instructions and TanStack Query 6.2% fewer ([performance.md](docs/performance.md#closures-in-one-block)).
 
 ### Fixed
 

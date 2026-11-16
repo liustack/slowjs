@@ -3016,7 +3016,10 @@ static void test_regvm_args_oom(void)
        which keeps apply (RV_DST_APPLY), with apply freed. show makes a
        string of 5000 bytes, more than the compile of fw() takes and gives
        back, so that some rooms run out there. Math.max and Math.min are C
-       functions, called by the C apply either way. */
+       functions, called by the C apply either way. The rooms go to 24 KiB:
+       cold, fw() works from about 17 KiB (13 KiB before a closure was one
+       block, js_new_function_object): a closure made there is a block of a
+       size class with no arena yet, which takes one of 4 KiB. */
     static const char setup_apply[] = SETUP_APPLY;
     static const char setup_apply_warm[] = SETUP_APPLY "fw();\n";
 #undef SETUP_APPLY
@@ -3026,7 +3029,7 @@ static void test_regvm_args_oom(void)
 
     sweep("arguments built where they escape", "<args>", setup_escape, "h()", want_escape, 16384);
     sweep("mapped arguments built on a read", "<args>", setup_mapped, "m()", want_mapped, 16384);
-    sweep("arguments passed on by apply", "<args>", setup_apply, "fw()", want_apply, 16384);
+    sweep("arguments passed on by apply", "<args>", setup_apply, "fw()", want_apply, 24576);
     v = vm_new();
     CHECK(eval_ok(v.ctx, setup_apply_warm), "apply, warm: the setup failed");
     show = JS_Eval(v.ctx, "fw.show", strlen("fw.show"), "<args>", JS_EVAL_TYPE_GLOBAL);
@@ -3034,7 +3037,7 @@ static void test_regvm_args_oom(void)
     JS_FreeValue(v.ctx, show);
     vm_free(&v);
     sweep("arguments passed on by apply to a converted function", "<args>", setup_apply_warm,
-          "fw()", want_apply, 16384);
+          "fw()", want_apply, 24576);
 }
 
 /* Array destructuring with no iterator (engine/regvm-ops-dst.h) makes the

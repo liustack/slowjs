@@ -320,9 +320,13 @@ static int rv_define_object_name(JSContext *ctx, JSValueConst obj,
     JSProperty *pr;
     JSShapeProperty *prs;
     JSValueConst val;
+    int r;
 
     if (RV_INJ_HIT(ctx))
         return -1;
+    r = js_object_name_in_place(ctx, obj, name, flags);
+    if (r != 0)
+        return r < 0 ? -1 : 0;
     if (name == JS_ATOM_NULL || !JS_IsObject(obj))
         return 0;
     /* js_object_has_name */
