@@ -8096,7 +8096,8 @@ static void test_regvm_dup_get_field(void)
         { "a nested pattern", "var { a: { x: p }, y: q } = h(); return p + q;", 2 },
     };
     int k, i, len, mov = regvm_op("MOV"), getft = regvm_op("GETFT"), getfl = regvm_op("GETFL");
-    int copies, n;
+    int copies, n, m;
+    uint32_t slots[8], ids[8];
     const uint8_t *code;
     VM v;
     JSValue f;
@@ -8116,6 +8117,14 @@ static void test_regvm_dup_get_field(void)
         }
         CHECK(copies == 0, "%s: %d MOV then GETFT of the copy", cases[k].what, copies);
         CHECK(n >= cases[k].getfl, "%s: %d GETFL, want %d", cases[k].what, n, cases[k].getfl);
+        /* the GETF of a destructured temp carries the slot and the id of a
+           read of a name as the others do: after a second call each read
+           keeps the slot of the own field it found */
+        CHECK(eval_ok(v.ctx, "f(1, 2); 0"), "%s: the second call failed", cases[k].what);
+        m = white_regvm_getf_slots(f, slots, ids, 8);
+        CHECK(m >= cases[k].getfl, "%s: %d reads of a name, want %d", cases[k].what, m, cases[k].getfl);
+        for (i = 0; i < m && i < 8; i++)
+            CHECK(slots[i] != 0xffffffffu, "%s: read %d of %d keeps no slot", cases[k].what, i, m);
         JS_FreeValue(v.ctx, f);
         vm_free(&v);
     }

@@ -133,6 +133,8 @@ static BOOL rv_dup_get_field(RVPass *s, int pos)
     rv_byte(s, d);
     rv_byte(s, s->st[s->sp - 1].slot);
     rv_u32(s, s->bc[q] == OP_get_length ? JS_ATOM_length : get_u32(s->bc + q + 1));
+    rv_u32(s, RV_GETF_NONE);
+    rv_u32(s, 0);
     rv_throws(s, rv_owned(s, 0));
     rv_push(s, RV_E_TEMP, d, 0);
     rv_mark_dst(s, d);
