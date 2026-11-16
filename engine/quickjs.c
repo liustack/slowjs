@@ -768,7 +768,8 @@ struct JSContext {
     JSShape *regexp_result_shape;  /* shape for regexp result objects */
     /* the shapes of the objects Object.getOwnPropertyDescriptor makes,
        a data descriptor (0) and an accessor one (1), at their first use
-       (js_new_desc_object) */
+       (js_new_desc_object), and let go when JS_SetClassProto replaces the
+       prototype of plain objects */
     JSShape *desc_shape[2];
     /* for each prototype of new functions, the empty shape and the shape
        with length and name, or NULL (see js_function_shape) */
@@ -4023,6 +4024,16 @@ void JS_SetClassProto(JSContext *ctx, JSClassID class_id, JSValue obj)
         JSShape *sh = ctx->class_shapes[class_id];
         ctx->class_shapes[class_id] = NULL;
         js_free_shape_null(rt, sh);
+    }
+    /* so do the shapes of property descriptors, which have the prototype
+       of plain objects (js_new_desc_object) */
+    if (class_id == JS_CLASS_OBJECT) {
+        int i;
+        for(i = 0; i < countof(ctx->desc_shape); i++) {
+            JSShape *sh = ctx->desc_shape[i];
+            ctx->desc_shape[i] = NULL;
+            js_free_shape_null(rt, sh);
+        }
     }
 }
 

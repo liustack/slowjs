@@ -788,6 +788,82 @@ static void test_class_shape_set_proto(void)
     host_free_runtime(rt);
 }
 
+/* The objects Object.getOwnPropertyDescriptor makes have the prototype of
+   the plain object class, as JS_NewObject gives it. The context keeps the
+   shapes of both forms of descriptor with that prototype, so a host that
+   replaces it with JS_SetClassProto must get descriptors of the new one,
+   of either form whichever was made first, and the one it replaced is
+   freed once the host drops it. The objects the descriptors are of are
+   made here, as an object literal would hold a shape of the prototype. */
+static int desc_proto_is(JSContext *ctx, JSValueConst f, int acc,
+                         JSValueConst want)
+{
+    JSValue obj = JS_NewObject(ctx), d;
+    JSAtom a = JS_NewAtom(ctx, "a");
+    int ok;
+
+    if (acc)
+        ok = JS_DefinePropertyGetSet(ctx, obj, a, JS_DupValue(ctx, f),
+                                     JS_UNDEFINED, JS_PROP_C_W_E) >= 0;
+    else
+        ok = JS_DefinePropertyValue(ctx, obj, a, JS_NewInt32(ctx, 1),
+                                    JS_PROP_C_W_E) >= 0;
+    JS_FreeAtom(ctx, a);
+    d = ok ? JS_Call(ctx, f, JS_UNDEFINED, 1, (JSValueConst *)&obj)
+           : JS_EXCEPTION;
+    ok = JS_IsObject(d) && proto_is(ctx, d, want);
+    JS_FreeValue(ctx, d);
+    JS_FreeValue(ctx, obj);
+    return ok;
+}
+
+static void test_desc_shape_set_proto(void)
+{
+    static const char src[] =
+        "(function (o) { return Object.getOwnPropertyDescriptor(o, 'a'); })";
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    JSClassDef def = { .class_name = "Proto", .finalizer = proto_finalizer };
+    JSClassID pclass = 0, oclass;
+    JSValue f, o, p, q;
+    int acc;
+
+    JS_NewClassID(rt, &pclass);
+    CHECK(JS_NewClass(rt, pclass, &def) == 0, "JS_NewClass failed");
+    f = JS_Eval(ctx, src, sizeof(src) - 1, "<test>", JS_EVAL_TYPE_GLOBAL);
+    CHECK(JS_IsFunction(ctx, f), "the function");
+    /* the class of plain objects, whose id quickjs.h does not name */
+    o = JS_NewObject(ctx);
+    oclass = JS_GetClassID(o);
+    JS_FreeValue(ctx, o);
+    o = JS_GetClassProto(ctx, oclass);
+    /* a data descriptor first: the context keeps its shape with o */
+    CHECK(desc_proto_is(ctx, f, 0, o), "a data descriptor with o");
+
+    p = JS_NewObjectClass(ctx, pclass);
+    q = JS_NewObject(ctx);
+    CHECK(JS_IsObject(p) && JS_IsObject(q), "the prototypes");
+    JS_SetClassProto(ctx, oclass, JS_DupValue(ctx, p));
+    for(acc = 0; acc < 2; acc++)
+        CHECK(desc_proto_is(ctx, f, acc, p),
+              "a descriptor (accessor %d) with p", acc);
+
+    JS_SetClassProto(ctx, oclass, JS_DupValue(ctx, q));
+    proto_freed = 0;
+    JS_FreeValue(ctx, p);
+    JS_RunGC(rt);
+    CHECK(proto_freed == 1, "the prototype replaced was freed %d times, "
+          "want 1", proto_freed);
+    for(acc = 0; acc < 2; acc++)
+        CHECK(desc_proto_is(ctx, f, acc, q),
+              "a descriptor (accessor %d) with q", acc);
+    JS_SetClassProto(ctx, oclass, o);
+    JS_FreeValue(ctx, q);
+    JS_FreeValue(ctx, f);
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
 /* The iterator of a for in loop is an object with a null prototype: the
    context holds its empty shape once a loop has made it, so a hundred more
    loops make no shape, and an object of Object.create(null) that gets keys
@@ -5535,6 +5611,7 @@ int main(void)
     test_func_shapes_kept();
     test_class_shapes();
     test_class_shape_set_proto();
+    test_desc_shape_set_proto();
     test_for_in_shape();
     test_object_lit_size();
     test_object_lit_one_block();
