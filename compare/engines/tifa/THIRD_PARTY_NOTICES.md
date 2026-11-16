@@ -25,9 +25,9 @@ at commit `8ca9ba5ea52de03308fe8ced94f7b159a44d28ff`, where LICENSE was added.
 
 | Bundle | SHA256 | Source map SHA256 | App lockfile SHA256 |
 | --- | --- | --- | --- |
-| bench | 8df28d3d550cfeb198f00e7d165b6a4e8aa6f53cc3049a53006785cea14beebe | 30b912b18946c752f36085417f4fecfa06f3b9ca38cb216ca31f9553b3ec2a40 | 082b159d0339e08871915d9842958826a3c247261c0dad05a533280fa24f6ab0 |
-| mui | 5d3cbbb1d6b24d42b3b7bfd3f8e6df757d843fb9b4a51588fdb3159de9733770 | 1db9931fc58bce4e939da71232a7048f338664d07f8ca253816c8855007345fe | 027f7ee721c83c3d013081c377860c4c4583de9c5da27a0df604b7c0992997fc |
-| shop | b0d5bc4bf6c795e6fe50de3beb10b4a55c7ece542c65dd01c71dcba3a8f6e439 | f939734b684479ad2416e78fe7464d2368e03f666bf2e9a5072b44137cb8f698 | 4a0112653129928c65371e879f7f30dbe54946cdef710cd9d79ea3411400dbc4 |
+| bench | be4fe9d65453a8628a09b2edc7d712fc5684d86e59722377523ecb137576f517 | 489f1a7b8d248d0a8aa85a2860a05c5ce8b80bb68fbf60a7e467d8c20151288e | 082b159d0339e08871915d9842958826a3c247261c0dad05a533280fa24f6ab0 |
+| mui | 881a59600aca99c1f5ac00775cf150a807d054bc893fff419461e7be85f5a586 | 110e5de74f7b51ca52360ed5d888069ea7e7b5bb40fe6539d55e42ea904b52ed | 027f7ee721c83c3d013081c377860c4c4583de9c5da27a0df604b7c0992997fc |
+| shop | 656886554a87dae25a2ced650fe8fbf47b83b8eefaecb0d8ff1a8c327576c3a9 | 687fb7fb0f99a7ef212571e9067430beda2eb48ed1c795cb491452689e40735b | a4404a2c5a6898d5b8605a0cfa3aacecd4e57ffab29d62152808681811a0dadc |
 
 Polyfill lockfile SHA256: `37aa2ea69d58af7e4f6740e5b12eefdd52964ed5d089bb52b1b28ae781566a92`.
 
@@ -147,7 +147,7 @@ Polyfill lockfile SHA256: `37aa2ea69d58af7e4f6740e5b12eefdd52964ed5d089bb52b1b28
 | highlight.js | 11.11.2 | BSD-3-Clause | shop | [LICENSE](#text-43) |
 | hoist-non-react-statics | 3.3.2 | BSD-3-Clause | mui | [LICENSE.md](#text-44) |
 | html-url-attributes | 3.0.1 | MIT | shop | [license](#text-45) |
-| i18next | 26.5.3 | MIT | shop | [LICENSE](#text-46) |
+| i18next | 27.1.2 | MIT | shop | [LICENSE](#text-46) |
 | inline-style-parser | 0.2.7 | MIT | shop | [LICENSE](#text-47) |
 | is-plain-obj | 4.1.0 | MIT | shop | [license](#text-38) |
 | longest-streak | 3.1.0 | MIT | shop | [license](#text-48) |
@@ -196,7 +196,7 @@ Polyfill lockfile SHA256: `37aa2ea69d58af7e4f6740e5b12eefdd52964ed5d089bb52b1b28
 | react | 19.3.1 | MIT | bench, mui, shop | [LICENSE](#text-53) |
 | react-dom | 19.3.1 | MIT | bench, mui, shop | [LICENSE](#text-53) |
 | react-hook-form | 7.90.0 | MIT | shop | [LICENSE](#text-8) |
-| react-i18next | 17.1.0 | MIT | shop | [LICENSE](#text-54) |
+| react-i18next | 18.0.1 | MIT | shop | [LICENSE](#text-54) |
 | react-is | 16.13.1 | MIT | mui | [LICENSE](#text-55) |
 | react-is | 19.3.1 | MIT | mui | [LICENSE](#text-53) |
 | react-markdown | 10.1.0 | MIT | shop | [license](#text-56) |
