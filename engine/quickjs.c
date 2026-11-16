@@ -60143,8 +60143,30 @@ static force_inline int js_regexp_set_lastIndex(JSContext *ctx, JSValueConst thi
 
 /* js_regexp_set_lastIndex for the failure path of a fast path, with an
    exception pending: it writes only a lastIndex that holds an int and can be
-   written, which calls nothing, and leaves any other as it is (a function
-   of a replace may have changed it). this_val must be of JS_CLASS_REGEXP. */
+   written, which calls nothing, and leaves any other as it is. this_val must
+   be of JS_CLASS_REGEXP.
+
+   lastIndex when a replace or a match fails (an exception, the host's stop,
+   no memory) is what the generic path leaves at the same stage, and the
+   fast paths (js_regexp_replace, js_regexp_replace_fn, js_regexp_match_fast)
+   keep to it. The generic path first finds the matches by calls of exec,
+   then builds the result:
+   - while it finds them, lastIndex is where the last call of exec that
+     wrote it left it: 0 set first with g, then the end of each match (exec
+     writes it before it makes the strings of the match), stepped over an
+     empty one with g. A failure there leaves that value, which a fast path
+     keeps in a local as it searches and writes with this function when it
+     fails.
+   - once they are found, the engine does not write lastIndex again: it is
+     0 with g (the last call of exec found none), the end of the match with
+     y alone, as it was otherwise, and then whatever the function of a
+     replace writes. A failure while the result is built leaves it so. A
+     fast path does at this stage some work the generic path did while it
+     found the matches (the strings of a match handed to the function, the
+     matched text of a replacement), and a failure there is one of this
+     stage too: the search is over, and the function may have run.
+   split never reads or writes the lastIndex of the regexp: the
+   specification searches with a splitter, another object. */
 static void js_regexp_reset_lastIndex(JSContext *ctx, JSValueConst this_val,
                                       int last_index)
 {
@@ -60466,18 +60488,19 @@ static JSValue js_regexp_replace(JSContext *ctx, JSValueConst this_val, JSValueC
             if (js_regexp_set_lastIndex(ctx, this_val, end) < 0)
                 goto fail;
         }
-        /* the generic path makes the strings of the match in its call of
-           exec, after it set lastIndex to end: a lack of memory here is
-           taken as one there */
+        /* the result is built as the matches are found: a failure in it is
+           one of the generic path after its search (see
+           js_regexp_reset_lastIndex), and leaves lastIndex as the search
+           leaves it, 0 with g, the end of the match with y alone */
         if (next_src_pos < start) {
             if (string_buffer_concat(b, str, next_src_pos, start))
-                goto fail_search;
+                goto fail;
         }
         if (rp->len != 0) {
             if (js_string_GetSubstitution(ctx, b, JS_UNDEFINED, str, start,
                                           JS_UNDEFINED, JS_UNDEFINED, rep_val,
                                           capture, capture_count)) {
-                goto fail_search;
+                goto fail;
             }
         }
         next_src_pos = end;
@@ -60494,9 +60517,9 @@ static JSValue js_regexp_replace(JSContext *ctx, JSValueConst this_val, JSValueC
     js_free(ctx, capture);
     return string_buffer_end(b);
 fail_search:
-    /* the call of exec that failed, or that made the strings of the match
-       that failed, leaves lastIndex where it left it: 0 set above, then the
-       end of each match, stepped over an empty one */
+    /* the call of exec that failed leaves lastIndex where the last call
+       left it: 0 set above, then the end of each match, stepped over an
+       empty one */
     if (re_flags & LRE_FLAG_GLOBAL)
         js_regexp_reset_lastIndex(ctx, this_val, last_index);
 fail:
@@ -60625,12 +60648,14 @@ static JSValue js_regexp_replace_fn(JSContext *ctx, JSValueConst rx,
     js_free(ctx, capture);
     capture = NULL;
 
-    j = 0;
+    /* the search is over: from here a failure leaves lastIndex as it is
+       (see js_regexp_reset_lastIndex), also one in the strings of a match,
+       which the generic path made in its search */
     args = js_malloc(ctx, sizeof(args[0]) * (capture_count + 2));
     if (!args)
-        goto fail_strings;
+        goto fail;
     next_src_pos = 0;
-    for (; j < n_pos; j += 2 * capture_count) {
+    for (j = 0; j < n_pos; j += 2 * capture_count) {
         if (((j / (2 * capture_count)) & 1023) == 1023 && js_poll_interrupts(ctx))
             goto fail;
         for (k = 0; k < capture_count; k++) {
@@ -60680,11 +60705,6 @@ fail_search:
 fail_args:
     while (--k >= 0)
         JS_FreeValue(ctx, args[k]);
-fail_strings:
-    /* making the strings of match j failed: the generic path makes them in
-       its call of exec for the match, which set lastIndex to its end */
-    if (global && j < n_pos)
-        js_regexp_reset_lastIndex(ctx, rx, pos[j + 1]);
 fail:
     js_free(ctx, args);
     js_free(ctx, pos);

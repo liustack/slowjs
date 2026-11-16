@@ -1438,45 +1438,89 @@ static void test_uncatchable_apply_forward(void)
     vm_free(&v);
 }
 
-/* A replace that runs out of memory as it makes the strings of a match
-   leaves lastIndex where the generic path leaves it: its exec of the match
-   set lastIndex to the end of the match before it made them. The match is
-   not the whole string, so its string is a copy. */
-static void test_regexp_replace_oom_last_index(void)
+static VM *take_vm;
+
+static JSValue js_take(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
 {
-    static const char *const reps[] = { "rep", "'$&'" };
-    static const char *const flags[] = { "g", "gy", "y" };
-    size_t i, j;
+    take_memory(take_vm);
+    return JS_UNDEFINED;
+}
+
+/* lastIndex after a replace or a match by a regexp that fails, at each of
+   the two stages of the rule of js_regexp_reset_lastIndex (quickjs.c), the
+   same on the fast path and on the generic path, which a regexp with a
+   property of its own takes. While the matches are found: the search of the
+   4th match runs out of memory in the backtracking stack of (a|b)*, and
+   lastIndex is the end of the 3rd, where the last call of exec left it (a
+   match, a replace with a function, with a string), and a match runs out of
+   memory as it makes the string of a match of 2 Mi characters, which exec
+   makes after it set lastIndex to the end of the match (a stop in the
+   search is in test_regexp_fast_stop_last_index of unit.c). After the
+   matches are found, nothing writes lastIndex: a replace with a string runs
+   out of memory as it adds a replacement of 16 Mi characters, and lastIndex
+   is 0 with g, as the last call of exec left it, or the end of the match
+   with y alone, and a replace with a function whose function set lastIndex
+   to 77 and then took all memory, or threw, leaves it at 77 (on the fast
+   path the strings of the next match fail, which the generic path made
+   while it found the matches). */
+static void test_regexp_oom_last_index(void)
+{
+    static const struct {
+        const char *setup, *call, *want, *error;
+        int room;
+    } cases[] = {
+        { "var s = ['ccc', 'ab'.repeat(1 << 20), 'c'].join(''), re = /(a|b)*c/g", "re[Symbol.match](s)", "3",
+          "out of memory", 1 },
+        { "var s = ['ccc', 'ab'.repeat(1 << 20), 'c'].join(''), re = /(a|b)*c/g", "re[Symbol.replace](s, () => '')",
+          "3", "out of memory", 1 },
+        { "var s = ['ccc', 'ab'.repeat(1 << 20), 'c'].join(''), re = /(a|b)*c/g", "re[Symbol.replace](s, 'x')", "3",
+          "out of memory", 1 },
+        { "var s = 'a'.repeat(2097152), re = /a{2097151}/g", "re[Symbol.match](s)", "2097151",
+          "out of memory", 1 },
+        { "var s = 'a'.repeat(2097152), re = /a{2097151}/y", "re[Symbol.match](s)", "2097151",
+          "out of memory", 1 },
+        { "var rep = 'x'.repeat(16 << 20), re = /a/g", "re[Symbol.replace]('aa', rep)", "0", "out of memory", 1 },
+        { "var rep = 'x'.repeat(16 << 20), re = /a/gy", "re[Symbol.replace]('aa', rep)", "0", "out of memory", 1 },
+        { "var rep = 'x'.repeat(16 << 20), re = /a/y", "re[Symbol.replace]('aa', rep)", "1", "out of memory", 1 },
+        { "var s = ['a', 'b'.repeat(4096)].join(''), re = /a|b{4096}/g, big = 'x'.repeat(1 << 20), n = 0;"
+          " function f() { re.lastIndex = 77; take(); return n++ ? big : '' }",
+          "re[Symbol.replace](s, f)", "77", "out of memory", 0 },
+        { "var s = 'aa', re = /a/g; function f() { re.lastIndex = 77; throw 1 }",
+          "re[Symbol.replace](s, f)", "77", "1", 0 },
+    };
+    size_t i;
     int generic;
 
-    for (i = 0; i < countof(reps); i++) {
-        for (j = 0; j < countof(flags); j++) {
-            for (generic = 0; generic < 2; generic++) {
-                VM v = vm_new();
-                JSValue r;
-                char js[256], *text = NULL;
+    for (i = 0; i < countof(cases); i++) {
+        for (generic = 0; generic < 2; generic++) {
+            VM v = vm_new();
+            JSValue g, r;
+            char js[512], *text = NULL;
 
-                snprintf(js, sizeof(js),
-                         "var s = 'a'.repeat(2097152), re = /a{2097151}/%s; re.exec('');"
-                         " if (%d) re.extra = 1; function rep() { return '' }",
-                         flags[j], generic);
-                eval_ok(v.ctx, js);
-                snprintf(js, sizeof(js), "re[Symbol.replace](s, %s)", reps[i]);
+            take_vm = &v;
+            g = JS_GetGlobalObject(v.ctx);
+            JS_SetPropertyStr(v.ctx, g, "take", JS_NewCFunction(v.ctx, js_take, "take", 0));
+            JS_FreeValue(v.ctx, g);
+            snprintf(js, sizeof(js), "%s; re.exec(''); if (%d) re.extra = 1", cases[i].setup,
+                     generic);
+            eval_ok(v.ctx, js);
+            if (cases[i].room)
                 room(&v, 1 << 20);
-                r = JS_Eval(v.ctx, js, strlen(js), "<unit>", JS_EVAL_TYPE_GLOBAL);
-                if (JS_IsException(r))
-                    text = exception_text(v.ctx);
-                JS_FreeValue(v.ctx, r);
-                unlimit(&v);
-                CHECK(text && strstr(text, "out of memory"),
-                      "replace with %s, /%s, %s path: ended with %s, want out of memory", reps[i], flags[j],
-                      generic ? "generic" : "fast", text ? text : "no error");
-                CHECK(eval_is(v.ctx, "re.lastIndex", "2097151"),
-                      "replace with %s, /%s, %s path: lastIndex is not the end of the match", reps[i], flags[j],
-                      generic ? "generic" : "fast");
-                free(text);
-                vm_free(&v);
-            }
+            r = JS_Eval(v.ctx, cases[i].call, strlen(cases[i].call), "<unit>", JS_EVAL_TYPE_GLOBAL);
+            if (JS_IsException(r))
+                text = exception_text(v.ctx);
+            JS_FreeValue(v.ctx, r);
+            release_blocks(&v);
+            /* with no memory for the error, the uncatchable error is null */
+            CHECK(text && (strstr(text, cases[i].error) ||
+                           (!strcmp(cases[i].error, "out of memory") && !strcmp(text, "null"))),
+                  "%s after %s, %s path: ended with %s, want %s",
+                  cases[i].call, cases[i].setup, generic ? "generic" : "fast", text ? text : "no error",
+                  cases[i].error);
+            CHECK(eval_is(v.ctx, "re.lastIndex", cases[i].want), "%s after %s, %s path: lastIndex is not %s",
+                  cases[i].call, cases[i].setup, generic ? "generic" : "fast", cases[i].want);
+            free(text);
+            vm_free(&v);
         }
     }
 }
@@ -3348,7 +3392,7 @@ int main(void)
     test_uncatchable_instanceof();
     test_uncatchable_apply_forward();
     test_uncatchable_regexp_fast();
-    test_regexp_replace_oom_last_index();
+    test_regexp_oom_last_index();
     test_uncatchable_flag_bit();
     test_weakref_kept_oom();
     test_symbol_copy_oom();
