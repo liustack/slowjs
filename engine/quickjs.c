@@ -3304,6 +3304,53 @@ size_t JS_GetMemorySize(JSRuntime *rt)
     return rt->malloc_ctx.heap.count;
 }
 
+/* what a block of the runtime adds to the count of the heap: its slot, or
+   the TLSF block and its 8 byte word */
+static size_t js_block_count(JSMallocContext *s, const void *ptr)
+{
+    const JSMallocBlockHeader *b = container_of(ptr, JSMallocBlockHeader, user_data);
+
+    if (b->u.block_idx != FREE_NIL)
+        return js_malloc_block_sizes[b->block_size_idx];
+    return heap_usable_size(container_of(ptr, JSMallocLargeBlockHeader, header.user_data)) + 8;
+}
+
+/* The bytes of JS_GetMemorySize that no block in use holds, which the heap
+   keeps for reuse: in each arena of small blocks, which counts whole while
+   one of its slots is in use, the free slots, its header and the room after
+   its last slot; the blocks of the front cache and of the cache of large
+   blocks; and the scratch block of the register pass between two
+   conversions. So JS_GetMemorySize less this is the runtime and the blocks
+   in use, whatever arenas they are spread over: after a collection, a
+   steadier figure of what a script keeps than JS_GetMemorySize, which grows
+   with the holes the garbage of the collected objects left among the ones
+   kept. It walks the arenas, not the objects (tens of microseconds for
+   thousands of arenas), and can be read at any time. */
+size_t JS_GetMemoryFree(JSRuntime *rt)
+{
+    JSMallocContext *s = &rt->malloc_ctx;
+    struct list_head *el;
+    size_t n = s->large_bytes;
+    int i;
+
+    for(i = 0; i < JS_MALLOC_BLOCK_SIZE_COUNT; i++) {
+        size_t block_size = js_malloc_block_sizes[i];
+        list_for_each(el, &s->arena_list[i]) {
+            JSMallocArena *ar = list_entry(el, JSMallocArena, link);
+            n += heap_usable_size(ar) + 8 - (size_t)ar->n_used_blocks * block_size;
+        }
+        /* the blocks of the front cache are slots in use for their arena */
+        n += (size_t)s->front_count[i] * block_size;
+    }
+    /* large_bytes counts the blocks of the cache of large blocks without the
+       8 byte word of the heap */
+    for(i = 0; i < JS_LARGE_CACHE_LISTS; i++)
+        n += (size_t)s->large_count[i] * 8;
+    if (rt->rv_scratch && !rt->rv_in_pass)
+        n += js_block_count(s, rt->rv_scratch);
+    return n;
+}
+
 size_t JS_GetGCThreshold(JSRuntime *rt)
 {
     return rt->malloc_gc_threshold;
@@ -10958,6 +11005,32 @@ static void compute_value_size(JSValueConst val, JSMemoryUsage_helper *hp)
     }
 }
 
+/* the register code of b, made at its first call (rv_convert) and kept as
+   long as b: the block of its RVFunc, which holds the code and its tables,
+   and the entries of its copy sites. JSFuncCodeSize stays the bytecode, which
+   a runtime that loads shared bytecode does not count, and the register code,
+   which every runtime makes for itself and only for the functions that ran,
+   has its own fields. */
+static void compute_register_code_size(JSRuntime *rt, JSFunctionBytecode *b,
+                                       JSMemoryUsage *s)
+{
+    RVFunc *rf = b->rv;
+    int i, j;
+
+    /* RV_UNCONVERTED or RV_REFUSED: no code of its own */
+    if (rf->arg_count < 0)
+        return;
+    s->register_code_count++;
+    s->register_code_size += js_malloc_usable_size_rt(rt, rf);
+    s->memory_used_count++;
+    for (i = 0; i < rf->copy_count; i++) {
+        for (j = 0; j < RV_COPY_WAYS && rf->copy[i].e[j]; j++) {
+            s->register_code_size += js_malloc_usable_size_rt(rt, rf->copy[i].e[j]);
+            s->memory_used_count++;
+        }
+    }
+}
+
 void JS_ComputeMemoryUsage(JSRuntime *rt, JSMemoryUsage *s)
 {
     struct list_head *el, *el1;
@@ -10970,6 +11043,7 @@ void JS_ComputeMemoryUsage(JSRuntime *rt, JSMemoryUsage *s)
     s->malloc_size = rt->malloc_ctx.heap.count;
     s->malloc_limit = rt->malloc_ctx.heap.limit_set;
     s->footprint = rt->malloc_ctx.heap.footprint;
+    s->free_size = JS_GetMemoryFree(rt);
     s->footprint_limit = rt->malloc_ctx.heap.footprint_limit;
     s->chunk_count = rt->malloc_ctx.heap.chunk_count;
     s->release_candidate = rt->malloc_ctx.heap.release_candidate;
@@ -11034,6 +11108,7 @@ void JS_ComputeMemoryUsage(JSRuntime *rt, JSMemoryUsage *s)
         /* XXX: could count the other GC object types too */
         if (js_rc(gp)->gc_obj_type == JS_GC_OBJ_TYPE_FUNCTION_BYTECODE) {
             compute_bytecode_size((JSFunctionBytecode *)gp, hp);
+            compute_register_code_size(rt, (JSFunctionBytecode *)gp, s);
             continue;
         } else if (js_rc(gp)->gc_obj_type != JS_GC_OBJ_TYPE_JS_OBJECT) {
             continue;
@@ -11266,7 +11341,8 @@ void JS_ComputeMemoryUsage(JSRuntime *rt, JSMemoryUsage *s)
         s->js_func_count + s->js_func_pc2line_count;
     s->memory_used_size += s->atom_size + s->str_size +
         s->obj_size + s->prop_size + s->shape_size +
-        s->js_func_size + s->js_func_code_size + s->js_func_pc2line_size;
+        s->js_func_size + s->js_func_code_size + s->js_func_pc2line_size +
+        s->register_code_size;
 }
 
 /* v with one decimal, as printf's %.1f prints it. The double is rounded once,
@@ -11416,6 +11492,8 @@ size_t JS_DumpMemoryUsage(char *buf, size_t size, const JSMemoryUsage *s, JSRunt
                 "memory used", s->memory_used_count, s->memory_used_size,
                 MALLOC_OVERHEAD, dump_tenths(t, ((double)(s->malloc_size - s->memory_used_size) /
                                   s->memory_used_count)));
+        dump_printf(&out, "%-20s %8s %8"PRId64"  (no block in use: free slots, caches)\n",
+                "memory free", "", s->free_size);
     }
     if (s->atom_count) {
         dump_printf(&out, "%-20s %8"PRId64" %8"PRId64"  (%s per atom)\n",
@@ -11450,6 +11528,11 @@ size_t JS_DumpMemoryUsage(char *buf, size_t size, const JSMemoryUsage *s, JSRunt
                     s->js_func_pc2line_size,
                     dump_tenths(t, (double)s->js_func_pc2line_size / s->js_func_pc2line_count));
         }
+    }
+    if (s->register_code_count) {
+        dump_printf(&out, "%-20s %8"PRId64" %8"PRId64"  (%s per function)\n",
+                "register code", s->register_code_count, s->register_code_size,
+                dump_tenths(t, (double)s->register_code_size / s->register_code_count));
     }
     if (s->c_func_count) {
         dump_printf(&out, "%-20s %8"PRId64"\n", "C functions", s->c_func_count);

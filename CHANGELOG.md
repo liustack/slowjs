@@ -4,6 +4,10 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 
 ## [Unreleased]
 
+### Added
+
+- `VM.MemoryFree` gives the part of `MemorySize` that no block in use holds, mostly the holes collected garbage leaves in the arenas of the objects kept, so `MemorySize() - MemoryFree()` after `RunGC` stays the same while a VM keeps the same objects. `MemoryUsage` has it as `FreeSize` and now counts the register code of the functions that ran (`RegisterCodeCount`, `RegisterCodeSize`, and in `MemoryUsedSize`).
+
 ### Changed
 
 - A write of a property by name (`o.x = v`) keeps, at each place in the code, the slot it last set and, for a write that added the property, the shape the object takes, so the next write there skips the lookup. On a linux/amd64 machine with an AMD EPYC 7B13 the V8 suite takes 3.1% less time and tifa's pages show no change beyond 1%, for up to 1% more memory in a VM.
