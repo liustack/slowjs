@@ -94,14 +94,18 @@ cycle("youngGC");
 // the heap holds as many blocks after the objects as before them
 (function () {
   function G(v) { this.p = v; this.q = v; this.r = v; this.s = v; }
+  function fill(n) {
+    var objs = [];
+    for (var i = 0; i < n; i++) objs.push(new G(i));
+    for (var i = 0; i < n; i++) new G(i);
+    objs.length = 0;
+  }
+  // the register code of fill, made at its first call, stays with it: made
+  // before the count, the count sees the objects alone
+  fill(0);
   gc();
   var before = memoryBlocks();
-  (function () {
-    var objs = [];
-    for (var i = 0; i < 200; i++) objs.push(new G(i));
-    for (var i = 0; i < 200; i++) new G(i);
-    objs.length = 0;
-  })();
+  fill(200);
   gc();
   log.push("blocks after the objects: " + (memoryBlocks() - before));
 })();
