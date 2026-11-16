@@ -35,6 +35,8 @@ func TestBaseParsedOnce(t *testing.T) {
 		{`for (var i = 0; i < 100; i++) URL.canParse("/p" + i, "http://localhost"); ""`, 0},
 		{`for (var i = 0; i < 10; i++) new URL("/p", i % 2 ? "http://a" : "http://b"); ""`, 10},
 		{`for (var i = 0; i < 10; i++) new URL("/p", "` + long + `"); ""`, 10},
+		// a string short enough whose href, percent-encoded, is not
+		{`for (var i = 0; i < 10; i++) new URL("/p", "http://h/" + "\x01".repeat(40) + "/"); ""`, 10},
 		{`for (var i = 0; i < 10; i++) try { new URL("/p", "no base"); } catch (e) {} ""`, 10},
 		{`for (var i = 0; i < 10; i++) new URL("http://h/p", undefined); ""`, 0},
 	} {

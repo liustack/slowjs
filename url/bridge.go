@@ -45,11 +45,25 @@ const (
 	setHash
 )
 
-// maxBaseBytes is the longest base a VM keeps parsed, in bytes of UTF-8.
-const maxBaseBytes = 256
+// maxBaseBytes is the longest base a VM keeps parsed, in bytes of UTF-8, and
+// the longest href of that base.
+const maxBaseBytes = 128
 
-// keptBase is the last base a VM parsed that was a URL of at most maxBaseBytes,
-// and its parse: a router resolves every link of a page against one base, so
+// What a VM keeps, at most: the base and its URL, the href of the record
+// (which its parts are cut from) and its URL, and its vmState with its entry
+// in states. The text of a URL's strings and path is at most its href. Each
+// is in a buffer of at most twice its length and 64 bytes (whatwgurl copies a
+// part the parser takes and a path ".." made shorter from a buffer with more
+// room than that, and append grows the others less), rounded up to a size
+// class of Go's allocator, which adds at most an eighth and 16 bytes at these
+// sizes. So a URL with an href of H bytes keeps at most 2.25H + 328 bytes,
+// and 192 for the URL: 808 for the base and 1,672 for the record. With the 128
+// bytes of the base, the 512 of the href, and under 400 for the state and its
+// entry, a VM keeps at most 3.5 KiB (TestKeptIsBounded checks keptMost).
+const keptMost = 4096
+
+// keptBase is the last base a VM parsed whose string and href are at most
+// maxBaseBytes, and its parse: a router resolves every link of a page against one base, so
 // most calls parse it no more. Each VM has its own (states), which the
 // Builtins change in the calls of that VM, one at a time, and which goes when
 // the VM closes: at most maxBaseBytes and the URL made of them. The parser
@@ -73,10 +87,14 @@ func (b *keptBase) parse(in whatwgurl.Input) (*whatwgurl.URL, error) {
 		h()
 	}
 	u, err := whatwgurl.Parse(in, nil)
-	if err == nil && len(s) <= maxBaseBytes {
+	if err != nil || len(s) > maxBaseBytes {
+		return u, err
+	}
+	// percent-encoding and IDNA can make an href longer than its string
+	if href, _ := u.Serialize(); len(href) <= maxBaseBytes {
 		b.s, b.u = strings.Clone(s), u
 	}
-	return u, err
+	return u, nil
 }
 
 // parseArgs parses argument 0 against argument 1, a base or undefined. ok is
@@ -100,7 +118,7 @@ func parseArgs(a slowjs.Args, kept *keptBase) (*whatwgurl.URL, bool) {
 }
 
 // maxKeptBytes is the longest href of a record a VM keeps (keptRecord).
-const maxKeptBytes = 1024
+const maxKeptBytes = 512
 
 // keptRecord is the last record parts made for a VM, when its href is at most
 // maxKeptBytes: its parts and bits, as url.js hands them back to set, and the
@@ -111,8 +129,8 @@ const maxKeptBytes = 1024
 // that URL, from which FromParts makes a URL that gives them back: the same
 // record. Nothing changes u: set changes a copy. A URL holds about the bytes
 // it is made of, however long the input was (whatwgurl's take and Path.Pop),
-// so this is at most maxKeptBytes of href and the URL made of it, under 4 KiB
-// of Go's memory a VM, which goes when the VM closes.
+// so this is at most maxKeptBytes of href and the URL made of it (keptMost),
+// which goes when the VM closes.
 type keptRecord struct {
 	p whatwgurl.Parts
 	u *whatwgurl.URL
