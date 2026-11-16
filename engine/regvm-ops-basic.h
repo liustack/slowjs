@@ -114,6 +114,20 @@ RV_OP(SWAP)                                           /* a b: the values of temp
         *term = 1;
         return 0;
 #elif RV_PART == RV_PART_PASS_FN
+/* a read of a name: op (GETF, GETFT or GETFL) into d of the field atom of
+   the object in o, with the cache of the site, slot RV_GETF_NONE and id 0
+   before its first find: 15 bytes. Every read of a name is emitted here, so
+   that none leaves out the words its handler reads and steps over. */
+static void rv_emit_getf(RVPass *s, int op, int d, int o, JSAtom atom)
+{
+    rv_emit(s, op);
+    rv_byte(s, d);
+    rv_byte(s, o);
+    rv_u32(s, atom);
+    rv_u32(s, RV_GETF_NONE);
+    rv_u32(s, 0);
+}
+
 /* dup of a temp then get_field or get_length (a destructuring, o.a.b ??
    ...): the field of the temp into the temp above it, as get_field2 does,
    with no copy of the object. GETF leaves its object where it is. The
@@ -129,12 +143,8 @@ static BOOL rv_dup_get_field(RVPass *s, int pos)
     s->ipos = q;
 #endif
     d = rv_tslot(s, s->sp);
-    rv_emit(s, RV_GETF);
-    rv_byte(s, d);
-    rv_byte(s, s->st[s->sp - 1].slot);
-    rv_u32(s, s->bc[q] == OP_get_length ? JS_ATOM_length : get_u32(s->bc + q + 1));
-    rv_u32(s, RV_GETF_NONE);
-    rv_u32(s, 0);
+    rv_emit_getf(s, RV_GETF, d, s->st[s->sp - 1].slot,
+                 s->bc[q] == OP_get_length ? JS_ATOM_length : get_u32(s->bc + q + 1));
     rv_throws(s, rv_owned(s, 0));
     rv_push(s, RV_E_TEMP, d, 0);
     rv_mark_dst(s, d);
@@ -545,12 +555,8 @@ static void rv_call(RVPass *s, int argc, int method, int tail)
             rv_materialize(s, s->sp - 1);
         e = s->st[s->sp - 1];
         d = rv_tslot(s, s->sp - 1);
-        rv_emit(s, e.kind == RV_E_TEMP ? RV_GETFT : RV_GETF);
-        rv_byte(s, d);
-        rv_byte(s, e.slot);
-        rv_u32(s, op == OP_get_length ? JS_ATOM_length : get_u32(p + 1));
-        rv_u32(s, RV_GETF_NONE);
-        rv_u32(s, 0);
+        rv_emit_getf(s, e.kind == RV_E_TEMP ? RV_GETFT : RV_GETF, d, e.slot,
+                     op == OP_get_length ? JS_ATOM_length : get_u32(p + 1));
         rv_throws(s, rv_owned(s, 1));
         s->sp--;
         rv_push(s, RV_E_TEMP, d, 0);
@@ -562,12 +568,7 @@ static void rv_call(RVPass *s, int argc, int method, int tail)
             rv_materialize(s, s->sp - 1);
         e = s->st[s->sp - 1];
         d = rv_tslot(s, s->sp);
-        rv_emit(s, RV_GETF);
-        rv_byte(s, d);
-        rv_byte(s, e.slot);
-        rv_u32(s, get_u32(p + 1));
-        rv_u32(s, RV_GETF_NONE);
-        rv_u32(s, 0);
+        rv_emit_getf(s, RV_GETF, d, e.slot, get_u32(p + 1));
         rv_throws(s, rv_owned(s, 0));
         rv_push(s, RV_E_TEMP, d, 0);
         rv_mark_dst(s, d);

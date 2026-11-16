@@ -1444,6 +1444,7 @@ var goasmKeep = []any{
 	rv_dup_branch,
 	rv_dup_get_field,
 	rv_emit,
+	rv_emit_getf,
 	rv_emit_ret,
 	rv_enter_args,
 	rv_entry_extra,
