@@ -7,6 +7,6 @@ result undefined: throws TypeError cannot convert to object
 result getter throws: throws Error from b
 result ownKeys throws: throws Error from ownKeys
 result frozen: 1|b=21|b=2falseb=2,c=3
-mem-end obj=195 atom=554 shape=152 prop=969 jsfunc=1 cfunc=130 array=1 fast_array=1 elements=0 binary=0
-mem-gc obj=193 atom=553 shape=150 prop=965 jsfunc=0 cfunc=130 array=1 fast_array=1 elements=0 binary=0
+mem-end obj=195 atom=555 shape=152 prop=969 jsfunc=1 cfunc=130 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=193 atom=554 shape=150 prop=965 jsfunc=0 cfunc=130 array=1 fast_array=1 elements=0 binary=0
 --- status exit 0

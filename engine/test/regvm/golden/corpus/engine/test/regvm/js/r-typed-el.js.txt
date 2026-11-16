@@ -71,6 +71,6 @@ result BigUint64Array detached undefined|undefined|NaN
 result BigUint64Array shrunk undefined|undefined|0n|4
 result BigUint64Array grown 0n|8n|8n|12
 result calls 60
-mem-end obj=191 atom=541 shape=134 prop=949 jsfunc=0 cfunc=129 array=1 fast_array=1 elements=0 binary=0
-mem-gc obj=191 atom=541 shape=134 prop=949 jsfunc=0 cfunc=129 array=1 fast_array=1 elements=0 binary=0
+mem-end obj=191 atom=542 shape=134 prop=949 jsfunc=0 cfunc=129 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=191 atom=542 shape=134 prop=949 jsfunc=0 cfunc=129 array=1 fast_array=1 elements=0 binary=0
 --- status exit 0

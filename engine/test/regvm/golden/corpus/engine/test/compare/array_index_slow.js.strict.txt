@@ -523,6 +523,6 @@ result realm rd: ["r0","r4",undefined,"rp6","r8","rp6",9]
 result realm wr: ["x","y","z",11,true]
 result realm proto not ours: ["ours6",undefined]
 result loop: [363136,5673,64]
-mem-end obj=566 atom=645 shape=299 prop=2669 jsfunc=46 cfunc=259 array=54 fast_array=5 elements=554 binary=0
-mem-gc obj=429 atom=645 shape=252 prop=2113 jsfunc=46 cfunc=259 array=8 fast_array=5 elements=554 binary=0
+mem-end obj=566 atom=646 shape=299 prop=2669 jsfunc=46 cfunc=259 array=54 fast_array=5 elements=554 binary=0
+mem-gc obj=429 atom=646 shape=252 prop=2113 jsfunc=46 cfunc=259 array=8 fast_array=5 elements=554 binary=0
 --- status exit 0

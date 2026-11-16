@@ -17,6 +17,6 @@ result switch: A1b A2c 1
 result tdz: ReferenceError
 result memory after: 0
 result async: [[a,1],2]
-mem-end obj=230 atom=652 shape=145 prop=1077 jsfunc=31 cfunc=135 array=4 fast_array=4 elements=34 binary=0
-mem-gc obj=230 atom=652 shape=145 prop=1077 jsfunc=31 cfunc=135 array=4 fast_array=4 elements=34 binary=0
+mem-end obj=230 atom=653 shape=145 prop=1077 jsfunc=31 cfunc=135 array=4 fast_array=4 elements=34 binary=0
+mem-gc obj=230 atom=653 shape=145 prop=1077 jsfunc=31 cfunc=135 array=4 fast_array=4 elements=34 binary=0
 --- status exit 0

@@ -11,6 +11,6 @@ result index too large int: throws
 result bad value: throws
 result wide result: 1267650600228229401496703205379
 result memory after: 0
-mem-end obj=198 atom=563 shape=126 prop=985 jsfunc=9 cfunc=129 array=2 fast_array=2 elements=13 binary=0
-mem-gc obj=198 atom=563 shape=126 prop=985 jsfunc=9 cfunc=129 array=2 fast_array=2 elements=13 binary=0
+mem-end obj=198 atom=564 shape=126 prop=985 jsfunc=9 cfunc=129 array=2 fast_array=2 elements=13 binary=0
+mem-gc obj=198 atom=564 shape=126 prop=985 jsfunc=9 cfunc=129 array=2 fast_array=2 elements=13 binary=0
 --- status exit 0

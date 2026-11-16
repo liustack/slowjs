@@ -15,6 +15,6 @@ result long 40 639 2033661457: local localPlus arg closure closureVar used usedC
 result long 1000 12980 1198739264: local localPlus arg closure closureVar used usedClosure tdz keep keyed
 result long 6000 77880 -260899968: local localPlus arg closure closureVar used usedClosure tdz keep keyed
 result held 100 150 800
-mem-end obj=212 atom=700 shape=244 prop=1005 jsfunc=19 cfunc=132 array=2 fast_array=2 elements=17 binary=0
-mem-gc obj=212 atom=700 shape=244 prop=1005 jsfunc=19 cfunc=132 array=2 fast_array=2 elements=17 binary=0
+mem-end obj=212 atom=701 shape=244 prop=1005 jsfunc=19 cfunc=132 array=2 fast_array=2 elements=17 binary=0
+mem-gc obj=212 atom=701 shape=244 prop=1005 jsfunc=19 cfunc=132 array=2 fast_array=2 elements=17 binary=0
 --- status exit 0

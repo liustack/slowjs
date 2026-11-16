@@ -17,6 +17,6 @@ result pow -1e+300 0:+/+ -0:+/+ 1:-/- -1:-/- 2:Infinity/Infinity -2:0/0 3:-Infin
 result pow -1.7976931348623157e+308 0:+/+ -0:+/+ 1:-/- -1:-/- 2:Infinity/Infinity -2:0/0 3:-Infinity/-Infinity -3:-0/-0 0.5:NaN/NaN -0.5:NaN/NaN 1.5:NaN/NaN 0.3333333333333333:NaN/NaN 9007199254740991:-Infinity/-Infinity 9007199254740992:Infinity/Infinity -9007199254740991:-0/-0 1025:-Infinity/-Infinity -1025:-0/-0 1075:-Infinity/-Infinity -1075:-0/-0 1e+300:Infinity/Infinity -1e+300:0/0 Infinity:Infinity/Infinity -Infinity:0/0 NaN:NaN/NaN
 result pow -Infinity 0:+/+ -0:+/+ 1:-Infinity/-Infinity -1:-0/-0 2:Infinity/Infinity -2:0/0 3:-Infinity/-Infinity -3:-0/-0 0.5:Infinity/Infinity -0.5:0/0 1.5:Infinity/Infinity 0.3333333333333333:Infinity/Infinity 9007199254740991:-Infinity/-Infinity 9007199254740992:Infinity/Infinity -9007199254740991:-0/-0 1025:-Infinity/-Infinity -1025:-0/-0 1075:-Infinity/-Infinity -1075:-0/-0 1e+300:Infinity/Infinity -1e+300:0/0 Infinity:Infinity/Infinity -Infinity:0/0 NaN:NaN/NaN
 result acosh of 321 values from -1 to -2^40, not NaN: 0
-mem-end obj=208 atom=593 shape=121 prop=1031 jsfunc=2 cfunc=138 array=6 fast_array=6 elements=94 binary=0
-mem-gc obj=208 atom=593 shape=121 prop=1031 jsfunc=2 cfunc=138 array=6 fast_array=6 elements=94 binary=0
+mem-end obj=208 atom=594 shape=121 prop=1031 jsfunc=2 cfunc=138 array=6 fast_array=6 elements=94 binary=0
+mem-gc obj=208 atom=594 shape=121 prop=1031 jsfunc=2 cfunc=138 array=6 fast_array=6 elements=94 binary=0
 --- status exit 0

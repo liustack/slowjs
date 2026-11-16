@@ -37,6 +37,6 @@ result throwing getter: caught first object 1 string:only string:second
 result twice 2: 1 5 2
 result twice 1: 1 undefined:undefined 1
 result twice 3: 1 5 3
-mem-end obj=222 atom=609 shape=132 prop=1061 jsfunc=23 cfunc=132 array=4 fast_array=5 elements=3042 binary=0
-mem-gc obj=222 atom=609 shape=132 prop=1061 jsfunc=23 cfunc=132 array=4 fast_array=5 elements=3042 binary=0
+mem-end obj=222 atom=610 shape=132 prop=1061 jsfunc=23 cfunc=132 array=4 fast_array=5 elements=3042 binary=0
+mem-gc obj=222 atom=610 shape=132 prop=1061 jsfunc=23 cfunc=132 array=4 fast_array=5 elements=3042 binary=0
 --- status exit 0

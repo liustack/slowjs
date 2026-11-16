@@ -24,6 +24,6 @@ result cases are evaluated in order: ab
 result async c: BC
 result async z: none
 result async a: A 1
-mem-end obj=235 atom=634 shape=137 prop=1054 jsfunc=19 cfunc=145 array=5 fast_array=5 elements=105 binary=0
-mem-gc obj=235 atom=634 shape=137 prop=1054 jsfunc=19 cfunc=145 array=5 fast_array=5 elements=105 binary=0
+mem-end obj=235 atom=635 shape=137 prop=1054 jsfunc=19 cfunc=145 array=5 fast_array=5 elements=105 binary=0
+mem-gc obj=235 atom=635 shape=137 prop=1054 jsfunc=19 cfunc=145 array=5 fast_array=5 elements=105 binary=0
 --- status exit 0

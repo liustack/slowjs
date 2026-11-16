@@ -28,6 +28,6 @@ result destructuring throws: next 0 | return called | return resolved | after
 result for await with let and closure: next 0 | next 1 | return called | return resolved | 0,1
 result for of is not awaited: sync return | after
 result order of microtasks: next 0 | body 0 at 2 | return called | return resolved | after at 7
-mem-end obj=419 atom=614 shape=144 prop=1369 jsfunc=56 cfunc=135 array=57 fast_array=57 elements=234 binary=0
-mem-gc obj=263 atom=614 shape=143 prop=1071 jsfunc=56 cfunc=135 array=33 fast_array=33 elements=120 binary=0
+mem-end obj=419 atom=615 shape=144 prop=1369 jsfunc=56 cfunc=135 array=57 fast_array=57 elements=234 binary=0
+mem-gc obj=263 atom=615 shape=143 prop=1071 jsfunc=56 cfunc=135 array=33 fast_array=33 elements=120 binary=0
 --- status exit 0

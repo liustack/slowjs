@@ -11,6 +11,6 @@ result     [native code]
 result }|function
 result proto getter 4 890 2
 result sum 446000
-mem-end obj=194 atom=540 shape=122 prop=956 jsfunc=1 cfunc=131 array=1 fast_array=1 elements=0 binary=0
-mem-gc obj=194 atom=540 shape=122 prop=956 jsfunc=1 cfunc=131 array=1 fast_array=1 elements=0 binary=0
+mem-end obj=194 atom=541 shape=122 prop=956 jsfunc=1 cfunc=131 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=194 atom=541 shape=122 prop=956 jsfunc=1 cfunc=131 array=1 fast_array=1 elements=0 binary=0
 --- status exit 0

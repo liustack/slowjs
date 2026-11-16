@@ -51,6 +51,6 @@ result in a loop => i=0:wec sq=0:wec | i=1:wec sq=1:wec odd=true:wec | i=2:wec s
 result class bodies => a=1:wec b=2:wec a=1:wec b=true:wec s=1:wec
 result more literals than 16 bits => 65535 a=1:wec | x=obj:wec w=4:wec | y=2:wec | z=3:wec v=obj:wec | u=5:wec
 result memory after: 0
-mem-end obj=216 atom=1304 shape=2176 prop=1024 jsfunc=5 cfunc=147 array=2 fast_array=2 elements=53 binary=0
-mem-gc obj=216 atom=1304 shape=2176 prop=1024 jsfunc=5 cfunc=147 array=2 fast_array=2 elements=53 binary=0
+mem-end obj=216 atom=1305 shape=2176 prop=1024 jsfunc=5 cfunc=147 array=2 fast_array=2 elements=53 binary=0
+mem-gc obj=216 atom=1305 shape=2176 prop=1024 jsfunc=5 cfunc=147 array=2 fast_array=2 elements=53 binary=0
 --- status exit 0

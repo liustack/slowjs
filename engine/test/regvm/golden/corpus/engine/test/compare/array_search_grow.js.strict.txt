@@ -36,6 +36,6 @@ result no change, present indexOf: 2 [1,2,3]
 result no change, present includes: true [1,2,3]
 result no change, absent indexOf: -1 [1,2,3]
 result no change, absent includes: false [1,2,3]
-mem-end obj=198 atom=556 shape=123 prop=970 jsfunc=4 cfunc=131 array=2 fast_array=2 elements=38 binary=0
-mem-gc obj=198 atom=556 shape=123 prop=970 jsfunc=4 cfunc=131 array=2 fast_array=2 elements=38 binary=0
+mem-end obj=198 atom=557 shape=123 prop=970 jsfunc=4 cfunc=131 array=2 fast_array=2 elements=38 binary=0
+mem-gc obj=198 atom=557 shape=123 prop=970 jsfunc=4 cfunc=131 array=2 fast_array=2 elements=38 binary=0
 --- status exit 0

@@ -14,6 +14,6 @@ result youngGC, before: alive alive
 result youngGC, after: gone gone
 result blocks after the objects: 0
 result realm: xyK xyK xyK xyK xyK xyK xyP xyP xyP xyP xyP xyP xyO xyO xyO
-mem-end obj=380 atom=550 shape=241 prop=1892 jsfunc=1 cfunc=255 array=2 fast_array=2 elements=0 binary=0
-mem-gc obj=195 atom=544 shape=124 prop=957 jsfunc=0 cfunc=133 array=1 fast_array=1 elements=0 binary=0
+mem-end obj=380 atom=551 shape=241 prop=1892 jsfunc=1 cfunc=255 array=2 fast_array=2 elements=0 binary=0
+mem-gc obj=195 atom=545 shape=124 prop=957 jsfunc=0 cfunc=133 array=1 fast_array=1 elements=0 binary=0
 --- status exit 0

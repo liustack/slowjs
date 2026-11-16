@@ -44,6 +44,6 @@ result loop k n16 2400 932267880 true
 result loop n8 l600 3645 833408364 true
 result loop wrope key 3 49874 true
 result loop empty hi 600 -221711168 true
-mem-end obj=243 atom=627 shape=139 prop=1105 jsfunc=29 cfunc=141 array=5 fast_array=5 elements=60 binary=0
-mem-gc obj=243 atom=627 shape=139 prop=1105 jsfunc=29 cfunc=141 array=5 fast_array=5 elements=60 binary=0
+mem-end obj=243 atom=628 shape=139 prop=1105 jsfunc=29 cfunc=141 array=5 fast_array=5 elements=60 binary=0
+mem-gc obj=243 atom=628 shape=139 prop=1105 jsfunc=29 cfunc=141 array=5 fast_array=5 elements=60 binary=0
 --- status exit 0

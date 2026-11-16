@@ -14,6 +14,6 @@ result BigUint64Array: 18446744073709551615n 18446744073709551615n 1844674407370
 result Float16Array: 1.5 1.5 1.5:wec 1.5 true true | -0 -0 -0:wec -0 true true | 65504 65504 65504:wec 65504 true true | undefined undefined none undefined false false | x:undefined none
 result Float32Array: 0.10000000149011612 0.10000000149011612 0.10000000149011612:wec 0.10000000149011612 true true | -0 -0 -0:wec -0 true true | NaN NaN NaN:wec NaN true true | undefined undefined none undefined false false | x:undefined none
 result Float64Array: 0.1 0.1 0.1:wec 0.1 true true | -0 -0 -0:wec -0 true true | -Infinity -Infinity -Infinity:wec -Infinity true true | undefined undefined none undefined false false | x:undefined none
-mem-end obj=230 atom=557 shape=138 prop=1027 jsfunc=20 cfunc=131 array=19 fast_array=19 elements=64 binary=0
-mem-gc obj=230 atom=557 shape=138 prop=1027 jsfunc=20 cfunc=131 array=19 fast_array=19 elements=64 binary=0
+mem-end obj=230 atom=558 shape=138 prop=1027 jsfunc=20 cfunc=131 array=19 fast_array=19 elements=64 binary=0
+mem-gc obj=230 atom=558 shape=138 prop=1027 jsfunc=20 cfunc=131 array=19 fast_array=19 elements=64 binary=0
 --- status exit 0

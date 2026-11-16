@@ -61,6 +61,6 @@ result recursion: 15
 result generators: a=1,a=1,c=3,d=4,b=2,stop,true,in
 result many loops: 10000
 result global: g1=x,g2=y g2
-mem-end obj=207 atom=611 shape=212 prop=989 jsfunc=3 cfunc=139 array=3 fast_array=3 elements=65 binary=0
-mem-gc obj=207 atom=611 shape=212 prop=989 jsfunc=3 cfunc=139 array=3 fast_array=3 elements=65 binary=0
+mem-end obj=207 atom=612 shape=212 prop=989 jsfunc=3 cfunc=139 array=3 fast_array=3 elements=65 binary=0
+mem-gc obj=207 atom=612 shape=212 prop=989 jsfunc=3 cfunc=139 array=3 fast_array=3 elements=65 binary=0
 --- status exit 0

@@ -82,6 +82,6 @@ result operands evaluated first: L,R,TypeError
 result in a loop: 156512
 result result used as a value and in a branch: true,false,y,and,false,true,n,false,false,true,n,false
 result strict code: true,false,true
-mem-end obj=481 atom=579 shape=358 prop=1556 jsfunc=35 cfunc=139 array=3 fast_array=3 elements=84 binary=0
-mem-gc obj=223 atom=566 shape=158 prop=1032 jsfunc=8 cfunc=139 array=3 fast_array=3 elements=84 binary=0
+mem-end obj=481 atom=580 shape=358 prop=1556 jsfunc=35 cfunc=139 array=3 fast_array=3 elements=84 binary=0
+mem-gc obj=223 atom=567 shape=158 prop=1032 jsfunc=8 cfunc=139 array=3 fast_array=3 elements=84 binary=0
 --- status exit 0

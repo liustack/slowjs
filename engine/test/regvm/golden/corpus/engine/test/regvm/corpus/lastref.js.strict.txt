@@ -280,6 +280,6 @@ result async-once then 2
 result async-throw-once catch a 0
 result async-throw-once catch a 1
 result async-throw-once catch a 2
-mem-end obj=200 atom=555 shape=136 prop=969 jsfunc=1 cfunc=132 array=1 fast_array=1 elements=0 binary=0
-mem-gc obj=194 atom=554 shape=132 prop=957 jsfunc=0 cfunc=132 array=1 fast_array=1 elements=0 binary=0
+mem-end obj=200 atom=556 shape=136 prop=969 jsfunc=1 cfunc=132 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=194 atom=555 shape=132 prop=957 jsfunc=0 cfunc=132 array=1 fast_array=1 elements=0 binary=0
 --- status exit 0

@@ -186,6 +186,6 @@ result throwing 6: TypeError: cannot read property 'nope' of undefined
 result     at t6 (<eval>:135:113)
 result     at <anonymous> (<eval>:142:26)
 result     at <eval> (<eval>:152:3)
-mem-end obj=238 atom=603 shape=154 prop=1056 jsfunc=25 cfunc=132 array=1 fast_array=1 elements=0 binary=0
-mem-gc obj=195 atom=545 shape=130 prop=969 jsfunc=0 cfunc=132 array=1 fast_array=1 elements=0 binary=0
+mem-end obj=238 atom=604 shape=154 prop=1056 jsfunc=25 cfunc=132 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=195 atom=546 shape=130 prop=969 jsfunc=0 cfunc=132 array=1 fast_array=1 elements=0 binary=0
 --- status exit 0

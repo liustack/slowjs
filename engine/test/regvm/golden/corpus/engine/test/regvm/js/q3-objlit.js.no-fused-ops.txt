@@ -8,6 +8,6 @@ result wide 40 ww 40
 result chain 36296992
 result area 9900
 result swap {"a":1,"b":2} a,b
-mem-end obj=190 atom=596 shape=131 prop=950 jsfunc=0 cfunc=127 array=1 fast_array=1 elements=0 binary=0
-mem-gc obj=190 atom=596 shape=131 prop=950 jsfunc=0 cfunc=127 array=1 fast_array=1 elements=0 binary=0
+mem-end obj=190 atom=597 shape=131 prop=950 jsfunc=0 cfunc=127 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=190 atom=597 shape=131 prop=950 jsfunc=0 cfunc=127 array=1 fast_array=1 elements=0 binary=0
 --- status exit 0

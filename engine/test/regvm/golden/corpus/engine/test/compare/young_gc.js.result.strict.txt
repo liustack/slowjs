@@ -19,6 +19,6 @@ result no zero count left, fr.register(old, 1);: ok
 result no zero count left, old.f = async function () {};: ok
 result no zero count left, old.g = (function* () { yield 1 })(); old.g.next();: ok
 result suspended async frame: ok
-mem-end obj=228 atom=735 shape=154 prop=1185 jsfunc=16 cfunc=148 array=2 fast_array=2 elements=21 binary=0
-mem-gc obj=228 atom=735 shape=154 prop=1185 jsfunc=16 cfunc=148 array=2 fast_array=2 elements=21 binary=0
+mem-end obj=228 atom=736 shape=154 prop=1185 jsfunc=16 cfunc=148 array=2 fast_array=2 elements=21 binary=0
+mem-gc obj=228 atom=736 shape=154 prop=1185 jsfunc=16 cfunc=148 array=2 fast_array=2 elements=21 binary=0
 --- status exit 0

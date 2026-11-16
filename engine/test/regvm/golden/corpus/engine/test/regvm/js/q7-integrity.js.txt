@@ -11,6 +11,6 @@ result 010 011 299 2582
 result 011
 result 1
 result false
-mem-end obj=408 atom=669 shape=295 prop=2035 jsfunc=15 cfunc=267 array=4 fast_array=4 elements=14 binary=0
-mem-gc obj=408 atom=669 shape=295 prop=2035 jsfunc=15 cfunc=267 array=4 fast_array=4 elements=14 binary=0
+mem-end obj=408 atom=670 shape=295 prop=2035 jsfunc=15 cfunc=267 array=4 fast_array=4 elements=14 binary=0
+mem-gc obj=408 atom=670 shape=295 prop=2035 jsfunc=15 cfunc=267 array=4 fast_array=4 elements=14 binary=0
 --- status exit 0

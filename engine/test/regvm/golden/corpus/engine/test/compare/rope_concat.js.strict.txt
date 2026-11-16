@@ -22,6 +22,6 @@ result tree 61 12299 -879962830: charAt key join concat template regexp json eq
 result tree 62 12603 -1938027468: charAt key join concat template regexp json eq
 result tree 200 40897 -758082971: charAt key join concat template regexp json eq
 result tree 3000 614925 -2045891493: charAt key join concat template regexp json eq
-mem-end obj=209 atom=583 shape=141 prop=994 jsfunc=6 cfunc=138 array=2 fast_array=2 elements=24 binary=0
-mem-gc obj=209 atom=583 shape=141 prop=994 jsfunc=6 cfunc=138 array=2 fast_array=2 elements=24 binary=0
+mem-end obj=209 atom=584 shape=141 prop=994 jsfunc=6 cfunc=138 array=2 fast_array=2 elements=24 binary=0
+mem-gc obj=209 atom=584 shape=141 prop=994 jsfunc=6 cfunc=138 array=2 fast_array=2 elements=24 binary=0
 --- status exit 0

@@ -30,6 +30,6 @@ result super of a built-in function: throws TypeError constructor
 result super of a built-in function with a spread: throws TypeError constructor
 result super of a constructor with a spread: true
 result new of a constructor with a spread: 3
-mem-end obj=218 atom=609 shape=128 prop=1046 jsfunc=8 cfunc=133 array=4 fast_array=4 elements=34 binary=0
-mem-gc obj=218 atom=609 shape=128 prop=1046 jsfunc=8 cfunc=133 array=4 fast_array=4 elements=34 binary=0
+mem-end obj=218 atom=610 shape=128 prop=1046 jsfunc=8 cfunc=133 array=4 fast_array=4 elements=34 binary=0
+mem-gc obj=218 atom=610 shape=128 prop=1046 jsfunc=8 cfunc=133 array=4 fast_array=4 elements=34 binary=0
 --- status exit 0

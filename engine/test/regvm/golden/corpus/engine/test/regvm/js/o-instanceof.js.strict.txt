@@ -107,6 +107,6 @@ result message, hasInstance a throwing getter: throws RangeError (getter) of mai
 result message, revoked proxy: throws TypeError (revoked proxy) of main
 result loop: 240
 result 0 differ
-mem-end obj=422 atom=594 shape=267 prop=2019 jsfunc=23 cfunc=253 array=6 fast_array=6 elements=111 binary=0
-mem-gc obj=416 atom=591 shape=263 prop=2006 jsfunc=20 cfunc=253 array=6 fast_array=6 elements=111 binary=0
+mem-end obj=422 atom=595 shape=267 prop=2019 jsfunc=23 cfunc=253 array=6 fast_array=6 elements=111 binary=0
+mem-gc obj=416 atom=592 shape=263 prop=2006 jsfunc=20 cfunc=253 array=6 fast_array=6 elements=111 binary=0
 --- status exit 0

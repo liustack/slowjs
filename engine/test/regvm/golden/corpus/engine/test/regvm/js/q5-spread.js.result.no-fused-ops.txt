@@ -185,6 +185,6 @@ result species
 result species
 result species
 result after [1,2] [1,2] [0] [s,3] [4,5]
-mem-end obj=810 atom=683 shape=503 prop=3966 jsfunc=72 cfunc=521 array=6 fast_array=5 elements=208 binary=0
-mem-gc obj=221 atom=599 shape=141 prop=1066 jsfunc=2 cfunc=155 array=2 fast_array=1 elements=187 binary=0
+mem-end obj=810 atom=684 shape=503 prop=3966 jsfunc=72 cfunc=521 array=6 fast_array=5 elements=208 binary=0
+mem-gc obj=221 atom=600 shape=141 prop=1066 jsfunc=2 cfunc=155 array=2 fast_array=1 elements=187 binary=0
 --- status exit 0

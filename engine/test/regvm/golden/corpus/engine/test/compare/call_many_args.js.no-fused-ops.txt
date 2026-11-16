@@ -73,6 +73,6 @@ result not a function 300: throws TypeError
 result concat 128: x01234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567
 result call 40 under a setter: 40:39
 result tag 40 under a setter: 41::true:40:39
-mem-end obj=226 atom=566 shape=134 prop=1120 jsfunc=18 cfunc=131 array=5 fast_array=2 elements=376 binary=0
-mem-gc obj=214 atom=565 shape=128 prop=1096 jsfunc=12 cfunc=131 array=5 fast_array=2 elements=376 binary=0
+mem-end obj=226 atom=567 shape=134 prop=1120 jsfunc=18 cfunc=131 array=5 fast_array=2 elements=376 binary=0
+mem-gc obj=214 atom=566 shape=128 prop=1096 jsfunc=12 cfunc=131 array=5 fast_array=2 elements=376 binary=0
 --- status exit 0

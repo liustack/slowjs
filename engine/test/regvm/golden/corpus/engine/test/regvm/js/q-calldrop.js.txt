@@ -21,6 +21,6 @@ result undefined
 result {"n":7}
 result 42
 result 24
-mem-end obj=199 atom=598 shape=129 prop=1014 jsfunc=2 cfunc=133 array=1 fast_array=1 elements=0 binary=0
-mem-gc obj=197 atom=591 shape=125 prop=1008 jsfunc=0 cfunc=133 array=1 fast_array=1 elements=0 binary=0
+mem-end obj=199 atom=599 shape=129 prop=1014 jsfunc=2 cfunc=133 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=197 atom=592 shape=125 prop=1008 jsfunc=0 cfunc=133 array=1 fast_array=1 elements=0 binary=0
 --- status exit 0

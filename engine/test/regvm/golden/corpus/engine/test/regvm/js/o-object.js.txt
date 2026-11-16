@@ -113,6 +113,6 @@ result TypeError:cannot read property of null
 result number:2.5
 result TypeError:cannot convert symbol to number
 result key,key,get a,key,key,get a,set0 1,get q,set0 P,key,key,get a,key,key,get a,key,key,get a,set0 1,get q,set0 P,key,key,get a,key,key,get a,key,key,get a,set0 1,get q,set0 P,key,key,get a
-mem-end obj=193 atom=556 shape=131 prop=954 jsfunc=1 cfunc=130 array=1 fast_array=1 elements=0 binary=0
-mem-gc obj=192 atom=546 shape=130 prop=951 jsfunc=0 cfunc=130 array=1 fast_array=1 elements=0 binary=0
+mem-end obj=193 atom=557 shape=131 prop=954 jsfunc=1 cfunc=130 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=192 atom=547 shape=130 prop=951 jsfunc=0 cfunc=130 array=1 fast_array=1 elements=0 binary=0
 --- status exit 0

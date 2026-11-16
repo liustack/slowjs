@@ -38,6 +38,6 @@ result order: ["a","b","c"]
 result proxy: {"a":1} ["a"] ownKeys,gopd a,get a,gopd b
 result proxy rest: {"a":1,"c":3} ["a","c"] b=2 get b,ownKeys,gopd a,get a,gopd c,get c
 result loop: 100
-mem-end obj=276 atom=644 shape=253 prop=1106 jsfunc=67 cfunc=135 array=36 fast_array=36 elements=139 binary=0
-mem-gc obj=270 atom=644 shape=251 prop=1094 jsfunc=67 cfunc=135 array=36 fast_array=36 elements=139 binary=0
+mem-end obj=276 atom=645 shape=253 prop=1106 jsfunc=67 cfunc=135 array=36 fast_array=36 elements=139 binary=0
+mem-gc obj=270 atom=645 shape=251 prop=1094 jsfunc=67 cfunc=135 array=36 fast_array=36 elements=139 binary=0
 --- status exit 0

@@ -133,6 +133,6 @@ result throwing 16: TypeError: parse is not a constructor
 result throwing 17: TypeError: class constructors must be invoked with 'new'
 result throwing 18: TypeError: class constructors must be invoked with 'new'
 result throwing 19: TypeError: cannot read property 'nope' of undefined
-mem-end obj=229 atom=619 shape=159 prop=1076 jsfunc=16 cfunc=136 array=1 fast_array=1 elements=0 binary=0
-mem-gc obj=200 atom=593 shape=139 prop=1014 jsfunc=0 cfunc=136 array=1 fast_array=1 elements=0 binary=0
+mem-end obj=229 atom=620 shape=159 prop=1076 jsfunc=16 cfunc=136 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=200 atom=594 shape=139 prop=1014 jsfunc=0 cfunc=136 array=1 fast_array=1 elements=0 binary=0
 --- status exit 0

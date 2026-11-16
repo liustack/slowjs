@@ -120,6 +120,6 @@ result 5e-324: 0.00 0 4.9407e-324 5e-324 5e-324 4.941e-324 0.0000000000000000000
 result -2.5: -2.50 -3 -2.5000 -3 -2.5e+0 -2.500e+0 -10.1 -2.8
 result NaN: NaN NaN NaN NaN NaN NaN NaN NaN
 result Infinity: Infinity Infinity Infinity Infinity Infinity Infinity Infinity Infinity
-mem-end obj=238 atom=2458 shape=2175 prop=1114 jsfunc=23 cfunc=145 array=5 fast_array=5 elements=236 binary=0
-mem-gc obj=238 atom=2458 shape=2175 prop=1114 jsfunc=23 cfunc=145 array=5 fast_array=5 elements=236 binary=0
+mem-end obj=238 atom=2459 shape=2175 prop=1114 jsfunc=23 cfunc=145 array=5 fast_array=5 elements=236 binary=0
+mem-gc obj=238 atom=2459 shape=2175 prop=1114 jsfunc=23 cfunc=145 array=5 fast_array=5 elements=236 binary=0
 --- status exit 0

@@ -131,6 +131,6 @@ result gen AIP y1,y2,[a,b,3]! y1,r! y1,Error:t y1,y2,r2! y1,y2,Error:t2 y2,r3!
 result async plain [1,2]
 result async [aw,2]
 result async rej
-mem-end obj=407 atom=568 shape=271 prop=1965 jsfunc=5 cfunc=275 array=3 fast_array=2 elements=133 binary=0
-mem-gc obj=215 atom=548 shape=147 prop=1015 jsfunc=0 cfunc=153 array=1 fast_array=0 elements=0 binary=0
+mem-end obj=407 atom=569 shape=271 prop=1965 jsfunc=5 cfunc=275 array=3 fast_array=2 elements=133 binary=0
+mem-gc obj=215 atom=549 shape=147 prop=1015 jsfunc=0 cfunc=153 array=1 fast_array=0 elements=0 binary=0
 --- status exit 0

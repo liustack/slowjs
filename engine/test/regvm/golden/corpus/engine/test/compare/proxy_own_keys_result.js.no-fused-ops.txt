@@ -193,6 +193,6 @@ result trap not a function: throws TypeError
 result trap is undefined: ["a"]
 result ownKeys of a function proxy: throws TypeError
 result memory after: 0
-mem-end obj=224 atom=577 shape=133 prop=1052 jsfunc=12 cfunc=135 array=7 fast_array=7 elements=203 binary=0
-mem-gc obj=224 atom=577 shape=133 prop=1052 jsfunc=12 cfunc=135 array=7 fast_array=7 elements=203 binary=0
+mem-end obj=224 atom=578 shape=133 prop=1052 jsfunc=12 cfunc=135 array=7 fast_array=7 elements=203 binary=0
+mem-gc obj=224 atom=578 shape=133 prop=1052 jsfunc=12 cfunc=135 array=7 fast_array=7 elements=203 binary=0
 --- status exit 0

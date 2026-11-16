@@ -37,6 +37,6 @@ result 1; try { throw 0 } catch (e) { ; } => undefined
 result 1; try { throw 0 } catch (e) { function f() {} } => undefined
 result 1; try { throw 0 } catch (e) { let y = 1 } => undefined
 result 1; with ({}) { try { throw 0 } catch (e) { } } => undefined
-mem-end obj=191 atom=585 shape=121 prop=953 jsfunc=1 cfunc=126 array=3 fast_array=3 elements=78 binary=0
-mem-gc obj=191 atom=585 shape=121 prop=953 jsfunc=1 cfunc=126 array=3 fast_array=3 elements=78 binary=0
+mem-end obj=191 atom=586 shape=121 prop=953 jsfunc=1 cfunc=126 array=3 fast_array=3 elements=78 binary=0
+mem-gc obj=191 atom=586 shape=121 prop=953 jsfunc=1 cfunc=126 array=3 fast_array=3 elements=78 binary=0
 --- status exit 0

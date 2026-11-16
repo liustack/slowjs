@@ -18,6 +18,6 @@ result cycles: 200
 result class: 41,42,43
 result recursion: 1275
 result async then: 2 2,3,102,103
-mem-end obj=191 atom=543 shape=131 prop=949 jsfunc=0 cfunc=129 array=1 fast_array=1 elements=0 binary=0
-mem-gc obj=191 atom=543 shape=131 prop=949 jsfunc=0 cfunc=129 array=1 fast_array=1 elements=0 binary=0
+mem-end obj=191 atom=544 shape=131 prop=949 jsfunc=0 cfunc=129 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=191 atom=544 shape=131 prop=949 jsfunc=0 cfunc=129 array=1 fast_array=1 elements=0 binary=0
 --- status exit 0

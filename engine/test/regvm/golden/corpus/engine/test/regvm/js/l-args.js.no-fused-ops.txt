@@ -97,6 +97,6 @@ result not a constructor 3 TypeError: not a constructor
 result not a constructor 40 TypeError: not a constructor
 result true:2:2
 result TypeError: not a constructor
-mem-end obj=210 atom=555 shape=129 prop=988 jsfunc=4 cfunc=138 array=1 fast_array=0 elements=0 binary=0
-mem-gc obj=200 atom=547 shape=120 prop=968 jsfunc=0 cfunc=138 array=1 fast_array=0 elements=0 binary=0
+mem-end obj=210 atom=556 shape=129 prop=988 jsfunc=4 cfunc=138 array=1 fast_array=0 elements=0 binary=0
+mem-gc obj=200 atom=548 shape=120 prop=968 jsfunc=0 cfunc=138 array=1 fast_array=0 elements=0 binary=0
 --- status exit 0

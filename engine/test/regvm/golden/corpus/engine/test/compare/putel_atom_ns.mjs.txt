@@ -14,6 +14,6 @@ result __proto__: TypeError, under ok __proto__, TypeError, under ok __proto__
 result then: TypeError, under ok then, TypeError, under ok then
 result Symbol(Symbol.toStringTag): TypeError, under TypeError, TypeError, under TypeError
 result values: 1,1,4,false,false
-mem-end obj=203 atom=573 shape=122 prop=970 jsfunc=5 cfunc=130 array=3 fast_array=3 elements=31 binary=0
-mem-gc obj=203 atom=573 shape=122 prop=970 jsfunc=5 cfunc=130 array=3 fast_array=3 elements=31 binary=0
+mem-end obj=203 atom=574 shape=122 prop=970 jsfunc=5 cfunc=130 array=3 fast_array=3 elements=31 binary=0
+mem-gc obj=203 atom=574 shape=122 prop=970 jsfunc=5 cfunc=130 array=3 fast_array=3 elements=31 binary=0
 --- status exit 0

@@ -399,6 +399,6 @@ result 397 0 2:ab 1:c undefined true caught t/fin 1770
 result 398 0 2:ab 1:r undefined true fin 1770
 result 399 0 2:ab 7:pest 260:babZ true fin 1770
 result 400 0 2:ab 1:c undefined true caught t/fin 1770
-mem-end obj=195 atom=592 shape=124 prop=959 jsfunc=2 cfunc=131 array=1 fast_array=1 elements=0 binary=0
-mem-gc obj=193 atom=540 shape=123 prop=953 jsfunc=0 cfunc=131 array=1 fast_array=1 elements=0 binary=0
+mem-end obj=195 atom=593 shape=124 prop=959 jsfunc=2 cfunc=131 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=193 atom=541 shape=123 prop=953 jsfunc=0 cfunc=131 array=1 fast_array=1 elements=0 binary=0
 --- status exit 0

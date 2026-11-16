@@ -112,6 +112,6 @@ result super in arrow twice 1 threw ReferenceError: this is not initialized
 result ArrowBase 5
 result ArrowBase 6
 result super in arrow twice 2 threw ReferenceError: this is not initialized
-mem-end obj=412 atom=603 shape=193 prop=1475 jsfunc=49 cfunc=134 array=2 fast_array=2 elements=114 binary=0
-mem-gc obj=197 atom=552 shape=144 prop=964 jsfunc=0 cfunc=134 array=1 fast_array=1 elements=0 binary=0
+mem-end obj=412 atom=604 shape=193 prop=1475 jsfunc=49 cfunc=134 array=2 fast_array=2 elements=114 binary=0
+mem-gc obj=197 atom=553 shape=144 prop=964 jsfunc=0 cfunc=134 array=1 fast_array=1 elements=0 binary=0
 --- status exit 0

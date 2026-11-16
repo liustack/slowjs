@@ -38,6 +38,6 @@ result object key: TypeError
 result object in: TypeError
 result object join: TypeError
 result array: 1,2,3,s 0 5
-mem-end obj=213 atom=562 shape=138 prop=1015 jsfunc=16 cfunc=133 array=3 fast_array=3 elements=51 binary=0
-mem-gc obj=213 atom=562 shape=138 prop=1015 jsfunc=16 cfunc=133 array=3 fast_array=3 elements=51 binary=0
+mem-end obj=213 atom=563 shape=138 prop=1015 jsfunc=16 cfunc=133 array=3 fast_array=3 elements=51 binary=0
+mem-gc obj=213 atom=563 shape=138 prop=1015 jsfunc=16 cfunc=133 array=3 fast_array=3 elements=51 binary=0
 --- status exit 0

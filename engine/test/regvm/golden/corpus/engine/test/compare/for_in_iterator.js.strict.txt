@@ -28,6 +28,6 @@ result generators: a,0,m,n,b,1,true,stop,true,z,in
 result many generators: 50
 result null prototype objects between loops: -,k0,0,-,k1,0,-,k2,0,-
 result iterators made in a loop: 1000
-mem-end obj=210 atom=577 shape=159 prop=1011 jsfunc=9 cfunc=135 array=2 fast_array=2 elements=30 binary=0
-mem-gc obj=204 atom=573 shape=155 prop=997 jsfunc=5 cfunc=135 array=2 fast_array=2 elements=30 binary=0
+mem-end obj=210 atom=578 shape=159 prop=1011 jsfunc=9 cfunc=135 array=2 fast_array=2 elements=30 binary=0
+mem-gc obj=204 atom=574 shape=155 prop=997 jsfunc=5 cfunc=135 array=2 fast_array=2 elements=30 binary=0
 --- status exit 0

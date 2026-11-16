@@ -14,6 +14,6 @@ result new Date(0).toString() = Thu Jan 01 1970 00:00:00 GMT+0000
 result new Date(0).toTimeString() = 00:00:00 GMT+0000
 result new Date(2026, 0, 1, 13, 5).getTime() === Date.UTC(2026, 0, 1, 13, 5) = true
 result Date.parse('2026-01-01T13:05:00') === Date.UTC(2026, 0, 1, 13, 5) = true
-mem-end obj=198 atom=544 shape=120 prop=965 jsfunc=1 cfunc=134 array=2 fast_array=2 elements=16 binary=0
-mem-gc obj=198 atom=544 shape=120 prop=965 jsfunc=1 cfunc=134 array=2 fast_array=2 elements=16 binary=0
+mem-end obj=198 atom=545 shape=120 prop=965 jsfunc=1 cfunc=134 array=2 fast_array=2 elements=16 binary=0
+mem-gc obj=198 atom=545 shape=120 prop=965 jsfunc=1 cfunc=134 array=2 fast_array=2 elements=16 binary=0
 --- status exit 0

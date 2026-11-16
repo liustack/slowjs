@@ -23,6 +23,6 @@ result a lone high first, 8192 characters of a, pairs: length 16393 false -> 163
 result 2 places of lone ones among pairs: length 8212 false -> 8212 true false 2 at 4094,8191 sum 483038645 of 213956653
 result wide, no surrogate: length 10000 true -> 10000 true true 0 at  sum 606855996 of 606855996
 result wide, a lone high at the end: length 10001 false -> 10001 true false 1 at 10000 sum 812601283 of 812591107
-mem-end obj=221 atom=582 shape=119 prop=990 jsfunc=3 cfunc=129 array=28 fast_array=28 elements=100 binary=0
-mem-gc obj=221 atom=582 shape=119 prop=990 jsfunc=3 cfunc=129 array=28 fast_array=28 elements=100 binary=0
+mem-end obj=221 atom=583 shape=119 prop=990 jsfunc=3 cfunc=129 array=28 fast_array=28 elements=100 binary=0
+mem-gc obj=221 atom=583 shape=119 prop=990 jsfunc=3 cfunc=129 array=28 fast_array=28 elements=100 binary=0
 --- status exit 0
