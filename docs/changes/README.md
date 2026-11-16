@@ -193,6 +193,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | The copy of a spread, a rest and Object.assign reads the interrupt flag | v0.30.5 | [uncatchable.md](uncatchable.md#the-copy-of-a-spread-a-rest-and-objectassign-reads-the-interrupt-flag) |
 | A VM with a memory limit keeps its block too | v0.30.6 | [uncatchable.md](uncatchable.md#a-vm-with-a-memory-limit-keeps-its-block-too) |
 | The loops over the captures of a match read the interrupt flag: the result of exec, and the captures replace and split read from an exec result, whose length a custom exec sets | Unreleased | `js_regexp_exec`, `js_regexp_Symbol_replace` and `js_regexp_Symbol_split` in [quickjs.c](../../engine/quickjs.c) |
+| The scan of a regexp literal reads the interrupt flag at its end, so a stop does not wait for the hash of a long literal | Unreleased | `js_parse_regexp` in [quickjs.c](../../engine/quickjs.c) |
 
 ## Errors and stacks
 

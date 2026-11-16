@@ -26892,6 +26892,12 @@ static __exception int js_parse_regexp(JSParseState *s)
             goto fail;
         p = p_next;
     }
+    /* the readings of the scan fall where p meets a multiple of
+       JS_ROPE_STEP, so the last one can be nearly a step before the end,
+       and the compile hashes the body and the flags from a step of its own
+       (js_regexp_cache_hash): a long literal ends with a reading */
+    if (p - s->buf_ptr >= JS_ROPE_STEP && js_poll_interrupts(s->ctx))
+        goto fail;
 
     body_str = string_buffer_end(b);
     flags_str = string_buffer_end(b2);
