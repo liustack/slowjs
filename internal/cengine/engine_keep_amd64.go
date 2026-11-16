@@ -1451,6 +1451,7 @@ var goasmKeep = []any{
 	rv_fold_tslot,
 	rv_for_in_branch,
 	rv_for_in_ctx,
+	rv_free_entry_extra,
 	rv_free_extra,
 	rv_free_func,
 	rv_gen_enter,

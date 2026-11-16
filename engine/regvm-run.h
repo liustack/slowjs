@@ -213,21 +213,38 @@ static force_inline void rv_exit_scan(JSContext *ctx, JSValue *F, RVFunc *rf)
     rv_free_slots(ctx, F - rf->fofs, rf->fofs);
 }
 
+/* frees the n values from q that rv_entry_extra copied before an interrupt,
+   out of line as free_arg_list frees the list of a call */
+static no_inline void rv_free_entry_extra(JSContext *ctx, JSValue *q, int n)
+{
+    for (; n > 0; n--, q++)
+        JS_FreeValue(ctx, *q);
+}
+
 /* the extra arguments of a C entry of rf, which reads its arguments, copied
    with a reference from W after a reference to func (regvm.h): the frame
    then starts after them. NULL when they and the frame do not fit in the
-   register stack. */
+   register stack. The flag is read every JS_COPY_POLL_KEYS arguments: an
+   interrupt frees what was copied and returns W as it came. */
 static no_inline JSValue *rv_entry_extra(JSContext *ctx, RVFunc *rf, JSValue *W,
                                          JSValueConst func_obj, int argc,
                                          JSValueConst *argv)
 {
     JSRuntime *rt = ctx->rt;
-    int i;
+    JSValue *W0 = W;
+    int i, j, n;
     if ((uint8_t *)(W + 1 + (argc - rf->arg_count)) + rf->room_b > (uint8_t *)rt->rv_end)
         return NULL;
     *W++ = JS_DupValue(ctx, func_obj);
-    for (i = rf->arg_count; i < argc; i++)
-        *W++ = JS_DupValue(ctx, argv[i]);
+    for (i = rf->arg_count; i < argc; i += n) {
+        n = min_int(argc - i, JS_COPY_POLL_KEYS);
+        if (i > rf->arg_count && js_poll_interrupts(ctx)) {
+            rv_free_entry_extra(ctx, W0, W - W0);
+            return W0;
+        }
+        for (j = i; j < i + n; j++)
+            *W++ = JS_DupValue(ctx, argv[j]);
+    }
     return W;
 }
 
@@ -649,6 +666,12 @@ static no_inline JSValue JS_RegvmRun(JSContext *caller_ctx, JSValueConst func_ob
                    register stack, made large enough (engine/regvm-entry.h) */
                 js_call_leave(rt);
                 return rv_run_seg(caller_ctx, rf, func_obj, this_obj, new_target, argc, argv);
+            }
+            if (unlikely(W == base)) {
+                /* interrupted in the copy */
+                js_call_leave(rt);
+                JS_FreeValue(caller_ctx, new_target);
+                return JS_EXCEPTION;
             }
             dst = RV_DST_ENTRY | RV_DST_EXTRA;
         }

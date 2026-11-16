@@ -101,6 +101,7 @@ go test -tags testhooks -run ArrayDestructuringRestStop . # the rest of a long a
 go test -tags testhooks -run SpreadCopyStops . # the spread, the rest and Object.assign of 65,536 keys stop within 16 polls of the copy, apart from those of freeing
 go test -tags testhooks -run RegExpCaptureLoopsStopPolls . # the loops over the captures of exec, replace and split stop within 9 polls, apart from those of freeing
 go test -tags testhooks -run TestMatcherStops . # a long match (a pattern written out, a back reference, a long x+) stops within 9 polls wherever the stop comes
+go test -tags testhooks -run TestArgListStops . # a call of 65,534 arguments (apply, spread, new, super, arguments, rest) and a spread of 2^21 elements stop within 9 polls, apart from those of freeing
 go test -run TestRegExpLongRunsMatchTheSame .           # a long pattern, which gets gotos that read the flag, matches as the same pattern written with a count
 go test -tags testhooks -run TestInterruptStopsLongKeys ./internal/cengine # the first use of a string of tens of millions of characters as a key, and a JSON text with one, stops within a few polls
 go test -tags testhooks -run TestInterruptStopsRegExpCompile ./internal/cengine # the compile of a class of many characters or strings stops within a few polls
