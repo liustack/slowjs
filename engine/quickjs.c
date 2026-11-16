@@ -51313,10 +51313,16 @@ static JSValue js_array_join(JSContext *ctx, JSValueConst this_val,
     }
     /* A fast array of strings: one buffer of the length and width of the
        result, and the elements read in place, as no read can run a script.
-       Its block collects first when it would pass the memory limit, as the
-       buffer of the loop does as it grows: here, with nothing made yet, a
-       collection is as safe as at the entry of the call, and it frees
-       nothing obj holds, so its elements stay where they are. */
+       Its block collects first when it would pass the memory limit, at any
+       size: the buffer of the loop collects when it grows to 64 Ki
+       characters or more, which its last growth, by half again, does for
+       results from about 43.7 Ki characters, so a size limit here would
+       fail where the loop made room. The check is a few compares. Here,
+       with nothing made yet, a collection is as safe as at the entry of the
+       call, and it frees nothing obj holds, so its elements stay where they
+       are. With room made whenever it does not fit, the one block, never
+       larger than the last buffer of the loop, is made wherever the loop
+       made its buffer. */
     if (!toLocaleString) {
         fast = js_join_plan(ctx, obj, n, c, p, &len, &wide);
         if (fast < 0) {
@@ -51325,8 +51331,7 @@ static JSValue js_array_join(JSContext *ctx, JSValueConst this_val,
         }
     }
     if (fast) {
-        if (len >= (64 << 10))
-            js_trigger_gc_block(ctx->rt, (size_t)len << wide);
+        js_trigger_gc_block(ctx->rt, (size_t)len << wide);
         if (string_buffer_init2(ctx, b, len, wide)) {
             JS_FreeValue(ctx, sep);
             goto exception;

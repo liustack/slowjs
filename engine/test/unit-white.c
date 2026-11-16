@@ -4579,6 +4579,63 @@ static void test_gc_block_widen(void)
     }
 }
 
+/* The one block of a fast join makes room when it would not fit, whatever
+   its size. The loop's buffer made room when it grew to 64 Ki characters or
+   more and would pass the limit, which its last growth, by half again, did
+   for results from about 43.7 Ki characters: the fast join must not lose
+   that. Under a limit the result passes, with cycles of garbage that the
+   threshold kept, each join collects and gives the string, of 8 and of 16
+   bits, under 64 Ki characters, and in bytes on both sides of 64 KiB. */
+static void test_join_gc_block_small(void)
+{
+    static const struct {
+        const char *arr;
+        size_t bytes;
+    } cases[] = {
+        { "['a'.repeat(45000), 'b'.repeat(5000)]", 50000 },
+        { "['a'.repeat(4000), 'b'.repeat(1000)]", 5000 },
+        { "['\\u4e00'.repeat(25000), 'b'.repeat(5000)]", 60000 },
+        { "['\\u4e00'.repeat(35000), 'b'.repeat(5000)]", 80000 },
+    };
+    const char *garbage = "for (let i = 0; i < 20000; i++) { const a = { x: [1, 2, 3] }, b = { a }; a.b = b } 0";
+    size_t i;
+
+    for (i = 0; i < countof(cases); i++) {
+        VM v = vm_new();
+        JSValue glob, f, r;
+        char src[200];
+        unsigned long full;
+
+        /* f runs once here, so the call below makes nothing but the join */
+        snprintf(src, sizeof(src), "globalThis.s = %s; globalThis.f = () => s.join(''); f().length",
+                 cases[i].arr);
+        CHECK(eval_ok(v.ctx, src), "case %zu: the setup threw", i);
+        glob = JS_GetGlobalObject(v.ctx);
+        f = JS_GetPropertyStr(v.ctx, glob, "f");
+        JS_FreeValue(v.ctx, glob);
+        JS_RunGC(v.rt);
+        JS_SetGCThreshold(v.rt, (size_t)1 << 40);
+        CHECK(eval_ok(v.ctx, garbage), "case %zu: the garbage threw", i);
+        /* the scratch of the register pass and the blocks the front keeps
+           would be given back when a request fails, room the limit does not
+           count on */
+        white_regvm_scratch_drain(v.ctx, 0);
+        /* 1 KiB short of the characters: the block of the result does not
+           fit without a collection */
+        JS_SetMemoryLimit(v.rt, JS_GetMemorySize(v.rt) + cases[i].bytes - 1024);
+        full = white_gc_run_count(0);
+        r = JS_Call(v.ctx, f, JS_UNDEFINED, 0, NULL);
+        CHECK(!JS_IsException(r), "case %zu: the join ran out of memory", i);
+        CHECK(white_gc_run_count(0) > full, "case %zu: the join ran no collection", i);
+        if (JS_IsException(r))
+            JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+        JS_FreeValue(v.ctx, r);
+        JS_FreeValue(v.ctx, f);
+        unlimit(&v);
+        vm_free(&v);
+    }
+}
+
 /* Array.prototype.join of a fast array of strings, ropes, undefined and null
    takes one block of the length and width of the result (js_join_plan) and
    reads the elements in place. It gives the same string in the same form, 8
@@ -8640,6 +8697,7 @@ int main(int argc, char **argv)
     test_gc_block();
     test_gc_block_fits();
     test_gc_block_widen();
+    test_join_gc_block_small();
     test_join_fast();
     test_gc_block_held();
     test_by_value_file();
