@@ -513,6 +513,11 @@ struct JSRuntime {
     uint32_t shape_id_next;
     /* the ids ran out once and were given again (js_shape_renumber) */
     uint8_t shape_renumbered;
+    /* the steps a write of a name keeps (RV_PUTF of engine/regvm-ops-basic.h)
+       hold while it is the same: js_shape_step_end changes it when a step
+       kept may no longer be what add_property does, and it stops at
+       JS_STEP_EPOCH_DEAD */
+    uint32_t shape_step_epoch;
     /* the async context of promise jobs, an object or any other value for
        none (see JS_SetAsyncContext) */
     JSValue async_context;
@@ -1311,7 +1316,11 @@ struct JSShape {
        block (js_props_inline) got a key: the objects of an object literal with
        this shape then get a block of their own for the properties, so that the
        room in the block of the object is not wasted. Fits in the padding. */
-    uint8_t inline_grew;
+    uint8_t inline_grew : 1;
+    /* a write of a name keeps this shape as the step it makes (RV_PUTF):
+       its free, or its move to a bigger or a smaller block, ends every step
+       kept (js_shape_step_end) */
+    uint8_t step_kept : 1;
     /* while the shape is in the shape hash table, what build_for_in_iterator
        found for it: 0 not asked yet, JS_FOR_IN_KEYS_SHAPE when a for in loop
        lists the string keys of an ordinary object of this shape from the
@@ -1372,6 +1381,7 @@ enum {
     RV_FAST_STRING, /* String called as a function */
     RV_FAST_COUNT,
 };
+_Static_assert(RV_FAST_COUNT <= 64, "JSObject.rv_fast holds an RV_FAST_x in 6 bits");
 
 struct JSObject {
     JSGCObjectHeader header;
@@ -1394,7 +1404,10 @@ struct JSObject {
     /* RV_FAST_x: a C function the register loop answers itself when its
        arguments allow (rv_fast_call in regvm-ops-basic.h), set only by
        JS_NewCFunction3 */
-    uint8_t rv_fast : 7;
+    uint8_t rv_fast : 6;
+    /* the prototype of a shape once: a change of its keys or flags ends
+       the steps writes of a name keep (js_shape_step_end) */
+    uint8_t is_proto : 1;
     uint16_t class_id; /* see JS_CLASS_x */
     /* count the number of weak references to this object. The object
        structure is freed only if header.ref_count = 0 and
@@ -7717,6 +7730,26 @@ static void js_shape_hash_unlink(JSRuntime *rt, JSShape *sh)
    parent id is the id of sh starts with the keys and flags of sh. */
 #define JS_SHAPE_ID_MAX UINT32_MAX
 
+/* The step of a write of a name: the site keeps the id of the shape an
+   object had, the shape add_property gave it for the key, the id of that
+   shape and the epoch (RV_PUTF, engine/regvm-ops-basic.h). The next object
+   of that id takes the shape kept without the walk up its prototypes or the
+   lookup in the shape hash table, while the epoch is the same. It holds no
+   reference: js_shape_step_end ends every step kept when one may no longer
+   be what the store does: a shape kept is freed or moved (step_kept), the keys,
+   flags or prototype of a prototype change in place (is_proto: a setter or
+   a read-only key on the way, or the way itself, js_shape_prepare_update and
+   add_property), and the ids are given again (two shapes of one id then
+   need not be alike). JS_STEP_EPOCH_DEAD, once the epoch runs out, keeps
+   none from then on: no site fills at it, and it never changes again. */
+#define JS_STEP_EPOCH_DEAD 0xfffffffeu
+
+static no_inline void js_shape_step_end(JSRuntime *rt)
+{
+    if (rt->shape_step_epoch < JS_STEP_EPOCH_DEAD)
+        rt->shape_step_epoch++;
+}
+
 /* The ids ran out: number the shapes of the table again from 1, with no
    parent, and return the id of the next shape. Until shapes get keys again,
    find_hashed_shape_prop compares every key. */
@@ -7728,6 +7761,7 @@ static no_inline uint32_t js_shape_renumber(JSRuntime *rt)
     int i;
 
     rt->shape_renumbered = TRUE;
+    js_shape_step_end(rt);
     list_for_each(el, &rt->context_list) {
         JSContext *ctx = list_entry(el, JSContext, link);
         ctx->rv_renumbered = TRUE;
@@ -7768,6 +7802,9 @@ static inline JSShape *js_new_shape_nohash(JSContext *ctx, JSObject *proto,
     if (proto)
         JS_DupValue(ctx, JS_MKPTR(JS_TAG_OBJECT, proto));
     sh->proto = proto;
+    if (proto)
+        proto->is_proto = TRUE;
+    sh->step_kept = FALSE;
     memset(sh->hash_table, 0, sizeof(sh->hash_table[0]) * hash_size);
     sh->prop_hash_mask = hash_size - 1;
     sh->prop_size = prop_size;
@@ -7834,6 +7871,7 @@ static JSShape *js_clone_shape(JSContext *ctx, JSShape *sh1)
     sh->is_hashed = FALSE;
     sh->parent = NULL;
     sh->parent_ok = 0;
+    sh->step_kept = FALSE;
     if (sh->proto) {
         JS_DupValue(ctx, JS_MKPTR(JS_TAG_OBJECT, sh->proto));
     }
@@ -8031,6 +8069,8 @@ static inline JSShape *js_free_shape1(JSRuntime *rt, JSShape *sh)
     sh = js_shape_keep(rt, sh);
     if (!sh)
         return NULL;
+    if (unlikely(sh->step_kept))
+        js_shape_step_end(rt);
     if (sh->is_hashed)
         js_shape_hash_unlink(rt, sh);
     if (sh->proto != NULL) {
@@ -8193,6 +8233,11 @@ static no_inline int resize_properties(JSContext *ctx, JSShape **psh,
 
     memcpy(&sh->header + 1, &old_sh->header + 1,
            sizeof(JSShape) - sizeof(JSGCObjectHeader));
+    /* old_sh is freed below: a site that keeps it as a step must let go */
+    if (unlikely(old_sh->step_kept)) {
+        js_shape_step_end(ctx->rt);
+        sh->step_kept = FALSE;
+    }
     
     if (new_hash_size != (sh->prop_hash_mask + 1)) {
         /* resize the hash table and the properties */
@@ -8258,6 +8303,11 @@ static int compact_properties(JSContext *ctx, JSObject *p)
 
     memcpy(&sh->header + 1, &old_sh->header + 1,
            sizeof(JSShape) - sizeof(JSGCObjectHeader));
+    /* old_sh is freed below: a site that keeps it as a step must let go */
+    if (unlikely(old_sh->step_kept)) {
+        js_shape_step_end(ctx->rt);
+        sh->step_kept = FALSE;
+    }
 
     memset(sh->hash_table, 0, sizeof(sh->hash_table[0]) * new_hash_size);
     sh->prop_hash_mask = new_hash_mask;
@@ -8451,6 +8501,7 @@ static JSValue JS_NewObjectFromShape(JSContext *ctx, JSShape *sh, JSClassID clas
     p->tmp_mark = 0;
     p->is_HTMLDDA = 0;
     p->rv_fast = 0;
+    p->is_proto = 0;
     p->weakref_count = 0;
     if (class_id != JS_CLASS_OBJECT) /* the block of an ordinary object ends before u */
         p->u.opaque = NULL;
@@ -8596,6 +8647,7 @@ static force_inline JSValue js_new_object_inline(JSContext *ctx, JSShape *sh)
     p->tmp_mark = 0;
     p->is_HTMLDDA = 0;
     p->rv_fast = 0;
+    p->is_proto = 0;
     p->weakref_count = 0;
     p->shape = sh;
     p->prop = JS_OBJ_INLINE_PROPS(p);
@@ -12741,6 +12793,8 @@ static int JS_SetPrototypeInternal(JSContext *ctx, JSValueConst obj,
     if (sh->proto)
         JS_FreeValue(ctx, JS_MKPTR(JS_TAG_OBJECT, sh->proto));
     sh->proto = proto;
+    if (proto)
+        proto->is_proto = TRUE;
     p->is_std_array_prototype = FALSE; 
     return TRUE;
 }
@@ -12971,6 +13025,9 @@ static int JS_AutoInitProperty(JSContext *ctx, JSObject *p, JSAtom prop,
             return -1;
         }
     }
+    /* the flags change in place */
+    if (unlikely(p->is_proto))
+        js_shape_step_end(ctx->rt);
     js_autoinit_free(ctx->rt, pr);
     prs->flags &= ~JS_PROP_TMASK;
     if (ns_var_ref) {
@@ -14450,6 +14507,11 @@ static JSProperty *add_property(JSContext *ctx,
 {
     JSShape *sh, *new_sh;
 
+    /* a setter or a read-only key on a prototype: a store to an object
+       below it no longer adds the key */
+    if (unlikely(p->is_proto) &&
+        (prop_flags & (JS_PROP_TMASK | JS_PROP_WRITABLE)) != JS_PROP_WRITABLE)
+        js_shape_step_end(ctx->rt);
     if (unlikely(__JS_AtomIsTaggedInt(prop))) {
         /* update is_std_array_prototype */
         if (unlikely(p->is_std_array_prototype)) {
@@ -15767,6 +15829,10 @@ static int js_shape_prepare_update(JSContext *ctx, JSObject *p,
     JSShape *sh;
     uint32_t idx = 0;    /* prevent warning */
 
+    /* what the steps of writes kept for objects with p on their way of
+       prototypes may no longer hold */
+    if (unlikely(p->is_proto))
+        js_shape_step_end(ctx->rt);
     sh = p->shape;
     if (sh->is_hashed) {
         if (js_rc(sh)->ref_count != 1) {
@@ -23426,6 +23492,8 @@ static JSVarRef *js_closure_define_global_var(JSContext *ctx, JSClosureVar *cv,
                 (prs->flags & JS_PROP_CONFIGURABLE)) {
                 /* update the property flags if possible when
                    declaring a global function */
+                if (unlikely(p->is_proto))
+                    js_shape_step_end(ctx->rt);
                 if ((prs->flags & JS_PROP_TMASK) == JS_PROP_GETSET) {
                     free_property(ctx->rt, pr, prs->flags);
                     prs->flags = flags | JS_PROP_VARREF;
@@ -23711,6 +23779,7 @@ static force_inline JSValue js_new_function_object(JSContext *ctx, JSShape *sh,
     p->tmp_mark = 0;
     p->is_HTMLDDA = 0;
     p->rv_fast = 0;
+    p->is_proto = 0;
     p->weakref_count = 0;
     p->shape = sh;
     p->prop = JS_FUNC_INLINE_PROPS(p);

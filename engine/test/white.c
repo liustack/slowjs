@@ -1707,6 +1707,54 @@ int white_regvm_getf_slots(JSValueConst f, uint32_t *slots, uint32_t *ids, int m
     return n;
 }
 
+/* the writes of a name of the function f, converted (PUTF, found by their
+   pcmap entries, which end the 32 bytes of the instruction: the opcode and
+   RV_PUTF_LEN of operands), in the order
+   of the code, up to max: in s[4 * i] the slot the site keeps
+   (engine/regvm-ops-basic.h), 0xffffffff for none, then the ids before and
+   after of the step it keeps and its epoch, RV_STEP_NONE for none. Returns
+   the sites, or -1 when f has no register code. */
+int white_regvm_putf_sites(JSValueConst f, uint32_t *s, int max)
+{
+    const RVFunc *rf;
+    int i, n = 0;
+
+    if (JS_VALUE_GET_TAG(f) != JS_TAG_OBJECT ||
+        !js_class_has_bytecode(JS_VALUE_GET_OBJ(f)->class_id))
+        return -1;
+    rf = JS_VALUE_GET_OBJ(f)->u.func.function_bytecode->rv;
+    if (rf == RV_UNCONVERTED || rf == RV_REFUSED || rf->arg_count < 0)
+        return -1;
+    for (i = 0; i < rf->pcmap_count; i++) {
+        const uint8_t *c;
+        if (rf->pcmap[i].end < RV_PUTF_LEN + 1 ||
+            (i > 0 && rf->pcmap[i - 1].end == rf->pcmap[i].end))
+            continue;
+        c = rf->code + rf->pcmap[i].end - (RV_PUTF_LEN + 1);
+        if (c[0] != RV_PUTF)
+            continue;
+        if (n < max) {
+            s[4 * n] = get_u32(c + 8);
+            s[4 * n + 1] = get_u32(c + 12);
+            s[4 * n + 2] = get_u32(c + 16);
+            s[4 * n + 3] = get_u32(c + 20);
+        }
+        n++;
+    }
+    return n;
+}
+
+/* the epoch of the steps of rt (js_shape_step_end) */
+uint32_t white_shape_step_epoch(JSRuntime *rt)
+{
+    return rt->shape_step_epoch;
+}
+
+void white_shape_step_epoch_set(JSRuntime *rt, uint32_t e)
+{
+    rt->shape_step_epoch = e;
+}
+
 /* the for in loops of the function f, converted, found by their pcmap
    entries: n[0] the for_in_next the pass made FINEXT (its entry for the
    next ends the four bytes of the instruction), n[1] those it made

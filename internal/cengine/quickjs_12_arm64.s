@@ -15502,7 +15502,7 @@ TEXT ·js_date_toJSON(SB), $136-48
 	MOVD $·engine_rodata+12672(SB), R9
 	WORD $0xeb09011f
 	WORD $0x540001c1
-	WORD $0xf955aea8
+	WORD $0xf955b2a8
 	WORD $0xeb16011f
 	WORD $0x54000160
 	WORD $0xf9403fe8
@@ -25803,7 +25803,7 @@ TEXT ·js_string_split(SB), $200-48
 	WORD $0xeb09011f
 	WORD $0x54ffe2a1
 	WORD $0xf9400955
-	WORD $0xf955aea8
+	WORD $0xf955b2a8
 	WORD $0xeb16011f
 	WORD $0x54ffe220
 	WORD $0xf9405fe8
