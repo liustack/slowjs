@@ -58,7 +58,7 @@ render() {
 	for pg in "$@" "$@"; do
 		ins="$ins,$p/$app/in/$pg.json"
 	done
-	LLVM_PROFILE_FILE="$out/$app.profraw" "$out/host/render" tifa=1 young=1 prelude="$p/fakeintl.js" \
+	LLVM_PROFILE_FILE="$out/$app.profraw" "$out/host/render" tifa=1 young=1 prelude="$p/fakeintl.js,$p/fakeurl.js" \
 		bundle="$p/$app/$app.js" inputs="${ins#,}" warm=2 n=8 tag="$app" html="$out/html" reset=$# > "$out/$app.txt"
 	got=$(grep -o '"input":"[^"]*"' "$out/$app.txt" | wc -l | tr -d ' ')
 	if [ "$got" != $((2 * $#)) ]; then
