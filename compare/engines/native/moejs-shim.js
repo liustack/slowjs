@@ -3,7 +3,7 @@
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-// Only for moejs: what the tifa bundles read at load and moejs v0.1.0 lacks.
+// Only for moejs: what the tifa bundles read at load and moejs v0.1.1 lacks.
 // FinalizationRegistry: a registry whose callback is never called is a valid one (no callback is
 // promised), so register and unregister do nothing.
 if (typeof FinalizationRegistry === "undefined") {

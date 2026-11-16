@@ -9,7 +9,7 @@ read_when:
 
 # JavaScript engines compared
 
-Run of 2026-11-16: liustack/slowjs v0.31.1 against two other engines for Go and three native engines, on a GCP t2d-standard-4 (AMD EPYC 7B13, four cores without SMT), Linux 7.0, Go 1.27.4. Every timed process ran on one core with the whole machine held for it, GOMAXPROCS=1. The files of the run are in [`compare/engines/results/`](../compare/engines/results/) (`2026-11-16-v0.31.1-gcp-pages` and `-v8`, each as `.md` and `.json`), and [`compare/engines/README.md`](../compare/engines/README.md) says how to run it again. The numbers are from this one machine: do not compare them with numbers from another.
+Run of 2026-11-16: liustack/slowjs v0.31.2 against two other engines for Go and three native engines, on a GCP t2d-standard-4 (AMD EPYC 7B13, four cores without SMT), Linux 7.0, Go 1.27.4. Every timed process ran on one core with the whole machine held for it, GOMAXPROCS=1. The files of the run are in [`compare/engines/results/`](../compare/engines/results/) (`2026-11-16-v0.31.2-gcp-pages` and `-v8`, each as `.md` and `.json`), and [`compare/engines/README.md`](../compare/engines/README.md) says how to run it again. The numbers are from this one machine: do not compare them with numbers from another.
 
 ## What is compared
 
@@ -21,10 +21,10 @@ Two tables: the render time of tifa's pages and the V8 suite. The comparison nev
 
 | Engine | Version | How it runs |
 |---|---|---|
-| liustack-slowjs | v0.31.1 | the packages `intl`, `temporal` and `url` of the module registered |
-| liustack-slowjs-polyfill | v0.31.1 | the same engine without those three packages, on the polyfills C QuickJS and Hermes get. In the page table only |
+| liustack-slowjs | v0.31.2 | the packages `intl`, `temporal` and `url` of the module registered |
+| liustack-slowjs-polyfill | v0.31.2 | the same engine without those three packages, on the polyfills C QuickJS and Hermes get. In the page table only |
 | go-quickjs-interp | go-quickjs v0.38.0 | JIT off, its own Intl |
-| moejs | v0.1.0 | its own (partial) Intl, plus a `FinalizationRegistry` stand-in (`native/moejs-shim.js`) |
+| moejs | v0.1.1 | its own (partial) Intl, plus a `FinalizationRegistry` stand-in (`native/moejs-shim.js`) |
 | C QuickJS | 2026-06-04 | `qjs`, built as shipped |
 | Hermes V1 | `260318099.0.0-stable` | no JIT in this release, run as `hermesc -O` bytecode, as an app ships it |
 | Node | v24.22.3 | `--jitless`, its own Intl and URL |
@@ -33,38 +33,38 @@ Left out: goja, sobek and otto (no async generators, WeakRef or newer regular ex
 
 ## Rendering
 
-CPU time of a render of tifa's pages, as a ratio to liustack/slowjs: geometric mean over the pages of a group, range in brackets. Above 1 is slower than liustack/slowjs.
+CPU time of a render of tifa's pages, as a ratio to liustack/slowjs: geometric mean over the pages of a group, median of two paired runs with the lower and higher run in brackets. Above 1 is slower than liustack/slowjs.
 
 | Engine | bench (2 pages) | MUI (3 pages) | shop (20 pages) |
 |---|---|---|---|
 | liustack-slowjs | 1.00 | 1.00 | 1.00 |
-| liustack-slowjs-polyfill | 1.02 (1.02–1.03) | 1.70 (1.19–2.12) | 1.63 (1.19–2.36) |
-| go-quickjs-interp | 2.51 (2.44–2.58) | 2.56 (2.46–2.62) | 3.55 (2.68–6.00) |
-| moejs | 1.29 (1.27–1.32) | 1.52 (1.49–1.55) | 1.86 (1.39–3.09) |
-| C QuickJS 2026-06-04 | 1.85 (1.71–1.99) | 3.64 (2.17–5.10) | 2.44 (1.74–3.29) |
-| Hermes V1, `-O` bytecode | 0.97 (0.90–1.05) | 1.92 (1.21–2.56) | 1.78 (0.96–4.57) |
-| Node v24.22.3 `--jitless` | 0.91 (0.90–0.93) | 1.15 (1.13–1.16) | 0.94 (0.75–1.00) |
+| liustack-slowjs-polyfill | 0.96 (0.94–0.98) | 1.71 (1.63–1.78) | 1.54 (1.53–1.56) |
+| go-quickjs-interp | 2.58 (2.40–2.77) | 3.04 (2.97–3.10) | 3.82 (3.76–3.87) |
+| moejs | 1.53 (1.39–1.67) | 1.41 (1.33–1.49) | 1.73 (1.73–1.73) |
+| C QuickJS 2026-06-04 | 1.93 (1.69–2.18) | 3.39 (3.11–3.67) | 2.20 (2.09–2.31) |
+| Hermes V1, `-O` bytecode | 1.20 (1.02–1.37) | 1.87 (1.86–1.88) | 1.92 (1.85–2.00) |
+| Node v24.22.3 `--jitless` | 0.87 (0.81–0.92) | 1.33 (1.22–1.43) | 0.87 (0.83–0.91) |
 
-- **The second row** is liustack/slowjs without its built-in Intl, URL and Temporal, on the same polyfills as C QuickJS and Hermes. It shows how much of the lead on the MUI and shop pages comes from the interpreter and how much from Intl written in Go. On the same JavaScript, C QuickJS takes 1.8 times as long on the bench pages, 2.1 times on MUI and 1.5 times on the shop, and Hermes is about level (0.95, 1.13 and 1.09 times). The rest of the lead on those two columns is the Go Intl.
+- **The second row** is liustack/slowjs without its built-in Intl, URL and Temporal, on the same polyfills as C QuickJS and Hermes. It shows how much of the lead on the MUI and shop pages comes from the interpreter and how much from Intl written in Go. On the same JavaScript, C QuickJS takes 2.0 times as long on the bench pages, 2.0 times on MUI and 1.4 times on the shop, and Hermes is about level (1.25, 1.09 and 1.25 times). The rest of the lead on those two columns is the Go Intl.
 - **Where polyfills ran.** C QuickJS, Hermes and the second row have no Intl and got FormatJS on the MUI and shop pages. URL, URLSearchParams and structuredClone came from core-js for go-quickjs, C QuickJS, Hermes and the second row, URL, URLSearchParams and the iterator helpers for moejs, and `Iterator.concat` for Hermes and Node. liustack/slowjs and Node need no polyfill for Intl and URL. The bench pages need no Intl, so that column is the same JavaScript on every engine: the claim that this engine is faster than C QuickJS on the same code rests on that column and on the V8 suite. core-js replaces only `Function.prototype.toString` and `Iterator.prototype.drop` and `take` (and `flatMap` on C QuickJS) in C QuickJS and Hermes, and a bench render calls none of them (counted over 3 renders of each page), nor `new URL`, so that column measures the engines.
-- **moejs** needs one stand-in to load the bundles: they read `FinalizationRegistry` at load, which moejs v0.1.0 lacks, and `native/moejs-shim.js` gives it a registry that never calls back. With that and core-js, all 25 pages render.
+- **moejs** needs one stand-in to load the bundles: they read `FinalizationRegistry` at load, which moejs v0.1.1 lacks, and `native/moejs-shim.js` gives it a registry that never calls back. With that and core-js, all 25 pages render.
 - **Hermes** has no async generators, so for Hermes only esbuild lowered the bundles' async generators and `for await` to ES2017 async functions. A small file of stand-ins (`native/hermes-shim.js`) gives Hermes the builtins the bundles only read at load and it lacks (the resizable ArrayBuffer getters, the RegExp flag getters, `SharedArrayBuffer`, `Float16Array`). Its shell has no `performance.now`, so its time is the wall time of the whole timed loop divided by the number of renders.
 - **HTML.** go-quickjs, moejs and Node give the same HTML as ours on all 25 pages. C QuickJS differs on 9 pages, the second row on the same 9 (its HTML is the same as C QuickJS's on all 25), and Hermes on all 25, always inside text that Intl formats or, for Hermes, in the inline script of the router. C QuickJS on FormatJS writes dates as `October 13, 14:32` where Go's Intl writes `October 13 at 14:32`, and a narrow no-break space before `AM` and `PM`. Hermes prints the router's dehydration function as `function($R){return ...}` where the others print the arrow function as written (outside Intl output), and the date text of the MUI and workbench pages differs as in C QuickJS. Every other byte is the same: the pages are listed in the `-pages.md` file with the first place each differs.
 
 ## The V8 suite
 
-Score of each engine on the V8 suite version 7, median of 5 rounds in one session, in which every side ran once per round and the order turned from round to round. Higher is better. In brackets: the lowest and highest round.
+Score of each engine on the V8 suite version 7, median of 10 rounds in two sessions of 5, in which every side ran once per round and the order turned from round to round. Higher is better. In brackets: the lowest and highest round.
 
 | Engine | Richards | DeltaBlue | Crypto | RayTrace | EarleyBoyer | RegExp | Splay | NavierStokes | Score |
 |---|---|---|---|---|---|---|---|---|---|
-| liustack-slowjs | 1133 | 1004 | 1425 | 2202 | 3031 | 1120 | 4645 | 2454 | 1854 (1842–1863) |
-| go-quickjs-interp | 998 | 882 | 1299 | 1583 | 1863 | 2901 | 3069 | 2338 | 1702 (1693–1706) |
-| moejs | 1243 | 1080 | 1361 | 1933 | 2512 | 1475 | 3357 | 3145 | 1864 (1848–1875) |
-| C QuickJS 2026-06-04 | 829 | 753 | 889 | 1571 | 2012 | 375 | 3121 | 1777 | 1178 (1176–1183) |
-| Hermes V1, `-O` bytecode | 1297 | 1521 | 1749 | 4593 | 4855 | 553 | 2857 | 3394 | 2136 (2107–2151) |
-| Node v24.22.3 `--jitless` | 1356 | 1445 | 1051 | 3534 | 5695 | 3037 | 3374 | 1645 | 2272 (2259–2290) |
+| liustack-slowjs | 1080 | 950 | 1284 | 2288 | 2216 | 905 | 3014 | 2118 | 1546 (1459–1721) |
+| go-quickjs-interp | 926 | 774 | 1149 | 1230 | 1396 | 1836 | 2125 | 1938 | 1303 (1237–1518) |
+| moejs | 1182 | 888 | 1265 | 1298 | 1682 | 908 | 2264 | 2755 | 1405 (1298–1691) |
+| C QuickJS 2026-06-04 | 804 | 698 | 890 | 1551 | 1750 | 347 | 2236 | 1753 | 1056 (1018–1126) |
+| Hermes V1, `-O` bytecode | 1267 | 1377 | 1685 | 3937 | 3496 | 446 | 1252 | 3342 | 1696 (1354–1960) |
+| Node v24.22.3 `--jitless` | 1238 | 1364 | 1025 | 2682 | 4750 | 2509 | 2328 | 1338 | 1875 (1248–2055) |
 
-liustack/slowjs scores 1.57 times C QuickJS and is ahead of it on every benchmark. Among the engines for Go it ties with moejs (1854 against 1864, and their rounds overlap) and scores 1.09 times go-quickjs. It is not the fastest engine on this suite: Hermes scores 1.15 times as much and Node `--jitless` 1.23. Against moejs it leads on Crypto, RayTrace, EarleyBoyer and Splay, and trails on RegExp (moejs 1.3 times), NavierStokes (1.3), Richards and DeltaBlue. go-quickjs leads on RegExp only (2.6 times). liustack/slowjs leads on Splay (1.4 to 1.6 times every other row).
+The ratios below are medians of the ratio of two engines' scores within the same round. liustack/slowjs scores 1.49 times C QuickJS and is ahead of it on every benchmark. Among the engines for Go it ties with moejs (1546 against 1405, and their rounds overlap) and scores 1.18 times go-quickjs. It is not the fastest engine on this suite: Hermes scores 1.07 times as much and Node `--jitless` 1.15. Against moejs it leads on Crypto, RayTrace, EarleyBoyer and Splay, and trails on RegExp (moejs 1.0 times), NavierStokes (1.3), Richards and DeltaBlue. go-quickjs leads on RegExp only (2.0 times). liustack/slowjs leads on Splay (1.2 to 2.4 times every other row).
 
 ## The pages
 
