@@ -54978,7 +54978,11 @@ static force_inline int js_string_two_way(JSStringFind *f, const void *hay,
                 s += k;
                 n--;
             }
+            /* each window skipped is a unit of work, and the counter is
+               checked when they used up the step, as one window at a time
+               did, also when the last of them ends the search */
             f->work = JS_STRING_FIND_STEP - n;
+            JS_STRING_FIND_WORK(f, 0);
             continue;
         }
         /* the right half */

@@ -1191,14 +1191,18 @@ static void test_search_linear(void)
    the needle at the one index a search has, as startsWith does, goes
    JS_ROPE_STEP characters at a time with the flag read after each. A needle
    of that kind is made flat with join: one made by + is a rope, and making a
-   rope flat reads the flag too (test_rope_polls). */
+   rope flat reads the flag too (test_rope_polls). A needle of 9 characters
+   in a9 or w9 takes 25 units of work to set up and 65,511 windows, each
+   skipped by the whole needle: the last window brings the work to exactly
+   JS_STRING_FIND_STEP, and the flag is read there too, as the search ends. */
 static void test_search_interrupt(void)
 {
     static const char setup[] =
         "var a = 'a'.repeat(1 << 23), m = 'a'.repeat(1000) + 'b'\n"
         "var w = '\\u4e00'.repeat(1 << 22), wm = '\\u4e00'.repeat(1000) + 'b'\n"
         "var aw = a + '\\u4e00', ab = a + 'b', ba = 'b' + a\n"
-        "var awm = aw + m, wwm = w + wm, a2 = [a.slice(1), 'a'].join('')\n";
+        "var awm = aw + m, wwm = w + wm, a2 = [a.slice(1), 'a'].join('')\n"
+        "var a9 = 'a'.repeat(589599), w9 = '\\u4e00'.repeat(589599)\n";
     static const struct {
         const char *hay, *call, *needle, *want;
         int stops;
@@ -1214,6 +1218,11 @@ static void test_search_interrupt(void)
         { "a", "indexOf", "'bcdefghijk'", "-1", 1 },
         { "w", "lastIndexOf", "'bcdefghijk'", "-1", 1 },
         { "w", "indexOf", "'b\\u0100cdefghij'", "-1", 1 },
+        { "a9", "indexOf", "'bbbbbbbbb'", "-1", 1 },
+        { "a9", "lastIndexOf", "'bbbbbbbbb'", "-1", 1 },
+        { "w9", "indexOf", "'bbbbbbbbb'", "-1", 1 },
+        { "w9", "indexOf", "'\\u4e01'.repeat(9)", "-1", 1 },
+        { "w9", "lastIndexOf", "'\\u4e01'.repeat(9)", "-1", 1 },
         { "w", "lastIndexOf", "'\\u4e00\\u4e00b'", "-1", 1 },
         { "ab", "indexOf", "'b'", "8388608", 1 },
         { "ab", "indexOf", "m", "8387608", 1 },
