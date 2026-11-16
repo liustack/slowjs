@@ -1,5 +1,10 @@
 # Changes to the engine comparison
 
+## 2026-11-16: the run of v0.31.2
+
+- The run moved to another machine of the same type (server C, GCP t2d-standard-4), so its numbers are not comparable with those of the run of v0.31.1. moejs is v0.1.1 (`go.mod`, `go.sum`), still with the `FinalizationRegistry` stand-in.
+- The page table is paired: each engine runs in two slots, and in each slot liustack-slowjs runs in the same hold of the machine, before the engine in one slot and after it in the other. The table shows the median of the two slots' ratios with the lower and higher slot in brackets. The V8 suite has ten rounds in two sessions of five, and its ratios are medians of the ratio within each round.
+
 ## 2026-11-16: the run of v0.31.1
 
 - moejs is timed in the same session as the other six page engines now, not in a session of its own, so its ratios come from the same session as the others'.
