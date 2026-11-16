@@ -1,0 +1,28 @@
+result absent: undefined,undefined
+result own and proto: 1,2,3
+result repeated absent: undefined,undefined,undefined
+result null proto: x,undefined
+result added between reads: undefined,now,undefined
+result proto added between reads: undefined,base,base
+result getter on proto: g true
+result Object.prototype: op,op,undefined undefined
+result array: 3,undefined,undefined,true,20
+result array with own key: e,undefined
+result arguments: 2,undefined,1
+result typed array: undefined,undefined,undefined,undefined,undefined,undefined,2,2
+result typed array, prototype names: undefined,undefined,op,undefined
+result typed array on the chain: undefined,undefined,undefined,2
+result String object: 3,undefined,b,undefined
+result primitive string: 3,undefined,c
+result proxy: h,trap:zz_proxy_absent here_key,zz_proxy_absent
+result proxy on the chain: own,p:zz_proxy_chain zz_proxy_chain
+result global: gl,undefined
+result wide: cn,undefined,e1,e1,undefined
+result long: long,undefined,undefined,very
+result symbol named the same: undefined,sym
+result keys of a template: dialog,undefined,dialog
+result class names: color:red;
+result memory after: 0
+mem-end obj=202 atom=572 shape=138 prop=988 jsfunc=4 cfunc=132 array=2 fast_array=2 elements=25 binary=0
+mem-gc obj=202 atom=572 shape=138 prop=988 jsfunc=4 cfunc=132 array=2 fast_array=2 elements=25 binary=0
+--- status exit 0

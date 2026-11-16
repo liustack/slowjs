@@ -1493,6 +1493,7 @@ var goasmKeep = []any{
 	rv_jump_throws_p,
 	rv_jump_to,
 	rv_k,
+	rv_key_lookup,
 	rv_lazy_fast,
 	rv_local_slot,
 	rv_materialize,

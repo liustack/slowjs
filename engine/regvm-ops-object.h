@@ -301,6 +301,42 @@ static no_inline BOOL rv_getel_index(JSContext *ctx, JSValue *F, const uint8_t *
     return TRUE;
 }
 
+/* The atom of the string key s that keeps none, for rv_getel_atom: 1 when
+   the atom table has a string atom of its characters, which s then keeps
+   as its key (key_atom, with a reference, and the hash 1), as
+   js_string_to_atom keeps it, with the atom in *patom. 0 when it has none:
+   no property of any object has that name, as the shape of each holds the
+   atom of each of its keys. -1, with nothing done, for a string that is an
+   atom of another kind, is empty, starts with a digit (an index has an int
+   atom, which the table never holds) or is long enough that its hash reads
+   the interrupt flag (js_new_long_string_atom). */
+static no_inline int rv_key_lookup(JSContext *ctx, JSString *s, JSAtom *patom)
+{
+    JSAtom atom;
+
+    if (s->atom_type != 0 || s->len == 0 || s->len >= JS_ROPE_STEP ||
+        is_digit(string_get(s, 0)))
+        return -1;
+    atom = js_find_string_atom(ctx->rt, s);
+    if (atom == JS_ATOM_NULL)
+        return 0;
+    /* a string atom that does not start with a digit is its own key */
+    s->key_atom = JS_DupAtom(ctx, atom);
+    s->hash = 1;
+    *patom = atom;
+    return 1;
+}
+
+/* an exotic object whose own keys that are not indices are all in its
+   shape: a fast array that is not a typed array (Array and arguments), as
+   goasm_field_goes_on passes it for a key that is no index. A typed array
+   answers a numeric string such as "-0" or "Infinity" itself. */
+static inline BOOL rv_exotic_index_only(JSObject *p)
+{
+    return p->fast_array &&
+        (p->class_id < JS_CLASS_UINT8C_ARRAY || p->class_id > JS_CLASS_FLOAT64_ARRAY);
+}
+
 /* GETEL of an object by a string key, ip at d o key|k, read as GETF reads
    a named property when the key is a string atom JS_ValueToAtom takes as
    its own atom (an atom of the type string, not empty, not starting with a
@@ -320,7 +356,14 @@ static no_inline BOOL rv_getel_index(JSContext *ctx, JSValue *F, const uint8_t *
    keep them in registers on the path of an array element too. The loop
    calls it before RV_SYNC_TOP, as it frees a T object on its array path
    without it: nothing here runs code or collects, and freeing a value
-   does neither. An int key goes to rv_getel_index. */
+   does neither. An int key goes to rv_getel_index. A string that keeps no
+   atom yet is looked up in the atom table without making one
+   (rv_key_lookup): found, it keeps its atom as js_string_to_atom would
+   keep it, and the read goes on with it. Not found, no object has a
+   property of that name, so the read is undefined when the chain holds no
+   exotic object but the fast arrays GETF passes, with no atom made and
+   freed: Emotion reads its registered styles by every class name of an
+   element, most of which are not there. */
 static no_inline BOOL rv_getel_atom(JSContext *ctx, JSValue *F, const uint8_t *ip,
                                     BOOL k, BOOL t)
 {
@@ -340,9 +383,25 @@ static no_inline BOOL rv_getel_atom(JSContext *ctx, JSValue *F, const uint8_t *i
     }
     /* the test of the key and its atom in one read (JSString.key_atom) */
     atom = JS_VALUE_GET_STRING(key)->key_atom;
-    if (atom == JS_ATOM_NULL)
-        return FALSE;
     p = JS_VALUE_GET_OBJ(obj);
+    if (unlikely(atom == JS_ATOM_NULL)) {
+        int n = rv_key_lookup(ctx, JS_VALUE_GET_STRING(key), &atom);
+        if (n < 0)
+            return FALSE;
+        if (n == 0) {
+            /* no object has a property of this name: undefined at the
+               end of a chain of objects that have no other own keys */
+            for (;;) {
+                if (unlikely(p->is_exotic) && !rv_exotic_index_only(p))
+                    return FALSE;
+                p = p->shape->proto;
+                if (!p)
+                    break;
+            }
+            val = JS_UNDEFINED;
+            goto done;
+        }
+    }
     for (;;) {
         prs = find_own_property(&pr, p, atom);
         if (prs) {
@@ -362,6 +421,7 @@ static no_inline BOOL rv_getel_atom(JSContext *ctx, JSValue *F, const uint8_t *i
             break;
         }
     }
+ done:
     if (!k && rv_is_temp(F, (int8_t)ip[2]))
         JS_FreeValue(ctx, key);
     if (t)

@@ -699,6 +699,52 @@ static void rv_call(RVPass *s, int argc, int method, int tail)
         rv_throws(s, rv_owned(s, 0));
         break;
 #elif RV_PART == RV_PART_RUN_FN
+/* a + b into a temp when both are flat strings of 8 bits, a of 1 to
+   JS_STRING_ROPE_SHORT2_LEN characters and b of 1 to
+   JS_STRING_ROPE_SHORT_LEN: what JS_ConcatString does for such a pair
+   (JS_ConcatString2), without its three calls. a grows in place when it has
+   no other holder, is no atom, keeps no key and has the room
+   (js_concat_string_in_place), else a new string of both is made, as
+   JS_ConcatString1 makes it, with the same out of memory error. These are
+   most of the adds of a page: Emotion's class names, i18next's keys, the
+   strings of tags. Takes a and b and gives 0 with the result in *pa, or -1
+   on an exception. Gives 1 with nothing done for any other pair, an empty
+   or a longer string, a wide one or a rope, which go to JS_ConcatString. */
+static force_inline int rv_concat8(JSContext *ctx, JSValue *pa, JSValue b)
+{
+    JSValue a = *pa;
+    JSString *p1, *p2, *p;
+    uint32_t l1, l2;
+
+    if (JS_VALUE_GET_TAG(a) != JS_TAG_STRING || JS_VALUE_GET_TAG(b) != JS_TAG_STRING)
+        return 1;
+    p1 = JS_VALUE_GET_STRING(a);
+    p2 = JS_VALUE_GET_STRING(b);
+    l1 = p1->len;
+    l2 = p2->len;
+    if ((p1->is_wide_char | p2->is_wide_char) ||
+        l1 - 1u >= (uint32_t)JS_STRING_ROPE_SHORT2_LEN ||
+        l2 - 1u >= (uint32_t)JS_STRING_ROPE_SHORT_LEN)
+        return 1;
+    if (js_concat_string_in_place(ctx, p1, b, 1)) {
+        JS_FreeValue(ctx, b);
+        return 0;
+    }
+    p = js_alloc_string(ctx, l1 + l2, 0);
+    if (unlikely(!p)) {
+        JS_FreeValue(ctx, a);
+        JS_FreeValue(ctx, b);
+        return -1;
+    }
+    memcpy(p->u.str8, p1->u.str8, l1);
+    memcpy(p->u.str8 + l1, p2->u.str8, l2);
+    p->u.str8[l1 + l2] = '\0';
+    JS_FreeValue(ctx, a);
+    JS_FreeValue(ctx, b);
+    *pa = JS_MKPTR(JS_TAG_STRING, p);
+    return 0;
+}
+
 /* add of two strings or ropes, ip at d a b, k as for rv_binop_slow (1 a
    constant b, 2 a constant a): what rv_binop_slow does for them, without
    its decode of the op and the operands. Both are primitive strings, so the
@@ -729,10 +775,15 @@ static force_inline int rv_add_str_k(JSContext *ctx, JSValue *F, const uint8_t *
     }
     /* into a local or an argument, the string of d grows in place when it
        is the left operand (js_add_string_into) */
-    if (!rv_is_temp(F, d))
+    if (!rv_is_temp(F, d)) {
         a = js_add_string_into(ctx, a, b, &F[d]);
-    else
-        a = JS_ConcatString(ctx, a, b);
+    } else {
+        int n = rv_concat8(ctx, &a, b);
+        if (n < 0)
+            return -1;
+        if (n > 0)
+            a = JS_ConcatString(ctx, a, b);
+    }
     if (JS_IsException(a))
         return -1;
     rv_put(ctx, F, d, a);
@@ -840,6 +891,21 @@ static no_inline int rv_tobool_slow(JSContext *ctx, JSValue *F, int slot)
         return JS_ToBoolFree(ctx, F[slot]);
     return JS_ToBool(ctx, F[slot]);
 }
+
+/* The truth of an object operand of a branch or of !, in the handler: true
+   but for an object with [[IsHTMLDDA]], as js_to_bool gives it. A temp
+   gives back its reference when it is not the last one, which frees
+   nothing, so no call is made. The last reference of a temp, and any value
+   that is not an object, go to rv_tobool_slow, which frees what it must.
+   Objects are half to two thirds of the truth tests of a page that are not
+   of an int or a bool. Gives 1 with the truth in res, else 0. */
+#define RV_TRUTH_OBJ(v, slot, res)                                      \
+    (JS_VALUE_GET_TAG(v) == JS_TAG_OBJECT &&                            \
+     (!rv_is_temp(F, slot) ||                                           \
+      __js_rc(JS_VALUE_GET_OBJ(v))->ref_count > 1) &&                   \
+     ((res) = !JS_VALUE_GET_OBJ(v)->is_HTMLDDA,                         \
+      rv_is_temp(F, slot) ?                                             \
+      (void)__js_rc(JS_VALUE_GET_OBJ(v))->ref_count-- : (void)0, 1))
 
 /* the length of a string or a rope, or -1 for any other value */
 static inline int rv_str_length(JSValueConst v)
@@ -1593,7 +1659,7 @@ static inline BOOL rv_unwrap_in_loop(JSValueConst f)
         int res;                                                        \
         if ((uint32_t)JS_VALUE_GET_TAG(v) <= JS_TAG_UNDEFINED) {        \
             res = JS_VALUE_GET_INT(v) != 0;                             \
-        } else {                                                        \
+        } else if (!RV_TRUTH_OBJ(v, (int8_t)ip[0], res)) {              \
             RV_SYNC_TOP();                                              \
             res = rv_tobool_slow(ctx, F, (int8_t)ip[0]);                \
             RV_JUMP_SLOW(res == (jt), (int16_t)get_u16(ip + 1), 0);     \

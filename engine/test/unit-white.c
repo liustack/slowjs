@@ -5778,6 +5778,13 @@ static void test_fused_edges(void)
         CHECK(eval_is(v.ctx, src, "bcde"), "on %d: the branches of dda", on);
         CHECK(eval_is(v.ctx, "typeof dda + (dda == undefined) + (dda === undefined)", "undefinedtruefalse"),
               "on %d: dda itself", on);
+        /* its truth in the branches and ! of the register loop, from a
+           local and from a temp that is not its last reference */
+        CHECK(eval_is(v.ctx, "(function (x) { var o = { d: x }, r = []; if (x) r.push('if'); if (o.d) r.push('temp');"
+                      " while (o.d) { r.push('loop'); break } r.push(!x, !o.d, x ? 1 : 0, o.d ? 1 : 0,"
+                      " (function () { return x })() ? 1 : 0, !{}, ![], !(function () { return {} })()); return r.join() })(dda)",
+                      "true,true,0,0,0,false,false,false"),
+              "on %d: the truth of dda", on);
 
         /* the exports of a namespace are read through their references:
            the read after bump() sees the new value */
