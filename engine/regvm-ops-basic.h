@@ -27,8 +27,11 @@ RV_OP(SUB) RV_OP(SUBL) RV_OP(SUBK) RV_OP(SUBKL)       /* d a b|k */
 RV_OP(KADD) RV_OP(KSUB)                               /* d k b: the constant on the left */
 RV_OP(JF) RV_OP(JT)                                   /* s off */
 RV_OP(GOTO)                                           /* off */
-RV_OP(GETF) RV_OP(GETFT)                              /* d o atom */
-RV_OP(GETFL)                                          /* d o atom: GETF into the local d */
+RV_OP(GETF) RV_OP(GETFT)                              /* d o atom slot */
+RV_OP(GETFL)                                          /* d o atom slot: GETF into the local d */
+/* slot: u32, the cache of the site, the slot of the own data property it
+   last found, RV_GETF_NONE before (RV_GETFIELD) */
+#define RV_GETF_NONE 0xffffffffu
 RV_OP(PUTF)                                           /* o v flags atom */
 RV_OP(GETVR)                                          /* d idx16 */
 RV_OP(GETVRL)                                         /* d idx16: GETVR into the local d */
@@ -447,6 +450,7 @@ static void rv_call(RVPass *s, int argc, int method, int tail)
         rv_byte(s, d);
         rv_byte(s, e.slot);
         rv_u32(s, op == OP_get_length ? JS_ATOM_length : get_u32(p + 1));
+        rv_u32(s, RV_GETF_NONE);
         rv_throws(s, rv_owned(s, 1));
         s->sp--;
         rv_push(s, RV_E_TEMP, d, 0);
@@ -462,6 +466,7 @@ static void rv_call(RVPass *s, int argc, int method, int tail)
         rv_byte(s, d);
         rv_byte(s, e.slot);
         rv_u32(s, get_u32(p + 1));
+        rv_u32(s, RV_GETF_NONE);
         rv_throws(s, rv_owned(s, 0));
         rv_push(s, RV_E_TEMP, d, 0);
         rv_mark_dst(s, d);
@@ -1426,10 +1431,20 @@ static inline BOOL rv_unwrap_in_loop(JSValueConst f)
     /* get_field: a data property found with nothing run, as the fast
        path of get_field in upstream's interpreter, else rv_getf_slow. GETF
        writes a temp, which holds nothing to free (the pass gives each result
-       a temp no entry owns), GETFL a local (rv_store) and GETFT either. */
+       a temp no entry owns), GETFL a local (rv_store) and GETFT either.
+       The site keeps the slot of the own data property it last found
+       (ip + 6), and a read first looks at that slot of the shape the
+       object has now: the same key there, a data property, is what
+       find_own_property would find, since a shape has a key once. So the
+       slot needs no invalidation, holds no reference, and is right for any
+       object of any shape and realm: a hit costs about as many
+       instructions as the lookup, but the address of the value waits on
+       the object and the slot only, not on the shape and its hash. The
+       stack of an error is never kept (its value can be the marker of a
+       stack not formatted yet). */
 #define RV_GETFIELD(label, temp, tdst)                                  \
  label:                                                                 \
-    ip = pc; pc += 6;                                                   \
+    ip = pc; pc += 10;                                                  \
     {                                                                   \
         JSValue obj = RV_R(ip[1]), val;                                 \
         JSAtom atom = get_u32(ip + 2);                                  \
@@ -1440,6 +1455,17 @@ static inline BOOL rv_unwrap_in_loop(JSValueConst f)
         else                                                            \
             p = goasm_field_proto(ctx, obj, atom);                      \
         if (likely(p) && !RV_INJ_ARMED) {                               \
+            uint32_t i_ = get_u32(ip + 6);                              \
+            JSShape *sh_ = p->shape;                                    \
+            JSObject *p0_ = p;                                          \
+            if (likely(i_ < (uint32_t)sh_->prop_count)) {               \
+                JSShapeProperty *q_ = get_shape_prop(sh_) + i_;         \
+                if (likely(q_->atom == atom &&                          \
+                           !(q_->flags & JS_PROP_TMASK))) {             \
+                    val = JS_DupValue(ctx, p->prop[i_].u.value);        \
+                    goto label ## _got;                                 \
+                }                                                       \
+            }                                                           \
             for(;;) {                                                   \
                 prs = find_own_property(&pr, p, atom);                  \
                 if (prs) {                                              \
@@ -1449,6 +1475,9 @@ static inline BOOL rv_unwrap_in_loop(JSValueConst f)
                         JS_VALUE_GET_TAG(pr->u.value) == JS_TAG_OBJECT) \
                         goto label ## _slow;                            \
                     val = JS_DupValue(ctx, pr->u.value);                \
+                    if (p == p0_ && atom != JS_ATOM_stack)              \
+                        put_u32((uint8_t *)ip + 6,                      \
+                                prs - get_shape_prop(p->shape));        \
                     break;                                              \
                 }                                                       \
                 if (unlikely(p->is_exotic) &&                           \
@@ -1460,6 +1489,7 @@ static inline BOOL rv_unwrap_in_loop(JSValueConst f)
                     break;                                              \
                 }                                                       \
             }                                                           \
+        label ## _got:                                                  \
             if (tdst)                                                   \
                 RV_R(ip[0]) = val;                                      \
             else                                                        \

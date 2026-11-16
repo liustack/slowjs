@@ -145,6 +145,7 @@ int white_crafted_code(JSContext *ctx, JSValueConst f, int kind, int undo);
 int white_regvm_read_check(JSContext *ctx, JSValueConst f);
 int white_regvm_dst_sites(JSValueConst f, int *dst, int *win);
 int white_regvm_forin_sites(JSValueConst f, int n[4]);
+int white_regvm_getf_slots(JSValueConst f, uint32_t *slots, int max);
 int white_regvm_stack(JSContext *ctx, long out[7]);
 int white_set_code(JSContext *ctx, JSValueConst f, const uint8_t *code, int len, int stack_size, int undo);
 uint32_t white_array_fake_count(JSContext *ctx, JSValueConst a, uint32_t count);
@@ -7525,6 +7526,54 @@ static void test_regvm_forin(void)
     vm_free(&v);
 }
 
+/* the slot the one read of a name of the function name keeps after src ran
+   (engine/regvm-ops-basic.h), 0xffffffff for none */
+static void getf_slot_case(VM *v, const char *name, const char *src, const char *want, uint32_t slot)
+{
+    JSValue g = JS_GetGlobalObject(v->ctx), f = JS_GetPropertyStr(v->ctx, g, name);
+    uint32_t s[2] = { 0, 0 };
+    int n;
+
+    CHECK(eval_is(v->ctx, src, want), "%s: %s does not give %s", name, src, want);
+    n = white_regvm_getf_slots(f, s, 2);
+    CHECK(n == 1, "%s: %d reads of a name, want 1", name, n);
+    CHECK(n != 1 || s[0] == slot, "%s after %s: the site keeps slot %u, want %u", name, src, s[0], slot);
+    JS_FreeValue(v->ctx, f);
+    JS_FreeValue(v->ctx, g);
+}
+
+/* The slot a read of a name keeps (GETF, GETFL, GETFT and the read of a
+   method): the slot of the own data property it last found, none before
+   the first run, not changed by a key found on a prototype, an accessor, a
+   key no object has or a primitive with no such key. The key "stack" is
+   never kept. */
+static void test_regvm_getf_slot(void)
+{
+    VM v = vm_new();
+
+    CHECK(eval_ok(v.ctx,
+        "globalThis.f = function (o) { return o.b; };"
+        "globalThis.fl = function (o) { var x; x = o.b; return x; };"
+        "globalThis.ft = function (o) { return [o][0].b; };"
+        "globalThis.fm = function (o) { return o.b(); };"
+        "globalThis.fs = function (o) { return typeof o.stack; }; 0"), "the setup threw");
+    getf_slot_case(&v, "f", "f(1)", "undefined", 0xffffffffu);
+    getf_slot_case(&v, "f", "f({ a: 1, b: 2 })", "2", 1);
+    getf_slot_case(&v, "f", "f({ b: 3 })", "3", 0);
+    getf_slot_case(&v, "f", "f(Object.create({ b: 4 }))", "4", 0);
+    getf_slot_case(&v, "f", "f({ a: 1, get b() { return 5; } })", "5", 0);
+    getf_slot_case(&v, "f", "f({ x: 1 })", "undefined", 0);
+    getf_slot_case(&v, "f", "f({ x: 1, y: 2, z: 3, b: 6 })", "6", 3);
+    getf_slot_case(&v, "f", "var d = { a: 1, b: 2, c: 3 }; delete d.a; f(d)", "2", 1);
+    getf_slot_case(&v, "fl", "fl({ a: 1, b: 7 })", "7", 1);
+    getf_slot_case(&v, "ft", "ft({ a: 1, b: 8 })", "8", 1);
+    getf_slot_case(&v, "fm", "fm({ a: 1, b() { return 9; } })", "9", 1);
+    getf_slot_case(&v, "fm", "class K { b() { return 10; } }; fm(new K())", "10", 1);
+    getf_slot_case(&v, "fs", "fs(new Error('e'))", "string", 0xffffffffu);
+    getf_slot_case(&v, "fs", "fs({ stack: 1 })", "number", 0xffffffffu);
+    vm_free(&v);
+}
+
 /* Array destructuring with no iterator (engine/regvm-ops-dst.h): the pass
    makes DSTART for the for_of_start of a destructuring, and not for a
    for-of loop, yield* or a destructuring with a yield in a default (its
@@ -8503,6 +8552,7 @@ int main(int argc, char **argv)
     test_regvm_dst();
     test_regvm_dst_alloc();
     test_regvm_forin();
+    test_regvm_getf_slot();
     test_spread_alloc();
     test_spread_refs();
     test_days_to_date();

@@ -2969,7 +2969,9 @@ static void test_regvm_args_oom(void)
 
     sweep("arguments built where they escape", "<args>", setup_escape, "h()", want_escape, 16384);
     sweep("mapped arguments built on a read", "<args>", setup_mapped, "m()", want_mapped, 16384);
-    sweep("arguments passed on by apply", "<args>", setup_apply, "fw()", want_apply, 16384);
+    /* cold, the conversion of the five functions is in the room too: past
+       16 KiB once a read of a name keeps its slot in the code */
+    sweep("arguments passed on by apply", "<args>", setup_apply, "fw()", want_apply, 20480);
     v = vm_new();
     CHECK(eval_ok(v.ctx, setup_apply_warm), "apply, warm: the setup failed");
     show = JS_Eval(v.ctx, "fw.show", strlen("fw.show"), "<args>", JS_EVAL_TYPE_GLOBAL);
