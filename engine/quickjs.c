@@ -51225,11 +51225,34 @@ static int js_join_wide(JSContext *ctx, JSValueConst v, uint32_t *pwork)
 /* The length and width of the result of js_array_join when obj is a fast
    array whose count is its length n and whose elements are all strings,
    ropes, undefined or null: 1 with them in *plen and *pwide, 0 when it is
-   not such an array or the result would be too long (the loop of
-   js_array_join then reads the elements and throws as before), -1 when
-   interrupted. sep is the separator when it is not the one character c. The
-   width is the one the buffer would come to as it copies (16 bits only for a
-   unit above 0xff), so the result is the same string in the same form. */
+   not such an array, when the result would be too long (the loop of
+   js_array_join then reads the elements and throws as before) or when its
+   length is one at which the loop makes room for some arrays and not for
+   others (JS_JOIN_ROOM_SOME), -1 when interrupted. sep is the separator
+   when it is not the one character c. The width is the one the buffer would
+   come to as it copies (16 bits only for a unit above 0xff), so the result
+   is the same string in the same form.
+
+   The fast join makes room under the memory limit (js_trigger_gc_block)
+   where the loop would, and nowhere else. The loop's buffer starts empty and
+   makes room when a growth takes it to JS_JOIN_ROOM_ALL characters or more
+   (string_buffer_realloc, string_buffer_widen), at either width, and a
+   growth to new_len characters takes max(new_len, size * 3 / 2). It grows
+   only while its size is less than the result, so from a size of at most
+   len - 1, and size * 3 / 2 stays under JS_JOIN_ROOM_ALL for a result of
+   fewer than JS_JOIN_ROOM_SOME characters: there the loop never makes room,
+   and neither does the fast join. A result of JS_JOIN_ROOM_ALL characters
+   or more takes a growth to that size (the few bytes of slack the allocator
+   gives a block aside), which makes room, and so does the fast join. In
+   between, it depends on the lengths of the elements and on that slack
+   (45,000 and 5,000 characters make room, 30,000 and 15,000 do not), so
+   those joins take the loop. */
+#define JS_JOIN_ROOM_ALL (64 << 10)
+#define JS_JOIN_ROOM_SOME ((JS_JOIN_ROOM_ALL * 2 + 2) / 3 + 1) /* 43,692 */
+_Static_assert((JS_JOIN_ROOM_SOME - 2) * 3 / 2 < JS_JOIN_ROOM_ALL &&
+               (JS_JOIN_ROOM_SOME - 1) * 3 / 2 >= JS_JOIN_ROOM_ALL,
+               "JS_JOIN_ROOM_SOME is the shortest result whose buffer may grow to JS_JOIN_ROOM_ALL");
+
 static int js_join_plan(JSContext *ctx, JSValueConst obj, int64_t n, int c,
                         JSString *sep, int64_t *plen, int *pwide)
 {
@@ -51280,7 +51303,8 @@ static int js_join_plan(JSContext *ctx, JSValueConst obj, int64_t n, int c,
     } else {
         len += cnt - 1;
     }
-    if (len > JS_STRING_LEN_MAX)
+    if (len > JS_STRING_LEN_MAX ||
+        (len >= JS_JOIN_ROOM_SOME && len < JS_JOIN_ROOM_ALL))
         return 0;
     *plen = len;
     *pwide = wide;
@@ -51313,16 +51337,13 @@ static JSValue js_array_join(JSContext *ctx, JSValueConst this_val,
     }
     /* A fast array of strings: one buffer of the length and width of the
        result, and the elements read in place, as no read can run a script.
-       Its block collects first when it would pass the memory limit, at any
-       size: the buffer of the loop collects when it grows to 64 Ki
-       characters or more, which its last growth, by half again, does for
-       results from about 43.7 Ki characters, so a size limit here would
-       fail where the loop made room. The check is a few compares. Here,
+       Its block makes room under the memory limit where the loop would: for
+       a result of JS_JOIN_ROOM_ALL characters or more, and not for a
+       shorter one (js_join_plan). A check for every short join would
+       collect at every call near the limit when nothing can be freed. Here,
        with nothing made yet, a collection is as safe as at the entry of the
        call, and it frees nothing obj holds, so its elements stay where they
-       are. With room made whenever it does not fit, the one block, never
-       larger than the last buffer of the loop, is made wherever the loop
-       made its buffer. */
+       are. */
     if (!toLocaleString) {
         fast = js_join_plan(ctx, obj, n, c, p, &len, &wide);
         if (fast < 0) {
@@ -51331,7 +51352,8 @@ static JSValue js_array_join(JSContext *ctx, JSValueConst this_val,
         }
     }
     if (fast) {
-        js_trigger_gc_block(ctx->rt, (size_t)len << wide);
+        if (len >= JS_JOIN_ROOM_ALL)
+            js_trigger_gc_block(ctx->rt, (size_t)len << wide);
         if (string_buffer_init2(ctx, b, len, wide)) {
             JS_FreeValue(ctx, sep);
             goto exception;

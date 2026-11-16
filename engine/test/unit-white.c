@@ -4579,23 +4579,35 @@ static void test_gc_block_widen(void)
     }
 }
 
-/* The one block of a fast join makes room when it would not fit, whatever
-   its size. The loop's buffer made room when it grew to 64 Ki characters or
-   more and would pass the limit, which its last growth, by half again, did
-   for results from about 43.7 Ki characters: the fast join must not lose
-   that. Under a limit the result passes, with cycles of garbage that the
-   threshold kept, each join collects and gives the string, of 8 and of 16
-   bits, under 64 Ki characters, and in bytes on both sides of 64 KiB. */
+/* A join makes room under the memory limit where the loop that reads one
+   element at a time made it, and nowhere else (js_join_plan). Under a limit
+   1 KiB short of the characters of the result, with cycles of garbage that
+   the threshold kept, a join whose loop's buffer grows to 64 Ki characters
+   collects and gives the string, and one whose buffer stays under runs out
+   of memory with no collection, as the loop did: of 8 and of 16 bits, just
+   under 43,692 characters (the fast join, no room made), between it and
+   64 Ki (the loop: 45,000 and 5,000 characters make room, 30,000 and 15,000
+   and one element of 65,535 do not) and at 64 Ki (the fast join, room
+   made). */
 static void test_join_gc_block_small(void)
 {
     static const struct {
         const char *arr;
         size_t bytes;
+        int room;
     } cases[] = {
-        { "['a'.repeat(45000), 'b'.repeat(5000)]", 50000 },
-        { "['a'.repeat(4000), 'b'.repeat(1000)]", 5000 },
-        { "['\\u4e00'.repeat(25000), 'b'.repeat(5000)]", 60000 },
-        { "['\\u4e00'.repeat(35000), 'b'.repeat(5000)]", 80000 },
+        { "['a'.repeat(45000), 'b'.repeat(5000)]", 50000, 1 },
+        { "['\\u4e00'.repeat(45000), 'b'.repeat(5000)]", 100000, 1 },
+        { "['a'.repeat(4000), 'b'.repeat(1000)]", 5000, 0 },
+        { "['\\u4e00'.repeat(4000), 'b'.repeat(1000)]", 10000, 0 },
+        { "['a'.repeat(43000), 'b'.repeat(691)]", 43691, 0 },
+        { "['\\u4e00'.repeat(43000), 'b'.repeat(691)]", 87382, 0 },
+        { "['a'.repeat(30000), 'b'.repeat(15000)]", 45000, 0 },
+        { "['\\u4e00'.repeat(30000), 'b'.repeat(15000)]", 90000, 0 },
+        { "['a'.repeat(65535)]", 65535, 0 },
+        { "['\\u4e00'.repeat(65535)]", 131070, 0 },
+        { "['a'.repeat(65000), 'b'.repeat(536)]", 65536, 1 },
+        { "['\\u4e00'.repeat(65000), 'b'.repeat(536)]", 131072, 1 },
     };
     const char *garbage = "for (let i = 0; i < 20000; i++) { const a = { x: [1, 2, 3] }, b = { a }; a.b = b } 0";
     size_t i;
@@ -4625,8 +4637,14 @@ static void test_join_gc_block_small(void)
         JS_SetMemoryLimit(v.rt, JS_GetMemorySize(v.rt) + cases[i].bytes - 1024);
         full = white_gc_run_count(0);
         r = JS_Call(v.ctx, f, JS_UNDEFINED, 0, NULL);
-        CHECK(!JS_IsException(r), "case %zu: the join ran out of memory", i);
-        CHECK(white_gc_run_count(0) > full, "case %zu: the join ran no collection", i);
+        if (cases[i].room) {
+            CHECK(!JS_IsException(r), "case %zu: the join ran out of memory", i);
+            CHECK(white_gc_run_count(0) > full, "case %zu: the join ran no collection", i);
+        } else {
+            CHECK(JS_IsException(r) && JS_IsUncatchableException(v.ctx),
+                  "case %zu: the join did not run out of memory", i);
+            CHECK(white_gc_run_count(0) == full, "case %zu: the join ran a collection", i);
+        }
         if (JS_IsException(r))
             JS_FreeValue(v.ctx, JS_GetException(v.ctx));
         JS_FreeValue(v.ctx, r);
@@ -4636,6 +4654,46 @@ static void test_join_gc_block_small(void)
     }
 }
 
+/* Short joins near the memory limit with nothing to free run no
+   collection, as the loop's buffer made none under 64 Ki characters: 10,000
+   joins of two characters, with 10,000 live objects and 6 KiB of room, less
+   than the margin of js_trigger_gc_block. */
+static void test_join_gc_block_short(void)
+{
+    VM v = vm_new();
+    JSValue glob, a, join, sep;
+    unsigned long full;
+    int i, failed = 0;
+
+    CHECK(eval_ok(v.ctx, "globalThis.keep = Array.from({ length: 10000 }, () => ({})); globalThis.a = ['a', 'b']; 0"),
+          "the setup threw");
+    glob = JS_GetGlobalObject(v.ctx);
+    a = JS_GetPropertyStr(v.ctx, glob, "a");
+    join = JS_GetPropertyStr(v.ctx, a, "join");
+    sep = JS_NewString(v.ctx, "");
+    JS_FreeValue(v.ctx, glob);
+    JS_RunGC(v.rt);
+    JS_SetMemoryLimit(v.rt, JS_GetMemorySize(v.rt) + 6144);
+    full = white_gc_run_count(0);
+    for (i = 0; i < 10000; i++) {
+        JSValue r = JS_Call(v.ctx, join, a, 1, &sep);
+
+        if (JS_IsException(r)) {
+            failed++;
+            JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+        }
+        JS_FreeValue(v.ctx, r);
+    }
+    CHECK(failed == 0, "%d of the 10,000 joins failed", failed);
+    CHECK(white_gc_run_count(0) == full, "10,000 joins of two characters ran %lu collections",
+          white_gc_run_count(0) - full);
+    JS_FreeValue(v.ctx, sep);
+    JS_FreeValue(v.ctx, join);
+    JS_FreeValue(v.ctx, a);
+    unlimit(&v);
+    vm_free(&v);
+}
+
 /* Array.prototype.join of a fast array of strings, ropes, undefined and null
    takes one block of the length and width of the result (js_join_plan) and
    reads the elements in place. It gives the same string in the same form, 8
@@ -4643,8 +4701,9 @@ static void test_join_gc_block_small(void)
    object with the same elements: W and RW hold 16-bit units that are all
    under 0x100, as a wide buffer can leave them, and a result made of them is
    8 bits. The one call of the allocator failing gives the out of memory
-   error and leaves nothing behind. An array of anything else, with holes, or
-   whose result would be too long, takes the loop. */
+   error and leaves nothing behind. An array of anything else, with holes,
+   whose result would be too long, or whose result has 43,692 to 65,535
+   characters, at either width (js_join_plan), takes the loop. */
 static void test_join_fast(void)
 {
     static const struct {
@@ -4671,6 +4730,7 @@ static void test_join_fast(void)
         const char *what, *arr, *sep;
         int fast;
         int64_t len;
+        int wide;
     } plans[] = {
         { "a number", "['a', 1, 'b']", "undefined", 0, 0 },
         { "an object", "['a', {}, 'b']", "undefined", 0, 0 },
@@ -4685,6 +4745,14 @@ static void test_join_fast(void)
         { "2^30 characters with commas", "[R29, R29m, 'q'.repeat(510)]", "undefined", 0, 0 },
         { "2^30 - 1 characters of separators", "Array(1024).fill('')", "S", 1, (1 << 30) - 1 },
         { "2^30 characters of separators", "Array(1025).fill('')", "S", 0, 0 },
+        { "43,691 characters", "['a'.repeat(43000), 'b'.repeat(690)]", "undefined", 1, 43691 },
+        { "43,692 characters", "['a'.repeat(43000), 'b'.repeat(691)]", "undefined", 0, 0 },
+        { "65,535 characters", "['a'.repeat(65000), 'b'.repeat(534)]", "undefined", 0, 0 },
+        { "65,536 characters", "['a'.repeat(65000), 'b'.repeat(535)]", "undefined", 1, 65536 },
+        { "43,691 characters of 16 bits", "['\\u4e00'.repeat(43000), 'b'.repeat(690)]", "undefined", 1, 43691, 1 },
+        { "43,692 characters of 16 bits", "['\\u4e00'.repeat(43000), 'b'.repeat(691)]", "undefined", 0, 0 },
+        { "65,535 characters of 16 bits", "['\\u4e00'.repeat(65000), 'b'.repeat(534)]", "undefined", 0, 0 },
+        { "65,536 characters of 16 bits", "['\\u4e00'.repeat(65000), 'b'.repeat(535)]", "undefined", 1, 65536, 1 },
     };
     VM v = vm_new();
     JSValue glob, f, g;
@@ -4784,7 +4852,7 @@ static void test_join_fast(void)
         a = JS_GetPropertyStr(v.ctx, glob, "a");
         s = JS_GetPropertyStr(v.ctx, glob, "s");
         fast = white_join_plan(v.ctx, a, s, &len, &wide);
-        CHECK(fast == plans[i].fast && (!fast || (len == plans[i].len && wide == 0)),
+        CHECK(fast == plans[i].fast && (!fast || (len == plans[i].len && wide == plans[i].wide)),
               "%s: plan %d of %lld characters, want %d of %lld", plans[i].what, fast, (long long)len,
               plans[i].fast, (long long)plans[i].len);
         JS_FreeValue(v.ctx, a);
@@ -8698,6 +8766,7 @@ int main(int argc, char **argv)
     test_gc_block_fits();
     test_gc_block_widen();
     test_join_gc_block_small();
+    test_join_gc_block_short();
     test_join_fast();
     test_gc_block_held();
     test_by_value_file();
