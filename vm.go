@@ -136,10 +136,9 @@ const DefaultShapeCache = 2048
 // about 100 bytes. A shape of 32 keys of about ten characters, that no
 // other object has, takes about 3 KiB with its atoms, so 2048 of them take
 // about 6 MiB, and the table of atoms m grew for them keeps its size after
-// they are let go. So a script
-// that runs close to its memory limit can run out of memory with the cache
-// on where it would not without it: give such a VM a smaller cache, or 0.
-// Kept shapes are not let go when an allocation fails.
+// they are let go. An allocation that would pass the limit lets every kept
+// shape go first, so a script that runs close to its memory limit fits what
+// it would with no shape kept, but for that table.
 func (m *VM) SetShapeCache(n int) error {
 	if err := m.usable(); err != nil {
 		return err

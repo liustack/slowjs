@@ -1788,6 +1788,8 @@ static void test_thrown_is_not_uncatchable(void)
 /* sweep_register, when set, runs on the context of each runtime sweep makes,
    before the setup: it gives the scripts a function of the host. */
 static void (*sweep_register)(JSContext *ctx);
+/* sweep_done, when set, runs on the context before the runtime is freed */
+static void (*sweep_done)(JSContext *ctx);
 static size_t sweep_step = 8;
 
 static void sweep(const char *what, const char *file, const char *setup,
@@ -1815,6 +1817,8 @@ static void sweep(const char *what, const char *file, const char *setup,
             sweep_register(v.ctx);
         if (setup && !eval_ok(v.ctx, setup)) {
             CHECK(0, "%s: the setup failed", what);
+            if (sweep_done)
+                sweep_done(v.ctx);
             vm_free(&v);
             return;
         }
@@ -1853,6 +1857,8 @@ static void sweep(const char *what, const char *file, const char *setup,
         free(exception_text(v.ctx));
         JS_FreeValue(v.ctx, r);
         fflush(stdout);
+        if (sweep_done)
+            sweep_done(v.ctx);
         vm_free(&v);
     }
     CHECK(failed > 0, "%s: no room made it fail", what);
@@ -2019,6 +2025,41 @@ static void test_putel_atom_oom(void)
     sweep_register = no_shape_cache;
     sweep("atom key put, no shape cache", "putelatom.js", setup, "run()", want, 16384);
     sweep_register = NULL;
+}
+
+static void shape_ring(JSContext *ctx)
+{
+    JS_SetShapeCache(ctx, 64);
+}
+
+/* Objects that get their keys one at a time find the shapes the shape cache
+   keeps, and some of those have more room than the property array of the
+   object, which add_property grows before it takes the shape. A request the
+   heap refuses lets every kept shape go (js_shape_cache_drop), in some rooms
+   while run() runs and in others before it (fill_memory): with too little
+   memory the objects are whole or it fails with the out of memory error, and
+   the runtime frees with no block left. unit-white sees the kept shapes go
+   inside the request (test_shape_drop_slot) and inside the growth of the
+   property array (test_shape_drop_in_resize). */
+static void test_shape_cache_drop_oom(void)
+{
+    static const char setup[] =
+        "function mk(n) { var o = {}; for (var k = 0; k < n; k++) o['q' + k] = k; return o }\n"
+        "function run() {\n"
+        "  var s = 0, o;\n"
+        "  for (var i = 0; i < 6; i++) { o = mk(14); s += o.q13 + Object.keys(o).length }\n"
+        "  return s + ':' + Object.keys(mk(5)).join();\n"
+        "}\n"
+        /* once before the sweep, so that its register code is made and the
+           ring holds the shapes of mk */
+        "run();\n";
+    static const char *const want[] = { "162:q0,q1,q2,q3,q4", NULL };
+
+    sweep_register = shape_ring;
+    sweep_done = no_shape_cache;
+    sweep("kept shapes let go", "shapedrop.js", setup, "run()", want, 16384);
+    sweep_register = NULL;
+    sweep_done = NULL;
 }
 
 /* The truth of strings, ropes and objects in locals and temps: with too
@@ -3485,6 +3526,7 @@ int main(void)
     test_getel_local_key_oom();
     test_putel_local_key_oom();
     test_putel_atom_oom();
+    test_shape_cache_drop_oom();
     test_truth_oom();
     test_array_literal_oom();
     test_fast_builtins_oom();

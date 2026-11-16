@@ -360,6 +360,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | One copy of source text and line tables for every VM, SharedBytecode | v0.28.1 | [memory-and-allocation.md](memory-and-allocation.md#one-copy-of-source-text-and-line-tables-for-every-vm) |
 | Shared bytecode is scanned for the polls on its first load only | v0.29.1 | [memory-and-allocation.md](memory-and-allocation.md#shared-bytecode-is-scanned-for-the-polls-on-its-first-load-only) |
 | A large block of a built-in collects first when it would pass the memory limit | v0.30.5 | [memory-and-allocation.md](memory-and-allocation.md#a-large-block-collects-first-when-it-would-pass-the-memory-limit) |
+| A request the heap refuses lets the kept shapes go before it is tried again, so a VM near its limit fits what it would with the ring empty | Unreleased | `js_shape_cache_drop` in [quickjs.c](../../engine/quickjs.c) |
 
 ## Young collection
 

@@ -85,10 +85,11 @@ function big(n) { const a = []; for (let i = 0; i < n; i++) a.push({v: i}); retu
 
 // Kept shapes count against the memory limit of the VM, as the rest of
 // its memory does, and they hold the atoms of their keys: with the ring
-// full of shapes of 32 keys no other object has they take more than 4 MiB,
-// and an allocation that fits with the cache off fails with it on.
-// SetShapeCache(0) lets the shapes and their atoms go, but the engine's
-// table of atoms keeps the size it grew to.
+// full of shapes of 32 keys no other object has they take more than 4 MiB.
+// An allocation that needs that memory lets them go first, so what fits
+// with the ring empty fits with it full. SetShapeCache(0) lets the shapes
+// and their atoms go, but the engine's table of atoms keeps the size it grew
+// to.
 func TestShapeCacheMemoryLimit(t *testing.T) {
 	vm := func(n int) *VM {
 		m, err := NewVM()
@@ -115,8 +116,23 @@ func TestShapeCacheMemoryLimit(t *testing.T) {
 		t.Fatalf("with the ring full of shapes of 32 keys: %d bytes, %d without the cache", onUse.Fmalloc_size, offUse.Fmalloc_size)
 	}
 
+	// empty went through the same steps as on, its atom table grew as much
+	// and it has a ring of the same size, but the ring is empty.
+	empty := vm(DefaultShapeCache)
+	defer empty.Close()
+	if err := empty.SetShapeCache(0); err != nil {
+		t.Fatal(err)
+	}
+	if err := empty.SetShapeCache(DefaultShapeCache); err != nil {
+		t.Fatal(err)
+	}
+	emptyUse := vmMemory(empty)
+	if onUse.Fmalloc_size-emptyUse.Fmalloc_size < 3<<20 {
+		t.Fatalf("with the ring full: %d bytes, %d with it empty", onUse.Fmalloc_size, emptyUse.Fmalloc_size)
+	}
+
 	// The smallest limit, in steps of 64 KiB, at which big fits with the
-	// cache off.
+	// ring empty.
 	fits := func(m *VM, limit uintptr) bool {
 		vmMemory(m)
 		m.SetMemoryLimit(limit)
@@ -125,8 +141,8 @@ func TestShapeCacheMemoryLimit(t *testing.T) {
 		return err == nil
 	}
 	var limit uintptr
-	for l := uintptr(offUse.Fmalloc_size); l < uintptr(offUse.Fmalloc_size)+8<<20; l += 64 << 10 {
-		if fits(off, l) {
+	for l := uintptr(emptyUse.Fmalloc_size); l < uintptr(emptyUse.Fmalloc_size)+8<<20; l += 64 << 10 {
+		if fits(empty, l) {
 			limit = l
 			break
 		}
@@ -134,16 +150,22 @@ func TestShapeCacheMemoryLimit(t *testing.T) {
 	if limit == 0 {
 		t.Fatal("big does not fit in 8 MiB more")
 	}
-	if fits(on, limit) {
-		t.Errorf("big fits in %d bytes with the cache on", limit)
+	if !fits(on, limit) {
+		t.Errorf("big fits in %d bytes with the ring empty, not with it full (%d bytes more)", limit, onUse.Fmalloc_size-emptyUse.Fmalloc_size)
 	}
 
 	if err := on.SetShapeCache(0); err != nil {
 		t.Fatal(err)
 	}
 	got := vmMemory(on)
-	if got.Fshape_count != offUse.Fshape_count || got.Fatom_count != offUse.Fatom_count {
-		t.Errorf("after SetShapeCache(0): %d shapes and %d atoms, %d and %d without the cache", got.Fshape_count, got.Fatom_count, offUse.Fshape_count, offUse.Fatom_count)
+	// big ran to its end in on, which leaves the shape of its literal: off
+	// runs it too
+	if _, err := off.Call("big", 20000); err != nil {
+		t.Fatal(err)
+	}
+	offRan := vmMemory(off)
+	if got.Fshape_count != offRan.Fshape_count || got.Fatom_count != offRan.Fatom_count {
+		t.Errorf("after SetShapeCache(0): %d shapes and %d atoms, %d and %d without the cache", got.Fshape_count, got.Fatom_count, offRan.Fshape_count, offRan.Fatom_count)
 	}
 	if freed, kept := onUse.Fmalloc_size-got.Fmalloc_size, onUse.Fmalloc_size-offUse.Fmalloc_size; freed < kept/2 {
 		t.Errorf("SetShapeCache(0) gave back %d of the %d bytes the cache took", freed, kept)

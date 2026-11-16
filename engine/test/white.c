@@ -47,7 +47,12 @@ static int white_alloc_fails(void)
     white_alloc_count++;
     return white_alloc_count == white_alloc_fail_at;
 }
-#define JS_HEAP_FAILS(s, size) white_alloc_fails()
+/* With white_drain_next set, the next request to the heap runs js_heap_drain
+   first, as a request the heap refused does, and clears it: the request then
+   goes on, and the drain has run inside it. */
+static int white_drain_next;
+#define JS_HEAP_FAILS(s, size) \
+    (white_drain_next ? (white_drain_next = 0, js_heap_drain(s), 0) : white_alloc_fails())
 
 static int white_call_fails(JSRuntime *rt, void *ptr, size_t size)
 {
@@ -2774,4 +2779,88 @@ unsigned long white_json_walks(void)
     unsigned long n = white_json_walked;
     white_json_walked = 0;
     return n;
+}
+
+/* ---- the shapes the shape cache lets go on a refused request ---- */
+
+/* white_drain_once makes the next request to the heap run js_heap_drain
+   first (JS_HEAP_FAILS). */
+void white_drain_once(void)
+{
+    white_drain_next = 1;
+}
+
+/* the shapes the shape cache keeps */
+int white_kept_shapes(JSRuntime *rt)
+{
+    return rt->shape_cache.count;
+}
+
+/* white_kept_shape gives the block of the first shape the shape cache
+   keeps, NULL when it keeps none, and the size to ask js_malloc_rt for to
+   get a block of its size in *size. */
+void *white_kept_shape(JSRuntime *rt, size_t *size)
+{
+    JSShapeCache *sc = &rt->shape_cache;
+    int i;
+
+    for(i = 0; sc->ring && i < sc->n; i++) {
+        if (sc->ring[i]) {
+            *size = js_malloc_usable_size_rt(rt, sc->ring[i]);
+            return sc->ring[i];
+        }
+    }
+    return NULL;
+}
+
+/* white_take_slots takes every free block of the size of size that the
+   front cache and the arenas have, without a new arena, into out (cap of
+   them), so that the next block of that size needs a new arena. It gives
+   their number, -1 when cap is short. */
+int white_take_slots(JSRuntime *rt, size_t size, void **out, int cap)
+{
+    JSMallocContext *s = &rt->malloc_ctx;
+    size_t total = ((size + JS_MALLOC_ALIGN - 1) & ~(JS_MALLOC_ALIGN - 1)) +
+        sizeof(JSMallocBlockHeader);
+    struct list_head *head = &s->free_arena_list[get_block_size_index(total)];
+    int n = 0;
+
+    js_front_drain(s);
+    while (head->next != head) {
+        if (n == cap)
+            return -1;
+        out[n++] = js_malloc_rt(rt, size);
+    }
+    return n;
+}
+
+/* white_found_resize gives, for the object obj about to get the key, the
+   bytes of the property array that add_property asks for when it takes the
+   shape it finds in the shape hash table, if that shape is held by the shape
+   cache alone and the property array needs a new block for it, and 0
+   otherwise. */
+size_t white_found_resize(JSContext *ctx, JSValueConst obj, const char *key)
+{
+    JSObject *p = JS_VALUE_GET_OBJ(obj);
+    JSShape *sh = p->shape, *found;
+    JSShapeCache *sc = &ctx->rt->shape_cache;
+    JSAtom atom;
+    size_t size;
+    int i;
+
+    if (!sh->is_hashed)
+        return 0;
+    atom = JS_NewAtom(ctx, key);
+    found = find_hashed_shape_prop(ctx->rt, sh, atom, JS_PROP_C_W_E);
+    JS_FreeAtom(ctx, atom);
+    if (!found || found->prop_size == sh->prop_size || js_rc(found)->ref_count != 1)
+        return 0;
+    for(i = 0; i < sc->n && sc->ring[i] != found; i++)
+        ;
+    if (i == sc->n)
+        return 0;
+    size = sizeof(JSProperty) * found->prop_size;
+    if (!js_props_inline(p) && size <= js_malloc_usable_size(ctx, p->prop))
+        return 0;
+    return size;
 }
