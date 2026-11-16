@@ -94,14 +94,19 @@ cycle("youngGC");
 // the heap holds as many blocks after the objects as before them
 (function () {
   function G(v) { this.p = v; this.q = v; this.r = v; this.s = v; }
+  function fill(n) {
+    var objs = [];
+    for (var i = 0; i < n; i++) objs.push(new G(i));
+    for (var i = 0; i < n; i++) new G(i);
+    objs.length = 0;
+  }
+  // what a first call makes and keeps (the register code of fill and G, and
+  // what G keeps for the objects it makes) is made before the count, so
+  // that the count sees the objects alone, with the system malloc too
+  fill(1);
   gc();
   var before = memoryBlocks();
-  (function () {
-    var objs = [];
-    for (var i = 0; i < 200; i++) objs.push(new G(i));
-    for (var i = 0; i < 200; i++) new G(i);
-    objs.length = 0;
-  })();
+  fill(200);
   gc();
   log.push("blocks after the objects: " + (memoryBlocks() - before));
 })();

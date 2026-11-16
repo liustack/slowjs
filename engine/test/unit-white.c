@@ -7720,6 +7720,181 @@ static void test_regvm_call_copies(void)
     }
 }
 
+/* the number of the register op named name */
+static int regvm_op(const char *name)
+{
+    int i;
+    for (i = 0; i < 256; i++) {
+        const char *n = JS_RegvmOpName(i);
+        if (n && !strcmp(n, name))
+            return i;
+    }
+    return -1;
+}
+
+/* globalThis.f = function (a, b) { 'use strict'; body }, called once with
+   (1, 2): its register code, or NULL */
+static const uint8_t *regvm_code_of_body(VM *v, const char *body, JSValue *f, int *len)
+{
+    char src[512];
+    JSValue g;
+    snprintf(src, sizeof(src), "function h() { return { x: 1, y: 2, a: { x: 3 } }; }"
+             " globalThis.f = function (a, b) { 'use strict'; %s }; 0", body);
+    if (!eval_ok(v->ctx, src))
+        return NULL;
+    g = JS_GetGlobalObject(v->ctx);
+    *f = JS_GetPropertyStr(v->ctx, g, "f");
+    JS_FreeValue(v->ctx, g);
+    if (!eval_ok(v->ctx, "f(1, 2); 0"))
+        return NULL;
+    return white_regvm_code(*f, len);
+}
+
+/* dup of a temp then get_field (a destructuring): GETF reads the temp, with
+   no MOV of it into the temp above and no GETFT that frees the copy
+   (rv_dup_get_field of engine/regvm-ops-basic.h) */
+static void test_regvm_dup_get_field(void)
+{
+    static const struct { const char *what, *src; int getfl; } cases[] = {
+        { "renamed fields of a call", "var { x: p, y: q } = h(); return p + q;", 2 },
+        { "an assignment pattern", "var p, q; ({ x: p, y: q } = h()); return p + q;", 2 },
+        { "a nested pattern", "var { a: { x: p }, y: q } = h(); return p + q;", 2 },
+    };
+    int k, i, len, mov = regvm_op("MOV"), getft = regvm_op("GETFT"), getfl = regvm_op("GETFL");
+    int copies, n;
+    const uint8_t *code;
+    VM v;
+    JSValue f;
+
+    CHECK(mov >= 0 && getft >= 0 && getfl >= 0, "the names of MOV, GETFT and GETFL");
+    for (k = 0; k < (int)countof(cases); k++) {
+        v = vm_new();
+        f = JS_UNDEFINED;
+        code = regvm_code_of_body(&v, cases[k].src, &f, &len);
+        CHECK(code != NULL, "%s: f has no register code", cases[k].what);
+        copies = n = 0;
+        for (i = 0; code && i < len; i++) {
+            if (code[i] == mov && i + 5 < len && code[i + 3] == getft && code[i + 5] == code[i + 1])
+                copies++;
+            if (code[i] == getfl)
+                n++;
+        }
+        CHECK(copies == 0, "%s: %d MOV then GETFT of the copy", cases[k].what, copies);
+        CHECK(n >= cases[k].getfl, "%s: %d GETFL, want %d", cases[k].what, n, cases[k].getfl);
+        JS_FreeValue(v.ctx, f);
+        vm_free(&v);
+    }
+}
+
+/* ++k or --k of a local read lazily below it (x[k] = x[++k]): the read below
+   is copied before the INC, which then writes k itself, INC k k, with no
+   SETL after it (rv_incdec_store of engine/regvm-ops-arith.h) */
+static void test_regvm_incdec_store(void)
+{
+    static const struct { const char *what, *src, *op; } cases[] = {
+        { "x[k] = x[++k]", "var x = [1, 2, 3], k = a - 1; x[k] = x[++k]; return x[0] + k;", "INC" },
+        { "x[k] = x[--k]", "var x = [1, 2, 3], k = a + 1; x[k] = x[--k]; return x[0] + k;", "DEC" },
+        { "k + ++k", "var k = a; var s = k + ++k; return s + k;", "INC" },
+    };
+    int k, i, len, op, self;
+    const uint8_t *code;
+    VM v;
+    JSValue f;
+
+    for (k = 0; k < (int)countof(cases); k++) {
+        op = regvm_op(cases[k].op);
+        CHECK(op >= 0, "the name of %s", cases[k].op);
+        v = vm_new();
+        f = JS_UNDEFINED;
+        code = regvm_code_of_body(&v, cases[k].src, &f, &len);
+        CHECK(code != NULL, "%s: f has no register code", cases[k].what);
+        self = 0;
+        for (i = 0; code && i + 2 < len; i++) {
+            if (code[i] == op && code[i + 1] == code[i + 2] && (int8_t)code[i + 1] < 0)
+                self++;
+        }
+        CHECK(self >= 1, "%s: no %s of the local into itself", cases[k].what, cases[k].op);
+        JS_FreeValue(v.ctx, f);
+        vm_free(&v);
+    }
+}
+
+/* l = x[k] = v and l = o.f = v into a local l: the value goes into l first
+   and the put reads l, so no MOVT, SWAP or MOV of the value is left
+   (rv_chain_store of engine/regvm-ops-basic.h). Where a closure reads l or
+   a catch is around, the copies stay, in the order of QuickJS. */
+static void test_regvm_chain_store(void)
+{
+    static const struct { const char *what, *src; int moves; } cases[] = {
+        { "l = x[k] = v", "var x = [0, 0], l; l = x[a] = b * 2; return l + x[1];", 0 },
+        { "l = o.f = v", "var o = {}, l; l = o.f = b * 2; return l + o.f;", 0 },
+        { "(l = x[k] = v) kept", "var x = [0, 0], l; var r = (l = x[a] = b * 2); return r + l;", 0 },
+        { "a closure reads l", "var x = [0, 0], l, g = function () { return l; }; l = x[a] = b * 2; return g();", 1 },
+        { "a catch around", "var x = [0, 0], l; try { l = x[a] = b * 2; } catch (e) { return l; } return l;", 1 },
+    };
+    int k, i, len, moves, op[3];
+    const uint8_t *code;
+    VM v;
+    JSValue f;
+
+    op[0] = regvm_op("MOV");
+    op[1] = regvm_op("MOVT");
+    op[2] = regvm_op("SWAP");
+    CHECK(op[0] >= 0 && op[1] >= 0 && op[2] >= 0, "the names of MOV, MOVT and SWAP");
+    for (k = 0; k < (int)countof(cases); k++) {
+        v = vm_new();
+        f = JS_UNDEFINED;
+        code = regvm_code_of_body(&v, cases[k].src, &f, &len);
+        CHECK(code != NULL, "%s: f has no register code", cases[k].what);
+        moves = 0;
+        for (i = 0; code && i + 2 < len; i++) {
+            if ((code[i] == op[1] || code[i] == op[2]) && (int8_t)code[i + 1] >= 0 && (int8_t)code[i + 2] >= 0)
+                moves++;
+        }
+        if (cases[k].moves)
+            CHECK(moves > 0, "%s: no MOVT or SWAP of temps, the old order wants them", cases[k].what);
+        else
+            CHECK(moves == 0, "%s: %d MOVT or SWAP of temps", cases[k].what, moves);
+        JS_FreeValue(v.ctx, f);
+        vm_free(&v);
+    }
+}
+
+/* the test of a loop read again at its goto (rv_rotate of
+   engine/regvm-ops-cmp.h): no GOTO is left in a loop whose test reads
+   locals, var refs, constants and fields, and one is left when the test
+   calls */
+static void test_regvm_loop_rotate(void)
+{
+    static const struct { const char *what, *src; int gotos; } cases[] = {
+        { "i < a", "var s = 0, i; for (i = 0; i < a; i++) s += i; return s;", 0 },
+        { "i <= a", "var s = 0; for (var i = 1; i <= a; i++) s += i; return s;", 0 },
+        { "while (i !== x.length)", "var x = [1, 2], i = 0, s = 0; while (i !== x.length) s += x[i++]; return s;", 0 },
+        { "a test that calls", "var s = 0, i; for (i = 0; i < Math.min(a, 3); i++) s += i; return s;", 1 },
+    };
+    int k, i, len, n, op = regvm_op("GOTO");
+    const uint8_t *code;
+    VM v;
+    JSValue f;
+
+    CHECK(op >= 0, "the name of GOTO");
+    for (k = 0; k < (int)countof(cases); k++) {
+        v = vm_new();
+        f = JS_UNDEFINED;
+        code = regvm_code_of_body(&v, cases[k].src, &f, &len);
+        CHECK(code != NULL, "%s: f has no register code", cases[k].what);
+        n = 0;
+        for (i = 0; code && i < len; i++)
+            n += code[i] == op;
+        if (cases[k].gotos)
+            CHECK(n > 0, "%s: no GOTO, the loop is not rotated here", cases[k].what);
+        else
+            CHECK(n == 0, "%s: %d GOTO", cases[k].what, n);
+        JS_FreeValue(v.ctx, f);
+        vm_free(&v);
+    }
+}
+
 static void test_regvm_ret_value(void)
 {
     static const char src[] = "(function () { return [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]; })";
@@ -8843,6 +9018,10 @@ int main(int argc, char **argv)
     test_regvm_bad_ret();
     test_regvm_ret_value();
     test_regvm_call_copies();
+    test_regvm_dup_get_field();
+    test_regvm_incdec_store();
+    test_regvm_chain_store();
+    test_regvm_loop_rotate();
     test_regvm_dst();
     test_regvm_dst_alloc();
     test_regvm_forin();

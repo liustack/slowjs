@@ -109,6 +109,8 @@ typedef struct RVPass {
     int ipos, iprev;    /* QuickJS's dispatch of it, the one before */
 #endif
     int skip_to;        /* the old instructions before it were read with the last one */
+    int rot_br, rot_body; /* the branch of a loop test read again at its goto, and the body it
+                           jumps back to (rv_rotate, regvm-ops-cmp.h), -1 for none */
     BOOL wide;          /* slots below F past -128: rv_wide_one reads first, and
                            the frame has a scratch slot past its stack */
     BOOL vr_heap;       /* the var_refs of the closure state are on the heap
@@ -783,6 +785,13 @@ static void rv_jump_throws_p(RVPass *s, const RVMask *mask, int q, BOOL own)
     } else {
         target = q + 1 + (int32_t)get_u32(p + 1);
         next = q + 5;
+    }
+    if (q == s->rot_br) {
+        /* the branch read again at the end of its loop (rv_rotate): it
+           jumps where the old one does not */
+        int32_t t = target;
+        target = next;
+        next = t;
     }
     rv_pcmap_put_p(s, end - 1 - own, target - 1, mask);
     rv_pcmap_put_p(s, end - own, next - 1, mask);
@@ -1501,6 +1510,7 @@ static void rv_round_init(RVPass *s)
     s->last_dst = -1;
     s->skip_to = 0;
     s->drop_at = -1;
+    s->rot_br = s->rot_body = -1;
     s->fi_n = 0;
     s->failed = FALSE;
     s->args = FALSE;
