@@ -4,18 +4,15 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 
 ## [Unreleased]
 
-### Added
-
-- The start tag function of `VM.RegisterStartTag` takes a seventh argument, the mode: 1 writes `img` and the void elements as React DOM's `pushSelfClosing` does, 2 writes `input` and 3 an inline `style` such as emotion's as its `pushStartInstance` does. With tifa's plugin calling it, the store pages run 1.1% fewer instructions, the workbench and MUI pages 0.9% to 1.0% fewer, with the same HTML ([performance.md](docs/performance.md#img-the-void-elements-input-and-style-unreleased)).
-- `Intl.NumberFormat.prototype.formatRange` and `formatRangeToParts` (ES2023): "€80 – €120", with the parts both ends share written once, the approximately sign when both ends round alike, and the source of each part. They give what Chrome 157 gives on 16,661 expressions in every locale, style and notation.
-- `VM.NewMurmur2Function()`: emotion's style hash in C, which package `tifa` now gives as `__tifa_murmur2__`. tifa's MUI pages run 0.91% fewer instructions ([murmur2.go](murmur2.go)).
+## [v0.31.2] - 2026-11-16
 
 ### Changed
 
+- Pages run 2.9% to 4.9% fewer instructions a render than with v0.31.1, with the changes below and a profile trained again on them. Counted on linux/amd64 against v0.31.1 trained the same way: tifa's store pages run 4.9% fewer, its workbench and MUI pages 3.2% and 3.3%, React's page 2.9% and the long Markdown page 1.0%, and on the V8 suite RayTrace runs 8.9% fewer and RegExp 1.1% more ([performance.md](docs/performance.md#v0312-against-v0311)).
 - A regexp without a literal every match must hold no longer carries 38 bytes for one: its plan after the bytecode is 36 bytes again, as in v0.31.0, and a regexp with a literal carries 6 bytes and 2 for each of its units ([regexp.md](docs/changes/regexp.md#a-literal-every-match-holds)).
 - Bytecode version 14: bytecode written by `Compile` of an earlier release no longer loads. Compile again.
 - A return frees the slots of a frame of more than 8 slots 8 to a turn, where it took one a turn. tifa's pages run 0.6% to 2.7% fewer instructions and React's page 2.9% fewer ([performance.md](docs/performance.md#the-slots-of-a-return-8-to-a-turn)).
-- `localeCompare` and `Intl.Collator.prototype.compare` compare two short strings of Latin letters, digits and punctuation from a table of their characters, with no normal form and no allocation: two ids of 12 characters compare in 206 ns where they took 2.15 µs, with the same answer as before for every pair. `localeCompare` with no locales or options no longer looks its collator up on each call. A page of jotai that sorts with `localeCompare` runs 9.1% fewer instructions.
+- `localeCompare` and `Intl.Collator.prototype.compare` compare two short strings of Latin letters, digits and punctuation from a table of their characters, with no normal form and no allocation, and `localeCompare` with no locales or options no longer looks its collator up on each call. Two ids of 12 characters compare in 206 ns where they took 2.15 µs, with the same answer for every pair, and a page of jotai that sorts with `localeCompare` runs 9.1% fewer instructions.
 - `formatToParts` of `Intl.NumberFormat` and `Intl.DateTimeFormat` gives each type as a string the engine keeps as an atom, so a page that reads a key with it, as luxon does, skips looking the string up again. A page of luxon runs 1.6% fewer instructions.
 - `new` of a constructor given more arguments than it has parameters stays in the register loop, as a call does, and takes no C stack: RayTrace runs 6.6% fewer instructions.
 - `new f()` reads the own `prototype` of `f` without the generic property read when it is a plain object. Boyer runs 2% fewer instructions, RayTrace 1.6% fewer.
@@ -23,6 +20,12 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 - `Array.prototype.join` of an array of strings makes the result in one block and reads the elements in place: a render of tifa's pages runs up to 0.75% fewer instructions.
 - A search for a string of more than 8 characters moves over the text in a tighter loop, as tifa's search of each page's HTML does: a render of tifa's pages runs up to 0.45% fewer instructions.
 - A new VM keeps 512 compiled regexps where it kept 256 (`DefaultRegExpCache`), in the same 1 MiB: the post pages of tifa's shop compile none again after their first render and run 3.2% to 4.0% fewer instructions, and use less memory.
+
+### Added
+
+- The start tag function of `VM.RegisterStartTag` takes a seventh argument, the mode: 1 writes `img` and the void elements as React DOM's `pushSelfClosing` does, 2 writes `input` and 3 an inline `style` such as emotion's as its `pushStartInstance` does. With tifa's plugin calling it, the store pages run 1.1% fewer instructions, the workbench and MUI pages 0.9% to 1.0% fewer, with the same HTML ([performance.md](docs/performance.md#img-the-void-elements-input-and-style-v0312)).
+- `Intl.NumberFormat.prototype.formatRange` and `formatRangeToParts` (ES2023): "€80 – €120", with the parts both ends share written once, the approximately sign when both ends round alike, and the source of each part. They give what Chrome 157 gives on 16,661 expressions in every locale, style and notation.
+- `VM.NewMurmur2Function()`: emotion's style hash in C, which package `tifa` now gives as `__tifa_murmur2__`. tifa's MUI pages run 0.91% fewer instructions ([murmur2.go](murmur2.go)).
 
 ## [v0.31.1] - 2026-11-16
 
@@ -776,7 +779,8 @@ The first release of the fork, from modernc.org/quickjs v0.25.0 and libquickjs v
 - A VM that runs out of memory inside `JSON.parse`, or anything else that converts a string with non-ASCII characters to UTF-8, no longer leaks that string.
 - `VM.Call` and `VM.CallValue` report the exception thrown while evaluating the function expression instead of `cannot call a non-function`.
 
-[Unreleased]: https://github.com/liustack/slowjs/compare/v0.31.1...main
+[Unreleased]: https://github.com/liustack/slowjs/compare/v0.31.2...main
+[v0.31.2]: https://github.com/liustack/slowjs/compare/v0.31.1...v0.31.2
 [v0.31.1]: https://github.com/liustack/slowjs/compare/v0.31.0...v0.31.1
 [v0.31.0]: https://github.com/liustack/slowjs/compare/v0.30.7...v0.31.0
 [v0.30.7]: https://github.com/liustack/quickjs/compare/v0.30.6...v0.30.7
