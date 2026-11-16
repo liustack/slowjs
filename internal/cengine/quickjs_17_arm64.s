@@ -4444,7 +4444,7 @@ TEXT ·JS_NewCFunction3(SB), $168-16
 	WORD $0xf9404ff4
 	WORD $0x52808008
 	WORD $0x17ffff7b
-	MOVD $·engine_rodata+123962(SB), R22
+	MOVD $·engine_rodata+123994(SB), R22
 	WORD $0x17ffff84
 	WORD $0x52804008
 	WORD $0x17ffff76
@@ -24835,7 +24835,7 @@ TEXT ·js_async_module_execution_fulfilled(SB), $200-16
 	WORD $0x924009c8
 	WORD $0xf1001d1f
 	WORD $0x540016e0
-	MOVD $·engine_rodata+124008(SB), R9
+	MOVD $·engine_rodata+124040(SB), R9
 	WORD $0xf8687928
 	WORD $0xf90053e8
 	WORD $0xd37ef5e8

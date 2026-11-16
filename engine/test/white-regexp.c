@@ -104,7 +104,7 @@ int white_lre_split_same(const char *re, int flags, void *opaque, const uint32_t
             oplen += get_u16(code + pos + 1) * 8;
         else if (op == REOP_back_reference || op == REOP_back_reference_i ||
                  op == REOP_backward_back_reference || op == REOP_backward_back_reference_i)
-            oplen += code[pos + 1];
+            oplen += 2 * get_u16(code + pos + 1);
         if (op != REOP_split_goto_first && op != REOP_split_next_first)
             continue;
         for (i = 0; i <= n; i++) {

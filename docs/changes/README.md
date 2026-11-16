@@ -185,6 +185,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A VM keeps its last block for the next call | v0.30.4 | [uncatchable.md](uncatchable.md#a-vm-keeps-its-last-block-for-the-next-call) |
 | The copy of a spread, a rest and Object.assign reads the interrupt flag | v0.30.5 | [uncatchable.md](uncatchable.md#the-copy-of-a-spread-a-rest-and-objectassign-reads-the-interrupt-flag) |
 | A VM with a memory limit keeps its block too | v0.30.6 | [uncatchable.md](uncatchable.md#a-vm-with-a-memory-limit-keeps-its-block-too) |
+| The loops over the captures of a match read the interrupt flag: the result of exec, and the captures replace and split read from an exec result, whose length a custom exec sets | Unreleased | `js_regexp_exec`, `js_regexp_Symbol_replace` and `js_regexp_Symbol_split` in [quickjs.c](../../engine/quickjs.c) |
 
 ## Errors and stacks
 
@@ -247,6 +248,8 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A long list of alternatives that start with a literal goes straight to the ones that start with the character. Bytecode version 10 | v0.30.2 | [regexp.md](regexp.md#long-lists-of-alternatives-that-start-with-a-literal) |
 | A regexp looks for the literal every match holds before the backtracking machine runs, and has no match when the string does not hold it. Bytecode version 13 | v0.31.1 | [regexp.md](regexp.md#a-literal-every-match-holds) |
 | Only a regexp with a literal every match holds carries it: the plan of one without is 36 bytes again, where v0.31.1 gave every regexp 74. Bytecode version 14 | Unreleased | [regexp.md](regexp.md#a-literal-every-match-holds) |
+| A regexp takes up to 32,767 capture groups, as V8 does, where upstream stops at 254: a capture index is a u16 in the header and in every op that names a group. Bytecode version 15 | Unreleased | [regexp.md](regexp.md#up-to-32767-capture-groups) |
+| Two groups of one name in alternatives 256 bars apart, or a multiple of 256, are no longer refused as duplicates: the scope of a group name is a u32 | Unreleased | `is_duplicate_group_name` in [libregexp.c](../../engine/libregexp.c) |
 | Compiled regexps kept per VM | v0.27.0 | [regexp.md](regexp.md#compiled-regexps-kept-per-vm) |
 | A new VM keeps 512 compiled regexps, not 256, in the same 1 MiB | Unreleased | `JS_REGEXP_CACHE_ENTRIES` in [engine/quickjs.h](../../engine/quickjs.h), `DefaultRegExpCache` in [vm.go](../../vm.go) |
 | Classes of regexps with the v flag parsed as the specification does | v0.28.3 | [regexp.md](regexp.md#classes-of-regexps-with-the-v-flag) |

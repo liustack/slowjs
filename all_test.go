@@ -806,8 +806,12 @@ func TestBytecode(t *testing.T) {
 	// 2026-11-16, version 14: the plan is 36 bytes again, and only a regexp
 	// with a literal every match holds carries it, after the chains. The code of
 	// this script is the same.
+	//
+	// 2026-11-16, version 15: the header of the bytecode of a regexp holds
+	// its capture count in 2 bytes, and every op that names a group a
+	// capture index of 2 bytes. The code of this script is the same.
 	hex := hex.EncodeToString(bytecode)
-	if g, e := hex, "0e000c000600a801000100020000000801aa0100000000bd2abe3a019acd29a8010400001b0600"; g != e {
+	if g, e := hex, "0f000c000600a801000100020000000801aa0100000000bd2abe3a019acd29a8010400001b0600"; g != e {
 		t.Fatalf("got %s, expected %s", g, e)
 	}
 

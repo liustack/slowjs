@@ -1454,13 +1454,13 @@ TEXT ·unicode_from_utf8(SB), $72-32
 	WORD $0x7100f51f
 	WORD $0x540004c8
 	WORD $0x92401d08
-	MOVD $·engine_rodata+99920(SB), R9
+	MOVD $·engine_rodata+99952(SB), R9
 	WORD $0xb8687928
 	WORD $0x510006c9
 	WORD $0x6b09011f
 	WORD $0x540003ec
 	WORD $0x5100050c
-	MOVD $·engine_rodata+99891(SB), R8
+	MOVD $·engine_rodata+99923(SB), R8
 	WORD $0x386c6908
 	WORD $0x8b0c02a9
 	WORD $0x2a0c03ed
@@ -1479,7 +1479,7 @@ TEXT ·unicode_from_utf8(SB), $72-32
 	WORD $0x9100054a
 	WORD $0x510005ad
 	WORD $0x17fffff5
-	MOVD $·engine_rodata+99896(SB), R8
+	MOVD $·engine_rodata+99928(SB), R8
 	WORD $0xb86c7908
 	WORD $0x6b08013f
 	WORD $0x540000a3
@@ -2236,7 +2236,7 @@ TEXT ·rqsort(SB), $40-48
 	MOVD a5+40(FP), R25
 	PCALIGN $16
 	WORD $0xaa1403e8
-	MOVD $·engine_rodata+99916(SB), R9
+	MOVD $·engine_rodata+99948(SB), R9
 	WORD $0xa9005a95
 	WORD $0xa9016297
 	WORD $0xaa0803f5

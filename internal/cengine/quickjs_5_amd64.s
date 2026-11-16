@@ -539,13 +539,13 @@ TEXT ·JS_StringToBigInt(SB), $208-32
 	QUAD $0x0000b82494894800
 	QUAD $0x0f3dfa8040518d00
 	QUAD $0xd2b60f000003c987
-	LEAQ ·engine_rodata+100904(SB), SI
+	LEAQ ·engine_rodata+100936(SB), SI
 	BYTE $0x8b
 	BYTE $0x34
 	BYTE $0x96
 	BYTE $0xff
 	BYTE $0xce
-	LEAQ ·engine_rodata+100866(SB), DX
+	LEAQ ·engine_rodata+100898(SB), DX
 	QUAD $0x8948ca211614b60f
 	QUAD $0x8b48000000a02494
 	QUAD $0x8948000000a8248c
@@ -574,14 +574,14 @@ TEXT ·JS_StringToBigInt(SB), $208-32
 	QUAD $0xff67e90000009824
 	BYTE $0xff
 	BYTE $0xff
-	LEAQ ·engine_rodata+100880(SB), DX
+	LEAQ ·engine_rodata+100912(SB), DX
 	QUAD $0x000000a024b48b48
 	QUAD $0xba343b70247c8b48
 	QUAD $0xf981000002c4820f
 	QUAD $0x02ac870f000000ff
 	BYTE $0x00
 	BYTE $0x00
-	LEAQ ·engine_rodata+71232(SB), CX
+	LEAQ ·engine_rodata+71264(SB), CX
 	QUAD $0x000000a024948b48
 	QUAD $0x029f840f010a04f6
 	QUAD $0x00a8248c8b480000
@@ -605,13 +605,13 @@ TEXT ·JS_StringToBigInt(SB), $208-32
 	BYTE $0x0f
 	BYTE $0xb6
 	BYTE $0xd2
-	LEAQ ·engine_rodata+100904(SB), SI
+	LEAQ ·engine_rodata+100936(SB), SI
 	BYTE $0x8b
 	BYTE $0x34
 	BYTE $0x96
 	BYTE $0xff
 	BYTE $0xce
-	LEAQ ·engine_rodata+100866(SB), DX
+	LEAQ ·engine_rodata+100898(SB), DX
 	QUAD $0x8948ca211614b60f
 	QUAD $0x8b48000000a82494
 	QUAD $0x894800000098248c
@@ -638,14 +638,14 @@ TEXT ·JS_StringToBigInt(SB), $208-32
 	QUAD $0x4858244c8948d101
 	QUAD $0xffff6de968245401
 	BYTE $0xff
-	LEAQ ·engine_rodata+100880(SB), DX
+	LEAQ ·engine_rodata+100912(SB), DX
 	QUAD $0x000000a824b48b48
 	QUAD $0xba343b60247c8b48
 	QUAD $0xf9810000016a820f
 	QUAD $0x0152870f000000ff
 	BYTE $0x00
 	BYTE $0x00
-	LEAQ ·engine_rodata+71232(SB), CX
+	LEAQ ·engine_rodata+71264(SB), CX
 	QUAD $0x000000a824948b48
 	QUAD $0x0145840f010a04f6
 	QUAD $0x0098248c8b480000
@@ -8216,7 +8216,7 @@ TEXT ·JS_GetOwnPropertyNamesInternal(SB), $288-48
 	BYTE $0x89
 	BYTE $0xde
 	LEAQ ·num_keys_cmp(SB), DI
-	LEAQ ·engine_rodata+100900(SB), DX
+	LEAQ ·engine_rodata+100932(SB), DX
 	QUAD $0x8b4c00000008bf41
 	QUAD $0x8b4c000000a824a4
 	QUAD $0x9c89000000c024ac
@@ -19853,7 +19853,7 @@ TEXT ·js_async_module_execution_fulfilled(SB), $224-64
 	BYTE $0x07
 	BYTE $0x74
 	BYTE $0x13
-	LEAQ ·engine_rodata+125064(SB), CX
+	LEAQ ·engine_rodata+125096(SB), CX
 	QUAD $0x24848948c1048b48
 	QUAD $0x9d148d4a000000c8
 	QUAD $0xdd048d4a00000000
