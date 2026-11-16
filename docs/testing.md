@@ -480,6 +480,8 @@ The steps of `scripts/check.sh` are chosen with `CHECK_ONLY`, and their logs are
 
 `gates.yml` runs the long checks a release waits for as jobs side by side, when a branch `gates/<name>` is pushed (`git push origin HEAD:gates/<name>`) or by hand. It has 12 jobs for the whole throw injection of the register loop ([the register loop](#the-register-loop)): each builds the test host with `-DRV_INJECT` and runs `inject.sh` on every 12th script of `engine/test/regvm/corpus` and `engine/test/regvm/js`, 6 to 16 minutes a job where one core takes about 10 hours. And it has one job for each Go release `scripts/go-versions.sh` lists, with LLVM 22.1.8, so with the generator tests and the post-link check of both architectures: 13 to 21 minutes a job. The whole run takes about 40 minutes. A job that fails keeps its logs, and the injection the runs that differ, as an artifact for 7 days. The push also runs `ci.yml` and `llvm-steps.yml` on the same commit.
 
+`count.yml` counts the instructions a render of every page takes, a pushed branch `count/<name>` against its merge base with `main`, under callgrind on the runners ([measuring.md](measuring.md#counts-in-ci)). `timeexp.yml` is an experiment, not a gate: on a push of `timeexp/<name>` twenty jobs time the same binaries by the protocol, to see what a hosted runner can tell ([measuring.md](measuring.md#counts-in-ci)).
+
 `release.yml` runs when a tag `v*` is pushed, and by hand on a branch: it builds the `slowjs` command for the five targets, runs the tests of `cmd/slowjs` against each binary on its own system, and for a pushed tag makes the GitHub release with them ([releasing.md](releasing.md#the-release-job)). It is the only workflow with `contents: write`, in its last job only.
 
 Left out on purpose:
