@@ -13488,7 +13488,7 @@ TEXT ·js_array_fill(SB), $152-48
 	WORD $0xa94827f5
 	WORD $0xf9403be8
 	WORD $0xa9452beb
-	WORD $0xb9005be0
+	WORD $0xb90053e0
 	WORD $0xa90022a9
 	WORD $0xf9403fe9
 	WORD $0x910142b4
@@ -13501,8 +13501,8 @@ TEXT ·js_array_fill(SB), $152-48
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
 	BL ·JS_SetPropertyInternal_block(SB)
-	WORD $0xb9405be8
-	WORD $0xb90053e0
+	WORD $0xb94053e8
+	WORD $0xb9005be0
 	WORD $0x7103c91f
 	WORD $0x5400016b
 	WORD $0x2a0803e9
@@ -13515,7 +13515,7 @@ TEXT ·js_array_fill(SB), $152-48
 	WORD $0x7100011f
 	WORD $0xb81fc2c8
 	WORD $0x5400090d
-	WORD $0xb94053e0
+	WORD $0xb9405be0
 	WORD $0x17ffff0c
 	WORD $0xd2f00008
 	WORD $0xab0b0108
