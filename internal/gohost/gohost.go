@@ -694,7 +694,8 @@ func Poll(sp uintptr) {
 	}
 	if v.flag != 0 && *(*int32)(addr(v.flag + 4)) != 0 {
 		// A compile that stopped frees the code and the module it made,
-		// which is bounded by what the compile did (JS_GetInterruptFlag in
+		// and a resolution that stopped frees the modules it leaves, which
+		// is bounded by what the compiles did (JS_GetInterruptFlag in
 		// engine/quickjs.h): the poll is left out of StopPolls and the kill.
 		return
 	}

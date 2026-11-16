@@ -482,8 +482,9 @@ struct JSRuntime {
     /* see JS_GetInterruptFlag */
     volatile int interrupt_flag;
     /* not 0 from the reading of the flag that stops a compile to the end
-       of that compile (JS_ThrowInterrupted, js_compile_end): the host reads
-       it next to the flag (JS_GetInterruptFlag) */
+       of that compile (JS_ThrowInterrupted, js_compile_end), and in the
+       free of modules a stopped resolution leaves (js_freeing_start): the
+       host reads it next to the flag (JS_GetInterruptFlag) */
     volatile int freeing_code;
     /* a compile runs (__JS_EvalInternal) */
     BOOL compiling;
@@ -12655,6 +12656,32 @@ static void JS_ThrowInterrupted(JSContext *ctx)
         return;
     JS_ThrowInternalError(ctx, "interrupted");
     JS_SetUncatchableException(ctx, TRUE);
+}
+
+/* The free of modules after a stop that came once their compile had
+   returned, in the resolution of their imports (__JS_EvalInternal,
+   JS_ResolveModule, an import of a module): it is bounded by the code those
+   compiles made, as the free of a stopped compile is, so the host leaves
+   its polls out of the kill too until the free is done. Only with an
+   uncatchable exception pending: an error of the script is no stop. */
+static void js_freeing_start(JSRuntime *rt)
+{
+    if (js_uncatchable_pending(rt))
+        rt->freeing_code = 1;
+}
+
+static void js_freeing_end(JSRuntime *rt)
+{
+    /* inside a compile, its end clears the mark (js_compile_end) */
+    if (!rt->compiling)
+        rt->freeing_code = 0;
+}
+
+static void js_free_unresolved_modules(JSContext *ctx)
+{
+    js_freeing_start(ctx->rt);
+    js_free_modules(ctx, JS_FREE_MODULE_NOT_RESOLVED);
+    js_freeing_end(ctx->rt);
 }
 
 static no_inline __exception int __js_poll_interrupts(JSContext *ctx)
@@ -36241,6 +36268,35 @@ static int js_inner_module_linking(JSContext *ctx, JSModuleDef *m,
     return ret;
 }
 
+/* Release the bindings a link that failed made in m, which goes back to
+   unlinked: the imports it bound and the exported variables it kept. A link
+   again binds each from the start, and took a second reference to each in
+   place of the first, which was never released. */
+static void js_unbind_module(JSRuntime *rt, JSModuleDef *m)
+{
+    JSVarRef **var_refs;
+    int i;
+
+    if (m->init_func)
+        return;
+    var_refs = JS_VALUE_GET_OBJ(m->func_obj)->u.func.var_refs;
+    for(i = 0; i < m->import_entries_count; i++) {
+        JSImportEntry *mi = &m->import_entries[i];
+        /* a namespace import is a variable of m, set again */
+        if (!mi->is_star) {
+            free_var_ref(rt, var_refs[mi->var_idx]);
+            var_refs[mi->var_idx] = NULL;
+        }
+    }
+    for(i = 0; i < m->export_entries_count; i++) {
+        JSExportEntry *me = &m->export_entries[i];
+        if (me->export_type == JS_EXPORT_TYPE_LOCAL) {
+            free_var_ref(rt, me->u.local.var_ref);
+            me->u.local.var_ref = NULL;
+        }
+    }
+}
+
 /* Prepare a module to be executed by resolving all the imported
    variables. */
 static int js_link_module(JSContext *ctx, JSModuleDef *m)
@@ -36263,6 +36319,7 @@ static int js_link_module(JSContext *ctx, JSModuleDef *m)
             m1 = stack_top;
             assert(m1->status == JS_MODULE_STATUS_LINKING);
             m1->status = JS_MODULE_STATUS_UNLINKED;
+            js_unbind_module(ctx->rt, m1);
             stack_top = m1->stack_prev;
         }
         return -1;
@@ -36429,7 +36486,7 @@ static void JS_LoadModuleInternal(JSContext *ctx, const char *basename,
         goto fail;
 
     if (js_resolve_module_top(ctx, m) < 0) {
-        js_free_modules(ctx, JS_FREE_MODULE_NOT_RESOLVED);
+        js_free_unresolved_modules(ctx);
         goto fail;
     }
 
@@ -37033,11 +37090,31 @@ static JSValue js_evaluate_module(JSContext *ctx, JSModuleDef *m)
         m = m->cycle_root;
     }
     /* a promise may be created only on the cycle_root of a cycle */
-    if (!JS_IsUndefined(m->promise))
+    if (!JS_IsUndefined(m->promise)) {
+        /* an evaluation that ended while an uncatchable exception was
+           pending recorded its result in m, and could not settle the
+           promise, as every call fails then: it settles now */
+        if (m->status == JS_MODULE_STATUS_EVALUATED &&
+            JS_PromiseState(ctx, m->promise) == JS_PROMISE_PENDING) {
+            if (m->eval_has_exception) {
+                ret_val = js_call(ctx, m->resolving_funcs[1], JS_UNDEFINED,
+                                  1, (JSValueConst *)&m->eval_exception);
+            } else {
+                JSValue value = JS_UNDEFINED;
+                ret_val = js_call(ctx, m->resolving_funcs[0], JS_UNDEFINED,
+                                  1, (JSValueConst *)&value);
+            }
+            JS_FreeValue(ctx, ret_val);
+        }
         return JS_DupValue(ctx, m->promise);
+    }
     m->promise = JS_NewPromiseCapability(ctx, m->resolving_funcs);
-    if (JS_IsException(m->promise))
+    if (JS_IsException(m->promise)) {
+        /* no promise: the next import makes one, where it took the
+           exception for the promise, with no exception pending */
+        m->promise = JS_UNDEFINED;
         return JS_EXCEPTION;
+    }
 
     stack_top = NULL;
     if (js_inner_module_evaluation(ctx, m, 0, &stack_top, &result) < 0) {
@@ -45526,8 +45603,12 @@ static JSValue __JS_EvalInternal(JSContext *ctx, JSValueConst this_obj,
     return ret_val;
  fail1:
     /* XXX: should free all the unresolved dependencies */
-    if (m)
+    if (m) {
+        /* a stop in the resolution, after the compile ended, frees the
+           module too */
+        js_freeing_start(ctx->rt);
         JS_FreeValue(ctx, JS_MKPTR(JS_TAG_MODULE, m));
+    }
     /* after the module, whose tables a stopped compile also made: on a
        path that did not compile, or ended it already, it changes nothing */
     js_compile_end(ctx->rt, was_compiling);
@@ -45606,7 +45687,7 @@ int JS_ResolveModule(JSContext *ctx, JSValueConst obj)
     if (JS_VALUE_GET_TAG(obj) == JS_TAG_MODULE) {
         JSModuleDef *m = JS_VALUE_GET_PTR(obj);
         if (js_resolve_module_top(ctx, m) < 0) {
-            js_free_modules(ctx, JS_FREE_MODULE_NOT_RESOLVED);
+            js_free_unresolved_modules(ctx);
             return -1;
         }
     }

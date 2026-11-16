@@ -2509,10 +2509,175 @@ static void test_link_stops(void)
     CHECK(reads > 10, "the module of the imports read the flag %ld times", reads);
 }
 
+/* A stop at each reading of the flag in the run of module b.js, which
+   imports a.js, which imports c.js, both made but not run, then an import of
+   b.js with no stop: the import settles, and the runtime is freed with no
+   block left. A stop in the evaluation leaves each module it ran recorded
+   with the error, and the promise of b.js was left pending for good, as the
+   call that rejects it fails while the interrupt is pending: the import
+   after it now rejects that promise with the error recorded. A stop in the
+   link leaked the bindings the link made (test_link_retry). */
+static void test_module_eval_stops(void)
+{
+    static const char c[] = "export var z = 1;";
+    static const char a[] =
+        "import {z} from \"c.js\"; export var y = z;"
+        "for (let i = 0; i < 50; i++) y += 0;";
+    static const char b[] =
+        "import {y} from \"a.js\"; globalThis.x = y;"
+        "for (let i = 0; i < 50; i++) globalThis.x += 0;";
+    static const char again[] =
+        "globalThis.r = 'pending';"
+        "import(\"b.js\").then(() => { r = 'ok:' + x }, e => { r = String(e) });";
+    long k, reads = 0, before, rejected = 0;
+    JSValue r;
+    char *t;
+    int leaked;
+
+    for (k = 0; k <= reads; k++) {
+        VM v = vm_new();
+        volatile int *flag = JS_GetInterruptFlag(v.rt);
+
+        r = JS_Eval(v.ctx, c, strlen(c), "c.js", JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY);
+        CHECK(!JS_IsException(r), "c.js does not compile");
+        JS_FreeValue(v.ctx, r);
+        r = JS_Eval(v.ctx, a, strlen(a), "a.js", JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY);
+        CHECK(!JS_IsException(r), "a.js does not compile");
+        JS_FreeValue(v.ctx, r);
+        before = host_poll_reads;
+        host_poll_stop_after(k);
+        r = JS_Eval(v.ctx, b, strlen(b), "b.js", JS_EVAL_TYPE_MODULE);
+        host_poll_stop_after(0);
+        if (k == 0)
+            reads = host_poll_reads - before;
+        *flag = 0;
+        JS_FreeValue(v.ctx, r);
+        JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+        while (JS_ExecutePendingJob(v.rt, NULL) > 0)
+            ;
+        JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+        r = JS_Eval(v.ctx, again, strlen(again), "<again>", JS_EVAL_TYPE_GLOBAL);
+        CHECK(!JS_IsException(r), "the import again threw");
+        JS_FreeValue(v.ctx, r);
+        while (JS_ExecutePendingJob(v.rt, NULL) > 0)
+            ;
+        t = eval_text(v.ctx, "r");
+        CHECK(t && strcmp(t, "pending") != 0,
+              "the stop at reading %ld of %ld: the import after it did not settle", k, reads);
+        if (t && strcmp(t, "InternalError: interrupted") == 0)
+            rejected++;
+        free(t);
+        leaked = host_leaked_runtimes();
+        vm_free(&v);
+        CHECK(host_leaked_runtimes() == leaked, "the stop at reading %ld of %ld left blocks in the runtime", k, reads);
+    }
+    CHECK(reads > 10, "the module read the flag %ld times", reads);
+    CHECK(rejected > 10, "%ld imports after a stop rejected with the error the module recorded", rejected);
+}
+
+/* A stop at each reading of the flag in an import of module b.js, which
+   binds 300 names of a.js and a namespace a.js exports from c.js, then an
+   import of b.js again with no stop. A link that stopped had bound some of
+   the names, and the link again took a second reference to each and lost
+   the first, and made the namespace binding again: the runtime was freed
+   with blocks left (js_unbind_module). A stop in the making of the promise
+   of b.js left the exception in its place, and the import again rejected
+   with no error. The import again links b.js and runs it, with the objects,
+   atoms and blocks of an import that never stopped, or rejects with the
+   error a stopped evaluation recorded, and the runtime is freed with no
+   block left. */
+static void test_link_retry(void)
+{
+    static const char c[] = "export var z = 1;";
+    static const char again[] =
+        "globalThis.r = 'pending';"
+        "import(\"b.js\").then(() => { r = 'ok:' + x }, e => { r = String(e) });";
+    char a[4096], b[4096];
+    size_t n;
+    long k, reads = 0, before;
+    int i, ok;
+    int64_t objs = 0, atoms = 0, blocks = 0;
+    long relinked = 0;
+    int leaked;
+    JSMemoryUsage u;
+    JSValue r;
+    char *t;
+
+#define ADD(s, ...) (n += snprintf(s + n, sizeof(s) - n, __VA_ARGS__))
+    n = 0;
+    ADD(a, "export * as nsx from \"c.js\"; export var e0 = 0");
+    for (i = 1; i < 300; i++)
+        ADD(a, ",e%d = 0", i);
+    ADD(a, ";");
+    n = 0;
+    ADD(b, "import {nsx, e0");
+    for (i = 1; i < 300; i++)
+        ADD(b, ",e%d", i);
+    ADD(b, "} from \"a.js\"; globalThis.x = e0 + e299 + nsx.z;");
+#undef ADD
+    CHECK(n < sizeof(b) && strlen(a) < sizeof(a) - 1, "the sources do not fit");
+    for (k = 0; k <= reads; k++) {
+        VM v = vm_new();
+        volatile int *flag = JS_GetInterruptFlag(v.rt);
+
+        r = JS_Eval(v.ctx, c, strlen(c), "c.js", JS_EVAL_TYPE_MODULE);
+        CHECK(!JS_IsException(r), "c.js does not run");
+        JS_FreeValue(v.ctx, r);
+        r = JS_Eval(v.ctx, a, strlen(a), "a.js", JS_EVAL_TYPE_MODULE);
+        CHECK(!JS_IsException(r), "a.js does not run");
+        JS_FreeValue(v.ctx, r);
+        r = JS_Eval(v.ctx, b, strlen(b), "b.js", JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY);
+        CHECK(!JS_IsException(r), "b.js does not compile");
+        JS_FreeValue(v.ctx, r);
+        while (JS_ExecutePendingJob(v.rt, NULL) > 0)
+            ;
+        before = host_poll_reads;
+        host_poll_stop_after(k);
+        r = JS_Eval(v.ctx, again, strlen(again), "<first>", JS_EVAL_TYPE_GLOBAL);
+        JS_FreeValue(v.ctx, r);
+        while (!JS_HasException(v.ctx) && JS_ExecutePendingJob(v.rt, NULL) > 0)
+            ;
+        host_poll_stop_after(0);
+        if (k == 0)
+            reads = host_poll_reads - before;
+        *flag = 0;
+        JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+        r = JS_Eval(v.ctx, again, strlen(again), "<again>", JS_EVAL_TYPE_GLOBAL);
+        CHECK(!JS_IsException(r), "the import again threw");
+        JS_FreeValue(v.ctx, r);
+        while (JS_ExecutePendingJob(v.rt, NULL) > 0)
+            ;
+        t = eval_text(v.ctx, "r");
+        CHECK(t && (strcmp(t, "ok:1") == 0 || strcmp(t, "InternalError: interrupted") == 0),
+              "the stop at reading %ld of %ld: the import after it gave %s", k, reads, t ? t : "nothing");
+        ok = t && strcmp(t, "ok:1") == 0;
+        free(t);
+        JS_RunGC(v.rt);
+        JS_ComputeMemoryUsage(v.rt, &u);
+        if (k == 0) {
+            objs = u.obj_count;
+            atoms = u.atom_count;
+            blocks = u.malloc_count;
+        } else if (ok) {
+            relinked++;
+            CHECK(u.obj_count == objs && u.atom_count == atoms && u.malloc_count == blocks,
+                  "the stop at reading %ld of %ld: %lld objects, %lld atoms and %lld blocks, against %lld, %lld and %lld",
+                  k, reads, (long long)u.obj_count, (long long)u.atom_count, (long long)u.malloc_count,
+                  (long long)objs, (long long)atoms, (long long)blocks);
+        }
+        leaked = host_leaked_runtimes();
+        vm_free(&v);
+        CHECK(host_leaked_runtimes() == leaked, "the stop at reading %ld of %ld left blocks in the runtime", k, reads);
+    }
+    CHECK(reads > 10 && relinked > 10, "the import read the flag %ld times, and %ld stops linked again", reads, relinked);
+}
+
 int main(void)
 {
     test_compile_stops();
     test_link_stops();
+    test_module_eval_stops();
+    test_link_retry();
     test_for_in_keeps_shape();
     test_plain_objects();
     test_run_gc_threshold();

@@ -502,6 +502,16 @@ size_t host_live_vms(void)
     return n;
 }
 
+int host_leaked_runtimes(void)
+{
+    int n;
+
+    pthread_mutex_lock(&host_lock);
+    n = host_leaks;
+    pthread_mutex_unlock(&host_lock);
+    return n;
+}
+
 size_t host_mapped_bytes(void)
 {
     HostVM *vm;

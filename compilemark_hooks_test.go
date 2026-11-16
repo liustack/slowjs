@@ -140,6 +140,74 @@ func TestStoppedModuleFreeNotKilled(t *testing.T) {
 	wantKillWhileFreeing(t, m, "after the stopped compiles of the module")
 }
 
+// TestStoppedResolveFreeNotKilled stops a module of 8,000 imports of 64
+// attributes each, 5.7 MB, made but not run, at the polls five, seven and
+// nine tenths into the call, with no grace. 2,000 modules evaluated before it
+// come first among the loaded modules, so the resolution of each import
+// looks through them, and the resolution, which runs once the compile has
+// returned, takes most of the call. A stop there frees the module, its
+// table of imports, the object of the attributes of each and its code: those
+// polls counted toward the kill, as the compile was over. They do not now
+// (js_freeing_start in engine/quickjs.c): the call ends interrupted after
+// at most compileStopPolls counted, and the VM goes on.
+func TestStoppedResolveFreeNotKilled(t *testing.T) {
+	m := newTestVM(t)
+	h := m.h
+	for i := 0; i < 2000; i++ {
+		if _, err := m.EvalFile(fmt.Sprintf("m%d", i), "export var x;", EvalModule); err != nil {
+			t.Fatal(err)
+		}
+	}
+	m.SetGCThreshold(^uintptr(0))
+	src := importsModule(8000)
+	// counted is StopPolls at the end of the call: taking its exception is a
+	// call of its own, which starts the count again
+	var counted int64
+	compile := func() error {
+		v, err := m.eval(src, EvalModule|evalFlagCompileOnly)
+		counted = h.StopPolls()
+		if err != nil {
+			return err
+		}
+		if isException(v) {
+			return m.errFromException()
+		}
+		m.jsFreeValue(v)
+		return nil
+	}
+	if err := compile(); err != nil {
+		t.Fatal(err)
+	}
+	m.RunGC()
+	before := h.Polls()
+	if err := compile(); err != nil {
+		t.Fatal(err)
+	}
+	span := h.Polls() - before
+	h.SetKillGrace(0)
+	for _, part := range []int64{5, 7, 9} {
+		at := span * part / 10
+		m.RunGC()
+		before := h.Polls()
+		h.InterruptAtPoll(before + at)
+		err := compile()
+		h.InterruptAtPoll(0)
+		what := fmt.Sprintf("stopped at poll %d of the %d of the call", at, span)
+		t.Logf("%s: %d polls counted toward the kill, %d polls in the call", what, counted, h.Polls()-before)
+		var e *Error
+		if errors.Is(err, ErrKilled) || !errors.As(err, &e) || !e.Interrupted || !e.Uncatchable {
+			t.Fatalf("%s: got %v (killed %v) after %d polls counted toward the kill, want interrupted", what, err, errors.Is(err, ErrKilled), counted)
+		}
+		if counted > compileStopPolls {
+			t.Errorf("%s: %d polls counted toward the kill, want at most %d", what, counted, compileStopPolls)
+		}
+		if v, err := m.Eval(`1+1`, EvalGlobal); err != nil || v != 2 {
+			t.Fatalf("the VM after the stop: 1+1 got %v, %v", v, err)
+		}
+	}
+	wantKillWhileFreeing(t, m, "after the stopped resolutions of the module")
+}
+
 // importsModule is a module that imports itself, by the name <eval> that
 // Eval gives it, n times, each with an object of 64 attributes.
 func importsModule(n int) string {

@@ -1154,8 +1154,9 @@ int JS_SetShapeCache(JSContext *ctx, int n);
    or made catchable (JS_SetUncatchableException). So the host writes 1 to
    stop, and 0 only when no exception is pending. The int after the flag is
    not 0 from the stop of a compile to its return, while it frees the code
-   it made: that work is bounded by what the compile did, and the host may
-   leave its polls out of a kill. */
+   it made, and while the modules a stopped resolution leaves are freed:
+   that work is bounded by what the compiles did, and the host may leave
+   its polls out of a kill. */
 volatile int *JS_GetInterruptFlag(JSRuntime *rt);
 /* select which debug info is stripped from the compiled code */
 #define JS_STRIP_SOURCE (1 << 0) /* strip source code */
