@@ -353,15 +353,26 @@ func (m *VM) NewArray(vals ...Value) (Value, error) {
 		}
 	}
 
+	// A short array is made in one call of the engine, which reads no
+	// interrupt flag while it copies the values in: a long array in a call
+	// into javascript reads whether the call is to stop every newArrayStep
+	// elements, as the engine adds them one at a time, in about 50 ns each.
+	if len(vals) < newArrayStep {
+		a, err := m.jsCreateArray(vals)
+		if err != nil {
+			return Value{}, err
+		}
+		if isException(a) {
+			return Value{}, m.errFromException()
+		}
+		return Value{vm: m, v: a}, nil
+	}
+
 	a := m.jsNewArray()
 	if isException(a) {
 		return Value{}, m.errFromException()
 	}
-
-	// The engine adds an element in about 50 ns, and reads no interrupt flag
-	// while it does: a long array in a call into javascript reads whether
-	// the call is to stop every newArrayStep elements.
-	steps := len(vals) >= newArrayStep && m.host > 0
+	steps := m.host > 0
 	for i, v := range vals {
 		if steps && i&(newArrayStep-1) == newArrayStep-1 && m.goStop() {
 			m.jsFreeValue(a)

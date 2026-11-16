@@ -136,6 +136,8 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | More values than the engine can count fail | v0.31.1 | [go-api.md](go-api.md#more-values-than-the-engine-can-count-fail) |
 | Package tifa: `tifa.Register` sets a VM up as tifa does | v0.31.1 | [go-api.md](go-api.md#package-tifa) |
 | The start tag function writes img and the void elements as React DOM's `pushSelfClosing` does, and `input` and emotion's inline `style` as `pushStartInstance` does, when its seventh argument, the mode, is 1, 2 or 3 | Unreleased | [go-api.md](go-api.md#registerstarttag-and-registerendtag) |
+| NewArray makes an array of fewer than 16,384 values in one call of the engine | Unreleased | [builtin.go](../../builtin.go) |
+| NewMurmur2Function: the hash of @emotion/hash in C, which package tifa gives as `__tifa_murmur2__` | Unreleased | [murmur2.go](../../murmur2.go) |
 
 ## Limits that hold
 
@@ -233,6 +235,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Change | Release | Doc |
 | --- | --- | --- |
 | URL and URLSearchParams on a Go parser, with the limits of the VM | v0.30.3 | [url.md](url.md#url-and-urlsearchparams-on-a-go-parser) |
+| A VM keeps the last base it parsed and the last record it made, so a URL made against the same base, and a setter on the URL made last, parse nothing again | Unreleased | [url/bridge.go](../../url/bridge.go) |
 
 ## Regular expressions
 

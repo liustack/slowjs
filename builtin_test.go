@@ -500,6 +500,36 @@ func TestNewArray(t *testing.T) {
 	}
 }
 
+// An array of fewer than newArrayStep values, made in one call of the
+// engine, and one of newArrayStep, made a value at a time, are the same
+// array: own elements, the zero Value undefined, and no setter of
+// Array.prototype run.
+func TestNewArrayAtTheStep(t *testing.T) {
+	m := newTestVM(t)
+	vals := make([]Value, newArrayStep)
+	for i := range vals {
+		vals[i] = m.NewInt(i)
+	}
+	vals[1] = Value{}
+	for _, n := range []int{2, newArrayStep - 1, newArrayStep} {
+		name := fmt.Sprintf("make%d", n)
+		defineBuiltin(t, m, name, NewBuiltin(name, 0, func(a Args) (Value, error) { return a.VM().NewArray(vals[:n]...) }))
+		js := fmt.Sprintf(`(() => {
+			let set = 0;
+			Object.defineProperty(Array.prototype, %[1]d, {set() { set++ }, configurable: true});
+			const a = %[2]s();
+			delete Array.prototype[%[1]d];
+			const ok = a.length === %[3]d && Array.isArray(a) && Object.getPrototypeOf(a) === Array.prototype &&
+				Object.keys(a).length === %[3]d && Object.hasOwn(a, 1) &&
+				a.every((v, i) => i === 1 ? v === undefined : v === i);
+			return ok + ' ' + set;
+		})()`, n-1, name, n)
+		if got := evalString(t, m, js); got != "true 0" {
+			t.Errorf("%d values: %s", n, got)
+		}
+	}
+}
+
 // NewArray refuses a Value of another VM, a number too, and leaves what it
 // was given to its owners.
 func TestNewArrayValueOfAnotherVM(t *testing.T) {

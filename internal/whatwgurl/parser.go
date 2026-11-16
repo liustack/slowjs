@@ -681,9 +681,19 @@ func unsafeString(b []byte) string {
 }
 
 // take is the string of the buffer, which the parser starts again on, without
-// a copy of a long one.
+// a copy of a long one. The buffer is used again for each part, so it may
+// have grown for a longer part before this one: then the string is a copy,
+// which does not keep that room reachable (roomy).
 func (p *parser) take() string {
-	s := unsafeString(p.buf)
+	b := p.buf
 	p.buf = nil
-	return s
+	if roomy(b) {
+		return string(b)
+	}
+	return unsafeString(b)
 }
+
+// roomy reports whether b has room for much more than it holds: what is
+// kept of it is copied, so that a URL holds about the bytes it is made of,
+// however long the input was.
+func roomy(b []byte) bool { return cap(b) > 2*len(b)+64 }

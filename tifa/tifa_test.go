@@ -160,11 +160,23 @@ func TestMurmur2IsTheHashOfEmotion(t *testing.T) {
 	}
 }
 
-// BenchmarkMurmur2 hashes a style of the length MUI serializes, in Go.
+// BenchmarkMurmur2 hashes a style of the length MUI serializes, through __tifa_murmur2__, 1,000
+// times an op.
 func BenchmarkMurmur2(b *testing.B) {
+	vm := newVM(b)
+	if err := RegisterHook(vm, "__tifa_murmur2__"); err != nil {
+		b.Fatal(err)
+	}
+	f, err := vm.EvalValue(`(s) => { let n = 0; for (let i = 0; i < 1000; i++) n += __tifa_murmur2__(s).length; return n }`, slowjs.EvalGlobal)
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer f.Free()
 	style := strings.Repeat("display:flex;align-items:center;padding:8px 16px;", 6)
 	for b.Loop() {
-		murmur2(style)
+		if _, err := f.Call(slowjs.UndefinedValue, style); err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 

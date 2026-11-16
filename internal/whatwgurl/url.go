@@ -426,11 +426,16 @@ func (p *Path) push(seg string) {
 	p.n++
 }
 
-// Pop takes the last segment off.
+// Pop takes the last segment off. When the list is left much shorter than
+// its buffer, as after ".." takes a long segment off, it moves to a buffer of
+// its size, so that the path holds about the bytes it is made of.
 func (p *Path) Pop() {
 	if p.n > 0 {
 		p.b = p.b[:bytes.LastIndexByte(p.b, '/')]
 		p.n--
+		if roomy(p.b) {
+			p.b = bytes.Clone(p.b)
+		}
 	}
 }
 

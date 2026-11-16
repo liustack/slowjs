@@ -8,6 +8,7 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 
 - The start tag function of `VM.RegisterStartTag` takes a seventh argument, the mode: 1 writes `img` and the void elements as React DOM's `pushSelfClosing` does, 2 writes `input` and 3 an inline `style` such as emotion's as its `pushStartInstance` does. With tifa's plugin calling it, the store pages run 1.1% fewer instructions, the workbench and MUI pages 0.9% to 1.0% fewer, with the same HTML ([performance.md](docs/performance.md#img-the-void-elements-input-and-style-unreleased)).
 - `Intl.NumberFormat.prototype.formatRange` and `formatRangeToParts` (ES2023): "€80 – €120", with the parts both ends share written once, the approximately sign when both ends round alike, and the source of each part. They give what Chrome 157 gives on 16,661 expressions in every locale, style and notation.
+- `VM.NewMurmur2Function()`: emotion's style hash in C, which package `tifa` now gives as `__tifa_murmur2__`. tifa's MUI pages run 0.91% fewer instructions ([murmur2.go](murmur2.go)).
 
 ### Changed
 
@@ -18,6 +19,7 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 - `formatToParts` of `Intl.NumberFormat` and `Intl.DateTimeFormat` gives each type as a string the engine keeps as an atom, so a page that reads a key with it, as luxon does, skips looking the string up again. A page of luxon runs 1.6% fewer instructions.
 - `new` of a constructor given more arguments than it has parameters stays in the register loop, as a call does, and takes no C stack: RayTrace runs 6.6% fewer instructions.
 - `new f()` reads the own `prototype` of `f` without the generic property read when it is a plain object. Boyer runs 2% fewer instructions, RayTrace 1.6% fewer.
+- Package `url` keeps the last base and the last record each VM made, and `VM.NewArray` makes a short array in one call of the engine: tifa's store pages run 1.77% fewer instructions (zh-CN journal 6.4%) and its workbench pages 0.53% fewer ([url/bridge.go](url/bridge.go)).
 
 ## [v0.31.1] - 2026-11-16
 

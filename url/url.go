@@ -58,9 +58,10 @@
 // the engine's own checks. A URL, and the list of a URLSearchParams, are
 // javascript objects: they take their memory from the VM and give it back with
 // the garbage collector. Go keeps nothing of them between calls, but for the
-// buffer in which package slowjs converts a long string, which holds the
-// bytes of the last one it read, at most 192 KiB through this package, until
-// the next one (see docs/changes/url.md).
+// last base each VM parsed and the last record it made, under 4 KiB a VM,
+// until the VM closes, and for the buffer in which package slowjs converts a
+// long string, which holds the bytes of the last one it read, at most 192 KiB
+// through this package, until the next one (see docs/changes/url.md).
 //
 // # Differences from a browser
 //
@@ -169,6 +170,8 @@ func Register(vm *slowjs.VM, opts ...Option) error {
 		return err
 	}
 	defer f.Free()
+	states.Store(vm, &vmState{})
+	vm.OnClose(func() { states.Delete(vm) })
 	args := make([]any, 0, len(bridge))
 	for _, b := range bridge {
 		v, err := vm.NewBuiltinFunction(b)

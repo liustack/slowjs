@@ -16,8 +16,8 @@ import (
 
 // TestParallelVMs makes a VM on each of many goroutines, registers URL on
 // every one, and has them parse different inputs at the same time, hosts that
-// need NFC among them, and use the shared bytecode and the shared cache of
-// bases. Each result is compared with the one a VM makes alone. It is for the
+// need NFC among them, and use the shared bytecode and the base each VM
+// keeps. Each result is compared with the one a VM makes alone. It is for the
 // race detector.
 func TestParallelVMs(t *testing.T) {
 	inputs := []string{
