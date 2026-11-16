@@ -22533,8 +22533,8 @@ TEXT ·js_map_set(SB), $136-16
 	WORD $0xd37efd4b
 	WORD $0xf1000d7f
 	WORD $0x540000a3
-	WORD $0x9260754a
-	WORD $0xb26077eb
+	WORD $0x9260714a
+	WORD $0xb26073eb
 	WORD $0xeb0b015f
 	WORD $0x54fff5c1
 	MOVD $·engine_rodata+25063(SB), R9
@@ -22859,8 +22859,8 @@ TEXT ·js_map_getOrInsert(SB), $136-16
 	WORD $0xd37efd09
 	WORD $0xf1000d3f
 	WORD $0x540000a3
-	WORD $0x92607508
-	WORD $0xb26077e9
+	WORD $0x92607108
+	WORD $0xb26073e9
 	WORD $0xeb09011f
 	WORD $0x54ffe9a1
 	MOVD $·engine_rodata+25640(SB), R22

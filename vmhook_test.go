@@ -199,6 +199,11 @@ func TestVMHookChars(t *testing.T) {
 		{`chars('abc')`, "3,3,flat,latin1,abc"},
 		{`chars('éÿ')`, "2,2,flat,latin1,éÿ"},
 		{`chars('aĀ')`, "2,2,flat,utf16,aĀ"},
+		// JSON.stringify marks a string it writes as it is, and the mark is
+		// no part of the length the host reads.
+		{`(() => { const s = 'abc'.repeat(2); JSON.stringify([s, s]); return chars(s) })()`, "6,6,flat,latin1,abcabc"},
+		{`(() => { JSON.stringify({ hookKey: 1 }); return chars('hookKey') })()`, "7,7,flat,latin1,hookKey"},
+		{`(() => { const s = 'aĀ'.repeat(2); JSON.stringify([s, s]); return chars(s) })()`, "4,4,flat,utf16,aĀaĀ"},
 		{`(() => { const s = 'x'.repeat(5000) + 'y'.repeat(5000); return chars(s).slice(0, 20) })()`, "10000,10000,rope,lat"},
 		{`(() => { const s = 'x'.repeat(5000) + 'Ā'.repeat(5000); return chars(s).slice(0, 20) })()`, "10000,10000,rope,utf"},
 	} {

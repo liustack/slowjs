@@ -214,7 +214,7 @@ int white_json_quote_run(StringBuffer *b, JSValueConst s, int *pi)
 {
     uint32_t work = 0;
 
-    return json_quote_run(b, JS_VALUE_GET_STRING(s), pi, &work);
+    return json_quote_run(b, JS_VALUE_GET_STRING(s), pi, &work, FALSE);
 }
 
 /* ---- strings built by appending ---- */
@@ -1360,6 +1360,14 @@ int white_shape_parents_bad(JSRuntime *rt, JSValueConst proto, int *count, int *
 uint32_t white_key_atom(JSValueConst v)
 {
     return JS_VALUE_GET_STRING(v)->key_atom;
+}
+
+/* The mark plain of the string v: JS_ToQuotedString knows it writes v as
+   it is. */
+int white_string_plain(JSContext *ctx, JSValueConst v)
+{
+    (void)ctx;
+    return JS_VALUE_GET_STRING(v)->plain;
 }
 
 /* The atoms of rt whose string has a key_atom other than the one

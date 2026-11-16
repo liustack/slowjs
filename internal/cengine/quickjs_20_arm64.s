@@ -13362,7 +13362,7 @@ TEXT ·js_object_isSealed(SB), $168-16
 	WORD $0x17ffffec
 	WORD $0x71000d5f
 	WORD $0x54002821
-	WORD $0xb26077ea
+	WORD $0xb26073ea
 	WORD $0x12b00034
 	WORD $0xea29015f
 	WORD $0x54fffcc0
