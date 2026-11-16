@@ -27,8 +27,12 @@ RV_OP(SUB) RV_OP(SUBL) RV_OP(SUBK) RV_OP(SUBKL)       /* d a b|k */
 RV_OP(KADD) RV_OP(KSUB)                               /* d k b: the constant on the left */
 RV_OP(JF) RV_OP(JT)                                   /* s off */
 RV_OP(GOTO)                                           /* off */
-RV_OP(GETF) RV_OP(GETFT)                              /* d o atom */
-RV_OP(GETFL)                                          /* d o atom: GETF into the local d */
+RV_OP(GETF) RV_OP(GETFT)                              /* d o atom slot id */
+RV_OP(GETFL)                                          /* d o atom slot id: GETF into the local d */
+/* slot, id: u32 each, the cache of the site: the slot of the data property
+   it last found, RV_GETF_NONE before, and 0, or for a key of the prototype
+   the id of the shape of the object (RV_GETFIELD) */
+#define RV_GETF_NONE 0xffffffffu
 RV_OP(PUTF)                                           /* o v flags atom */
 RV_OP(GETVR)                                          /* d idx16 */
 RV_OP(GETVRL)                                         /* d idx16: GETVR into the local d */
@@ -543,6 +547,8 @@ static void rv_call(RVPass *s, int argc, int method, int tail)
         rv_byte(s, d);
         rv_byte(s, e.slot);
         rv_u32(s, op == OP_get_length ? JS_ATOM_length : get_u32(p + 1));
+        rv_u32(s, RV_GETF_NONE);
+        rv_u32(s, 0);
         rv_throws(s, rv_owned(s, 1));
         s->sp--;
         rv_push(s, RV_E_TEMP, d, 0);
@@ -558,6 +564,8 @@ static void rv_call(RVPass *s, int argc, int method, int tail)
         rv_byte(s, d);
         rv_byte(s, e.slot);
         rv_u32(s, get_u32(p + 1));
+        rv_u32(s, RV_GETF_NONE);
+        rv_u32(s, 0);
         rv_throws(s, rv_owned(s, 0));
         rv_push(s, RV_E_TEMP, d, 0);
         rv_mark_dst(s, d);
@@ -826,6 +834,30 @@ static inline int rv_str_length(JSValueConst v)
     if (JS_VALUE_GET_TAG(v) == JS_TAG_STRING_ROPE)
         return JS_VALUE_GET_STRING_ROPE(v)->len;
     return -1;
+}
+
+/* the cache of a read of a name at ip (RV_GETFIELD) after the lookup from
+   the object p0 found the data property prs of the object p: its slot and
+   0 when p is p0, its slot and the id of the shape of p0 when p is the
+   prototype of p0 and that shape is in the shape hash table (an id names
+   its prototype, keys and flags, so that p0 has no such key of its own),
+   p0 is not exotic and the ids never ran out. Else the cache stays. */
+static force_inline void rv_getf_keep(JSContext *ctx, const uint8_t *ip, JSObject *p0,
+                                      JSObject *p, JSShapeProperty *prs)
+{
+    uint32_t id;
+
+    if (p == p0) {
+        id = 0;
+    } else {
+        if (p != p0->shape->proto || p0->is_exotic || ctx->rv_renumbered)
+            return;
+        id = p0->shape->id;
+        if (id == 0)
+            return;
+    }
+    put_u32((uint8_t *)ip + 6, prs - get_shape_prop(p->shape));
+    put_u32((uint8_t *)ip + 10, id);
 }
 
 /* the slow side of get_field: an object operand that is a temp is freed */
@@ -1522,10 +1554,25 @@ static inline BOOL rv_unwrap_in_loop(JSValueConst f)
     /* get_field: a data property found with nothing run, as the fast
        path of get_field in upstream's interpreter, else rv_getf_slow. GETF
        writes a temp, which holds nothing to free (the pass gives each result
-       a temp no entry owns), GETFL a local (rv_store) and GETFT either. */
+       a temp no entry owns), GETFL a local (rv_store) and GETFT either.
+       The site keeps the slot of the own data property it last found
+       (ip + 6), and a read first looks at that slot of the shape the
+       object has now: the same key there, a data property, is what
+       find_own_property would find, since a shape has a key once. So the
+       slot needs no invalidation, holds no reference, and is right for any
+       object of any shape and realm: a hit costs about as many
+       instructions as the lookup, but the address of the value waits on
+       the object and the slot only, not on the shape and its hash. The
+       stack of an error is never kept (its value can be the marker of a
+       stack not formatted yet).
+       A key found on the prototype of the object is kept with the id of
+       the shape of the object (rv_getf_keep): the same id, which a shape
+       has only while it is in the shape hash table, means the same
+       prototype, keys and flags, so the object has no such key of its own
+       and the slot is checked in the shape its prototype has now. */
 #define RV_GETFIELD(label, temp, tdst)                                  \
  label:                                                                 \
-    ip = pc; pc += 6;                                                   \
+    ip = pc; pc += 14;                                                  \
     {                                                                   \
         JSValue obj = RV_R(ip[1]), val;                                 \
         JSAtom atom = get_u32(ip + 2);                                  \
@@ -1536,6 +1583,25 @@ static inline BOOL rv_unwrap_in_loop(JSValueConst f)
         else                                                            \
             p = goasm_field_proto(ctx, obj, atom);                      \
         if (likely(p) && !RV_INJ_ARMED) {                               \
+            uint32_t i_ = get_u32(ip + 6), id_ = get_u32(ip + 10);      \
+            JSShape *sh_ = p->shape;                                    \
+            JSObject *p0_ = p, *h_ = p;                                 \
+            if (id_ != 0) {                                             \
+                if (sh_->id != id_ || p->is_exotic ||                   \
+                    ctx->rv_renumbered)                                 \
+                    goto label ## _look;                                \
+                h_ = sh_->proto;                                        \
+                sh_ = h_->shape;                                        \
+            }                                                           \
+            if (likely(i_ < (uint32_t)sh_->prop_count)) {               \
+                JSShapeProperty *q_ = get_shape_prop(sh_) + i_;         \
+                if (likely(q_->atom == atom &&                          \
+                           !(q_->flags & JS_PROP_TMASK))) {             \
+                    val = JS_DupValue(ctx, h_->prop[i_].u.value);       \
+                    goto label ## _got;                                 \
+                }                                                       \
+            }                                                           \
+        label ## _look:                                                 \
             for(;;) {                                                   \
                 prs = find_own_property(&pr, p, atom);                  \
                 if (prs) {                                              \
@@ -1545,6 +1611,8 @@ static inline BOOL rv_unwrap_in_loop(JSValueConst f)
                         JS_VALUE_GET_TAG(pr->u.value) == JS_TAG_OBJECT) \
                         goto label ## _slow;                            \
                     val = JS_DupValue(ctx, pr->u.value);                \
+                    if (atom != JS_ATOM_stack)                          \
+                        rv_getf_keep(ctx, ip, p0_, p, prs);             \
                     break;                                              \
                 }                                                       \
                 if (unlikely(p->is_exotic) &&                           \
@@ -1556,6 +1624,7 @@ static inline BOOL rv_unwrap_in_loop(JSValueConst f)
                     break;                                              \
                 }                                                       \
             }                                                           \
+        label ## _got:                                                  \
             if (tdst)                                                   \
                 RV_R(ip[0]) = val;                                      \
             else                                                        \

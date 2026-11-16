@@ -511,6 +511,8 @@ struct JSRuntime {
     JSShape **shape_hash;
     /* the id the next shape of the shape hash table gets (js_shape_new_id) */
     uint32_t shape_id_next;
+    /* the ids ran out once and were given again (js_shape_renumber) */
+    uint8_t shape_renumbered;
     /* the async context of promise jobs, an object or any other value for
        none (see JS_SetAsyncContext) */
     JSValue async_context;
@@ -748,6 +750,10 @@ struct JSContext {
     struct list_head link;
 
     uint16_t binary_object_count;
+    /* rt->shape_renumbered, where the register loop reads it: a read of
+       a name no longer takes the slot it keeps for a key of the prototype,
+       whose id of a shape may now name other keys (engine/regvm-ops-basic.h) */
+    uint8_t rv_renumbered;
     int binary_object_size;
     
     JSShape *array_shape;   /* initial shape for Array objects */
@@ -3921,6 +3927,7 @@ JSContext *JS_NewContextRaw(JSRuntime *rt)
         return NULL;
     }
     ctx->rt = rt;
+    ctx->rv_renumbered = rt->shape_renumbered;
     list_add_tail(&ctx->link, &rt->context_list);
     for(i = 0; i < rt->class_count; i++)
         ctx->class_proto[i] = JS_NULL;
@@ -7716,8 +7723,15 @@ static void js_shape_hash_unlink(JSRuntime *rt, JSShape *sh)
 static no_inline uint32_t js_shape_renumber(JSRuntime *rt)
 {
     JSShape *sh;
+    struct list_head *el;
     uint32_t id = 1;
     int i;
+
+    rt->shape_renumbered = TRUE;
+    list_for_each(el, &rt->context_list) {
+        JSContext *ctx = list_entry(el, JSContext, link);
+        ctx->rv_renumbered = TRUE;
+    }
 
     for(i = 0; i < rt->shape_hash_size; i++) {
         for(sh = rt->shape_hash[i]; sh != NULL; sh = sh->shape_hash_next) {
