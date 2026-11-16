@@ -9,6 +9,7 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 - A regexp takes up to 32,767 capture groups, as V8 does, where it stopped at 254 with "SyntaxError: too many captures". shiki's JavaScript engine needs 410 to 912 groups in one regexp to highlight JavaScript, TypeScript and HTML. Bytecode version 14: bytecode written by `Compile` of an earlier release no longer loads.
 - Two groups of one name in alternatives 256 bars apart (or a multiple of 256) are no longer refused with "SyntaxError: duplicate group name".
 - An interrupt or the eval timeout stops replace and split on the result of a custom `exec` of any length, which ran on until the kill, and the result of an exec of thousands of groups.
+- An interrupt or the eval timeout stops a long match wherever it is. A pattern written out many times, a back reference over a long capture and a long `x+` or `x{n,}` did not look at the stop for as long as they ran: about 20 ms for `/^a+/` over a million characters, 40 ms for `\w+` over a million of 16 bits.
 
 ## [v0.31.1] - 2026-11-16
 

@@ -14048,7 +14048,7 @@ TEXT ·JS_NewContextRaw(SB), $168-16
 	WORD $0xf94057eb
 	MOVD $·js_function_proto(SB), R10
 	WORD $0xa9002975
-	MOVD $·engine_rodata+123858(SB), R10
+	MOVD $·engine_rodata+123930(SB), R10
 	WORD $0x9102c174
 	WORD $0xa9032169
 	WORD $0x528001a8
@@ -27689,7 +27689,7 @@ TEXT ·js_error_toString(SB), $136-48
 	WORD $0x540002c0
 	WORD $0xf9403fe8
 	WORD $0xf94047f5
-	MOVD $·engine_rodata+123858(SB), R22
+	MOVD $·engine_rodata+123930(SB), R22
 	WORD $0xa90663f9
 	MOVD $·engine_rodata+35352(SB), R25
 	WORD $0xaa0003f7

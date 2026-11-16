@@ -23815,7 +23815,7 @@ TEXT ·rv_run_seg(SB), $200-16
 	WORD $0x7103fd1f
 	WORD $0x540003c8
 	WORD $0x32180108
-	MOVD $·engine_rodata+56909(SB), R22
+	MOVD $·engine_rodata+56981(SB), R22
 	WORD $0xaa0903f5
 	WORD $0x79139148
 	WORD $0xf94067e8
@@ -25024,7 +25024,7 @@ TEXT ·rv_seg_move(SB), $168-16
 	WORD $0x7103fd1f
 	WORD $0x540003a8
 	WORD $0x32180108
-	MOVD $·engine_rodata+56909(SB), R22
+	MOVD $·engine_rodata+56981(SB), R22
 	WORD $0xaa1403f7
 	WORD $0x91004294
 	WORD $0xaa0903f5
@@ -27203,7 +27203,7 @@ TEXT ·JS_NewCFunction3(SB), $152-16
 	WORD $0xf94047f4
 	WORD $0x52808008
 	WORD $0x17ffff74
-	MOVD $·engine_rodata+123858(SB), R22
+	MOVD $·engine_rodata+123930(SB), R22
 	WORD $0x17ffff7d
 	WORD $0x52804008
 	WORD $0x17ffff6f
