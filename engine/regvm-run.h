@@ -179,16 +179,37 @@ static force_inline void rv_undefined(JSValue *q, int n)
 #undef RV_PART
 
 #define RV_FREE_SLOT(q) do {                                            \
-        if (unlikely((int64_t)(q)->tag < 0))                            \
+        if (unlikely(JS_VALUE_HAS_REF_COUNT(*(q))))                      \
             JS_FreeValue(ctx, *(q));                                    \
     } while (0)
 
-/* frees the n slots from q, in order: straight code up to 8, as a loop with
-   a call in it gets a poll tick on each turn */
+/* frees the n slots from q, in order, each read right before it is freed, as
+   a loop of one slot to a turn did: straight code up to 8, and past 8 a loop
+   that frees 8 to a turn, then the last 1 to 8 in straight code. A loop with
+   a call in it gets a poll tick on each turn (internal/goasm/gen/pass/
+   poll.cpp), so a poll comes within 8 slots and the frees they make, where it
+   came within one: this bound is what TestFrameSlotTurns holds. A turn of 8
+   with no value to free is 3 instructions a slot and 7 for the turn, where a
+   turn of one took 9. The test is the one JS_FreeValue makes, so that llc
+   makes it once. */
 static force_inline void rv_free_slots(JSContext *ctx, JSValue *q, int n)
 {
     JSValue *e = q + n;
-    switch (n) {
+    if (n > 8) {
+        JSValue *stop = e - 8;
+        do {
+            RV_FREE_SLOT(q);
+            RV_FREE_SLOT(q + 1);
+            RV_FREE_SLOT(q + 2);
+            RV_FREE_SLOT(q + 3);
+            RV_FREE_SLOT(q + 4);
+            RV_FREE_SLOT(q + 5);
+            RV_FREE_SLOT(q + 6);
+            RV_FREE_SLOT(q + 7);
+            q += 8;
+        } while (q < stop);
+    }
+    switch (e - q) {
     case 8: RV_FREE_SLOT(e - 8); /* fall through */
     case 7: RV_FREE_SLOT(e - 7); /* fall through */
     case 6: RV_FREE_SLOT(e - 6); /* fall through */
@@ -198,10 +219,6 @@ static force_inline void rv_free_slots(JSContext *ctx, JSValue *q, int n)
     case 2: RV_FREE_SLOT(e - 2); /* fall through */
     case 1: RV_FREE_SLOT(e - 1); /* fall through */
     case 0:
-        break;
-    default:
-        for (; q < e; q++)
-            RV_FREE_SLOT(q);
         break;
     }
 }

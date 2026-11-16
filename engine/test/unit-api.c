@@ -424,7 +424,7 @@ static void test_host_function(void)
 
 /* The handles test_host_release saw released, in order. */
 static struct {
-    uint32_t vm, handles[8];
+    uint32_t vm, handles[64];
     int n;
 } released;
 
@@ -504,7 +504,7 @@ static void test_host_release(void)
    returned say which values the end of the call freed, how many times and in
    which order. */
 
-/* order_run makes the globals h1 to h16, functions that release their number,
+/* order_run makes the globals h1 to h64, functions that release their number,
    runs src, which defines f, and calls f. take(name) in src hands a global
    over to a local: nothing else holds the function then. */
 static void order_run(const char *src, const char *what, int want_n, const uint32_t *want, int gc)
@@ -519,7 +519,7 @@ static void order_run(const char *src, const char *what, int want_n, const uint3
     host_release_call = test_release_call;
     memset(&released, 0, sizeof(released));
     g = JS_GetGlobalObject(v.ctx);
-    for (i = 1; i <= 16; i++) {
+    for (i = 1; i <= 64; i++) {
         snprintf(name, sizeof(name), "h%d", i);
         JS_SetPropertyStr(v.ctx, g, name, new_release(v.ctx, name, i));
     }
@@ -557,6 +557,68 @@ static void order_slots(int n, const int *slots, int k, const char *what)
     }
     sprintf(p, "}");
     order_run(src, what, k, want, 0);
+}
+
+/* A function g of m arguments and n locals, every one of them set first and
+   live to its end (so that no two share a slot), called with h1 to hm: the local at
+   slots[i] takes h(m+i+1), for k slots. The return of g frees its arguments,
+   then its locals, each from the first to the last, in whatever groups the
+   loop takes them. */
+static void order_live(int m, int n, const int *slots, int k, const char *what)
+{
+    char src[8192], *p = src;
+    uint32_t want[64];
+    int i;
+
+    p += sprintf(p, "function g(");
+    for (i = 0; i < m; i++)
+        p += sprintf(p, "%sa%d", i ? ", " : "", i);
+    p += sprintf(p, ") {");
+    for (i = 0; i < n; i++)
+        p += sprintf(p, "var s%d = %d;", i, i);
+    for (i = 0; i < k; i++)
+        p += sprintf(p, "s%d = take('h%d');", slots[i], m + i + 1);
+    p += sprintf(p, "if (globalThis.never) {");
+    for (i = 0; i < m + n; i++)
+        p += i < m ? sprintf(p, " keep(a%d);", i) : sprintf(p, " keep(s%d);", i - m);
+    p += sprintf(p, " } }\nfunction f() { g(");
+    for (i = 0; i < m; i++)
+        p += sprintf(p, "%stake('h%d')", i ? ", " : "", i + 1);
+    sprintf(p, ") }");
+    for (i = 0; i < m + k; i++)
+        want[i] = i + 1;
+    order_run(src, what, m + k, want, 0);
+}
+
+/* Frames of up to 44 slots, whose return frees them in a loop: every slot
+   full, the last one alone, values on each side of the boundaries of the
+   groups of 8, and arguments before the locals. */
+static void test_release_order_live(void)
+{
+    static const int edges[] = { 6, 7, 8, 14, 15, 16, 22, 23, 24, 30, 31, 32, 38, 39 };
+    int slots[64], n, m, i;
+    char what[64];
+
+    for (n = 0; n <= 40; n++) {
+        for (i = 0; i < n; i++)
+            slots[i] = i;
+        snprintf(what, sizeof(what), "all %d live locals", n);
+        order_live(0, n, slots, n, what);
+        if (n > 0) {
+            slots[0] = n - 1;
+            snprintf(what, sizeof(what), "the last of %d live locals", n);
+            order_live(0, n, slots, 1, what);
+        }
+    }
+    order_live(0, 40, edges, countof(edges), "40 live locals, values at the edges of the groups");
+    for (m = 1; m <= 20; m += 3) {
+        for (n = 0; n <= 20; n += 5) {
+            for (i = 0; i < n; i++)
+                slots[i] = i;
+            snprintf(what, sizeof(what), "%d arguments and %d live locals", m, n);
+            order_live(m, n, slots, n, what);
+        }
+    }
 }
 
 static void test_release_order(void)
@@ -2223,6 +2285,7 @@ int main(void)
     test_host_function();
     test_host_release();
     test_release_order();
+    test_release_order_live();
     test_module_top_level();
     test_new_string_chars();
     test_throw_error_kind();

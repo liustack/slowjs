@@ -12,6 +12,7 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 
 - A regexp without a literal every match must hold no longer carries 38 bytes for one: its plan after the bytecode is 36 bytes again, as in v0.31.0, and a regexp with a literal carries 6 bytes and 2 for each of its units ([regexp.md](docs/changes/regexp.md#a-literal-every-match-holds)).
 - Bytecode version 14: bytecode written by `Compile` of an earlier release no longer loads. Compile again.
+- A return frees the slots of a frame of more than 8 slots 8 to a turn, where it took one a turn. tifa's pages run 0.6% to 2.7% fewer instructions and React's page 2.9% fewer ([performance.md](docs/performance.md#the-slots-of-a-return-8-to-a-turn)).
 
 ## [v0.31.1] - 2026-11-16
 
