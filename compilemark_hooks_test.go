@@ -254,3 +254,131 @@ func TestModuleCompileStops(t *testing.T) {
 		t.Errorf("%s: %d polls saw the request, want at most %d", worstAt, worst, compileStopPolls)
 	}
 }
+
+// exportsModule is a module of n variables, each exported under its name
+// e0, e1 and on. The first module a VM evaluates is the one other modules
+// get when they import "<eval>".
+func exportsModule(n int) string {
+	var b strings.Builder
+	b.WriteString("export var e0")
+	for i := 1; i < n; i++ {
+		fmt.Fprintf(&b, ",e%d", i)
+	}
+	b.WriteString(";")
+	return b.String()
+}
+
+// importerModule imports each export of exportsModule(n) by name, then all
+// of them as a namespace, then the module n more times for nothing, and
+// loops for ever when globalThis.spin is set.
+func importerModule(n int) string {
+	var b strings.Builder
+	b.WriteString("import {e0")
+	for i := 1; i < n; i++ {
+		fmt.Fprintf(&b, ",e%d", i)
+	}
+	b.WriteString(`} from "<eval>"; import * as ns from "<eval>";`)
+	b.WriteString(strings.Repeat(`import "<eval>";`, n))
+	b.WriteString("if (globalThis.spin) for (;;) {}")
+	return b.String()
+}
+
+// TestModuleLinkStops stops a module of 2,000 imports by name of a module
+// of 2,000 exports at every poll of a call of it (the second, as the first
+// also makes the namespace), then a loop that runs for ever: each stop must
+// come within compileStopPolls, with the error interrupted and no kill. The
+// link looks for each import among the exports, work that grows as a
+// square: it read no flag, and a stop waited for it.
+func TestModuleLinkStops(t *testing.T) {
+	m := newTestVM(t)
+	h := m.h
+	const n = 2000
+	if _, err := m.Eval(exportsModule(n), EvalModule); err != nil {
+		t.Fatal(err)
+	}
+	src := importerModule(n)
+	m.SetGCThreshold(^uintptr(0))
+	if _, err := m.Eval(src, EvalModule); err != nil {
+		t.Fatal(err)
+	}
+	m.RunGC()
+	before := h.Polls()
+	if _, err := m.Eval(src, EvalModule); err != nil {
+		t.Fatal(err)
+	}
+	span := h.Polls() - before
+	if _, err := m.Eval(`globalThis.spin = true`, EvalGlobal); err != nil {
+		t.Fatal(err)
+	}
+	h.SetKillGrace(0)
+	var worst int64
+	var worstAt string
+	for at := int64(1); at <= span; at++ {
+		m.RunGC()
+		h.InterruptAtPoll(h.Polls() + at)
+		_, err := m.Eval(src, EvalModule)
+		h.InterruptAtPoll(0)
+		what := fmt.Sprintf("the stop at poll %d of %d", at, span)
+		var e *Error
+		if errors.Is(err, ErrKilled) || !errors.As(err, &e) || !e.Interrupted {
+			t.Fatalf("%s: got %v, want the error interrupted", what, err)
+		}
+		if n := h.StopPolls(); n > worst {
+			worst, worstAt = n, what
+		}
+	}
+	t.Logf("one call took %d polls, at most %d saw the request (%s)", span, worst, worstAt)
+	if worst > compileStopPolls {
+		t.Errorf("%s: %d polls saw the request, want at most %d", worstAt, worst, compileStopPolls)
+	}
+}
+
+// TestStoppedLinkNotKilled stops the first call of a module of 8,000
+// imports by name of a module of 8,000 exports, and of all of them as a
+// namespace, at the polls two, five and nine tenths into it, each in a VM of
+// its own, with no grace: the link and the making of the namespace look for
+// each name among the others, and read the flag as they go, so the call
+// ends interrupted after at most compileStopPolls polls counted toward the
+// kill, and the VM goes on.
+func TestStoppedLinkNotKilled(t *testing.T) {
+	const n = 8000
+	src := importerModule(n)
+	setup := func() *VM {
+		m := newTestVM(t)
+		if _, err := m.Eval(exportsModule(n), EvalModule); err != nil {
+			t.Fatal(err)
+		}
+		m.SetGCThreshold(^uintptr(0))
+		m.RunGC()
+		return m
+	}
+	m := setup()
+	before := m.h.Polls()
+	if _, err := m.Eval(src, EvalModule); err != nil {
+		t.Fatal(err)
+	}
+	span := m.h.Polls() - before
+	for _, part := range []int64{2, 5, 9} {
+		m := setup()
+		h := m.h
+		h.SetKillGrace(0)
+		at := span * part / 10
+		before := h.Polls()
+		h.InterruptAtPoll(before + at)
+		_, err := m.Eval(src, EvalModule)
+		h.InterruptAtPoll(0)
+		polls, counted := h.Polls()-before, h.StopPolls()
+		what := fmt.Sprintf("stopped at poll %d of the %d of the call", at, span)
+		t.Logf("%s: %d polls counted toward the kill, %d polls in the call", what, counted, polls)
+		var e *Error
+		if errors.Is(err, ErrKilled) || !errors.As(err, &e) || !e.Interrupted || !e.Uncatchable {
+			t.Fatalf("%s: got %v (killed %v) after %d polls counted toward the kill, want interrupted", what, err, errors.Is(err, ErrKilled), counted)
+		}
+		if counted > compileStopPolls {
+			t.Errorf("%s: %d polls counted toward the kill, want at most %d", what, counted, compileStopPolls)
+		}
+		if v, err := m.Eval(`1+1`, EvalGlobal); err != nil || v != 2 {
+			t.Fatalf("the VM after the stop: 1+1 got %v, %v", v, err)
+		}
+	}
+}

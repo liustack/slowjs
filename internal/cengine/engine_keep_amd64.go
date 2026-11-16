@@ -1121,6 +1121,7 @@ var goasmKeep = []any{
 	js_resize_prop,
 	js_resolve_export,
 	js_resolve_export1,
+	js_resolve_export_throw_error,
 	js_resolve_module,
 	js_resolve_module_top,
 	js_rest_end,

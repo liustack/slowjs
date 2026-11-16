@@ -2438,9 +2438,81 @@ static void test_compile_stops(void)
 #undef ADD
 }
 
+/* A module that imports each of 300 names of another one, then all of them
+   as a namespace, then the module 300 times more, stopped at each reading of
+   its eval, in a VM of its own each time, the other module evaluated first:
+   the resolution of the imports, the making of the namespace and the walks
+   of the link and of the evaluation read the flag. Each stop ends the eval
+   with the error interrupted, or the promise of the module rejected with it
+   (a stop in the evaluation), or the eval done with the flag still set.
+   Run under AddressSanitizer, it shows that what each failure frees is
+   whole, and the VM, freed at the end, that no stop leaks. */
+static void test_link_stops(void)
+{
+    static char a[1 << 14], b[1 << 15];
+    size_t n;
+    long reads = 0, k, before;
+    JSValue r, e;
+    char *t;
+    int i, set;
+
+#define ADD(s, ...) (n += (size_t)snprintf(s + n, sizeof(s) - n, __VA_ARGS__))
+    n = 0;
+    ADD(a, "export var e0");
+    for (i = 1; i < 300; i++)
+        ADD(a, ",e%d", i);
+    ADD(a, ";");
+    n = 0;
+    ADD(b, "import {e0");
+    for (i = 1; i < 300; i++)
+        ADD(b, ",e%d", i);
+    ADD(b, "} from \"a.js\"; import * as ns from \"a.js\";");
+    for (i = 0; i < 300; i++)
+        ADD(b, "import \"a.js\";");
+    ADD(b, "globalThis.r = Object.keys(ns).length;");
+#undef ADD
+    for (k = 0; k <= reads && !failures; k++) {
+        VM v = vm_new();
+        volatile int *flag = JS_GetInterruptFlag(v.rt);
+
+        r = JS_Eval(v.ctx, a, strlen(a), "a.js", JS_EVAL_TYPE_MODULE);
+        CHECK(!JS_IsException(r), "the module of the exports does not run");
+        JS_FreeValue(v.ctx, r);
+        before = host_poll_reads;
+        host_poll_stop_after(k);
+        r = JS_Eval(v.ctx, b, strlen(b), "b.js", JS_EVAL_TYPE_MODULE);
+        host_poll_stop_after(0);
+        set = *flag;
+        *flag = 0;
+        if (k == 0) {
+            reads = host_poll_reads - before;
+            CHECK(!JS_IsException(r) && JS_PromiseState(v.ctx, r) == JS_PROMISE_FULFILLED,
+                  "the module of the imports does not run");
+        } else if (JS_IsException(r)) {
+            t = exception_text(v.ctx);
+            CHECK(t && strcmp(t, "InternalError: interrupted") == 0, "the stop at reading %ld of %ld: %s", k, reads,
+                  t ? t : "no exception");
+            free(t);
+        } else if (JS_PromiseState(v.ctx, r) == JS_PROMISE_REJECTED) {
+            e = JS_PromiseResult(v.ctx, r);
+            JS_Throw(v.ctx, e);
+            t = exception_text(v.ctx);
+            CHECK(t && strcmp(t, "InternalError: interrupted") == 0,
+                  "the stop at reading %ld of %ld rejected the module with %s", k, reads, t ? t : "nothing");
+            free(t);
+        } else {
+            CHECK(set, "the stop at reading %ld of %ld did not stop the module", k, reads);
+        }
+        JS_FreeValue(v.ctx, r);
+        vm_free(&v);
+    }
+    CHECK(reads > 10, "the module of the imports read the flag %ld times", reads);
+}
+
 int main(void)
 {
     test_compile_stops();
+    test_link_stops();
     test_for_in_keeps_shape();
     test_plain_objects();
     test_run_gc_threshold();

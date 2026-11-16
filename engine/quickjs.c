@@ -34998,8 +34998,6 @@ static JSExportEntry *find_export_entry(JSContext *ctx, JSModuleDef *m,
 {
     JSExportEntry *me;
     int i;
-    /* a look for each export the parse adds (js_compile_count) */
-    js_compile_count(ctx, m->export_entries_count);
     for(i = 0; i < m->export_entries_count; i++) {
         me = &m->export_entries[i];
         if (me->export_name == export_name)
@@ -35015,6 +35013,8 @@ static JSExportEntry *add_export_entry2(JSContext *ctx,
 {
     JSExportEntry *me;
 
+    /* a look for each export the parse adds (js_compile_count) */
+    js_compile_count(ctx, m->export_entries_count);
     if (find_export_entry(ctx, m, export_name)) {
         char buf1[ATOM_GET_STR_BUF_SIZE];
         if (s) {
@@ -35212,13 +35212,19 @@ static JSModuleDef *js_find_loaded_module(JSContext *ctx, JSAtom name)
 {
     struct list_head *el;
     JSModuleDef *m;
+    int n = 0;
 
-    /* first look at the loaded modules */
+    /* first look at the loaded modules, a look for each of them
+       (js_compile_count, read for each import, js_resolve_module1) */
     list_for_each(el, &ctx->loaded_modules) {
         m = list_entry(el, JSModuleDef, link);
-        if (m->module_name == name)
+        n++;
+        if (m->module_name == name) {
+            js_compile_count(ctx, n);
             return m;
+        }
     }
+    js_compile_count(ctx, n);
     return NULL;
 }
 
@@ -35361,6 +35367,13 @@ static JSResolveResultEnum js_resolve_export2(JSContext *ctx,
 
     *pmodule = NULL;
     *pme = NULL;
+    /* a resolution looks along its way, then among the exports of m: the
+       flag is read before it adds to its way, where a failure, as one of
+       add_resolve_entry, leaves the way to js_resolve_export to free. The
+       link resolves each import so, and each indirect export, which grows
+       as their product. */
+    if (js_compile_poll(ctx, s->count + m->export_entries_count))
+        return JS_RESOLVE_RES_EXCEPTION;
     if (find_resolve_entry(s, m, export_name) >= 0)
         return JS_RESOLVE_RES_CIRCULAR;
     if (add_resolve_entry(ctx, s, m, export_name) < 0)
@@ -35553,6 +35566,11 @@ static __exception int get_exported_names1(JSContext *ctx,
     ExportedNameEntry *en;
     int i, j;
 
+    /* the modules on the way, then for each export the names collected so
+       far, are looked at: the flag is read before each look, where a
+       failure leaves s to js_build_module_ns to free */
+    if (js_compile_poll(ctx, s->modules_count))
+        return -1;
     /* check circular reference */
     for(i = 0; i < s->modules_count; i++) {
         if (s->modules[i] == m)
@@ -35567,6 +35585,8 @@ static __exception int get_exported_names1(JSContext *ctx,
         JSExportEntry *me = &m->export_entries[i];
         if (from_star && me->export_name == JS_ATOM_default)
             continue;
+        if (js_compile_poll(ctx, s->exported_names_count))
+            return -1;
         j = find_exported_name(s, me->export_name);
         if (j < 0) {
             if (js_resize_array(ctx, (void **)&s->exported_names, sizeof(s->exported_names[0]),
@@ -35836,6 +35856,11 @@ static int js_resolve_module1(JSContext *ctx, JSModuleDef *m)
     /* resolve each requested module */
     for(i = 0; i < m->req_module_entries_count; i++) {
         JSReqModuleEntry *rme = &m->req_module_entries[i];
+        /* the host looks for each among the loaded modules
+           (js_find_loaded_module): a failure here, as one of the host,
+           leaves to js_resolve_module_top the modules marked */
+        if (js_compile_poll(ctx, 1))
+            return -1;
         m1 = js_host_resolve_imported_module_atom(ctx, m->module_name,
                                                   rme->module_name,
                                                   rme->attributes);
@@ -35926,6 +35951,10 @@ static int js_create_module_function1(JSContext *ctx, JSModuleDef *m)
 
     if (m->func_created)
         return 0;
+    /* a module and its imports: a failure before the mark leaves it to
+       be done again (js_create_module_function_top) */
+    if (js_compile_poll(ctx, 1 + m->req_module_entries_count))
+        return -1;
 
     is_c_module = (m->init_func != NULL);
 
@@ -36027,6 +36056,12 @@ static int js_inner_module_linking1(JSContext *ctx, JSModuleDef *m,
         return index;
 
     assert(m->status == JS_MODULE_STATUS_UNLINKED);
+    /* the walk over the imports, the exports and the modules a module
+       requests, whose resolutions read the flag too: a failure before m is
+       on the stack leaves the stack to js_link_module to undo */
+    if (js_compile_poll(ctx, 1 + m->req_module_entries_count +
+                        m->import_entries_count + m->export_entries_count))
+        return -1;
     m->status = JS_MODULE_STATUS_LINKING;
     m->dfs_index = index;
     m->dfs_ancestor_index = index;
@@ -36889,6 +36924,13 @@ static int js_inner_module_evaluation1(JSContext *ctx, JSModuleDef *m,
     /* push 'm' on stack */
     m->stack_prev = *pstack_top;
     *pstack_top = m;
+    /* the walk over the modules a module requests: the flag is read once m
+       is on the stack, as a failure is one of its evaluation, which
+       js_evaluate_module gives to each module on the stack, m too */
+    if (js_compile_poll(ctx, 1 + m->req_module_entries_count)) {
+        *pvalue = js_get_exception(ctx);
+        return -1;
+    }
 
     for(i = 0; i < m->req_module_entries_count; i++) {
         JSReqModuleEntry *rme = &m->req_module_entries[i];

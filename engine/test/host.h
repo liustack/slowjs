@@ -52,7 +52,9 @@ extern _Thread_local long host_poll_reads;
 
 /* host_poll_stop_after(n) sets the interrupt flag at the n-th reading from now
    in this thread, as a host that was asked to stop in the middle of a run
-   does (0 cancels it). The reading that sets it returns 1. */
+   does (0 cancels it). The reading that sets it returns 1. When the n-th
+   reading is of another flag, the stop of rqsort_stop, it sets the interrupt
+   flag at the next reading of one. */
 void host_poll_stop_after(long n);
 
 /* The VM host_now was last asked about for the wall clock in this thread, and

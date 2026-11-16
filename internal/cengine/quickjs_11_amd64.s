@@ -21749,30 +21749,3 @@ TEXT ·push_scope(SB), $160-16
 	BYTE $0xff
 	RET
 
-TEXT ·js_compile_read(SB), $16-16
-	NO_LOCAL_POINTERS
-#ifdef GOOS_windows
-	LEAQ -12288(SP), R12
-	CMPQ R12, 16(R14)
-	JHI 2(PC)
-	CALL ·goasm_room(SB)
-	BYTE $0x90
-#endif
-	PCALIGN $16
-	MOVQ a0+0(FP), R12
-	MOVQ a1+8(FP), R13
-	QUAD $0xb983c031104d8b49
-	QUAD $0xeb027500000009d8
-	QUAD $0x6c894c2424894c15
-	BYTE $0x24
-	BYTE $0x08
-	CALL ·__js_poll_interrupts(SB)
-	BYTE $0xb8
-	BYTE $0xff
-	BYTE $0xff
-	BYTE $0xff
-	BYTE $0xff
-	BYTE $0xeb
-	BYTE $0xe9
-	RET
-
