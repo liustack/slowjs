@@ -170,8 +170,12 @@ func Register(vm *slowjs.VM, opts ...Option) error {
 		return err
 	}
 	defer f.Free()
-	states.Store(vm, &vmState{})
-	vm.OnClose(func() { states.Delete(vm) })
+	// One state and one close function a VM, however often Register is
+	// tried: one that failed in url.js keeps the state, which what url.js
+	// defined before it failed may still call, until the VM closes.
+	if _, had := states.LoadOrStore(vm, &vmState{}); !had {
+		vm.OnClose(func() { states.Delete(vm) })
+	}
 	args := make([]any, 0, len(bridge))
 	for _, b := range bridge {
 		v, err := vm.NewBuiltinFunction(b)
