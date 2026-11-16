@@ -68,7 +68,7 @@ Releases from v0.29.0 run the C engine. Instructions are counted with callgrind 
 | v0.30.7 | [Stores that add a key](#keyed-and-named-stores-that-add-a-key), [two strings added without the generic path](#two-strings-added-without-the-generic-path), [the spread of a plain array with no iterator](#the-spread-of-a-plain-array-with-no-iterator), [property descriptors and bind without generic lookups](#property-descriptors-and-bind-without-generic-lookups), [the UTF-8 of a page eight ASCII units at a time](#the-utf-8-of-a-page-eight-ascii-units-at-a-time), and the profile trained again with [its second input](#the-second-input-of-the-profile) | Against v0.30.6, on linux/amd64 (an AMD EPYC 7B13 with 4 cores, one core, the mean of 16 code layouts, sums of the pages' medians): the six workbench pages of the shop take 0.977 of the time, the three MUI pages 0.983, its fourteen store pages 0.984 and the long Markdown page 0.986. React's page shows no change. A render runs 2.9% to 4.7% fewer instructions, React's 0.8% ([v0.30.7 against v0.30.6](#v0307-against-v0306)) |
 | v0.31.0 | [Arrays that are no longer fast arrays](#arrays-that-are-no-longer-fast-arrays), [instanceof without the call of Symbol.hasInstance](#instanceof-without-the-call-of-symbolhasinstance), [the iterator of a for in loop and its shape](#the-iterator-of-a-for-in-loop-and-its-shape), and the profile trained again on them | Against v0.30.7, on linux/amd64 (an AMD EPYC 7B13 with 4 cores, one core, the mean of 16 code layouts, sums of the pages' medians): no kind of tifa's pages is slower beyond the delta of 1%, and none runs more instructions. React's page runs 0.63% fewer. The V8 suite scores 5.4% higher, Crypto 29.6% and EarleyBoyer 14.1% ([v0.31.0 against v0.30.7](#v0310-against-v0307)) |
 | v0.31.1 | [Numbers converted to text by Schubfach](#numbers-converted-to-text-by-schubfach), [the fields and strings of a Date](#the-fields-and-strings-of-a-date), [integrity levels from the shape](#integrity-levels-from-the-shape), [objects of a constructor that find their shapes](#objects-of-a-constructor-that-find-their-shapes), [passing arguments on with apply](#passing-arguments-on-with-apply), [the next key of a for in loop and the read of it](#the-next-key-of-a-for-in-loop-and-the-read-of-it), [numbers added and subtracted without the shared tail](#numbers-added-and-subtracted-without-the-shared-tail), [a literal every match holds](#a-literal-every-match-holds), and the profile trained again on them | Against v0.31.0, on linux/amd64 (an AMD EPYC 7B13 with 4 cores, one core, the mean of 16 code layouts, sums of the pages' medians): React's page takes 2.2% less time, the six workbench pages 1.5% less and the three MUI pages 1.1% less, and the store pages show no change. The long Markdown page measured 2.6% slower, which a later run did not see again. The V8 suite scores 18.7% higher, RegExp 97.2% and RayTrace 48.6% ([v0.31.1 against v0.31.0](#v0311-against-v0310)) |
-| v0.31.2 | [img, the void elements, input and style](#img-the-void-elements-input-and-style-v0312), [the plan of a regexp without a literal](#the-plan-of-a-regexp-without-a-literal), [the slots of a return, 8 to a turn](#the-slots-of-a-return-8-to-a-turn), [`new` with extra arguments in the register loop](#new-with-extra-arguments-in-the-register-loop-and-the-own-prototype-read-directly), the last URL base and record kept per VM, `NewArray` in one call, emotion's style hash in C, `localeCompare` of short strings from a table, the types of `formatToParts` as atoms, `join` of strings in one block, a tighter loop for long searches, 512 regexps kept, and the profile trained again on them | Instructions, against v0.31.1 with its profile trained again the same way (callgrind, linux/amd64, sums of the pages): the fourteen store pages run 4.86% fewer, the three MUI pages 3.26%, the six workbench pages 3.21%, React's page 2.89% and the long Markdown page 0.98%, with the same HTML on every page. On the V8 suite RayTrace runs 8.93% fewer and RegExp 1.14% more ([v0.31.2 against v0.31.1](#v0312-against-v0311)) |
+| v0.31.2 | [img, the void elements, input and style](#img-the-void-elements-input-and-style-v0312), [the plan of a regexp without a literal](#the-plan-of-a-regexp-without-a-literal), [the slots of a return, 8 to a turn](#the-slots-of-a-return-8-to-a-turn), [`new` with extra arguments in the register loop](#new-with-extra-arguments-in-the-register-loop-and-the-own-prototype-read-directly), the last URL base and record kept per VM, `NewArray` in one call, emotion's style hash in C, `localeCompare` of short strings from a table, the types of `formatToParts` as atoms, `join` of strings in one block, a tighter loop for long searches, 512 regexps kept, and the profile trained again on them | Against v0.31.1 with its profile trained again the same way, on linux/amd64 (an AMD EPYC 7B13 with 4 cores, one core, the mean of 16 code layouts, sums of the pages' medians): the three MUI pages take 3.0% less time and the fourteen store pages 2.7% less, and the workbench pages and React's page show no change beyond the delta of 1%. A render runs 2.9% to 4.9% fewer instructions, the long Markdown page 1.0%, with the same HTML on every page. On the V8 suite RayTrace scores 8.5% higher and Crypto 7.0%, RegExp 5.9% lower, and the score shows no change ([v0.31.2 against v0.31.1](#v0312-against-v0311)) |
 
 ## Measuring in tifa
 
@@ -2041,7 +2041,16 @@ The long Markdown page measured slower although it runs fewer instructions, and 
 
 #### v0.31.2 against v0.31.1
 
-v0.31.2 (c6383ce9, its profile trained again on its C, 2,849 functions, none stale) against v0.31.1 (the engine of 420dc95a, with its profile trained again the same way on the same server), with the shop and MUI pages in an app that registers tifa's functions as tifa does.
+v0.31.2 (c6383ce9, its profile trained again on its C, 2,849 functions, none stale) was timed against v0.31.1 (the engine of 420dc95a, with its profile trained again the same way on the same server) on 2026-11-16 on a server of the same type and in the way of v0.31.0 above (core 0 with the whole machine quiet, the 16 layouts, 2 rounds, 18 units of every kind, a delta of 1% and 95% intervals), with the shop and MUI pages in an app that registers tifa's functions as tifa does. Both sides give the same HTML on every page. Every kind ran its 18 units, with no block run again. The run SD of one page was 2.5% to 11.5%, so the intervals of single pages are wide. The long Markdown page was not timed for this release.
+
+| Pages | Mean of the layouts | Formal layout |
+| --- | ---: | ---: |
+| tifa's shop, six workbench pages | -0.54% (-1.36% to +0.29%) no regression beyond delta | -0.68% (-3.22% to +1.92%) inconclusive |
+| tifa's shop, fourteen store pages | -2.70% (-3.87% to -1.52%) faster | -3.07% (-5.15% to -0.96%) faster |
+| tifa's MUI test app, three pages | -2.98% (-4.40% to -1.55%) faster | -4.38% (-7.78% to -0.85%) faster |
+| React's page | -1.13% (-2.39% to +0.14%) no regression beyond delta | +0.20% (-2.34% to +2.81%) inconclusive |
+
+The post pages, which compile no regexp again after their first render, take 5.6% (en-US) and 5.5% (zh-CN) less time, the mean of the layouts. No page is judged slower. Seven pages are inconclusive, their intervals reaching past +1%, the furthest the English checkout page at -0.18% (-4.30% to +4.11%) and the workbench's weekend stats page at +1.25% (-0.40% to +2.92%).
 
 Instructions a render (callgrind on linux/amd64, `scripts/count-pages.sh`: the whole program with Go's collector off, 3 renders after 2 warm ones, the same two builds), sums of the pages of each kind. Every page gives the same HTML, and every page of tifa's runs fewer instructions.
 
@@ -2055,6 +2064,22 @@ Instructions a render (callgrind on linux/amd64, `scripts/count-pages.sh`: the w
 | The V8 suite, one run of each benchmark | -0.96% | -0.96% |
 
 On the V8 suite RayTrace runs 8.93% fewer instructions, DeltaBlue 2.20%, EarleyBoyer 1.96%, Richards 1.13%, Crypto 0.56% and Splay 0.25%, NavierStokes the same, and RegExp 1.14% more. All of the rise of RegExp is in `lre_exec_backtrack`, whose C did not change: the C of v0.31.2 generated with the profile trained before its last three changes (the join of strings, the search and the 512 regexps) runs RegExp 0.04% below the build of that profile, so the rise comes with the profile trained again, not with the code.
+
+The V8 suite, the formal builds of `jsbench v8` of each side, 20 runs each in turn on core 0 of the same server with the whole machine quiet: the median score of each side, and the median of the 20 ratios of a run of v0.31.2 to the run of v0.31.1 next to it. The score of either side moved from about 1,400 to 1,700 over the runs, so a change of a few percent is no reading. Only RayTrace and Crypto are faster in nearly every pair.
+
+| Benchmark | v0.31.1 | v0.31.2 | Change | Change, pairs | v0.31.2 faster |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Score | 1565 | 1569.5 | +0.3% | +0.7% | 11 of 20 |
+| RayTrace | 2104 | 2283 | +8.5% | +9.6% | 19 of 20 |
+| Crypto | 1251 | 1338.5 | +7.0% | +6.7% | 17 of 20 |
+| EarleyBoyer | 2444.5 | 2415.5 | -1.2% | +1.5% | 12 of 20 |
+| DeltaBlue | 930 | 934.5 | +0.5% | -0.8% | 8 of 20 |
+| Richards | 1119.5 | 1114 | -0.5% | -0.9% | 7 of 20 |
+| NavierStokes | 2108 | 2062 | -2.2% | -1.7% | 8 of 20 |
+| RegExp | 886 | 833.5 | -5.9% | -2.9% | 7 of 20 |
+| Splay | 2818 | 2601 | -7.7% | -4.0% | 4 of 20 |
+
+Splay moves by tens of percent from run to run with the collector (-38% to +26% in these pairs).
 
 #### The study of 2026-11-13
 

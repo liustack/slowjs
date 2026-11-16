@@ -8,7 +8,7 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 
 ### Changed
 
-- Pages run 2.9% to 4.9% fewer instructions a render than with v0.31.1, with the changes below and a profile trained again on them. Counted on linux/amd64 against v0.31.1 trained the same way: tifa's store pages run 4.9% fewer, its workbench and MUI pages 3.2% and 3.3%, React's page 2.9% and the long Markdown page 1.0%, and on the V8 suite RayTrace runs 8.9% fewer and RegExp 1.1% more ([performance.md](docs/performance.md#v0312-against-v0311)).
+- tifa's MUI pages render in 3.0% less time than with v0.31.1 and its store pages in 2.7% less, with the changes below and a profile trained again on them, and its workbench pages and React's page show no change beyond 1% (linux/amd64, an AMD EPYC 7B13, the mean of 16 code layouts). A render runs 2.9% to 4.9% fewer instructions (the long Markdown page 1.0%), and on the V8 suite RayTrace scores 8.5% higher, Crypto 7.0% higher and RegExp 5.9% lower, with the score unchanged ([performance.md](docs/performance.md#v0312-against-v0311)).
 - A regexp without a literal every match must hold no longer carries 38 bytes for one: its plan after the bytecode is 36 bytes again, as in v0.31.0, and a regexp with a literal carries 6 bytes and 2 for each of its units ([regexp.md](docs/changes/regexp.md#a-literal-every-match-holds)).
 - Bytecode version 14: bytecode written by `Compile` of an earlier release no longer loads. Compile again.
 - A return frees the slots of a frame of more than 8 slots 8 to a turn, where it took one a turn. tifa's pages run 0.6% to 2.7% fewer instructions and React's page 2.9% fewer ([performance.md](docs/performance.md#the-slots-of-a-return-8-to-a-turn)).
