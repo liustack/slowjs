@@ -144,8 +144,10 @@ static void rv_one(RVPass *s, int pos);
    where nothing can tell the two orders apart: l a local no closure
    captures, and no catch around, so that an exception of the put leaves the
    function, and l with it. The put names its own instruction, as in QuickJS's
-   interpreter. */
-static BOOL rv_chain_store(RVPass *s, int pos, int put)
+   interpreter. The insert at pos only checks here, and rv_code reads the
+   rest after it (RV_DEFER_CHAIN, rv_chain_store), so that rv_one does not
+   call itself. */
+static BOOL rv_chain_check(RVPass *s, int pos, int put)
 {
     int q = pos + 1, r, slot, keep;
     if (s->fold || s->catchpos[pos] >= 0 || q >= s->len || s->bc[q] != put || s->leader[q])
@@ -168,6 +170,18 @@ static BOOL rv_chain_store(RVPass *s, int pos, int put)
     slot = rv_local_slot(s, s->bc[r], s->bc + r);
     if (rv_far_slot(slot) || rv_captured(s, slot))
         return FALSE;
+    s->defer = RV_DEFER_CHAIN;
+    s->defer_a = slot;
+    s->defer_b = keep;
+    return TRUE;
+}
+
+/* the rest of the insert at pos that rv_chain_check took: v into the local
+   slot, then the put after the insert, and the value left as a read of the
+   local when keep (set_loc) */
+static void rv_chain_store(RVPass *s, int pos, int slot, int keep)
+{
+    int q = pos + 1, r = q + short_opcode_info(s->bc[q]).size;
     rv_store(s, slot);
     rv_push(s, RV_E_SLOT, slot, 0);
     s->pos = q;
@@ -178,7 +192,6 @@ static BOOL rv_chain_store(RVPass *s, int pos, int put)
     if (keep)
         rv_push(s, RV_E_SLOT, slot, 0);
     s->skip_to = r + short_opcode_info(s->bc[r]).size;
-    return TRUE;
 }
 
 /* a binary op: add, sub (the result is a number or a string), lt, strict_eq */
@@ -442,7 +455,7 @@ static void rv_call(RVPass *s, int argc, int method, int tail)
     case OP_insert2: /* obj a -> a obj a */
         {
             static const int8_t m[] = { 1, 0, 1 };
-            if (rv_chain_store(s, pos, OP_put_field))
+            if (rv_chain_check(s, pos, OP_put_field))
                 break;
             rv_shuffle(s, 2, m, 3);
         }
@@ -450,7 +463,7 @@ static void rv_call(RVPass *s, int argc, int method, int tail)
     case OP_insert3: /* obj prop a -> a obj prop a */
         {
             static const int8_t m[] = { 2, 0, 1, 2 };
-            if (rv_chain_store(s, pos, OP_put_array_el))
+            if (rv_chain_check(s, pos, OP_put_array_el))
                 break;
             rv_shuffle(s, 3, m, 4);
         }
@@ -495,15 +508,21 @@ static void rv_call(RVPass *s, int argc, int method, int tail)
         break;
     case OP_goto: case OP_goto8: case OP_goto16:
         {
-            int target;
+            int target, br;
             if (op == OP_goto)
                 target = pos + 1 + (int32_t)get_u32(p + 1);
             else if (op == OP_goto8)
                 target = pos + 1 + (int8_t)p[1];
             else
                 target = pos + 1 + (int16_t)get_u16(p + 1);
-            if (rv_rotate(s, pos, target))
+            br = rv_rotate_branch(s, pos, target);
+            if (br > 0) {
+                /* the test read again by rv_code after the goto */
+                s->defer = RV_DEFER_ROTATE;
+                s->defer_a = target;
+                s->defer_b = br;
                 break;
+            }
             rv_block_end(s, s->sp);
             rv_emit(s, RV_GOTO);
             rv_jump_to(s, target);
