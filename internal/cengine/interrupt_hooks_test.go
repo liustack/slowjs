@@ -105,10 +105,9 @@ func TestInterruptStopsLongBuiltins(t *testing.T) {
 		twoSets = `var s = new Set(), t = new Set(); for (var i = 0; i < (1 << 20) - 1024; i++) { s.add(i); t.add(-i - 1) }`
 	)
 	cases := []struct{ name, setup, call, top string }{
-		// The first replace of a VM takes the generic path, which calls exec and so reads the flag. The
-		// rest, after one has run, take the one that matches in a loop of its own, inside
-		// RegExp.prototype[Symbol.replace].
-		{"replace", `'a'.replace(/a/g, 'b'); var s = 'ab'.repeat(1 << 22)`, `s.replace(/a/g, 'cc')`, "[Symbol.replace]"},
+		// A replace by a regexp that nothing changed matches in a loop of its own, inside
+		// RegExp.prototype[Symbol.replace], with no call of exec.
+		{"replace", `var s = 'ab'.repeat(1 << 22)`, `s.replace(/a/g, 'cc')`, "[Symbol.replace]"},
 		{"fill", `var a = new Array(1 << 23).fill(1)`, `a.fill(0)`, "fill"},
 		// An array-like object: join reads each index as it would an
 		// Array's, and there are no elements to mark.
@@ -202,6 +201,11 @@ func TestInterruptStopsLongBuiltins(t *testing.T) {
 	bigResults := []struct{ name, setup, call, top, also string }{
 		{"split", `var s = 'ab,'.repeat(1 << 21)`, `s.split(',')`, "split", ""},
 		{"split by nothing", `var s = 'a'.repeat(1 << 22)`, `s.split('')`, "split", ""},
+		// split, match and replace with a function by a regexp that nothing changed find the matches
+		// in a loop of their own, with no call of exec. replace then calls the function for each.
+		{"split by a regexp", `var s = 'ab,'.repeat(1 << 21)`, `s.split(/(,)/)`, "[Symbol.split]", ""},
+		{"match, global", `var s = 'ab'.repeat(1 << 21)`, `s.match(/a/g)`, "[Symbol.match]", ""},
+		{"replace with a function", `var s = 'ab'.repeat(1 << 21)`, `s.replace(/a/g, String)`, "[Symbol.replace]", ""},
 		{"Array.from, a string", `var s = 'ab'.repeat(1 << 21)`, `Array.from(s)`, "from", ""},
 		{"Array.from, an array-like", `var o = { length: 1 << 22 }`, `Array.from(o)`, "from", ""},
 		// A typed array of an iterable is made from an array of its pieces, which

@@ -87,10 +87,12 @@ int white_function_set_properties(JSContext *ctx, JSValueConst f, JSAtom name, i
 int white_own_keys(JSContext *ctx, JSValueConst obj, int flags, int got, char *out, size_t cap);
 int white_function_debug(JSValueConst script, int i, const uint8_t **source, size_t *source_len, const uint8_t **pc2line, int *shared);
 int white_regexp_cache(JSRuntime *rt, char *out, size_t cap, size_t *bytes, uint32_t *buckets);
+int white_regexp_standard(JSContext *ctx, const char *name);
 int white_lre_split_budget(void);
 int white_lre_chains(const char *re, int flags, void *opaque, char *out, size_t n);
 int white_lre_literal(const char *re, int flags, void *opaque, char *out, size_t n);
 int white_lre_plan_size(const char *re, int flags, void *opaque, int *rest, char *names, size_t n);
+int white_lre_plan(const char *re, int flags, void *opaque, char *out, size_t n);
 int white_lre_split_same(const char *re, int flags, void *opaque, const uint32_t *units, int n, long *calls);
 JSValue white_compile_failing(JSContext *ctx, const char *js, int fail, int mode, int *nallocs);
 JSValue white_read_failing(JSContext *ctx, const uint8_t *buf, size_t len, int fail, int *nallocs);
@@ -6107,6 +6109,84 @@ static void test_regexp_cache_memory(void)
     vm_free(&w);
 }
 
+/* ---- regexps that nothing changed ---- */
+
+/* js_is_standard_regexp says yes for a regexp of the realm as the constructor
+   made it, with exec of RegExp.prototype not made yet and made, and no after
+   each change a script can make to what replace and match read: the getter of
+   flags or of each of the 8 flags, exec, the getter or exec of another realm,
+   the getter of another flag, lastIndex, the prototype of the regexp, a
+   property of its own. Once the built-in is put back at its place, yes again.
+   A property deleted and added again sits at another place, and the answer
+   stays no. */
+static void test_regexp_standard(void)
+{
+    static const char *const flags[] = {
+        "flags", "global", "ignoreCase", "multiline", "dotAll", "unicode", "unicodeSets", "sticky", "hasIndices",
+    };
+    static const struct { const char *change, *undo; } changes[] = {
+        { "P.exec = function (s) { return d.exec.value.call(this, s) }", "P.exec = d.exec.value" },
+        { "Object.defineProperty(P, 'exec', { get: function () { return d.exec.value } })", "Object.defineProperty(P, 'exec', d.exec)" },
+        { "P.exec = exec2", "P.exec = d.exec.value" },
+        { "Object.defineProperty(P, 'sticky', { get: sticky2 })", "Object.defineProperty(P, 'sticky', d.sticky)" },
+        { "Object.defineProperty(P, 'sticky', d.global)", "Object.defineProperty(P, 'sticky', d.sticky)" },
+        { "Object.defineProperty(P, 'global', { value: true })", "Object.defineProperty(P, 'global', d.global)" },
+        { "re.lastIndex = { valueOf() { return 0 } }", "re.lastIndex = 0" },
+        { "re.lastIndex = '1'", "re.lastIndex = 1.5" },
+        { "re.lastIndex = undefined", "re.lastIndex = -1" },
+    };
+    static const char *const others[] = {
+        "Object.setPrototypeOf(/a/, Object.create(RegExp.prototype))", "Object.assign(/a/, { x: 1 })",
+        "Object.defineProperty(/a/, 'lastIndex', { writable: false })", "Object.freeze(/a/g)",
+        "Object.defineProperty(Object.create(RegExp.prototype), 'lastIndex', { value: 0, writable: true })",
+        "new (class extends RegExp {})('a')", "re2", "new Proxy(/a/, {})", "({})",
+    };
+    VM v = vm_new();
+    JSContext *c2 = JS_NewContext(v.rt);
+    JSValue g = JS_GetGlobalObject(v.ctx);
+    char src[256];
+    size_t i;
+
+    CHECK(c2 != NULL, "no second context");
+    eval_ok(v.ctx, "var P = RegExp.prototype, re = /a/g, re0 = new RegExp('a', 'dgimsuy'); 0");
+    CHECK(white_regexp_standard(v.ctx, "re") == 1, "a regexp before exec is made");
+    CHECK(white_regexp_standard(v.ctx, "re0") == 1, "a regexp of every flag before exec is made");
+    eval_ok(v.ctx, "var d = {}; for (var k of ['exec', 'flags', 'global', 'ignoreCase', 'multiline', 'dotAll', 'unicode',"
+            " 'unicodeSets', 'sticky', 'hasIndices']) d[k] = Object.getOwnPropertyDescriptor(P, k); 0");
+    CHECK(white_regexp_standard(v.ctx, "re") == 1, "a regexp once exec is made");
+    JS_SetPropertyStr(v.ctx, g, "exec2", JS_Eval(c2, "RegExp.prototype.exec", strlen("RegExp.prototype.exec"), "<c2>", JS_EVAL_TYPE_GLOBAL));
+    JS_SetPropertyStr(v.ctx, g, "sticky2", JS_Eval(c2, "Object.getOwnPropertyDescriptor(RegExp.prototype, 'sticky').get",
+                                                    strlen("Object.getOwnPropertyDescriptor(RegExp.prototype, 'sticky').get"), "<c2>", JS_EVAL_TYPE_GLOBAL));
+    JS_SetPropertyStr(v.ctx, g, "re2", JS_Eval(c2, "/a/g", strlen("/a/g"), "<c2>", JS_EVAL_TYPE_GLOBAL));
+    for (i = 0; i < countof(flags); i++) {
+        snprintf(src, sizeof(src), "Object.defineProperty(P, '%s', { get: function () { return d.%s.get.call(this) } }); 0",
+                 flags[i], flags[i]);
+        eval_ok(v.ctx, src);
+        CHECK(white_regexp_standard(v.ctx, "re") == 0, "the getter of %s replaced", flags[i]);
+        snprintf(src, sizeof(src), "Object.defineProperty(P, '%s', d.%s); 0", flags[i], flags[i]);
+        eval_ok(v.ctx, src);
+        CHECK(white_regexp_standard(v.ctx, "re") == 1, "the getter of %s put back", flags[i]);
+    }
+    for (i = 0; i < countof(changes); i++) {
+        snprintf(src, sizeof(src), "%s; 0", changes[i].change);
+        eval_ok(v.ctx, src);
+        CHECK(white_regexp_standard(v.ctx, "re") == 0, "after %s", changes[i].change);
+        snprintf(src, sizeof(src), "%s; 0", changes[i].undo);
+        eval_ok(v.ctx, src);
+        CHECK(white_regexp_standard(v.ctx, "re") == 1, "after %s", changes[i].undo);
+    }
+    for (i = 0; i < countof(others); i++) {
+        snprintf(src, sizeof(src), "var o = %s; 0", others[i]);
+        eval_ok(v.ctx, src);
+        CHECK(white_regexp_standard(v.ctx, "o") == 0, "%s", others[i]);
+    }
+    eval_ok(v.ctx, "delete P.exec; P.exec = d.exec.value; 0");
+    CHECK(white_regexp_standard(v.ctx, "re") == 0, "exec deleted and added again");
+    JS_FreeValue(v.ctx, g);
+    JS_FreeContext(c2);
+    vm_free(&v);
+}
+
 /* ---- the split ops of the regexp machine ---- */
 
 /* lre_split steps over at most LRE_SPLIT_BUDGET split ops in one call, and
@@ -6328,6 +6408,46 @@ static void test_regexp_plan_size(void)
         CHECK(size == cases[i].size && (rest == 0) == !cases[i].names[0] && !strcmp(names, cases[i].names),
               "/%s/ flags %d: plan %d, %d bytes after it, names \"%s\", want plan %d, names \"%s\"",
               cases[i].re, cases[i].flags, size, rest, names, cases[i].size, cases[i].names);
+    }
+    vm_free(&v);
+}
+
+/* The units a match can start with (lre_first_set), as the plan of lre_skip
+   keeps them (white_lre_plan): \s and \S start a match at the units the
+   machine takes for them (lre_is_space: 9 to 13, 32 and 160 below 256, and
+   units from 256 up), alone, after an optional part, in alternatives and
+   after a lookbehind, with i, and not with u or y, which keep the loop. A
+   class, alternatives of characters and a dot are as before. */
+static void test_regexp_first_set(void)
+{
+    enum { I = 2, U = 16, Y = 32 };
+    static const struct {
+        const char *re;
+        int flags;
+        const char *want;
+    } cases[] = {
+        { "\\s+", 0, "set high 9-13 32 160" },
+        { "\\s", I, "set high 9-13 32 160" },
+        { "\\S", 0, "set high 0-8 14-31 33-159 161-255" },
+        { "\\S|a", 0, "set high 0-8 14-31 33-159 161-255" },
+        /* the regexp of a split of the V8 RegExp benchmark */
+        { "\\s?;\\s?", 0, "set high 9-13 32 59 160" },
+        { "\\s*x", 0, "set high 9-13 32 120 160" },
+        { "(?:^|\\s+)x(?:\\s+|$)", 0, "set high 9-13 32 120 160" },
+        { "(?<=a)\\s", 0, "set high 9-13 32 160" },
+        { "\\s", U, "loop" },
+        { "\\s", Y, "loop" },
+        { "[ab]", 0, "range 97-98" },
+        { "a|b", 0, "set 97-98" },
+        { ".x", 0, "loop" },
+    };
+    VM v = vm_new();
+    char out[256];
+
+    for (size_t i = 0; i < countof(cases); i++) {
+        int n = white_lre_plan(cases[i].re, cases[i].flags, v.ctx, out, sizeof(out));
+        CHECK(n >= 0 && !strcmp(out, cases[i].want), "/%s/ flags %d: \"%s\", want \"%s\"",
+              cases[i].re, cases[i].flags, out, cases[i].want);
     }
     vm_free(&v);
 }
@@ -9213,10 +9333,12 @@ int main(int argc, char **argv)
     test_shared_debug_read();
     test_regexp_cache_keeps();
     test_regexp_cache_memory();
+    test_regexp_standard();
     test_regexp_split_budget();
     test_regexp_chains();
     test_regexp_literal();
     test_regexp_plan_size();
+    test_regexp_first_set();
     test_regexp_split_same();
     test_compile_one_failure(0);
     test_compile_one_failure(1);

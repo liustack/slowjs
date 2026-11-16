@@ -962,6 +962,22 @@ When the page renders in one VM without a pool, the time and the peak memory fol
 
 v0.31.1 is not slower than v0.31.0 here. The counts of md-0400 move with the schedule too: this change runs 1.0% more instructions than v0.31.1, all of them in the collector and in freeing.
 
+### split, replace with a function and match without exec
+
+split, replace with a function and match by a regexp that nothing changed find their matches without calls of exec, and a regexp that starts with `\s` skips to where a match can start (the rows of [changes](changes/README.md) marked Unreleased). Callgrind on linux/amd64, instructions against `2ce90aa3`, with main's profile on both sides and the same HTML on all 24 pages. The V8 benchmark is one iteration (the difference of runs of 2 and 6), a page is the window of 3 renders in tifa's setup (`internal/measure/pages`):
+
+| Script | Before | After | Change |
+| --- | ---: | ---: | ---: |
+| V8 RegExp benchmark, native host | 914.7M | 516.7M | -43.5% |
+| V8 RegExp benchmark, Go product | 970.4M | 540.4M | -44.3% |
+| tifa's shop, English checkout | 70.50M | 68.10M | -3.39% |
+| tifa's shop, workbench | 151.03M | 149.73M | -0.86% |
+| tifa's shop, English product list | 240.43M | 239.67M | -0.32% |
+| tifa's MUI app, home | 91.45M | 91.51M | +0.07% |
+| React's page | 32.80M | 32.80M | 0.00% |
+
+The other pages of the shop run 0.2% to 2.8% fewer instructions. MUI's home runs the same calls, and the rise is a longer walk of the chains of the shape hash table, whose hash takes the address of the prototype.
+
 ### Arrays that are appended to take room for 8 elements at first
 
 [An array that is appended to takes room for 8 elements at first](changes/objects-and-shapes.md#an-array-that-is-appended-to-takes-room-for-8-elements-at-first). Counted on 2026-11-12 on the native C tree at 641f7dc7 (linux/arm64 callgrind, the timed render only, `host_poll` and `__shadow_remaining` left out): a render makes 1.3K (React) to 20.5K (the shop's products page) arrays, and 0.25K to 8.2K of the allocations are regrows of an array that outgrew its first allocation (React 246, the shop's home 5.1K, products 8.2K, a workbench page 3.6K, MUI's orders page 7.0K, 3.0K of them in the results of `concat`), at about 108 instructions for a first allocation and 160 and 3 for each element copied for a regrow, so growth is 0.8% to 1.2% of a render and its regrows 0.30% to 0.58%. A first allocation of 4 slots took 0.09% (React), 0.10% (home), 0.19% (products), 0.20% (workbench) and 0.36% (MUI orders), and of 8 slots 0.10%, 0.23%, 0.23%, 0.19% and 0.39%. With the URL stand-in (a URL object reused after the first render) 8 slots took 0.14% (home), 0.14% (products), 0.19% (workbench) and 0.39% (MUI orders). Memory after 200 renders stays the same within 0.1%. A room remembered per place and the exact length for the results of `concat` and `map`, `Array(n)` and the own keys are in [What was tried and not done](#what-was-tried-and-not-done).

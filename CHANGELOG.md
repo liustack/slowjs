@@ -27,6 +27,7 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 - `JSON.stringify` with no replacer and no indent writes plain objects and arrays straight from their shapes. A react-intl page, which makes a memo key with it for every formatter, runs 16% fewer instructions, and writing 300 orders as a loader does takes two thirds fewer ([changes](docs/changes/README.md#json)).
 - A string made while the script runs, such as one from `join` or `JSON.parse`, finds a property as fast as a key written in the source from its second use as a key on: 398 instructions a read, not 901 ([changes](docs/changes/README.md#strings)).
 - A closure is one block of memory where it took three, a full collection marks closures and arrays without a call through the class table, and a function with no name of its own takes its name in place. With the profile trained again, the TanStack Table page runs 8.2% fewer instructions and TanStack Query 6.2% fewer ([performance.md](docs/performance.md#closures-in-one-block)).
+- `split`, `replace` with a function and `match` by a regexp that nothing changed find their matches without calls of `exec`, and a regexp that starts with `\s` skips to where a match can start: the RegExp benchmark of the V8 suite runs 44% fewer instructions ([performance.md](docs/performance.md#split-replace-with-a-function-and-match-without-exec)). A regexp whose flag getters or `exec` a script replaced is now told apart by the slots of its shape, so `replace` by it calls them as the specification says.
 
 ### Fixed
 

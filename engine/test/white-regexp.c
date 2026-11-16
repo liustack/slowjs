@@ -221,3 +221,40 @@ int white_lre_plan_size(const char *re, int flags, void *opaque, int *rest, char
     lre_realloc(opaque, bc, 0);
     return size;
 }
+
+/* white_lre_plan compiles the pattern re with the flags of lre_compile and
+   writes into out, at most n bytes, how lre_skip starts (lre_plan): the kind
+   ("loop", "line", "char", "range" or "set"), then for "range" and "set"
+   " high" when every unit from 256 up can start a match, and the units below
+   256 of the table, as ranges ("9-13 32 160"). Returns -1 when the compile
+   fails, else the kind. opaque is the context of lre_compile. */
+int white_lre_plan(const char *re, int flags, void *opaque, char *out, size_t n)
+{
+    static const char *const kinds[] = { "loop", "line", "char", "range", "set" };
+    char msg[64];
+    int len, kind, used, c, low;
+    uint8_t *bc = lre_compile(&len, msg, sizeof(msg), re, strlen(re), flags, opaque);
+    const uint8_t *plan;
+
+    if (!bc)
+        return -1;
+    plan = bc + RE_HEADER_LEN + get_u32(bc + RE_HEADER_BYTECODE_LEN);
+    kind = plan[0] & ~LRE_PLAN_LITERAL;
+    used = snprintf(out, n, "%s", kind < (int)countof(kinds) ? kinds[kind] : "?");
+    if (kind == LRE_PLAN_RANGE || kind == LRE_PLAN_SET) {
+        if (plan[LRE_PLAN_HIGH])
+            used += snprintf(out + used, n - used, " high");
+        for (c = 0; c < 256; c++) {
+            if (!((plan[LRE_PLAN_TABLE + (c >> 3)] >> (c & 7)) & 1))
+                continue;
+            for (low = c; c < 255 && ((plan[LRE_PLAN_TABLE + ((c + 1) >> 3)] >> ((c + 1) & 7)) & 1); c++)
+                continue;
+            if (low == c)
+                used += snprintf(out + used, n - used, " %d", c);
+            else
+                used += snprintf(out + used, n - used, " %d-%d", low, c);
+        }
+    }
+    lre_realloc(opaque, bc, 0);
+    return kind;
+}

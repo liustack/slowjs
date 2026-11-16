@@ -1374,6 +1374,78 @@ static void test_uncatchable_instanceof(void)
     }
 }
 
+/* A RegExp method that does its work without the calls of the specification,
+   on a regexp that nothing changed, fails as those calls do while an
+   uncatchable exception is pending: here one left by the toString of an
+   argument, which returned undefined. Called by the host, the method
+   returns the exception, not a value. Called from a script, the code after
+   it does not run. A replace first makes RegExp.prototype.exec, so that the
+   replace of the case is not the first one. */
+static void test_uncatchable_regexp_fast(void)
+{
+    static const struct { const char *name, *fn, *self, *args; int argc; } cases[] = {
+        { "replace with a string", "RegExp.prototype[Symbol.replace]", "/a/g", "'aa', o", 2 },
+        { "split", "RegExp.prototype[Symbol.split]", "/b/", "o", 1 },
+        { "split with a limit", "RegExp.prototype[Symbol.split]", "/b/", "o, 1", 2 },
+        { "replace with a function", "RegExp.prototype[Symbol.replace]", "/a/g", "o, () => (ran = 1, 'x')", 2 },
+        { "match", "RegExp.prototype[Symbol.match]", "/a/", "o", 1 },
+        { "global match", "RegExp.prototype[Symbol.match]", "/a/g", "o", 1 },
+    };
+    size_t i;
+    int host;
+
+    for (i = 0; i < countof(cases); i++) {
+        for (host = 0; host < 2; host++) {
+            VM v = vm_new();
+            JSValue r, c = JS_UNDEFINED;
+            char js[256], *text = NULL;
+            const char *how = host ? "called by the host" : "called from a script";
+            int unc = 0;
+
+            eval_ok(v.ctx, fail_js[END_OOM]);
+            /* the resolve function of a promise, given a thenable whose then
+               getter runs out of memory, rejects the promise and returns */
+            eval_ok(v.ctx, "/b/[Symbol.replace]('b', 'c'); var after = 0, ran = 0, res;"
+                    " new Promise(r => { res = r });"
+                    " var o = { toString: res.bind(undefined, { get then() { fail() } }) }");
+            if (host) {
+                snprintf(js, sizeof(js), "[%s, %s, %s]", cases[i].fn, cases[i].self, cases[i].args);
+                c = JS_Eval(v.ctx, js, strlen(js), "<unit>", JS_EVAL_TYPE_GLOBAL);
+                CHECK(!JS_IsException(c), "regexp %s: %s threw", cases[i].name, js);
+            }
+            room(&v, 1 << 20);
+            if (host) {
+                JSValue f = JS_GetPropertyUint32(v.ctx, c, 0), self = JS_GetPropertyUint32(v.ctx, c, 1);
+                JSValue argv[2] = { JS_GetPropertyUint32(v.ctx, c, 2), JS_GetPropertyUint32(v.ctx, c, 3) };
+                r = JS_Call(v.ctx, f, self, cases[i].argc, argv);
+                JS_FreeValue(v.ctx, f);
+                JS_FreeValue(v.ctx, self);
+                JS_FreeValue(v.ctx, argv[0]);
+                JS_FreeValue(v.ctx, argv[1]);
+            } else {
+                snprintf(js, sizeof(js), "%s.call(%s, %s); after = 1", cases[i].fn, cases[i].self, cases[i].args);
+                r = JS_Eval(v.ctx, js, strlen(js), "<unit>", JS_EVAL_TYPE_GLOBAL);
+            }
+            if (JS_IsException(r)) {
+                unc = JS_IsUncatchableException(v.ctx);
+                text = exception_text(v.ctx);
+            }
+            JS_FreeValue(v.ctx, r);
+            JS_FreeValue(v.ctx, c);
+            unlimit(&v);
+            CHECK(unc && text && (strstr(text, "out of memory") || strcmp(text, "null") == 0),
+                  "regexp %s, %s: ended with %s, want the uncatchable out of memory error", cases[i].name,
+                  how, text ? text : "no error");
+            CHECK(eval_is(v.ctx, "after", "0"), "regexp %s, %s: the code after it ran with the exception pending",
+                  cases[i].name, how);
+            CHECK(eval_is(v.ctx, "ran", "0"), "regexp %s, %s: a function ran with the exception pending",
+                  cases[i].name, how);
+            free(text);
+            vm_free(&v);
+        }
+    }
+}
+
 /* f.apply(this, arguments) in the register loop (CALLMA,
    engine/regvm-ops-args.h) calls f from the loop only when no uncatchable
    exception is pending: with one pending, after an async function ran out
@@ -1412,6 +1484,93 @@ static void test_uncatchable_apply_forward(void)
     CHECK(eval_is(v.ctx, "after", "0"), "apply forward: the code after the call ran with the exception pending");
     free(text);
     vm_free(&v);
+}
+
+static VM *take_vm;
+
+static JSValue js_take(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+    take_memory(take_vm);
+    return JS_UNDEFINED;
+}
+
+/* lastIndex after a replace or a match by a regexp that fails, at each of
+   the two stages of the rule of js_regexp_reset_lastIndex (quickjs.c), the
+   same on the fast path and on the generic path, which a regexp with a
+   property of its own takes. While the matches are found: the search of the
+   4th match runs out of memory in the backtracking stack of (a|b)*, and
+   lastIndex is the end of the 3rd, where the last call of exec left it (a
+   match, a replace with a function, with a string), and a match runs out of
+   memory as it makes the string of a match of 2 Mi characters, which exec
+   makes after it set lastIndex to the end of the match (a stop in the
+   search is in test_regexp_fast_stop_last_index of unit.c). After the
+   matches are found, nothing writes lastIndex: a replace with a string runs
+   out of memory as it adds a replacement of 16 Mi characters, and lastIndex
+   is 0 with g, as the last call of exec left it, or the end of the match
+   with y alone, and a replace with a function whose function set lastIndex
+   to 77 and then took all memory, or threw, leaves it at 77 (on the fast
+   path the strings of the next match fail, which the generic path made
+   while it found the matches). */
+static void test_regexp_oom_last_index(void)
+{
+    static const struct {
+        const char *setup, *call, *want, *error;
+        int room;
+    } cases[] = {
+        { "var s = ['ccc', 'ab'.repeat(1 << 20), 'c'].join(''), re = /(a|b)*c/g", "re[Symbol.match](s)", "3",
+          "out of memory", 1 },
+        { "var s = ['ccc', 'ab'.repeat(1 << 20), 'c'].join(''), re = /(a|b)*c/g", "re[Symbol.replace](s, () => '')",
+          "3", "out of memory", 1 },
+        { "var s = ['ccc', 'ab'.repeat(1 << 20), 'c'].join(''), re = /(a|b)*c/g", "re[Symbol.replace](s, 'x')", "3",
+          "out of memory", 1 },
+        { "var s = 'a'.repeat(2097152), re = /a{2097151}/g", "re[Symbol.match](s)", "2097151",
+          "out of memory", 1 },
+        { "var s = 'a'.repeat(2097152), re = /a{2097151}/y", "re[Symbol.match](s)", "2097151",
+          "out of memory", 1 },
+        { "var rep = 'x'.repeat(16 << 20), re = /a/g", "re[Symbol.replace]('aa', rep)", "0", "out of memory", 1 },
+        { "var rep = 'x'.repeat(16 << 20), re = /a/gy", "re[Symbol.replace]('aa', rep)", "0", "out of memory", 1 },
+        { "var rep = 'x'.repeat(16 << 20), re = /a/y", "re[Symbol.replace]('aa', rep)", "1", "out of memory", 1 },
+        { "var s = ['a', 'b'.repeat(4096)].join(''), re = /a|b{4096}/g, big = 'x'.repeat(1 << 20), n = 0;"
+          " function f() { re.lastIndex = 77; take(); return n++ ? big : '' }",
+          "re[Symbol.replace](s, f)", "77", "out of memory", 0 },
+        { "var s = 'aa', re = /a/g; function f() { re.lastIndex = 77; throw 1 }",
+          "re[Symbol.replace](s, f)", "77", "1", 0 },
+    };
+    size_t i;
+    int generic;
+
+    for (i = 0; i < countof(cases); i++) {
+        for (generic = 0; generic < 2; generic++) {
+            VM v = vm_new();
+            JSValue g, r;
+            char js[512], *text = NULL;
+
+            take_vm = &v;
+            g = JS_GetGlobalObject(v.ctx);
+            JS_SetPropertyStr(v.ctx, g, "take", JS_NewCFunction(v.ctx, js_take, "take", 0));
+            JS_FreeValue(v.ctx, g);
+            snprintf(js, sizeof(js), "%s; re.exec(''); if (%d) re.extra = 1", cases[i].setup,
+                     generic);
+            eval_ok(v.ctx, js);
+            if (cases[i].room)
+                room(&v, 1 << 20);
+            r = JS_Eval(v.ctx, cases[i].call, strlen(cases[i].call), "<unit>", JS_EVAL_TYPE_GLOBAL);
+            if (JS_IsException(r))
+                text = exception_text(v.ctx);
+            JS_FreeValue(v.ctx, r);
+            release_blocks(&v);
+            /* with no memory for the error, the uncatchable error is null */
+            CHECK(text && (strstr(text, cases[i].error) ||
+                           (!strcmp(cases[i].error, "out of memory") && !strcmp(text, "null"))),
+                  "%s after %s, %s path: ended with %s, want %s",
+                  cases[i].call, cases[i].setup, generic ? "generic" : "fast", text ? text : "no error",
+                  cases[i].error);
+            CHECK(eval_is(v.ctx, "re.lastIndex", cases[i].want), "%s after %s, %s path: lastIndex is not %s",
+                  cases[i].call, cases[i].setup, generic ? "generic" : "fast", cases[i].want);
+            free(text);
+            vm_free(&v);
+        }
+    }
 }
 
 /* The engine's 2 in the interrupt flag follows the uncatchable exception
@@ -2000,6 +2159,30 @@ static void test_integrity_oom(void)
     };
 
     sweep("integrity levels", "integrity.js", setup, "run()", want, 16384);
+}
+
+/* split, replace with a function and match by a regexp that nothing changed,
+   which do their work without the calls of exec (js_regexp_split_fast,
+   js_regexp_replace_fn, js_regexp_match_fast): with too little memory (the
+   captures, the array and its pieces, the positions kept, the arguments of
+   the function, the string made) they fail with the out of memory error, and
+   leave nothing behind. */
+static void test_regexp_fast_oom(void)
+{
+    static const char setup[] =
+        "function run() {\n"
+        "  var s = 'a1b22c333d4444e55555f'.repeat(4) + '\\u4e2d1\\u00e92', r = /(\\d)(\\d)?/g, out = [];\n"
+        "  out.push(s.split(/(\\d)(x)?/).length, s.split(/\\d+/, 7).join('-'), s.split(/(?:)/u).length);\n"
+        "  out.push(s.replace(r, (m, a, b, p) => (b === undefined ? '_' : b) + p).length, r.lastIndex);\n"
+        "  out.push(s.replace(/[a-f]/y, m => m.toUpperCase()).slice(0, 3));\n"
+        "  out.push(s.match(/\\d+/g).length, s.match(/(?:)/g).length, s.match(/(\\d)(\\d)/).index);\n"
+        "  return out.join(',');\n"
+        "}\n"
+        /* once before the sweep, so that its register code is made */
+        "run();\n";
+    static const char *const want[] = { "187,a-b-c-d-e-fa-b,88,136,0,A1b,22,89,3", NULL };
+
+    sweep("regexp fast paths", "regexp_fast.js", setup, "run()", want, 32768);
 }
 
 /* Object.defineProperty, Object.defineProperties, Object.create and
@@ -3269,6 +3452,8 @@ int main(void)
     test_uncatchable_fast_call();
     test_uncatchable_instanceof();
     test_uncatchable_apply_forward();
+    test_uncatchable_regexp_fast();
+    test_regexp_oom_last_index();
     test_uncatchable_flag_bit();
     test_weakref_kept_oom();
     test_symbol_copy_oom();
@@ -3299,6 +3484,7 @@ int main(void)
     test_array_literal_oom();
     test_fast_builtins_oom();
     test_for_in_oom();
+    test_regexp_fast_oom();
     test_define_desc_oom();
     test_integrity_oom();
     test_bind_oom();

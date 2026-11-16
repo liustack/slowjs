@@ -1,0 +1,130 @@
+/,/ differ 0 hash 1296957229
+/,/g differ 0 hash 1296957229
+/,/y differ 0 hash 1296957229
+/,/gy differ 0 hash 1296957229
+/(,)/ differ 0 hash -665396779
+/(,)|(;)/ differ 0 hash -1888766449
+/\s+/ differ 0 hash 260911877
+/(\s+)/ differ 0 hash -1775108132
+/\s*/ differ 0 hash -409275717
+/\b/ differ 0 hash 438789313
+/\B/ differ 0 hash 1746527929
+/(?:)/ differ 0 hash 600703127
+/(?:)/u differ 0 hash -204606006
+/(?:)/v differ 0 hash -204606006
+/(?:)/y differ 0 hash 600703127
+/x*/ differ 0 hash -224349551
+/a*?/ differ 0 hash 600703127
+/(a)?/ differ 0 hash -72094661
+/(a)?b?/ differ 0 hash -667740113
+/$/ differ 0 hash -980651336
+/$/m differ 0 hash 285351231
+/^/ differ 0 hash -980651336
+/^/m differ 0 hash 2119724361
+/^a/ differ 0 hash -468791588
+/^a/m differ 0 hash 151320989
+/a$/ differ 0 hash 380682505
+/(?=a)/ differ 0 hash 124573877
+/(?!a)/ differ 0 hash 943880854
+/(?<=a)/ differ 0 hash -1407034686
+/(?<!a)/ differ 0 hash 1466149072
+/(?<=a)b/ differ 0 hash 321935051
+/(?<![a-z])b/ differ 0 hash 1865464149
+/(?<=^|,)/ differ 0 hash -1809792861
+/(?<=,)/y differ 0 hash -753863133
+/(?<=(a))(b)/ differ 0 hash 1250657395
+/\b(?=\w)/ differ 0 hash -1379191699
+/./ differ 0 hash 1152524242
+/./u differ 0 hash -1987372442
+/./s differ 0 hash 840829650
+/./y differ 0 hash 1152524242
+/.?/ differ 0 hash -2019424364
+/[\ud800-\udbff]/ differ 0 hash -808462630
+/[\udc00-\udfff]/ differ 0 hash -1566967461
+/[\ud800-\udfff]/u differ 0 hash -1045676582
+/\ud83d/ differ 0 hash -1090086220
+/\ude00/ differ 0 hash 279950499
+/\ude00/u differ 0 hash -2113227830
+/\ud83d/u differ 0 hash 974499746
+/😀/u differ 0 hash -1478903902
+/😀/ differ 0 hash -1478903902
+/(😀)/u differ 0 hash -1544005779
+/(?<=😀)/u differ 0 hash -264541617
+/(?<=\ud83d)/ differ 0 hash -1662959772
+/(?<=\ud83d)/u differ 0 hash -716284134
+/(?=\ude00)/ differ 0 hash -1614150445
+/(?=\ude00)/u differ 0 hash -874981175
+/\p{L}/u differ 0 hash 2092768557
+/[\p{L}--[a-z]]/v differ 0 hash 1730669646
+/a|ab/ differ 0 hash 1291204604
+/(a)|(b)/ differ 0 hash -872738678
+/(?<x>a)(?<y>b)?/ differ 0 hash -1448958750
+/A/i differ 0 hash 1209213202
+/a/gi differ 0 hash 1209213202
+/É/i differ 0 hash -831273282
+/\n/m differ 0 hash -1013649389
+/(a)\1/ differ 0 hash -807186497
+/(?:ab)+/ differ 0 hash 130049500
+/(a|b)*/ differ 0 hash -798723866
+/é/ differ 0 hash -1394721941
+/中/ differ 0 hash 1034632486
+/(é|中)/ differ 0 hash 1638160956
+/(\n|\r\n)/ differ 0 hash -1128986460
+/([^\S\r\n]+|[()[\]{}'"\r\n]|\b)/ differ 0 hash 625687602
+/(\s+|[()[\]{}'"]|\b)/ differ 0 hash -2128218061
+/([{}:;,]|\s+)/ differ 0 hash 1007593207
+/(\S.+?[.!?])(?=\s+|$)/ differ 0 hash 1196910979
+/\r?\n/ differ 0 hash -709356207
+/(?:\r\n|\n)+/g differ 0 hash 609312123
+/(a)(?:b|(c))/d differ 0 hash 477509266
+/,(?!$)/ differ 0 hash 521177977
+/(?=,)|(?<=,)/ differ 0 hash 332209108
+/(?:)(?=b)/ differ 0 hash -603745905
+/a(?=)/ differ 0 hash 1291204604
+long /,/ 3 70000,70000,1 true 2 true
+long /(,)/ 5 70000,1,70000 true 3 true
+long /[,z]/ 4 70000,70000,0 true 2 true
+long /(?<=x),/ 2 70000,70002 true 1 true
+long /\b/ 5 70000,1,70000 true 1 true
+long /$/ 1 140003 true 1 true
+long /(?:)/u 140003 1,1,1 true 140001 true
+long /y+/ 2 70001,2 true 1 true
+long /(?:\r\n|\n)/ 1 140003 true 1 true
+literal /a.c/ differ 0 hash 1057133192
+literal /a.c/u differ 0 hash 1057133192
+literal /.?bc/ differ 0 hash 2089582171
+literal /.?bc/u differ 0 hash 2089582171
+literal /(\d+)px/ differ 0 hash -545158102
+literal /(\d+)px/u differ 0 hash -545158102
+literal /[a-c]x\d/ differ 0 hash -440513434
+literal /[a-c]x\d/u differ 0 hash -440513434
+literal /\s*,\s*/ differ 0 hash -254237308
+literal /\s*,\s*/u differ 0 hash -254237308
+literal /(?<=,)ab/ differ 0 hash -1223685662
+literal /(?<=,)ab/u differ 0 hash -1223685662
+literal /(.)\1x/ differ 0 hash -281259062
+literal /(.)\1x/u differ 0 hash -281259062
+literal /\bend\b/u differ 0 hash -514366190
+literal /é.中/u differ 0 hash -117143230
+literal /😀x/u differ 0 hash -1806165496
+literal /x😀/u differ 0 hash 2001166812
+literal /(?:)x/u differ 0 hash 1386020726
+literal /x(?:)/u differ 0 hash 1386020726
+literal /.x$/u differ 0 hash -1921929006
+literal /(?=.x)/u differ 0 hash -294753887
+literal /(?<=x).?/u differ 0 hash -1944337941
+literal /x?yz/u differ 0 hash 522795458
+literal /[^,]*,x/u differ 0 hash 1998032986
+["a",",","b",",","",",","c"]
+["a","b"]
+["a","😀","b"]
+["a","\ud83d","\ude00","b"]
+["x","1",~,"y","2","2","z"]
+["abc"]
+["a","\nb"]
+["a","b"]
+["t","e"]
+["a"]
+["ab","c"]
+["one","  ","two","\t","three"]
+129 lines
