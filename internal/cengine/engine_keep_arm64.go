@@ -1494,6 +1494,7 @@ var goasmKeep = []any{
 	rv_refused,
 	rv_ret_put,
 	rv_ret_target,
+	rv_rotate,
 	rv_run_seg,
 	rv_scratch_fit,
 	rv_scratch_grow,

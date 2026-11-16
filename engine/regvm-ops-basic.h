@@ -502,6 +502,8 @@ static void rv_call(RVPass *s, int argc, int method, int tail)
                 target = pos + 1 + (int8_t)p[1];
             else
                 target = pos + 1 + (int16_t)get_u16(p + 1);
+            if (rv_rotate(s, pos, target))
+                break;
             rv_block_end(s, s->sp);
             rv_emit(s, RV_GOTO);
             rv_jump_to(s, target);

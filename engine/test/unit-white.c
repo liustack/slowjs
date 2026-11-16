@@ -7521,6 +7521,41 @@ static void test_regvm_chain_store(void)
     }
 }
 
+/* the test of a loop read again at its goto (rv_rotate of
+   engine/regvm-ops-cmp.h): no GOTO is left in a loop whose test reads
+   locals, var refs, constants and fields, and one is left when the test
+   calls */
+static void test_regvm_loop_rotate(void)
+{
+    static const struct { const char *what, *src; int gotos; } cases[] = {
+        { "i < a", "var s = 0, i; for (i = 0; i < a; i++) s += i; return s;", 0 },
+        { "i <= a", "var s = 0; for (var i = 1; i <= a; i++) s += i; return s;", 0 },
+        { "while (i !== x.length)", "var x = [1, 2], i = 0, s = 0; while (i !== x.length) s += x[i++]; return s;", 0 },
+        { "a test that calls", "var s = 0, i; for (i = 0; i < Math.min(a, 3); i++) s += i; return s;", 1 },
+    };
+    int k, i, len, n, op = regvm_op("GOTO");
+    const uint8_t *code;
+    VM v;
+    JSValue f;
+
+    CHECK(op >= 0, "the name of GOTO");
+    for (k = 0; k < (int)countof(cases); k++) {
+        v = vm_new();
+        f = JS_UNDEFINED;
+        code = regvm_code_of_body(&v, cases[k].src, &f, &len);
+        CHECK(code != NULL, "%s: f has no register code", cases[k].what);
+        n = 0;
+        for (i = 0; code && i < len; i++)
+            n += code[i] == op;
+        if (cases[k].gotos)
+            CHECK(n > 0, "%s: no GOTO, the loop is not rotated here", cases[k].what);
+        else
+            CHECK(n == 0, "%s: %d GOTO", cases[k].what, n);
+        JS_FreeValue(v.ctx, f);
+        vm_free(&v);
+    }
+}
+
 static void test_regvm_ret_value(void)
 {
     static const char src[] = "(function () { return [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]; })";
@@ -8643,6 +8678,7 @@ int main(int argc, char **argv)
     test_regvm_dup_get_field();
     test_regvm_incdec_store();
     test_regvm_chain_store();
+    test_regvm_loop_rotate();
     test_regvm_dst();
     test_regvm_dst_alloc();
     test_regvm_forin();

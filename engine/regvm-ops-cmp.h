@@ -65,13 +65,100 @@ static int rv_next_branch(RVPass *s, int pos, int *jt)
     switch (c[0]) {
     case OP_if_false: case OP_if_true:
         *jt = c[0] == OP_if_true;
-        return q + 1 + (int32_t)get_u32(c + 1);
+        break;
     case OP_if_false8: case OP_if_true8:
         *jt = c[0] == OP_if_true8;
+        break;
+    default:
+        return -1;
+    }
+    if (q == s->rot_br) {
+        /* the test of a loop read again at its end (rv_rotate): back to
+           the body when the old branch would not jump */
+        *jt = !*jt;
+        return s->rot_body;
+    }
+    switch (c[0]) {
+    case OP_if_false: case OP_if_true:
+        return q + 1 + (int32_t)get_u32(c + 1);
+    case OP_if_false8: case OP_if_true8:
         return q + 1 + (int8_t)c[1];
     default:
         return -1;
     }
+}
+
+static void rv_one(RVPass *s, int pos);
+
+/* the goto at pos back to target, the test of a loop (for and while: the
+   test, if_false to the exit, the body, the goto back, the exit): the test
+   is read again here, with its branch turned round, back to the body when
+   the loop goes on, and on to the exit after the goto when it ends. A turn
+   of the loop runs no GOTO. Only a test of reads of locals, arguments, var
+   refs, constants and fields, then a compare and its branch: each
+   instruction is read with s->pos at its old place, so it names the line and
+   throws as there, and the interrupt is polled at the branch in place of the
+   goto. */
+static BOOL rv_rotate(RVPass *s, int pos, int target)
+{
+    int p, n = 0, br, exit, jt;
+#ifdef RV_INJECT
+    int prev = -1;
+#endif
+    if (s->fold || target >= pos || (s->farj && s->farj[pos]) || !s->leader[target])
+        return FALSE;
+    for (p = target; ; p = rv_next_pos(s, p)) {
+        if (p >= pos || (p != target && s->leader[p]) || ++n > 6)
+            return FALSE;
+        switch (s->bc[p]) {
+        case OP_get_loc: case OP_get_loc0: case OP_get_loc1: case OP_get_loc2:
+        case OP_get_loc3: case OP_get_loc8: case OP_get_loc_check:
+        case OP_get_arg: case OP_get_arg0: case OP_get_arg1: case OP_get_arg2:
+        case OP_get_arg3:
+        case OP_get_var_ref: case OP_get_var_ref0: case OP_get_var_ref1:
+        case OP_get_var_ref2: case OP_get_var_ref3:
+        case OP_push_i8: case OP_push_i16: case OP_push_0: case OP_push_1:
+        case OP_push_2: case OP_push_3: case OP_push_4: case OP_push_5:
+        case OP_push_6: case OP_push_7: case OP_push_minus1:
+        case OP_get_field: case OP_get_length:
+        case OP_get_loc0_get_field: case OP_get_loc8_get_field:
+        case OP_get_arg0_get_field: case OP_get_arg1_get_field:
+            continue;
+        case OP_lt: case OP_lte: case OP_gt: case OP_gte:
+        case OP_strict_eq: case OP_strict_neq:
+            break;
+        default:
+            return FALSE;
+        }
+        break;
+    }
+    exit = rv_next_branch(s, p, &jt);
+    if (exit < 0 || exit != rv_next_pos(s, pos))
+        return FALSE;
+    br = rv_next_pos(s, p);
+    rv_block_end(s, s->sp);
+    s->rot_br = br;
+    s->rot_body = rv_next_pos(s, br);
+    for (p = target; p < br; p = rv_next_pos(s, p)) {
+        s->pos = p;
+#ifdef RV_INJECT
+        /* as rv_code: a get_field right after a fused head is run in the
+           dispatch of the head */
+        s->ipos = p;
+        if (prev >= 0) {
+            switch (s->bc[prev]) {
+            case OP_get_arg0_get_field: case OP_get_arg1_get_field:
+            case OP_get_loc0_get_field: case OP_get_loc8_get_field:
+                s->ipos = prev;
+                break;
+            }
+        }
+        prev = p;
+#endif
+        rv_one(s, p);
+    }
+    s->rot_br = s->rot_body = -1;
+    return TRUE;
 }
 
 /* the register forms of a compare: the bool form (its K form next to it),

@@ -4,6 +4,47 @@
 #include "textflag.h"
 #include "funcdata.h"
 
+TEXT ·js_call_enter(SB), $48-16
+	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
+	PCALIGN $16
+	MOVQ a0+0(FP), R12
+	MOVQ a1+8(FP), R13
+	QUAD $0x8b10458b49e7894d
+	QUAD $0x74883b0000097088
+	QUAD $0x4f8d412c7d000009
+	QUAD $0x4801ffffffe18110
+	QUAD $0xf0ba000009808803
+	QUAD $0x8148ca294801ffff
+	QUAD $0xff0a7e0000fffffa
+	QUAD $0xebc0310000097080
+	BYTE $0x2a
+	BYTE $0x4d
+	BYTE $0x8d
+	BYTE $0x67
+	BYTE $0x10
+	LEAQ ·engine_rodata+6616(SB), R14
+	QUAD $0x246c894c2424894c
+	QUAD $0x894c102474894c08
+	BYTE $0x7c
+	BYTE $0x24
+	BYTE $0x18
+	CALL ·JS_ThrowRangeError(SB)
+	BYTE $0xb8
+	BYTE $0xff
+	BYTE $0xff
+	BYTE $0xff
+	BYTE $0xff
+	BYTE $0xeb
+	BYTE $0x00
+	RET
+
 TEXT ·rv_gen_enter(SB), $176-40
 	NO_LOCAL_POINTERS
 #ifdef GOOS_windows
