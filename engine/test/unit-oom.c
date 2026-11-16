@@ -2035,11 +2035,12 @@ static void shape_ring(JSContext *ctx)
 /* Objects that get their keys one at a time find the shapes the shape cache
    keeps, and some of those have more room than the property array of the
    object, which add_property grows before it takes the shape. A request the
-   heap refuses lets every kept shape go (js_shape_cache_drop), the one
-   add_property found among them: with too little memory the objects are
-   whole or it fails with the out of memory error, nothing is read after it
-   was freed (the sanitizer builds), and the runtime frees with no block
-   left. */
+   heap refuses lets every kept shape go (js_shape_cache_drop), in some rooms
+   while run() runs and in others before it (fill_memory): with too little
+   memory the objects are whole or it fails with the out of memory error, and
+   the runtime frees with no block left. unit-white sees the kept shapes go
+   inside the request (test_shape_drop_slot) and inside the growth of the
+   property array (test_shape_drop_in_resize). */
 static void test_shape_cache_drop_oom(void)
 {
     static const char setup[] =

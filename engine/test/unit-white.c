@@ -174,9 +174,11 @@ size_t white_sb_block_usable(const struct StringBuffer *b);
 void white_front_drain(JSContext *ctx);
 size_t white_heap_limit(JSContext *ctx);
 size_t white_gc_count(JSRuntime *rt);
+void white_drain_once(void);
 int white_kept_shapes(JSRuntime *rt);
 void *white_kept_shape(JSRuntime *rt, size_t *size);
 int white_take_slots(JSRuntime *rt, size_t size, void **out, int cap);
+size_t white_found_resize(JSContext *ctx, JSValueConst obj, const char *key);
 
 /* ---- texts of every kind of character ---- */
 
@@ -2225,6 +2227,52 @@ static void test_shape_drop_slot(void)
     js_free_rt(v.rt, p);
     while (n > 0)
         js_free_rt(v.rt, slots[--n]);
+    vm_free(&v);
+}
+
+/* add_property takes a shape it finds in the shape hash table that the
+   shape cache alone holds, and grows the property array of the object to its
+   room. That block needs a new arena, whose request runs js_heap_drain first,
+   as a refused one does: the drain lets the kept shapes go, the one found
+   among them, while add_property holds it, and the object gets it whole (the sanitizer builds see any read of it after it
+   was freed, and the runtime frees with no block left). */
+static void test_shape_drop_in_resize(void)
+{
+    static void *slots[SLOTS_MAX];
+    VM v;
+    JSValue g, o;
+    size_t size;
+    int n, kept, r;
+
+    if (white_every_block_is_a_request())
+        return;
+    v = vm_new();
+    JS_SetShapeCache(v.ctx, 64);
+    CHECK(eval_ok(v.ctx,
+                  "function mk() { var o = {}; o.length = 1; o.name = 2; o.value = 3; o.done = 4; return 0 }\n"
+                  "mk(); mk();\n"
+                  "var o = {}; o.length = 1; o.name = 2;"),
+          "the script threw");
+    JS_RunGC(v.rt);
+    g = JS_GetGlobalObject(v.ctx);
+    o = JS_GetPropertyStr(v.ctx, g, "o");
+    size = white_found_resize(v.ctx, o, "value");
+    kept = white_kept_shapes(v.rt);
+    CHECK(size > 0 && kept > 0, "adding value to o finds no shape held by the cache alone with more room");
+    n = white_take_slots(v.rt, size, slots, SLOTS_MAX);
+    CHECK(n >= 0, "more than %d free blocks of %lu bytes", SLOTS_MAX, (unsigned long)size);
+    white_drain_once();
+    r = JS_SetPropertyStr(v.ctx, o, "value", JS_NewInt32(v.ctx, 3));
+    CHECK(r == 1, "the property was not added: %d", r);
+    /* the shape o left once it had the new one is the only one kept */
+    CHECK(kept > 1 && white_kept_shapes(v.rt) == 1, "%d shapes kept after the refused request, %d before", white_kept_shapes(v.rt), kept);
+    while (n > 0)
+        js_free_rt(v.rt, slots[--n]);
+    JS_FreeValue(v.ctx, o);
+    JS_FreeValue(v.ctx, g);
+    CHECK(eval_is(v.ctx, "Object.keys(o) + ':' + o.value + ':' + mk() + ':' + JSON.stringify(o)",
+                  "length,name,value:3:0:{\"length\":1,\"name\":2,\"value\":3}"),
+          "o after the property was added");
     vm_free(&v);
 }
 
@@ -9406,6 +9454,7 @@ int main(int argc, char **argv)
     test_object_lit_shared_shape();
     test_putel_atom_shape();
     test_shape_drop_slot();
+    test_shape_drop_in_resize();
     test_putel_atom_each_failing();
     test_object_rest_cache();
     test_object_spread_cache();

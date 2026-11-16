@@ -47,7 +47,12 @@ static int white_alloc_fails(void)
     white_alloc_count++;
     return white_alloc_count == white_alloc_fail_at;
 }
-#define JS_HEAP_FAILS(s, size) white_alloc_fails()
+/* With white_drain_next set, the next request to the heap runs js_heap_drain
+   first, as a request the heap refused does, and clears it: the request then
+   goes on, and the drain has run inside it. */
+static int white_drain_next;
+#define JS_HEAP_FAILS(s, size) \
+    (white_drain_next ? (white_drain_next = 0, js_heap_drain(s), 0) : white_alloc_fails())
 
 static int white_call_fails(JSRuntime *rt, void *ptr, size_t size)
 {
@@ -2722,6 +2727,13 @@ unsigned long white_json_walks(void)
 
 /* ---- the shapes the shape cache lets go on a refused request ---- */
 
+/* white_drain_once makes the next request to the heap run js_heap_drain
+   first (JS_HEAP_FAILS). */
+void white_drain_once(void)
+{
+    white_drain_next = 1;
+}
+
 /* the shapes the shape cache keeps */
 int white_kept_shapes(JSRuntime *rt)
 {
@@ -2766,3 +2778,33 @@ int white_take_slots(JSRuntime *rt, size_t size, void **out, int cap)
     return n;
 }
 
+/* white_found_resize gives, for the object obj about to get the key, the
+   bytes of the property array that add_property asks for when it takes the
+   shape it finds in the shape hash table, if that shape is held by the shape
+   cache alone and the property array needs a new block for it, and 0
+   otherwise. */
+size_t white_found_resize(JSContext *ctx, JSValueConst obj, const char *key)
+{
+    JSObject *p = JS_VALUE_GET_OBJ(obj);
+    JSShape *sh = p->shape, *found;
+    JSShapeCache *sc = &ctx->rt->shape_cache;
+    JSAtom atom;
+    size_t size;
+    int i;
+
+    if (!sh->is_hashed)
+        return 0;
+    atom = JS_NewAtom(ctx, key);
+    found = find_hashed_shape_prop(ctx->rt, sh, atom, JS_PROP_C_W_E);
+    JS_FreeAtom(ctx, atom);
+    if (!found || found->prop_size == sh->prop_size || js_rc(found)->ref_count != 1)
+        return 0;
+    for(i = 0; i < sc->n && sc->ring[i] != found; i++)
+        ;
+    if (i == sc->n)
+        return 0;
+    size = sizeof(JSProperty) * found->prop_size;
+    if (!js_props_inline(p) && size <= js_malloc_usable_size(ctx, p->prop))
+        return 0;
+    return size;
+}
