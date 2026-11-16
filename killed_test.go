@@ -264,6 +264,36 @@ func TestKilledVMReportsItsMemory(t *testing.T) {
 	}
 }
 
+// TestKilledVMReadsMemoryFreeAtPolls: MemoryFree walks the arenas, and the
+// walk polls as any loop of the engine does. After a kill, a poll must not
+// kill again: the read has no call around it to turn the panic into an
+// error. With a poll at every tick, the walk over thousands of arenas polls
+// many times.
+func TestKilledVMReadsMemoryFreeAtPolls(t *testing.T) {
+	m := newTestVM(t)
+	if _, err := m.Eval(`globalThis.kept = []
+for (let i = 0; i < 64000; i++) kept.push({ i, s: 'v' + i }); undefined`, EvalGlobal); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := killedVMWith(t, m, nestedEntries["Eval"]); !errors.Is(err, ErrKilled) {
+		t.Fatalf("the killed call got %v", err)
+	}
+	m.h.SetPollInterval(1)
+	before := m.h.Polls()
+	for i := 0; i < 3; i++ {
+		var free, size uintptr
+		if p := panicked(func() { free, size = m.MemoryFree(), m.MemorySize() }); p != nil {
+			t.Fatalf("MemoryFree after a kill, with a poll at every tick, panicked with %v", p)
+		}
+		if free > size {
+			t.Fatalf("MemoryFree after a kill is %d, over MemorySize %d", free, size)
+		}
+	}
+	if m.h.Polls() == before {
+		t.Fatal("the walk of MemoryFree did not poll: the test proves nothing")
+	}
+}
+
 // TestKillWhileFreeing: the polls of the engine while it frees what a
 // stopped script made count toward the kill like any other
 // (docs/changes/go-api.md#error-says-why-a-call-ended). The script asks to
