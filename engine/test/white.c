@@ -1614,11 +1614,12 @@ const uint8_t *white_regvm_code(JSValueConst f, int *code_len)
 }
 
 /* the reads of a name of the function f, converted (GETF, GETFL and GETFT,
-   found by their pcmap entries, which end the 11 bytes of the
+   found by their pcmap entries, which end the 15 bytes of the
    instruction): the slot each site keeps (engine/regvm-ops-basic.h), in
-   the order of the code, into slots (up to max), 0xffffffff for none.
-   Returns the sites, or -1 when f has no register code. */
-int white_regvm_getf_slots(JSValueConst f, uint32_t *slots, int max)
+   the order of the code, into slots (up to max), 0xffffffff for none, and
+   the id of a shape it keeps with it into ids, 0 for none. Returns the
+   sites, or -1 when f has no register code. */
+int white_regvm_getf_slots(JSValueConst f, uint32_t *slots, uint32_t *ids, int max)
 {
     const RVFunc *rf;
     int i, n = 0;
@@ -1631,13 +1632,15 @@ int white_regvm_getf_slots(JSValueConst f, uint32_t *slots, int max)
         return -1;
     for (i = 0; i < rf->pcmap_count; i++) {
         const uint8_t *c;
-        if (rf->pcmap[i].end < 11 || (i > 0 && rf->pcmap[i - 1].end == rf->pcmap[i].end))
+        if (rf->pcmap[i].end < 15 || (i > 0 && rf->pcmap[i - 1].end == rf->pcmap[i].end))
             continue;
-        c = rf->code + rf->pcmap[i].end - 11;
+        c = rf->code + rf->pcmap[i].end - 15;
         if (c[0] != RV_GETF && c[0] != RV_GETFL && c[0] != RV_GETFT)
             continue;
-        if (n < max)
+        if (n < max) {
             slots[n] = get_u32(c + 7);
+            ids[n] = get_u32(c + 11);
+        }
         n++;
     }
     return n;
