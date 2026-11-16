@@ -1,0 +1,8 @@
+result lengths -2046767234
+result holders ok
+result keys ok
+result chain ok
+result memory after: 0
+mem-end obj=200 atom=559 shape=126 prop=974 jsfunc=4 cfunc=130 array=5 fast_array=5 elements=24 binary=0
+mem-gc obj=200 atom=559 shape=126 prop=974 jsfunc=4 cfunc=130 array=5 fast_array=5 elements=24 binary=0
+--- status exit 0

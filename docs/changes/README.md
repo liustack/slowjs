@@ -282,6 +282,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | `Array.prototype.join` of a fast array of strings, ropes, `undefined` and `null` makes one block of the length and width of the result and reads the elements in place, without a property read for each | v0.31.2 | `js_join_plan` in [engine/quickjs.c](../../engine/quickjs.c) |
 | The search for a needle of more than 8 characters keeps a table of 256 one-byte shifts and moves over a run of windows in one tight loop, checking the step counter as often as before | v0.31.2 | `js_string_two_way` in [engine/quickjs.c](../../engine/quickjs.c) |
 | A string that is no atom, made a key, keeps the atom it found, with a reference, so later keyed reads by that string skip the hash and the search of the atom table | v0.31.3 | `js_string_to_atom` in [engine/quickjs.c](../../engine/quickjs.c) |
+| The register loop adds two flat 8-bit strings into a temp (the left one of 1 to 8192 characters, the right one of 1 to 512) itself: it grows the left one in place or copies both, as `JS_ConcatString` does, without its three calls | Unreleased | `rv_concat8` in [engine/regvm-ops-basic.h](../../engine/regvm-ops-basic.h) |
 
 ## JSON
 
