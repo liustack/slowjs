@@ -143,8 +143,8 @@ func TestTableRows(t *testing.T) {
 | liustack-slowjs | 7 | 2 of 2 | 2 of 2 | 1.00 (1.00–1.00) |
 | go-quickjs-interp | 6 | 2 of 2 | 2 of 2 | 1.41 (1.00–2.00) (disturbed) |
 | moejs | load: SyntaxError: no | 0 of 2 | | |
-| Hermes V1 260318099.0.0-stable, -O bytecode (reference) | not run | | | |
-| Node v24.22.3 --jitless (reference) | a: boom; b: bang | 0 of 2 | | |
+| Hermes V1 260318099.0.7, -O bytecode (reference) | not run | | | |
+| Node v26.13.1 --jitless (reference) | a: boom; b: bang | 0 of 2 | | |
 | C QuickJS 2026-06-04 (reference) | not run | | | |
 
 `
