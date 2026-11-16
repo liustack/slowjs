@@ -114,6 +114,8 @@ int white_eval_vars(JSContext *ctx, int in_arrow, size_t room, int *pending, int
 int white_string_is_rope(JSValueConst v);
 int white_string_room(JSContext *ctx, JSValueConst v);
 int white_string_wide(JSValueConst v);
+JSValue white_wide_latin1(JSContext *ctx, const char *s);
+int white_join_plan(JSContext *ctx, JSValueConst a, JSValueConst sep, int64_t *len, int *wide);
 JSValue white_concat(JSContext *ctx, JSValueConst a, JSValueConst b);
 int white_every_block_is_a_request(void);
 int white_fused_ops(const uint8_t *code, int len, int *count, size_t cap);
@@ -4548,22 +4550,318 @@ static void test_gc_block_held(void)
    1.25 Mi of them, which takes 1.5 MiB of room, and its wide copy takes
    3 MiB, 1.5 MiB more than the narrow one. With 2.25 MiB of room and the
    garbage in the way, the narrow buffer fits and the wide one collects
-   first. */
+   first. That is the second join, which takes the loop that reads one
+   element at a time. The first, of strings only, takes one block of 16 bits
+   for its 1.25 Mi characters (js_join_plan), 2.5 MiB, which collects first
+   too. */
 static void test_gc_block_widen(void)
 {
+    static const char *const setups[] = {
+        "globalThis.s = ['j'.repeat(1 << 20), 'j'.repeat(1 << 18), '\\u0100']; 0",
+        "globalThis.s = ['j'.repeat(1 << 20), 'j'.repeat(1 << 18), 0, '\\u0100']; 0",
+    };
     const char *garbage = "for (let i = 0; i < 120000; i++) { const a = { x: [1, 2, 3] }, b = { a }; a.b = b } 0";
-    VM v = vm_new();
-    unsigned long full;
+    size_t i;
 
-    CHECK(eval_ok(v.ctx, "globalThis.s = ['j'.repeat(1 << 20), 'j'.repeat(1 << 18), '\\u0100']; 0"), "the setup threw");
+    for (i = 0; i < countof(setups); i++) {
+        VM v = vm_new();
+        unsigned long full;
+
+        CHECK(eval_ok(v.ctx, setups[i]), "the setup threw");
+        JS_RunGC(v.rt);
+        JS_SetGCThreshold(v.rt, (size_t)1 << 40);
+        CHECK(eval_ok(v.ctx, garbage), "the garbage threw");
+        JS_SetMemoryLimit(v.rt, JS_GetMemorySize(v.rt) + (9 << 18));
+        full = white_gc_run_count(0);
+        CHECK(eval_ok(v.ctx, "globalThis.r = s.join(''); r.length"), "join %zu ran out of memory", i);
+        CHECK(white_gc_run_count(0) > full, "join %zu ran no collection", i);
+        unlimit(&v);
+        vm_free(&v);
+    }
+}
+
+/* A join makes room under the memory limit where the loop that reads one
+   element at a time made it, and nowhere else (js_join_plan). Under a limit
+   1 KiB short of the characters of the result, with cycles of garbage that
+   the threshold kept, a join whose loop's buffer grows to 64 Ki characters
+   collects and gives the string, and one whose buffer stays under runs out
+   of memory with no collection, as the loop did: of 8 and of 16 bits, just
+   under 43,692 characters (the fast join, no room made), between it and
+   64 Ki (the loop: 45,000 and 5,000 characters make room, 30,000 and 15,000
+   and one element of 65,535 do not) and at 64 Ki (the fast join, room
+   made). */
+static void test_join_gc_block_small(void)
+{
+    static const struct {
+        const char *arr;
+        size_t bytes;
+        int room;
+    } cases[] = {
+        { "['a'.repeat(45000), 'b'.repeat(5000)]", 50000, 1 },
+        { "['\\u4e00'.repeat(45000), 'b'.repeat(5000)]", 100000, 1 },
+        { "['a'.repeat(4000), 'b'.repeat(1000)]", 5000, 0 },
+        { "['\\u4e00'.repeat(4000), 'b'.repeat(1000)]", 10000, 0 },
+        { "['a'.repeat(43000), 'b'.repeat(691)]", 43691, 0 },
+        { "['\\u4e00'.repeat(43000), 'b'.repeat(691)]", 87382, 0 },
+        { "['a'.repeat(30000), 'b'.repeat(15000)]", 45000, 0 },
+        { "['\\u4e00'.repeat(30000), 'b'.repeat(15000)]", 90000, 0 },
+        { "['a'.repeat(65535)]", 65535, 0 },
+        { "['\\u4e00'.repeat(65535)]", 131070, 0 },
+        { "['a'.repeat(65000), 'b'.repeat(536)]", 65536, 1 },
+        { "['\\u4e00'.repeat(65000), 'b'.repeat(536)]", 131072, 1 },
+    };
+    const char *garbage = "for (let i = 0; i < 20000; i++) { const a = { x: [1, 2, 3] }, b = { a }; a.b = b } 0";
+    size_t i;
+
+    for (i = 0; i < countof(cases); i++) {
+        VM v = vm_new();
+        JSValue glob, f, r;
+        char src[200];
+        unsigned long full;
+
+        /* f runs once here, so the call below makes nothing but the join */
+        snprintf(src, sizeof(src), "globalThis.s = %s; globalThis.f = () => s.join(''); f().length",
+                 cases[i].arr);
+        CHECK(eval_ok(v.ctx, src), "case %zu: the setup threw", i);
+        glob = JS_GetGlobalObject(v.ctx);
+        f = JS_GetPropertyStr(v.ctx, glob, "f");
+        JS_FreeValue(v.ctx, glob);
+        JS_RunGC(v.rt);
+        JS_SetGCThreshold(v.rt, (size_t)1 << 40);
+        CHECK(eval_ok(v.ctx, garbage), "case %zu: the garbage threw", i);
+        /* the scratch of the register pass and the blocks the front keeps
+           would be given back when a request fails, room the limit does not
+           count on */
+        white_regvm_scratch_drain(v.ctx, 0);
+        /* 1 KiB short of the characters: the block of the result does not
+           fit without a collection */
+        JS_SetMemoryLimit(v.rt, JS_GetMemorySize(v.rt) + cases[i].bytes - 1024);
+        full = white_gc_run_count(0);
+        r = JS_Call(v.ctx, f, JS_UNDEFINED, 0, NULL);
+        if (cases[i].room) {
+            CHECK(!JS_IsException(r), "case %zu: the join ran out of memory", i);
+            CHECK(white_gc_run_count(0) > full, "case %zu: the join ran no collection", i);
+        } else {
+            CHECK(JS_IsException(r) && JS_IsUncatchableException(v.ctx),
+                  "case %zu: the join did not run out of memory", i);
+            CHECK(white_gc_run_count(0) == full, "case %zu: the join ran a collection", i);
+        }
+        if (JS_IsException(r))
+            JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+        JS_FreeValue(v.ctx, r);
+        JS_FreeValue(v.ctx, f);
+        unlimit(&v);
+        vm_free(&v);
+    }
+}
+
+/* Short joins near the memory limit with nothing to free run no
+   collection, as the loop's buffer made none under 64 Ki characters: 10,000
+   joins of two characters, with 10,000 live objects and 6 KiB of room, less
+   than the margin of js_trigger_gc_block. */
+static void test_join_gc_block_short(void)
+{
+    VM v = vm_new();
+    JSValue glob, a, join, sep;
+    unsigned long full;
+    int i, failed = 0;
+
+    CHECK(eval_ok(v.ctx, "globalThis.keep = Array.from({ length: 10000 }, () => ({})); globalThis.a = ['a', 'b']; 0"),
+          "the setup threw");
+    glob = JS_GetGlobalObject(v.ctx);
+    a = JS_GetPropertyStr(v.ctx, glob, "a");
+    join = JS_GetPropertyStr(v.ctx, a, "join");
+    sep = JS_NewString(v.ctx, "");
+    JS_FreeValue(v.ctx, glob);
     JS_RunGC(v.rt);
-    JS_SetGCThreshold(v.rt, (size_t)1 << 40);
-    CHECK(eval_ok(v.ctx, garbage), "the garbage threw");
-    JS_SetMemoryLimit(v.rt, JS_GetMemorySize(v.rt) + (9 << 18));
+    JS_SetMemoryLimit(v.rt, JS_GetMemorySize(v.rt) + 6144);
     full = white_gc_run_count(0);
-    CHECK(eval_ok(v.ctx, "globalThis.r = s.join(''); r.length"), "the join made wide ran out of memory");
-    CHECK(white_gc_run_count(0) > full, "the join made wide ran no collection");
+    for (i = 0; i < 10000; i++) {
+        JSValue r = JS_Call(v.ctx, join, a, 1, &sep);
+
+        if (JS_IsException(r)) {
+            failed++;
+            JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+        }
+        JS_FreeValue(v.ctx, r);
+    }
+    CHECK(failed == 0, "%d of the 10,000 joins failed", failed);
+    CHECK(white_gc_run_count(0) == full, "10,000 joins of two characters ran %lu collections",
+          white_gc_run_count(0) - full);
+    JS_FreeValue(v.ctx, sep);
+    JS_FreeValue(v.ctx, join);
+    JS_FreeValue(v.ctx, a);
     unlimit(&v);
+    vm_free(&v);
+}
+
+/* Array.prototype.join of a fast array of strings, ropes, undefined and null
+   takes one block of the length and width of the result (js_join_plan) and
+   reads the elements in place. It gives the same string in the same form, 8
+   or 16 bits, as the loop that reads the elements one at a time gives for an
+   object with the same elements: W and RW hold 16-bit units that are all
+   under 0x100, as a wide buffer can leave them, and a result made of them is
+   8 bits. The one call of the allocator failing gives the out of memory
+   error and leaves nothing behind. An array of anything else, with holes,
+   whose result would be too long, or whose result has 43,692 to 65,535
+   characters, at either width (js_join_plan), takes the loop. */
+static void test_join_fast(void)
+{
+    static const struct {
+        const char *what, *arr, *sep;
+    } joins[] = {
+        { "8 bits", "['a', 'bc', 'def'.repeat(20)]", "undefined" },
+        { "undefined and null", "['a', undefined, 'b'.repeat(40), null, 'c', undefined]", "'-'" },
+        { "a separator of three", "['ab', 'cd'.repeat(20), 'ef']", "'<->'" },
+        { "an empty separator", "['ab', 'cd'.repeat(20), 'ef']", "''" },
+        { "a wide separator", "['ab'.repeat(20), 'cd', 'ef']", "'\\u4e2d'" },
+        { "a wide separator, one element", "['ab'.repeat(30)]", "'\\u4e2d\\u6587'" },
+        { "a wide element", "['ab'.repeat(20), '\\u4e2d', 'ef']", "undefined" },
+        { "a wide element last", "['ab'.repeat(20), 'ef', 'x\\u4e2d']", "'\\u00e9'" },
+        { "16-bit units under 0x100", "['ab'.repeat(20), W, 'ef']", "undefined" },
+        { "a separator of 16-bit units under 0x100", "['ab', 'cd'.repeat(20)]", "W" },
+        { "ropes", "[R8, 'x', R16]", "'+'" },
+        { "a rope of 16-bit units under 0x100", "[R8, RW]", "undefined" },
+        { "one element", "['abc'.repeat(20)]", "undefined" },
+        { "one rope", "[R16]", "undefined" },
+        { "empty strings", "['', '', '']", "''" },
+        { "only undefined and null", "[undefined, null]", "undefined" },
+    };
+    static const struct {
+        const char *what, *arr, *sep;
+        int fast;
+        int64_t len;
+        int wide;
+    } plans[] = {
+        { "a number", "['a', 1, 'b']", "undefined", 0, 0 },
+        { "an object", "['a', {}, 'b']", "undefined", 0, 0 },
+        { "a hole at the end", "(() => { const x = ['a', 'b']; x.length = 3; return x })()", "undefined", 0, 0 },
+        { "itself", "(() => { const x = ['a']; x.push(x); return x })()", "undefined", 0, 0 },
+        { "empty", "[]", "undefined", 0, 0 },
+        { "not an array", "({ length: 2, 0: 'a', 1: 'b' })", "undefined", 0, 0 },
+        { "2^29 characters", "[R29]", "undefined", 1, 1 << 29 },
+        { "2^30 - 1 characters", "[R29, R29m, 'q'.repeat(511)]", "''", 1, (1 << 30) - 1 },
+        { "2^30 characters", "[R29, R29m, 'q'.repeat(512)]", "''", 0, 0 },
+        { "2^30 - 1 characters with commas", "[R29, R29m, 'q'.repeat(509)]", "undefined", 1, (1 << 30) - 1 },
+        { "2^30 characters with commas", "[R29, R29m, 'q'.repeat(510)]", "undefined", 0, 0 },
+        { "2^30 - 1 characters of separators", "Array(1024).fill('')", "S", 1, (1 << 30) - 1 },
+        { "2^30 characters of separators", "Array(1025).fill('')", "S", 0, 0 },
+        { "43,691 characters", "['a'.repeat(43000), 'b'.repeat(690)]", "undefined", 1, 43691 },
+        { "43,692 characters", "['a'.repeat(43000), 'b'.repeat(691)]", "undefined", 0, 0 },
+        { "65,535 characters", "['a'.repeat(65000), 'b'.repeat(534)]", "undefined", 0, 0 },
+        { "65,536 characters", "['a'.repeat(65000), 'b'.repeat(535)]", "undefined", 1, 65536 },
+        { "43,691 characters of 16 bits", "['\\u4e00'.repeat(43000), 'b'.repeat(690)]", "undefined", 1, 43691, 1 },
+        { "43,692 characters of 16 bits", "['\\u4e00'.repeat(43000), 'b'.repeat(691)]", "undefined", 0, 0 },
+        { "65,535 characters of 16 bits", "['\\u4e00'.repeat(65000), 'b'.repeat(534)]", "undefined", 0, 0 },
+        { "65,536 characters of 16 bits", "['\\u4e00'.repeat(65000), 'b'.repeat(535)]", "undefined", 1, 65536, 1 },
+    };
+    VM v = vm_new();
+    JSValue glob, f, g;
+    char src[256];
+    size_t i;
+
+    glob = JS_GetGlobalObject(v.ctx);
+    JS_SetPropertyStr(v.ctx, glob, "W", white_wide_latin1(v.ctx, "16 bits, latin-1 \xe9"));
+    CHECK(eval_ok(v.ctx,
+                  "globalThis.R8 = 'x'.repeat(600) + 'y'.repeat(600)\n"
+                  "globalThis.R16 = '\\u4e2d'.repeat(300) + 'y'.repeat(600)\n"
+                  "globalThis.RW = W + 'z'.repeat(600)\n"
+                  "globalThis.R29 = 'q'.repeat(1 << 20), R29m = 'q'.repeat((1 << 20) - 1)\n"
+                  "for (let i = 0; i < 9; i++) R29 = R29 + R29, R29m = R29m + R29m\n"
+                  "globalThis.S = 'q'.repeat((1 << 20) + (1 << 10) + 1)\n"
+                  "globalThis.f = () => a.join(s)\n"
+                  "globalThis.g = () => Array.prototype.join.call(Object.assign({ length: a.length }, a), s)\n"
+                  "0"), "the setup threw");
+    {
+        static const char *const ropes[] = { "R8", "R16", "RW", "R29", "R29m" };
+        static const int wide[] = { 0, 1, 1, 0, 0 };
+        JSValue w = JS_GetPropertyStr(v.ctx, glob, "W");
+
+        CHECK(white_string_is_rope(w) == 0 && white_string_wide(w) == 1, "W is no flat string of 16 bits");
+        JS_FreeValue(v.ctx, w);
+        for (i = 0; i < countof(ropes); i++) {
+            JSValue r = JS_GetPropertyStr(v.ctx, glob, ropes[i]);
+
+            CHECK(white_string_is_rope(r) == 1 && white_string_wide(r) == wide[i], "%s is no rope of %d bits",
+                  ropes[i], wide[i] ? 16 : 8);
+            JS_FreeValue(v.ctx, r);
+        }
+    }
+    f = JS_GetPropertyStr(v.ctx, glob, "f");
+    g = JS_GetPropertyStr(v.ctx, glob, "g");
+    for (i = 0; i < countof(joins); i++) {
+        JSValue a, s, want, r;
+        int64_t len = -1;
+        int wide = -1, fail, made, n = 0;
+
+        snprintf(src, sizeof(src), "globalThis.a = %s; globalThis.s = %s; 0", joins[i].arr, joins[i].sep);
+        CHECK(eval_ok(v.ctx, src), "%s: the setup threw", joins[i].what);
+        a = JS_GetPropertyStr(v.ctx, glob, "a");
+        s = JS_GetPropertyStr(v.ctx, glob, "s");
+        CHECK(white_join_plan(v.ctx, a, s, &len, &wide) == 1, "%s: no fast join", joins[i].what);
+        JS_FreeValue(v.ctx, a);
+        JS_FreeValue(v.ctx, s);
+        want = JS_Call(v.ctx, g, JS_UNDEFINED, 0, NULL);
+        CHECK(!JS_IsException(want), "%s: the join of the object threw", joins[i].what);
+        /* a first call of f sets f up (its code and caches), which is not
+           the join's to count */
+        r = JS_Call(v.ctx, f, JS_UNDEFINED, 0, NULL);
+        CHECK(!JS_IsException(r), "%s: the join threw", joins[i].what);
+        JS_FreeValue(v.ctx, r);
+        for (fail = 0; fail == 0 || fail <= n; fail++) {
+            JSMemoryUsage before, after;
+
+            JS_RunGC(v.rt);
+            JS_ComputeMemoryUsage(v.rt, &before);
+            r = white_call_failing(v.ctx, f, JS_UNDEFINED, 0, NULL, fail, &made);
+            if (fail == 0) {
+                JSValue rl = JS_GetPropertyStr(v.ctx, r, "length");
+                int64_t got = -1;
+
+                JS_ToInt64(v.ctx, &got, rl);
+                n = made;
+                CHECK(made == 1, "%s: %d calls of the allocator, want 1", joins[i].what, made);
+                CHECK(JS_StrictEq(v.ctx, r, want), "%s: another string than the join of the object", joins[i].what);
+                CHECK(white_string_wide(r) == white_string_wide(want), "%s: %d bits, the join of the object %d",
+                      joins[i].what, white_string_wide(r) ? 16 : 8, white_string_wide(want) ? 16 : 8);
+                CHECK(wide == white_string_wide(r) && len == got,
+                      "%s: planned %lld characters of %d bits", joins[i].what, (long long)len, wide ? 16 : 8);
+            } else {
+                CHECK(JS_IsException(r) && JS_IsUncatchableException(v.ctx),
+                      "%s: call %d failing: no out of memory error", joins[i].what, fail);
+                JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+            }
+            JS_FreeValue(v.ctx, r);
+            JS_RunGC(v.rt);
+            JS_ComputeMemoryUsage(v.rt, &after);
+            CHECK(after.obj_count == before.obj_count && after.str_count == before.str_count &&
+                  after.malloc_size == before.malloc_size,
+                  "%s: call %d failing: %lld objects, %lld strings and %lld bytes, before it %lld, %lld and %lld",
+                  joins[i].what, fail, (long long)after.obj_count, (long long)after.str_count,
+                  (long long)after.malloc_size, (long long)before.obj_count, (long long)before.str_count,
+                  (long long)before.malloc_size);
+        }
+        JS_FreeValue(v.ctx, want);
+    }
+    for (i = 0; i < countof(plans); i++) {
+        JSValue a, s;
+        int64_t len = -1;
+        int wide = -1, fast;
+
+        snprintf(src, sizeof(src), "globalThis.a = %s; globalThis.s = %s; 0", plans[i].arr, plans[i].sep);
+        CHECK(eval_ok(v.ctx, src), "%s: the setup threw", plans[i].what);
+        a = JS_GetPropertyStr(v.ctx, glob, "a");
+        s = JS_GetPropertyStr(v.ctx, glob, "s");
+        fast = white_join_plan(v.ctx, a, s, &len, &wide);
+        CHECK(fast == plans[i].fast && (!fast || (len == plans[i].len && wide == plans[i].wide)),
+              "%s: plan %d of %lld characters, want %d of %lld", plans[i].what, fast, (long long)len,
+              plans[i].fast, (long long)plans[i].len);
+        JS_FreeValue(v.ctx, a);
+        JS_FreeValue(v.ctx, s);
+    }
+    JS_FreeValue(v.ctx, f);
+    JS_FreeValue(v.ctx, g);
+    JS_FreeValue(v.ctx, glob);
     vm_free(&v);
 }
 
@@ -8508,6 +8806,9 @@ int main(int argc, char **argv)
     test_gc_block();
     test_gc_block_fits();
     test_gc_block_widen();
+    test_join_gc_block_small();
+    test_join_gc_block_short();
+    test_join_fast();
     test_gc_block_held();
     test_by_value_file();
     test_by_value_oom();

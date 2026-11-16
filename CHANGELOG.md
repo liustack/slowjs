@@ -20,6 +20,9 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 - `new` of a constructor given more arguments than it has parameters stays in the register loop, as a call does, and takes no C stack: RayTrace runs 6.6% fewer instructions.
 - `new f()` reads the own `prototype` of `f` without the generic property read when it is a plain object. Boyer runs 2% fewer instructions, RayTrace 1.6% fewer.
 - Package `url` keeps the last base and the last record each VM made, and `VM.NewArray` makes a short array in one call of the engine: tifa's store pages run 1.77% fewer instructions (zh-CN journal 6.4%) and its workbench pages 0.53% fewer ([url/bridge.go](url/bridge.go)).
+- `Array.prototype.join` of an array of strings makes the result in one block and reads the elements in place: a render of tifa's pages runs up to 0.75% fewer instructions.
+- A search for a string of more than 8 characters moves over the text in a tighter loop, as tifa's search of each page's HTML does: a render of tifa's pages runs up to 0.45% fewer instructions.
+- A new VM keeps 512 compiled regexps where it kept 256 (`DefaultRegExpCache`), in the same 1 MiB: the post pages of tifa's shop compile none again after their first render and run 3.2% to 4.0% fewer instructions, and use less memory.
 
 ## [v0.31.1] - 2026-11-16
 

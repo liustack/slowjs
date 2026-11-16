@@ -145,34 +145,47 @@ static int64_t strings(JSRuntime *rt)
 }
 
 /* Regexps compiled from the same pattern and flags share the bytecode the
-   cache kept, and with the cache off each has its own. */
+   cache kept, and with the cache off each has its own: 200 regexps of 4
+   patterns, and 800 of 400 patterns made twice over, which a new runtime
+   keeps all of (the post of tifa's example shop compiles about 300
+   different ones a render). */
 static void test_regexp_cache(void)
 {
-    static const char src[] =
-        "var keep = [];\n"
-        "for (var i = 0; i < 200; i++) keep.push(new RegExp('x(y+)z' + (i % 4), 'g'));\n";
+    static const struct {
+        const char *src;
+        int64_t fewer; /* at least this many fewer strings with the cache */
+    } cases[] = {
+        { "var keep = [];\n"
+          "for (var i = 0; i < 200; i++) keep.push(new RegExp('x(y+)z' + (i % 4), 'g'));\n",
+          190 },
+        { "var keep = [];\n"
+          "for (var i = 0; i < 800; i++) keep.push(new RegExp('x(y+)z' + (i % 400), 'g'));\n",
+          390 },
+    };
     int64_t on, off;
+    size_t k;
     int i;
 
-    for (i = 0; i < 2; i++) {
-        JSRuntime *rt = host_new_runtime();
-        JSContext *ctx = JS_NewContext(rt);
-        int64_t before;
+    for (k = 0; k < countof(cases); k++) {
+        for (i = 0; i < 2; i++) {
+            JSRuntime *rt = host_new_runtime();
+            JSContext *ctx = JS_NewContext(rt);
+            int64_t before;
 
-        if (i == 1)
-            JS_SetRegExpCache(rt, 0, 0);
-        before = strings(rt);
-        CHECK(eval(ctx, src), "the script threw");
-        if (i == 0)
-            on = strings(rt) - before;
-        else
-            off = strings(rt) - before;
-        JS_FreeContext(ctx);
-        host_free_runtime(rt);
+            if (i == 1)
+                JS_SetRegExpCache(rt, 0, 0);
+            before = strings(rt);
+            CHECK(eval(ctx, cases[k].src), "the script threw");
+            if (i == 0)
+                on = strings(rt) - before;
+            else
+                off = strings(rt) - before;
+            JS_FreeContext(ctx);
+            host_free_runtime(rt);
+        }
+        CHECK(off - on >= cases[k].fewer, "case %zu: %lld strings with the cache, %lld without",
+              k, (long long)on, (long long)off);
     }
-    /* 200 patterns either way, 4 bytecodes with the cache, 200 without. */
-    CHECK(off - on >= 190, "%lld strings with the cache, %lld without",
-          (long long)on, (long long)off);
 }
 
 /* compile reports whether ctx compiled the regexp of pats[i] rather than
@@ -1178,14 +1191,18 @@ static void test_search_linear(void)
    the needle at the one index a search has, as startsWith does, goes
    JS_ROPE_STEP characters at a time with the flag read after each. A needle
    of that kind is made flat with join: one made by + is a rope, and making a
-   rope flat reads the flag too (test_rope_polls). */
+   rope flat reads the flag too (test_rope_polls). A needle of 9 characters
+   in a9 or w9 takes 25 units of work to set up and 65,511 windows, each
+   skipped by the whole needle: the last window brings the work to exactly
+   JS_STRING_FIND_STEP, and the flag is read there too, as the search ends. */
 static void test_search_interrupt(void)
 {
     static const char setup[] =
         "var a = 'a'.repeat(1 << 23), m = 'a'.repeat(1000) + 'b'\n"
         "var w = '\\u4e00'.repeat(1 << 22), wm = '\\u4e00'.repeat(1000) + 'b'\n"
         "var aw = a + '\\u4e00', ab = a + 'b', ba = 'b' + a\n"
-        "var awm = aw + m, wwm = w + wm, a2 = [a.slice(1), 'a'].join('')\n";
+        "var awm = aw + m, wwm = w + wm, a2 = [a.slice(1), 'a'].join('')\n"
+        "var a9 = 'a'.repeat(589599), w9 = '\\u4e00'.repeat(589599)\n";
     static const struct {
         const char *hay, *call, *needle, *want;
         int stops;
@@ -1198,6 +1215,14 @@ static void test_search_interrupt(void)
         { "w", "lastIndexOf", "'b'", "-1", 1 },
         { "aw", "indexOf", "m", "-1", 1 },
         { "a", "indexOf", "'aaab'", "-1", 1 },
+        { "a", "indexOf", "'bcdefghijk'", "-1", 1 },
+        { "w", "lastIndexOf", "'bcdefghijk'", "-1", 1 },
+        { "w", "indexOf", "'b\\u0100cdefghij'", "-1", 1 },
+        { "a9", "indexOf", "'bbbbbbbbb'", "-1", 1 },
+        { "a9", "lastIndexOf", "'bbbbbbbbb'", "-1", 1 },
+        { "w9", "indexOf", "'bbbbbbbbb'", "-1", 1 },
+        { "w9", "indexOf", "'\\u4e01'.repeat(9)", "-1", 1 },
+        { "w9", "lastIndexOf", "'\\u4e01'.repeat(9)", "-1", 1 },
         { "w", "lastIndexOf", "'\\u4e00\\u4e00b'", "-1", 1 },
         { "ab", "indexOf", "'b'", "8388608", 1 },
         { "ab", "indexOf", "m", "8387608", 1 },

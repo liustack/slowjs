@@ -1132,7 +1132,7 @@ void JS_SetAsyncContext(JSContext *ctx, JSValueConst v);
 /* the regexp cache of a runtime keeps compiled regexps by pattern and flags:
    at most n entries in at most bytes bytes, 0 for none. A new runtime keeps
    JS_REGEXP_CACHE_ENTRIES in JS_REGEXP_CACHE_BYTES. */
-#define JS_REGEXP_CACHE_ENTRIES 256
+#define JS_REGEXP_CACHE_ENTRIES 512
 #define JS_REGEXP_CACHE_BYTES (1 << 20)
 void JS_SetRegExpCache(JSRuntime *rt, int n, size_t bytes);
 /* the shape cache of the runtime of ctx keeps the last n shapes of plain

@@ -867,6 +867,7 @@ var goasmKeep = []any{
 	js_iterator_wrap_finalizer,
 	js_iterator_wrap_mark,
 	js_iterator_wrap_next,
+	js_join_wide,
 	js_json_check,
 	js_json_isRawJSON,
 	js_json_parse,

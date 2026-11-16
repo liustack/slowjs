@@ -51185,14 +51185,140 @@ static JSValue js_array_toString(JSContext *ctx, JSValueConst this_val,
     return ret;
 }
 
+/* 1 when a unit of the string or rope v is above 0xff, so that the buffer of
+   js_array_join must be 16 bits wide, 0 when none is, -1 when interrupted. It
+   reads the flag as hash_string_poll does: *pwork is the units since the last
+   reading, each string of a rope counted one more than its length. A string of
+   8 bits is not read. */
+static int js_join_wide(JSContext *ctx, JSValueConst v, uint32_t *pwork)
+{
+    JSStringRopeIter it;
+    JSString *p;
+    uint32_t off, n, j, work = *pwork;
+    uint16_t c = 0;
+
+    string_rope_iter_init(&it, v);
+    while (c <= 0xff && (p = string_rope_iter_next(&it)) != NULL) {
+        for (off = 0; p->is_wide_char && off < p->len && c <= 0xff; off += n) {
+            n = min_uint32(p->len - off, JS_ROPE_STEP - work);
+            for (j = 0; j < n; j++)
+                c |= p->u.str16[off + j];
+            JS_WORK(n);
+            work += n;
+            if (work >= JS_ROPE_STEP) {
+                work = 0;
+                if (js_poll_interrupts(ctx))
+                    return -1;
+            }
+        }
+        JS_WORK(1);
+        if (++work >= JS_ROPE_STEP) {
+            work = 0;
+            if (js_poll_interrupts(ctx))
+                return -1;
+        }
+    }
+    *pwork = work;
+    return c > 0xff;
+}
+
+/* The length and width of the result of js_array_join when obj is a fast
+   array whose count is its length n and whose elements are all strings,
+   ropes, undefined or null: 1 with them in *plen and *pwide, 0 when it is
+   not such an array, when the result would be too long (the loop of
+   js_array_join then reads the elements and throws as before) or when its
+   length is one at which the loop makes room for some arrays and not for
+   others (JS_JOIN_ROOM_SOME), -1 when interrupted. sep is the separator
+   when it is not the one character c. The width is the one the buffer would
+   come to as it copies (16 bits only for a unit above 0xff), so the result
+   is the same string in the same form.
+
+   The fast join makes room under the memory limit (js_trigger_gc_block)
+   where the loop would, and nowhere else. The loop's buffer starts empty and
+   makes room when a growth takes it to JS_JOIN_ROOM_ALL characters or more
+   (string_buffer_realloc, string_buffer_widen), at either width, and a
+   growth to new_len characters takes max(new_len, size * 3 / 2). It grows
+   only while its size is less than the result, so from a size of at most
+   len - 1, and size * 3 / 2 stays under JS_JOIN_ROOM_ALL for a result of
+   fewer than JS_JOIN_ROOM_SOME characters: there the loop never makes room,
+   and neither does the fast join. A result of JS_JOIN_ROOM_ALL characters
+   or more takes a growth to that size (the few bytes of slack the allocator
+   gives a block aside), which makes room, and so does the fast join. In
+   between, it depends on the lengths of the elements and on that slack
+   (45,000 and 5,000 characters make room, 30,000 and 15,000 do not), so
+   those joins take the loop. */
+#define JS_JOIN_ROOM_ALL (64 << 10)
+#define JS_JOIN_ROOM_SOME ((JS_JOIN_ROOM_ALL * 2 + 2) / 3 + 1) /* 43,692 */
+_Static_assert((JS_JOIN_ROOM_SOME - 2) * 3 / 2 < JS_JOIN_ROOM_ALL &&
+               (JS_JOIN_ROOM_SOME - 1) * 3 / 2 >= JS_JOIN_ROOM_ALL,
+               "JS_JOIN_ROOM_SOME is the shortest result whose buffer may grow to JS_JOIN_ROOM_ALL");
+
+static int js_join_plan(JSContext *ctx, JSValueConst obj, int64_t n, int c,
+                        JSString *sep, int64_t *plen, int *pwide)
+{
+    JSValue *arrp;
+    uint32_t cnt, k, work = 0;
+    int64_t len = 0;
+    int wide = 0, r;
+
+    if (!js_get_fast_array(ctx, obj, &arrp, &cnt) || cnt != n || n == 0)
+        return 0;
+    for (k = 0; k < cnt; k++) {
+        JSValueConst e = arrp[k];
+
+        if ((k & 1023) == 1023 && js_poll_interrupts(ctx))
+            return -1;
+        switch (JS_VALUE_GET_TAG(e)) {
+        case JS_TAG_STRING:
+            len += JS_VALUE_GET_STRING(e)->len;
+            if (!wide && JS_VALUE_GET_STRING(e)->is_wide_char)
+                goto scan;
+            break;
+        case JS_TAG_STRING_ROPE:
+            len += JS_VALUE_GET_STRING_ROPE(e)->len;
+            if (!wide && JS_VALUE_GET_STRING_ROPE(e)->is_wide_char)
+                goto scan;
+            break;
+        scan:
+            r = js_join_wide(ctx, e, &work);
+            if (r < 0)
+                return -1;
+            wide = r;
+            break;
+        case JS_TAG_UNDEFINED:
+        case JS_TAG_NULL:
+            break;
+        default:
+            return 0;
+        }
+    }
+    if (c < 0 && cnt > 1) {
+        len += (int64_t)(cnt - 1) * sep->len;
+        if (!wide && sep->is_wide_char) {
+            r = js_join_wide(ctx, JS_MKPTR(JS_TAG_STRING, sep), &work);
+            if (r < 0)
+                return -1;
+            wide = r;
+        }
+    } else {
+        len += cnt - 1;
+    }
+    if (len > JS_STRING_LEN_MAX ||
+        (len >= JS_JOIN_ROOM_SOME && len < JS_JOIN_ROOM_ALL))
+        return 0;
+    *plen = len;
+    *pwide = wide;
+    return 1;
+}
+
 static JSValue js_array_join(JSContext *ctx, JSValueConst this_val,
                              int argc, JSValueConst *argv, int toLocaleString)
 {
     JSValue obj, sep = JS_UNDEFINED, el;
     StringBuffer b_s, *b = &b_s;
     JSString *p = NULL;
-    int64_t i, n;
-    int c;
+    int64_t i, n, len;
+    int c, wide, fast = 0;
 
     obj = JS_ToObject(ctx, this_val);
     if (js_get_length64(ctx, &n, obj))
@@ -51209,7 +51335,32 @@ static JSValue js_array_join(JSContext *ctx, JSValueConst this_val,
         else
             c = -1;
     }
-    string_buffer_init(ctx, b, 0);
+    /* A fast array of strings: one buffer of the length and width of the
+       result, and the elements read in place, as no read can run a script.
+       Its block makes room under the memory limit where the loop would: for
+       a result of JS_JOIN_ROOM_ALL characters or more, and not for a
+       shorter one (js_join_plan). A check for every short join would
+       collect at every call near the limit when nothing can be freed. Here,
+       with nothing made yet, a collection is as safe as at the entry of the
+       call, and it frees nothing obj holds, so its elements stay where they
+       are. */
+    if (!toLocaleString) {
+        fast = js_join_plan(ctx, obj, n, c, p, &len, &wide);
+        if (fast < 0) {
+            JS_FreeValue(ctx, sep);
+            goto exception;
+        }
+    }
+    if (fast) {
+        if (len >= JS_JOIN_ROOM_ALL)
+            js_trigger_gc_block(ctx->rt, (size_t)len << wide);
+        if (string_buffer_init2(ctx, b, len, wide)) {
+            JS_FreeValue(ctx, sep);
+            goto exception;
+        }
+    } else {
+        string_buffer_init(ctx, b, 0);
+    }
     /* the buffer grows where a full collection is as safe as at the
        creation of an object: between the reads of two elements, each of
        which may run a getter, with obj and the element counted, and a
@@ -51220,6 +51371,27 @@ static JSValue js_array_join(JSContext *ctx, JSValueConst this_val,
         ctx->rt->gc_join_sb[ctx->rt->gc_join_depth] = b;
     ctx->rt->gc_join_depth++;
 
+    if (fast) {
+        /* the buffer has the room and the width of the result, so it does
+           not grow, and nothing here collects or runs a script */
+        const JSValue *arrp = JS_VALUE_GET_OBJ(obj)->u.array.u.values;
+
+        for(i = 0; i < n; i++) {
+            if ((i & 1023) == 1023 && js_poll_interrupts(ctx))
+                goto fail;
+            if (i > 0) {
+                if (c >= 0) {
+                    string_buffer_putc8(b, c);
+                } else {
+                    string_buffer_concat(b, p, 0, p->len);
+                }
+            }
+            if (!JS_IsNull(arrp[i]) && !JS_IsUndefined(arrp[i]) &&
+                string_buffer_concat_value(b, arrp[i]))
+                goto fail;
+        }
+        goto done;
+    }
     for(i = 0; i < n; i++) {
         if ((i & 1023) == 1023 && js_poll_interrupts(ctx))
             goto fail;
@@ -51241,6 +51413,7 @@ static JSValue js_array_join(JSContext *ctx, JSValueConst this_val,
                 goto fail;
         }
     }
+ done:
     ctx->rt->gc_join_depth--;
     JS_FreeValue(ctx, sep);
     JS_FreeValue(ctx, obj);
@@ -54708,9 +54881,14 @@ static no_inline int js_string_find_short(JSStringFind *f, const void *hay,
    looks at each character of the needle a few times to find its critical
    factorization, and compares at most two characters for each index of hay.
    It checks the interrupt counter after at most 2 JS_STRING_FIND_STEP units
-   of work. The table of shifts has an entry for each low byte: 16-bit
-   characters with the same low byte share one, which holds the shift of the
-   one nearest the end of the needle, and a shorter shift is still safe. */
+   of work. The table of shifts has an entry for each low byte: how far the
+   last character of the needle with that low byte is from its end, or the
+   length of the needle for a byte it does not have, at most 255 so that the
+   table is 256 bytes. 16-bit characters with the same low byte share one
+   entry, which holds the shift of the one nearest the end of the needle, and
+   a shorter shift is still safe. A run of windows whose last character has a
+   shift is skipped in one tight loop, at most as many windows as are left of
+   the step, so that the counter is checked as often as before. */
 static force_inline int js_string_two_way(JSStringFind *f, const void *hay,
                                           int hw, int lo, int hi,
                                           const void *needle, int nw, int l,
@@ -54718,17 +54896,16 @@ static force_inline int js_string_two_way(JSStringFind *f, const void *hay,
 {
 #define JS_TW_HAY(v) js_string_unit(hay, hw, rev ? hi + l - 1 - (v) : lo + (v))
 #define JS_TW_NEEDLE(j) js_string_unit(needle, nw, rev ? l - 1 - (j) : (j))
-    uint32_t shift[256], set[256 / 32] = { 0 };
-    int i, ip, jp, k, p, p0, ms, mem, mem0, s, last, a, b, e;
+    uint8_t shift[256];
+    int i, ip, jp, k, p, p0, ms, mem, mem0, s, last, a, b, e, n;
 
+    memset(shift, min_int(l, 255), sizeof(shift));
     for(i = 0; i < l; i++) {
         a = JS_TW_NEEDLE(i);
         /* a string of 8-bit characters cannot have it */
         if (!hw && a > 0xff)
             return -1;
-        a &= 0xff;
-        set[a >> 5] |= 1u << (a & 31);
-        shift[a] = i + 1;
+        shift[a & 0xff] = min_int(l - 1 - i, 255);
         JS_STRING_FIND_WORK(f, 1);
     }
 
@@ -54809,20 +54986,25 @@ static force_inline int js_string_two_way(JSStringFind *f, const void *hay,
             return -1;
         JS_STRING_FIND_WORK(f, 1);
         /* the last character first: move on by its shift when it is not
-           the last of the needle */
-        a = JS_TW_HAY(s + l - 1) & 0xff;
-        if (set[a >> 5] >> (a & 31) & 1) {
-            k = l - shift[a];
-            if (k) {
-                if (k < mem)
-                    k = mem;
-                s += k;
-                mem = 0;
-                continue;
-            }
-        } else {
-            s += l;
+           the last of the needle, and so on over the next windows, as many
+           as are left of the step */
+        k = shift[JS_TW_HAY(s + l - 1) & 0xff];
+        if (k) {
+            if (k < mem)
+                k = mem;
+            s += k;
             mem = 0;
+            n = JS_STRING_FIND_STEP - f->work;
+            while (n > 0 && s <= last &&
+                   (k = shift[JS_TW_HAY(s + l - 1) & 0xff]) != 0) {
+                s += k;
+                n--;
+            }
+            /* each window skipped is a unit of work, and the counter is
+               checked when they used up the step, as one window at a time
+               did, also when the last of them ends the search */
+            f->work = JS_STRING_FIND_STEP - n;
+            JS_STRING_FIND_WORK(f, 0);
             continue;
         }
         /* the right half */

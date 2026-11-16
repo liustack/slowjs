@@ -93,7 +93,7 @@ Release: v0.26.16.
 
 Release: v0.27.0.
 
-`DefaultRegExpCache` (256) and `DefaultRegExpCacheBytes` (1 MiB) are how many compiled regexps a new VM keeps at most, and in how many bytes, counting their patterns and flags. `VM.SetRegExpCache(n, bytes)` changes both for one VM and lets go of what it kept, 0 turning it off. `n` can be at most `math.MaxInt32/8`, as for `SetShapeCache`. A VM that runs close to its memory limit can run out of memory with the cache on where it would not without it: give such a VM a smaller cache, or none. [Compiled regexps kept per VM](regexp.md#compiled-regexps-kept-per-vm) has what it gains and costs.
+`DefaultRegExpCache` (512) and `DefaultRegExpCacheBytes` (1 MiB) are how many compiled regexps a new VM keeps at most, and in how many bytes, counting their patterns and flags. `VM.SetRegExpCache(n, bytes)` changes both for one VM and lets go of what it kept, 0 turning it off. `n` can be at most `math.MaxInt32/8`, as for `SetShapeCache`. A VM that runs close to its memory limit can run out of memory with the cache on where it would not without it: give such a VM a smaller cache, or none. [Compiled regexps kept per VM](regexp.md#compiled-regexps-kept-per-vm) has what it gains and costs.
 
 ## Builtin, a Go function called as a built-in
 
