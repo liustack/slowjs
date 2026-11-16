@@ -112,8 +112,13 @@ func Open(o Options) (_ *Runner, err error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", o.Bundle, err)
 	}
-	if err := r.jobs(); err != nil {
-		return nil, err
+	if o.Setup.Mode == StandIn {
+		// The program the stand-in mode reproduces ran the jobs of the top level at once. tifa
+		// loads the bundle as a module, which settles at once without a top-level await (and the
+		// script form has none), so they are still queued when Load collects, and run after it.
+		if err := r.jobs(); err != nil {
+			return nil, err
+		}
 	}
 	if o.Setup.Mode == Tifa {
 		if err := r.take(); err != nil {
@@ -124,16 +129,20 @@ func Open(o Options) (_ *Runner, err error) {
 	if memory == 0 {
 		memory = defaultMemory
 	}
-	r.pool = pool{vm: r.vm, memory: memory, give: o.Setup.Mode == Tifa}
+	tifaMode := o.Setup.Mode == Tifa
+	r.pool = pool{vm: r.vm, memory: memory, timeout: o.Timeout, give: tifaMode, finalize: tifaMode}
 	switch {
 	case o.NoPool || o.Setup.Mode == StandIn && o.React:
 		// The engine's collections only: the stand-in mode ran React's page so, with a young
 		// collection after each render (After).
 		r.vm.RunGC()
+		if err := r.pool.runFinalizers(); err != nil {
+			return nil, err
+		}
 	default:
-		// what tifa's Load does once the bundle ran: a full collection, the threshold, and the
-		// memory given back (the stand-in mode gives none back)
-		if err := r.pool.full(); err != nil {
+		// what tifa's Load does once the bundle ran: a full collection, the jobs it queued, the
+		// threshold, and the memory given back (the stand-in mode runs no job and gives none back)
+		if err := r.pool.load(); err != nil {
 			return nil, err
 		}
 	}
@@ -323,8 +332,9 @@ func (r *Runner) renderStandIn(input string) (string, time.Duration, error) {
 	return s, d, nil
 }
 
-// After runs what follows a render, outside its time: tifa's collections between renders, none
-// with NoPool, and a young collection for React's page in the stand-in mode.
+// After runs what follows a render, outside its time: tifa's collection between renders and, in
+// the tifa mode, the jobs it queued, none with NoPool, and a young collection for React's page in
+// the stand-in mode.
 func (r *Runner) After() error {
 	switch {
 	case r.o.NoPool:
@@ -351,15 +361,17 @@ func (r *Runner) Close() error {
 	return err
 }
 
-// pool keeps a VM as tifa's pool does (pooledVM, release, runGC and gcThreshold of
+// pool keeps a VM as tifa's pool does (pooledVM, release, collect, runGC and gcThreshold of
 // internal/ssr/pool.go of tifa): a young collection after each render and a full one now and
-// then. give is whether a full collection gives the memory the VM holds free back, as tifa's
-// does and the stand-in mode's does not.
+// then. give is whether a full collection gives the memory the VM holds free back, and finalize
+// whether the jobs a collection queued run right after it, as tifa's do and the stand-in mode's
+// do not.
 type pool struct {
 	vm                            *slowjs.VM
 	memory, live, need, threshold uintptr
+	timeout                       time.Duration
 	young                         int
-	give                          bool
+	give, finalize                bool
 }
 
 // gcThreshold is that of tifa.
@@ -372,8 +384,22 @@ func (p *pool) setThreshold() {
 	p.vm.SetGCThreshold(p.threshold)
 }
 
+// load is what tifa's Load does after the bundle ran: a full collection, the jobs it queued, then
+// the live size and the threshold from what is left, and the memory given back.
+func (p *pool) load() error {
+	p.vm.RunGC()
+	if err := p.runFinalizers(); err != nil {
+		return err
+	}
+	return p.afterFull()
+}
+
 func (p *pool) full() error {
 	p.vm.RunGC()
+	return p.afterFull()
+}
+
+func (p *pool) afterFull() error {
 	p.young = 0
 	p.live = p.vm.MemorySize()
 	p.setThreshold()
@@ -385,8 +411,34 @@ func (p *pool) full() error {
 	return nil
 }
 
-// between is release and collect of tifa's pool, after a render.
+// runFinalizers is runFinalizers of tifa's renderer.go: the jobs a collection outside a render
+// queued, the callbacks of a FinalizationRegistry whose targets it freed and the jobs they queue,
+// under the whole timeout, until none is left. A callback that throws is an error, as it retires
+// the VM in tifa.
+func (p *pool) runFinalizers() error {
+	if !p.finalize {
+		return nil
+	}
+	if err := p.vm.SetEvalTimeout(p.timeout); err != nil {
+		return err
+	}
+	if _, err := p.vm.ExecutePendingJobs(); err != nil {
+		return fmt.Errorf("pages: FinalizationRegistry callback: %w", err)
+	}
+	return nil
+}
+
+// between is release and collect of tifa's pool, after a render: the collection, then the jobs it
+// queued.
 func (p *pool) between() error {
+	if err := p.collect(); err != nil {
+		return err
+	}
+	return p.runFinalizers()
+}
+
+// collect is release and runGC of tifa's pool.
+func (p *pool) collect() error {
 	engineGC := p.vm.GCThreshold() != p.threshold
 	if engineGC {
 		p.need = min(max(p.need, p.vm.GCThreshold()), 4*p.live)
