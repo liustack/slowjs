@@ -203,6 +203,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A module whose link ran out of memory while making its function can be linked again: it kept no code, and the link again read the function it lacked and crashed | Unreleased | `js_create_module_bytecode_function` in [quickjs.c](../../engine/quickjs.c) |
 | The handlers of a module with a top-level await, and the step of an `import()` after its module is evaluated, are put on their promise as the spec does, with no look for a species constructor: a script that changed `Promise.prototype.constructor` left the module evaluating for good, or the import pending, with a `TypeError` left pending after a call that did not fail | Unreleased | `js_execute_async_module` and `JS_LoadModuleInternal` in [quickjs.c](../../engine/quickjs.c) |
 | Intl asks Go for no memory sized by a whole list of locales before its first check of the call: the locales it canonicalizes and their seen set grow with the tags gone through | Unreleased | [uncatchable.md](uncatchable.md#intl-reads-the-interrupt-flag-in-loops-over-a-long-list) |
+| When the top-level await of a module ends, finding the modules that waited for it takes time linear in their number: a mark on each module in place of a search of the list found so far. 100,000 waiting modules took 2.5 s and take 0.025 s, run in the same order | Unreleased | `gather_available_ancestors` in [quickjs.c](../../engine/quickjs.c) |
 
 ## Errors and stacks
 

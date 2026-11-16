@@ -143,6 +143,7 @@ uint32_t white_key_atom(JSValueConst v);
 long white_call_debt(JSContext *ctx, int direct, int *depth);
 int white_key_atoms_bad(JSRuntime *rt, int *live, int *keys);
 unsigned long white_gc_run_count(int young);
+unsigned long white_module_steps_take(void);
 JSValue white_call_failing(JSContext *ctx, JSValueConst func, JSValueConst this_val, int argc, JSValueConst *argv, int fail, int *nallocs);
 JSValue white_eval_function_failing(JSContext *ctx, JSValue m, int fail, int *nallocs);
 int white_jobs_failing(JSRuntime *rt, JSContext **pctx, int fail, int *nallocs);
@@ -9390,6 +9391,70 @@ static void test_module_jobs_oom(void)
     }
 }
 
+/* The modules of test_module_waiters: module t awaits, and each module w<i>
+   imports it and writes down that it ran. */
+static JSModuleDef *waiter_loader(JSContext *ctx, const char *name, void *opaque)
+{
+    char src[64];
+    JSValue v;
+    JSModuleDef *m;
+
+    (void)opaque;
+    if (strcmp(name, "t") == 0)
+        snprintf(src, sizeof(src), "globalThis.order = []; await 0;");
+    else
+        snprintf(src, sizeof(src), "import \"t\"; order.push(%d);", atoi(name + 1));
+    v = JS_Eval(ctx, src, strlen(src), name, JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY);
+    if (JS_IsException(v))
+        return NULL;
+    m = JS_VALUE_GET_PTR(v);
+    JS_FreeValue(ctx, v);
+    return m;
+}
+
+/* When the await of a module ends, the modules that waited for it run in the
+   order they were reached, and the work of finding them is linear in their
+   number: the gathering looks at each parent once and clears each mark
+   once. A module imports WAITERS modules that each import the one module
+   that awaits: 2 * WAITERS parents and WAITERS + 1 marks. Looking each one
+   up in the list of those found so far, as QuickJS did, takes about
+   WAITERS^2 / 2 steps. The steps are counted (JS_MODULE_STEP), so that no
+   clock decides. */
+#define WAITERS 5000
+static void test_module_waiters(void)
+{
+    VM v = vm_new();
+    size_t size = (size_t)WAITERS * 24 + 64, len = 0;
+    char *src = malloc(size), want[128];
+    unsigned long steps;
+    JSValue r;
+    int i;
+
+    if (!src) {
+        CHECK(0, "no memory");
+        vm_free(&v);
+        return;
+    }
+    for (i = 0; i < WAITERS; i++)
+        len += snprintf(src + len, size - len, "import \"w%d\";\n", i);
+    len += snprintf(src + len, size - len, "order.push(-1);");
+    JS_SetModuleLoaderFunc(v.rt, NULL, waiter_loader, NULL);
+    r = JS_Eval(v.ctx, src, len, "top", JS_EVAL_TYPE_MODULE);
+    CHECK(!JS_IsException(r), "top threw");
+    JS_FreeValue(v.ctx, r);
+    white_module_steps_take();
+    drain_jobs(&v);
+    steps = white_module_steps_take();
+    CHECK(steps == 3 * WAITERS + 1, "the gathering took %lu steps for %d waiting modules",
+          steps, WAITERS);
+    snprintf(want, sizeof(want),
+             "order.length === %d && order.every((v, i) => v === (i < %d ? i : -1))",
+             WAITERS + 1, WAITERS);
+    CHECK(eval_is(v.ctx, want, "true"), "the order");
+    free(src);
+    vm_free(&v);
+}
+
 int main(int argc, char **argv)
 {
     /* one case of test_gc_in_free, in a process of its own */
@@ -9536,6 +9601,7 @@ int main(int argc, char **argv)
     test_spread_refs();
     test_days_to_date();
     test_module_jobs_oom();
+    test_module_waiters();
     if (failures) {
         printf("unit-white: %d of %ld checks failed\n", failures, checks);
         return 1;

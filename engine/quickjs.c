@@ -1246,6 +1246,9 @@ struct JSModuleDef {
     BOOL resolved : 8;
     BOOL func_created : 8;
     JSModuleStatus status : 8;
+    /* in the list of js_async_module_execution_fulfilled while it is
+       gathered */
+    BOOL in_exec_list : 8;
     /* the module marked resolved before it, while a resolution is under way */
     JSModuleDef *resolve_prev;
     /* the module marked func_created before it, the same way */
@@ -2192,6 +2195,15 @@ static BOOL js_front_drain(JSMallocContext *s)
    most work between two readings, and not only how many readings there were. */
 #ifndef JS_WORK
 #define JS_WORK(n) ((void)0)
+#endif
+
+/* JS_MODULE_STEP() says that a walk over modules took one step: a parent
+   module the gathering after an await looked at, a mark it cleared. It is
+   nothing in the engine. white.c
+   counts the steps, so that a test sees that the work is linear in the
+   number of modules with no clock. */
+#ifndef JS_MODULE_STEP
+#define JS_MODULE_STEP() ((void)0)
 #endif
 
 /* JS_SHAPE_ID_CHECK set to 1 makes find_hashed_shape_prop compare the keys of
@@ -36732,15 +36744,14 @@ typedef struct {
     int size;
 } ExecModuleList;
 
-/* XXX: slow. Could use a linked list instead of ExecModuleList */
-static BOOL find_in_exec_module_list(ExecModuleList *exec_list, JSModuleDef *m)
+/* the modules of exec_list lose their marks */
+static void clear_exec_module_list(ExecModuleList *exec_list)
 {
     int i;
     for(i = 0; i < exec_list->count; i++) {
-        if (exec_list->tab[i] == m)
-            return TRUE;
+        JS_MODULE_STEP();
+        exec_list->tab[i]->in_exec_list = FALSE;
     }
-    return FALSE;
 }
 
 static int gather_available_ancestors(JSContext *ctx, JSModuleDef *module,
@@ -36752,7 +36763,10 @@ static int gather_available_ancestors1(JSContext *ctx, JSModuleDef *module,
 
     for(i = 0; i < module->async_parent_modules_count; i++) {
         JSModuleDef *m = module->async_parent_modules[i];
-        if (!find_in_exec_module_list(exec_list, m) &&
+        JS_MODULE_STEP();
+        /* the mark of m, in place of a search of exec_list that made the
+           work grow as the square of the number of modules */
+        if (!m->in_exec_list &&
             !m->cycle_root->eval_has_exception) {
             assert(m->status == JS_MODULE_STATUS_EVALUATING_ASYNC);
             assert(!m->eval_has_exception);
@@ -36764,6 +36778,7 @@ static int gather_available_ancestors1(JSContext *ctx, JSModuleDef *module,
                     return -1;
                 }
                 exec_list->tab[exec_list->count++] = m;
+                m->in_exec_list = TRUE;
                 if (!m->has_tla) {
                     if (gather_available_ancestors(ctx, m, exec_list))
                         return -1;
@@ -36865,7 +36880,7 @@ static JSValue js_async_module_execution_fulfilled(JSContext *ctx, JSValueConst 
 {
     JSModuleDef *module = JS_VALUE_GET_PTR(func_data[0]);
     ExecModuleList exec_list_s, *exec_list = &exec_list_s;
-    int i;
+    int i, ret;
 
 #ifdef DUMP_MODULE_EXEC
     js_dump_module(ctx, __func__, module);
@@ -36884,7 +36899,10 @@ static JSValue js_async_module_execution_fulfilled(JSContext *ctx, JSValueConst 
     exec_list->count = 0;
     exec_list->size = 0;
 
-    if (gather_available_ancestors(ctx, module, exec_list) < 0) {
+    ret = gather_available_ancestors(ctx, module, exec_list);
+    /* the marks are only for the gathering */
+    clear_exec_module_list(exec_list);
+    if (ret < 0) {
         js_free(ctx, exec_list->tab);
         return JS_EXCEPTION;
     }

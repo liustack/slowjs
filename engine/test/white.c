@@ -96,6 +96,11 @@ static unsigned long white_json_walked;
 /* JS_GC_RUN counts the collections that run, full (0) and young (1). */
 static unsigned long white_gc_runs[2];
 #define JS_GC_RUN(young) (white_gc_runs[young]++)
+
+/* JS_MODULE_STEP counts the steps of the walks over modules. */
+static unsigned long white_module_steps;
+#define JS_MODULE_STEP() (white_module_steps++)
+
 #define host_poll white_host_poll
 
 #include "../quickjs.c"
@@ -1284,6 +1289,17 @@ int white_ref_count(JSValueConst v)
 unsigned long white_gc_run_count(int young)
 {
     return white_gc_runs[young != 0];
+}
+
+/* ---- the steps of the walks over modules (JS_MODULE_STEP) ---- */
+
+/* The steps since the last call, which starts the count again. */
+unsigned long white_module_steps_take(void)
+{
+    unsigned long n = white_module_steps;
+
+    white_module_steps = 0;
+    return n;
 }
 
 /* ---- the ids of shapes (find_hashed_shape_prop) ---- */
