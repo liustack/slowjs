@@ -4,6 +4,10 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 
 ## [Unreleased]
 
+### Changed
+
+- The young collection after a render tells young objects by a bit of their own and walks them once where it walked them three times. The store's post page, which leaves 32,000 objects in cycles each render, takes 1.6% less time counting that collection (against v0.31.3 trained the same way, linux/amd64, an AMD EPYC 7B13, the mean of 16 code layouts).
+
 ### Fixed
 
 - A full collection now frees an object whose last reference the finalizer of a host class lets go of while the collection frees its garbage. It used to leave the object listed with a count of 0, and a WeakRef to it then freed its memory while it was still listed.
