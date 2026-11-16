@@ -399,6 +399,29 @@ func (c *ctor) request(a slowjs.Args, door *intlhook.Door) (request, error) {
 // and a colon, "5:en-US2:de". A tag longer than intlhook.MaxTag ends the
 // Builtin with a RangeError, as one given alone does. A long list stops at
 // the eval timeout of vm (see tagTurns).
+// canonicalLocaleList is Intl.getCanonicalLocales of tags: each canonical tag
+// once, in the order of its first time. It is for a Builtin of vm, which a
+// long list stops at the eval timeout or Interrupt (see tagTurns).
+func canonicalLocaleList(vm *slowjs.VM, tags []string) ([]string, error) {
+	// seen grows with the tags gone through, as in goLocales.
+	r := []string{}
+	seen := map[string]bool{}
+	t := tagTurns{vm: vm}
+	for _, tag := range tags {
+		t.turn(len(tag))
+		s, err := canonicalLocale(tag)
+		if err != nil {
+			return nil, err
+		}
+
+		if !seen[s] {
+			seen[s] = true
+			r = append(r, s)
+		}
+	}
+	return r, nil
+}
+
 func splitLocales(vm *slowjs.VM, s string) ([]string, bool) {
 	r := []string{}
 	t := tagTurns{vm: vm}
@@ -572,21 +595,9 @@ var bridge = []*slowjs.Builtin{
 			return slowjs.Value{}, err
 		}
 
-		// Each canonical tag once, in the order of its first time.
-		r := []string{}
-		seen := make(map[string]bool, len(tags))
-		t := tagTurns{vm: a.VM()}
-		for _, tag := range tags {
-			t.turn(len(tag))
-			s, err := canonicalLocale(tag)
-			if err != nil {
-				return slowjs.Value{}, jsErr(err)
-			}
-
-			if !seen[s] {
-				seen[s] = true
-				r = append(r, s)
-			}
+		r, err := canonicalLocaleList(a.VM(), tags)
+		if err != nil {
+			return slowjs.Value{}, jsErr(err)
 		}
 		return intlhook.EmitStrings(a.VM(), r)
 	}),

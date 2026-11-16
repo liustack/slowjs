@@ -19,6 +19,7 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 - Two groups of one name in alternatives 256 bars apart (or a multiple of 256) are no longer refused with "SyntaxError: duplicate group name".
 - An interrupt or the eval timeout stops replace and split on the result of a custom `exec` of any length, which ran on until the kill, and the result of an exec of thousands of groups.
 - An interrupt or the eval timeout stops the parse of a regexp literal of megabytes within the usual number of polls wherever its text falls in memory, where up to 13 polls could pass.
+- A call of Intl on a long list of locales no longer has Go clear memory for the whole list before it first checks the eval timeout: 189 MiB for a million tags, which held a timeout of 20 ms for up to 103 ms on an AMD EPYC.
 
 ## [v0.31.2] - 2026-11-16
 

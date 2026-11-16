@@ -194,6 +194,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A VM with a memory limit keeps its block too | v0.30.6 | [uncatchable.md](uncatchable.md#a-vm-with-a-memory-limit-keeps-its-block-too) |
 | The loops over the captures of a match read the interrupt flag: the result of exec, and the captures replace and split read from an exec result, whose length a custom exec sets | Unreleased | `js_regexp_exec`, `js_regexp_Symbol_replace` and `js_regexp_Symbol_split` in [quickjs.c](../../engine/quickjs.c) |
 | The scan of a regexp literal reads the interrupt flag at its end, so a stop does not wait for the hash of a long literal | Unreleased | `js_parse_regexp` in [quickjs.c](../../engine/quickjs.c) |
+| Intl asks Go for no memory sized by a whole list of locales before its first check of the call: the locales it canonicalizes and their seen set grow with the tags gone through | Unreleased | [uncatchable.md](uncatchable.md#intl-reads-the-interrupt-flag-in-loops-over-a-long-list) |
 
 ## Errors and stacks
 
