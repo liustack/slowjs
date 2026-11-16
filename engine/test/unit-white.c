@@ -154,6 +154,9 @@ int white_regvm_read_check(JSContext *ctx, JSValueConst f);
 int white_regvm_dst_sites(JSValueConst f, int *dst, int *win);
 int white_regvm_forin_sites(JSValueConst f, int n[4]);
 int white_regvm_getf_slots(JSValueConst f, uint32_t *slots, uint32_t *ids, int max);
+int white_regvm_putf_sites(JSValueConst f, uint32_t *s, int max);
+uint32_t white_shape_step_epoch(JSRuntime *rt);
+void white_shape_step_epoch_set(JSRuntime *rt, uint32_t e);
 int white_regvm_stack(JSContext *ctx, long out[7]);
 int white_set_code(JSContext *ctx, JSValueConst f, const uint8_t *code, int len, int stack_size, int undo);
 uint32_t white_array_fake_count(JSContext *ctx, JSValueConst a, uint32_t count);
@@ -8570,6 +8573,103 @@ static void test_regvm_getf_slot(void)
     vm_free(&v);
 }
 
+/* what the one write of a name of the function s keeps after src ran
+   (engine/regvm-ops-basic.h): the slot, and whether it keeps a step and the
+   epoch of the step is the one of the runtime (step 2), is another (1) or
+   it keeps none (0) */
+static void putf_case(VM *v, const char *src, const char *want, uint32_t slot, int step)
+{
+    JSValue g = JS_GetGlobalObject(v->ctx), f = JS_GetPropertyStr(v->ctx, g, "s");
+    uint32_t w[4] = { 0, 0, 0, 0 };
+    int n, got;
+
+    CHECK(eval_is(v->ctx, src, want), "%s does not give %s", src, want);
+    n = white_regvm_putf_sites(f, w, 1);
+    CHECK(n == 1, "%s: %d writes of a name, want 1", src, n);
+    got = w[3] == 0xffffffffu ? 0 : w[3] == white_shape_step_epoch(v->rt) ? 2 : 1;
+    CHECK(n != 1 || w[0] == slot, "after %s: the site keeps slot %u, want %u", src, w[0], slot);
+    CHECK(n != 1 || got == step, "after %s: the step is %d (ids %u %u, epoch %u of %u), want %d",
+          src, got, w[1], w[2], w[3], white_shape_step_epoch(v->rt), step);
+    CHECK(n != 1 || got == 0 || (w[1] != 0 && w[2] != 0 && w[1] != w[2]),
+          "after %s: the step keeps the ids %u %u", src, w[1], w[2]);
+    JS_FreeValue(v->ctx, f);
+    JS_FreeValue(v->ctx, g);
+}
+
+/* The slot and the step a write of a name keeps (PUTF): none after a
+   store to an array, the slot of the own key it set, the step of the key
+   it added to an ordinary object (the objects of C stay alive, so that an
+   add copies the shape of the one before). The epoch moves when a
+   prototype gets a setter or loses it and when the ids run out and are
+   given again (also inside the add the site makes), and it stops at its
+   last value, after which no site takes a step. */
+static void test_regvm_putf_step(void)
+{
+    VM v = vm_new();
+
+    CHECK(eval_ok(v.ctx,
+        "globalThis.s = function (o, v) { o.x = v; return o; };"
+        "globalThis.keep = []; globalThis.C = function () { this.a = 1; keep.push(this); }; s(new C(), 0); 0"), "the setup threw");
+    putf_case(&v, "s([1], 1).x", "1", 0xffffffffu, 0);
+    putf_case(&v, "s(new C(), 2).x", "2", 0xffffffffu, 2);
+    putf_case(&v, "s(new C(), 3).x", "3", 0xffffffffu, 2);
+    putf_case(&v, "s({ b: 1, x: 2 }, 4).x", "4", 1, 2);
+    putf_case(&v, "Object.defineProperty(C.prototype, 'x', { set: function (v) { this.y = v; }, configurable: true });"
+                  "s(new C(), 5).y", "5", 1, 1);
+    putf_case(&v, "var o = s(new C(), 6); o.x + ',' + o.y + ',' + Object.keys(o)", "undefined,6,a,y", 1, 1);
+    putf_case(&v, "delete C.prototype.x; s(new C(), 7).x", "7", 1, 2);
+    vm_free(&v);
+
+    /* the ids run out and are given again: the epoch moves, so a step kept
+       with the old ids is not taken, whatever shape has its ids now */
+    v = vm_new();
+    CHECK(eval_ok(v.ctx,
+        "globalThis.s = function (o, v) { o.x = v; return o; };"
+        "globalThis.keep = []; globalThis.C = function () { this.a = 1; keep.push(this); }; s(new C(), 1); 0"), "the setup threw");
+    putf_case(&v, "s(new C(), 2).x", "2", 0xffffffffu, 2);
+    white_shape_id_set(v.rt, white_shape_id_max() - 8);
+    CHECK(eval_ok(v.ctx, "var objs = []; for (var i = 0; i < 64; i++) { var o = {}; o['r' + i] = i; objs.push(o); } 0"),
+          "the shapes threw");
+    CHECK(white_shape_id_next(v.rt) < white_shape_id_max() - 8, "the ids did not run out (next %u)",
+          white_shape_id_next(v.rt));
+    putf_case(&v, "objs.length", "64", 0xffffffffu, 1);
+    CHECK(eval_ok(v.ctx, "var S = { set x(v) { this.y = v; } }, many = [];"
+                         " for (var i = 0; i < 4096; i++) { var o = Object.create(S); o['s' + i] = i; many.push(o); } 0"),
+          "the shapes threw");
+    putf_case(&v, "var n = 0; for (var i = 0; i < 4096; i++) if (s(many[i], i).y === i &&"
+                  " !Object.hasOwn(many[i], 'x')) n++; n", "4096", 0xffffffffu, 1);
+    putf_case(&v, "s(new C(), 3).x", "3", 0xffffffffu, 2);
+    vm_free(&v);
+
+    /* the epoch stops at its last value: no site takes a step after */
+    v = vm_new();
+    CHECK(eval_ok(v.ctx,
+        "globalThis.s = function (o, v) { o.x = v; return o; };"
+        "globalThis.keep = []; globalThis.C = function () { this.a = 1; keep.push(this); }; s(new C(), 0); 0"), "the setup threw");
+    white_shape_step_epoch_set(v.rt, 0xfffffffdu);
+    putf_case(&v, "s(new C(), 1).x", "1", 0xffffffffu, 2);
+    putf_case(&v, "Object.defineProperty(C.prototype, 'z', { get: function () { return 0; } }); s(new C(), 2).x",
+              "2", 0xffffffffu, 1);
+    CHECK(white_shape_step_epoch(v.rt) == 0xfffffffeu, "the epoch is %u", white_shape_step_epoch(v.rt));
+    putf_case(&v, "Object.defineProperty(C.prototype, 'w', { get: function () { return 0; } }); s(new C(), 3).x",
+              "3", 0xffffffffu, 1);
+    CHECK(white_shape_step_epoch(v.rt) == 0xfffffffeu, "the epoch is %u", white_shape_step_epoch(v.rt));
+    vm_free(&v);
+
+    /* the ids run out inside the add itself: the id the object had is one
+       of the old numbering, so the site takes no step from it */
+    v = vm_new();
+    CHECK(eval_ok(v.ctx,
+        "globalThis.s = function (o, v) { o.x = v; return o; };"
+        "var P = {}, o1 = Object.create(P), o2 = Object.create(P); s([1], 0); 0"), "the setup threw");
+    white_shape_id_set(v.rt, white_shape_id_max());
+    putf_case(&v, "s(o1, 1).x", "1", 0xffffffffu, 0);
+    CHECK(white_shape_id_next(v.rt) < white_shape_id_max() / 2, "the ids did not run out (next %u)",
+          white_shape_id_next(v.rt));
+    putf_case(&v, "s(o2, 2).x", "2", 0xffffffffu, 2);
+    vm_free(&v);
+}
+
 /* Array destructuring with no iterator (engine/regvm-ops-dst.h): the pass
    makes DSTART for the for_of_start of a destructuring, and not for a
    for-of loop, yield* or a destructuring with a yield in a default (its
@@ -9561,6 +9661,7 @@ int main(int argc, char **argv)
     test_regvm_dst_alloc();
     test_regvm_forin();
     test_regvm_getf_slot();
+    test_regvm_putf_step();
     test_spread_alloc();
     test_spread_refs();
     test_days_to_date();
