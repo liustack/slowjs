@@ -640,6 +640,7 @@ var goasmKeep = []any{
 	js_async_function_resolve_finalizer,
 	js_async_function_resolve_mark,
 	js_async_function_resume,
+	js_async_function_start,
 	js_async_generator_completed_return,
 	js_async_generator_finalizer,
 	js_async_generator_free,

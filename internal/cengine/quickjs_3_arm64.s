@@ -4967,7 +4967,7 @@ TEXT ·rv_old(SB), $328-32
 	WORD $0x17fffa4c
 	WORD $0xf94097e8
 	WORD $0xf940a7f5
-	MOVD $·engine_rodata+13087(SB), R22
+	MOVD $·engine_rodata+13084(SB), R22
 	WORD $0x91084114
 	WORD $0x91018117
 	WORD $0xf90007f4
@@ -5595,7 +5595,7 @@ TEXT ·rv_clw_exit(SB), $104-24
 	WORD $0x17ffffe0
 	WORD $0xaa1603e8
 	WORD $0xa904b3f6
-	WORD $0xd1008116
+	WORD $0xd100c116
 	WORD $0xf90037f4
 	WORD $0xf9002ff5
 	WORD $0xf90023eb
@@ -5626,7 +5626,7 @@ TEXT ·rv_clw_exit(SB), $104-24
 	WORD $0x92679a88
 	WORD $0xa9033fe8
 	WORD $0xaa1603e8
-	WORD $0xd1008116
+	WORD $0xd100c116
 	WORD $0xf90037f4
 	WORD $0xf9002ff5
 	WORD $0xf90023ed
@@ -5644,7 +5644,7 @@ TEXT ·rv_clw_exit(SB), $104-24
 	WORD $0x17ffff3f
 	WORD $0xaa1603e8
 	WORD $0xa904b3f6
-	WORD $0xd1008116
+	WORD $0xd100c116
 	WORD $0xf90037f4
 	WORD $0xf9002ff5
 	WORD $0xf90023eb
@@ -5658,7 +5658,7 @@ TEXT ·rv_clw_exit(SB), $104-24
 	WORD $0x17ffff65
 	WORD $0xaa1603e8
 	WORD $0xa904b3f6
-	WORD $0xd1008116
+	WORD $0xd100c116
 	WORD $0xf90037f4
 	WORD $0xf9002ff5
 	WORD $0xf90023eb
@@ -7055,7 +7055,7 @@ TEXT ·rv_unwind(SB), $216-40
 	WORD $0xf940c108
 	WORD $0xa94ae3f1
 	WORD $0x17fffc56
-	MOVD $·engine_rodata+12672(SB), R10
+	MOVD $·engine_rodata+12688(SB), R10
 	WORD $0xeb0a013f
 	WORD $0x540018a1
 	WORD $0xf94067e9
@@ -21215,7 +21215,7 @@ TEXT ·JS_SetPropertyFunctionList(SB), $216-48
 	WORD $0x9102c1b4
 	WORD $0x9101a1b5
 	WORD $0x52800816
-	MOVD $·engine_rodata+14184(SB), R23
+	MOVD $·engine_rodata+14181(SB), R23
 	WORD $0xf8060f08
 	WORD $0x9101a1a8
 	WORD $0xf90043e8
@@ -21558,7 +21558,7 @@ TEXT ·JS_SetPropertyFunctionList(SB), $216-48
 	WORD $0x17fffdb6
 	WORD $0xf94001c8
 	WORD $0xaa0d03f8
-	MOVD $·engine_rodata+14191(SB), R23
+	MOVD $·engine_rodata+14188(SB), R23
 	WORD $0x9102c1b4
 	WORD $0x9101a1b5
 	WORD $0x52800816
@@ -25928,7 +25928,7 @@ TEXT ·JS_ToPrimitiveFree(SB), $136-40
 	WORD $0xa9475bf7
 	WORD $0x5280076a
 	WORD $0x17ffff9c
-	MOVD $·engine_rodata+12672(SB), R9
+	MOVD $·engine_rodata+12688(SB), R9
 	WORD $0xeb09011f
 	WORD $0x54ffef01
 	WORD $0xf955b2a8
@@ -26173,7 +26173,7 @@ TEXT ·JS_ToPrimitiveFree(SB), $136-40
 	WORD $0xf90013f7
 	BL ·__JS_FreeValueRT(SB)
 	WORD $0x17ffff94
-	MOVD $·engine_rodata+12672(SB), R9
+	MOVD $·engine_rodata+12688(SB), R9
 	WORD $0xeb09011f
 	WORD $0x54ffea21
 	WORD $0xf955b2a8

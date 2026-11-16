@@ -1875,7 +1875,7 @@ TEXT ·js_json_check(SB), $152-16
 	WORD $0xf9404fe0
 	WORD $0xf94047eb
 	WORD $0x17ffff8f
-	MOVD $·engine_rodata+12672(SB), R9
+	MOVD $·engine_rodata+12688(SB), R9
 	WORD $0xeb09011f
 	WORD $0x54000c01
 	WORD $0xf955b2a8
@@ -2021,7 +2021,7 @@ TEXT ·js_json_check(SB), $152-16
 	WORD $0xaa0903e0
 	WORD $0xf9403fed
 	WORD $0x17fffebb
-	MOVD $·engine_rodata+12672(SB), R9
+	MOVD $·engine_rodata+12688(SB), R9
 	WORD $0xeb09011f
 	WORD $0x54fff141
 	WORD $0xf94047e8
@@ -3769,7 +3769,7 @@ TEXT ·js_json_to_str(SB), $280-16
 	WORD $0xa94f43f8
 	WORD $0xb94012e8
 	WORD $0x17fffbe2
-	MOVD $·engine_rodata+13109(SB), R22
+	MOVD $·engine_rodata+13106(SB), R22
 	WORD $0x910381d4
 	WORD $0x910101d7
 	WORD $0xf90007f4
@@ -12993,13 +12993,13 @@ TEXT ·check_polls(SB), $152-16
 	WORD $0xf9000128
 	WORD $0x3c9d8140
 	WORD $0x140000d5
-	MOVD $·engine_rodata+13602(SB), R15
+	MOVD $·engine_rodata+13599(SB), R15
 	WORD $0xb94063e8
 	WORD $0xaa1403f7
 	WORD $0xf801068f
 	WORD $0x34001088
 	WORD $0xf9404ff5
-	MOVD $·engine_rodata+13616(SB), R22
+	MOVD $·engine_rodata+13613(SB), R22
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
 	WORD $0xf9000ff6
@@ -13125,7 +13125,7 @@ TEXT ·check_polls(SB), $152-16
 	WORD $0xf900c128
 	WORD $0x17ffff3d
 	WORD $0xf9404ff5
-	MOVD $·engine_rodata+13638(SB), R22
+	MOVD $·engine_rodata+13635(SB), R22
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
 	WORD $0xf9000ff6
@@ -28388,16 +28388,16 @@ TEXT ·js_generator_next(SB), $136-16
 	WORD $0xaa1f03e0
 	WORD $0x528000c1
 	WORD $0x14000058
-	WORD $0xf94049c9
+	WORD $0xf94051c9
 	WORD $0x2a1f03e8
 	WORD $0xf81f0130
-	WORD $0xf94049ca
+	WORD $0xf94051ca
 	WORD $0xf81f812f
 	WORD $0xf9000151
-	WORD $0xf94049c9
+	WORD $0xf94051c9
 	WORD $0xf900055f
 	WORD $0x91004129
-	WORD $0xf90049c9
+	WORD $0xf90051c9
 	WORD $0xf94005b6
 	WORD $0xb90026c8
 	WORD $0x52800068
@@ -28438,7 +28438,7 @@ TEXT ·js_generator_next(SB), $136-16
 	WORD $0x7100097f
 	WORD $0x3dc00120
 	WORD $0xf94037e9
-	WORD $0xf9404908
+	WORD $0xf9405108
 	WORD $0xa97f0500
 	WORD $0x3c9f0100
 	WORD $0x54000421

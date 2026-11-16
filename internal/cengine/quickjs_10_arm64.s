@@ -16302,7 +16302,7 @@ TEXT ·poll_scan(SB), $168-48
 	WORD $0x54001862
 	WORD $0x2a1f03ee
 	WORD $0x2a1f03e0
-	MOVD $·engine_rodata+13659(SB), R8
+	MOVD $·engine_rodata+13656(SB), R8
 	MOVD $·engine_rodata+7912(SB), R13
 	WORD $0xf9002be8
 	WORD $0x92679a88
@@ -16332,7 +16332,7 @@ TEXT ·poll_scan(SB), $168-48
 	WORD $0x7103ea1f
 	WORD $0x54fffd48
 	WORD $0xaa1f03f1
-	MOVD $·engine_rodata+13957(SB), R19
+	MOVD $·engine_rodata+13954(SB), R19
 	WORD $0x6b0e02ff
 	WORD $0x5400008d
 	WORD $0x39400a69
@@ -16403,7 +16403,7 @@ TEXT ·poll_scan(SB), $168-48
 	MOVD $·engine_rodata+7912(SB), R13
 	WORD $0xa9475bf7
 	WORD $0x17ffffa6
-	MOVD $·engine_rodata+13739(SB), R9
+	MOVD $·engine_rodata+13736(SB), R9
 	WORD $0xf9002be9
 	WORD $0x92679a89
 	WORD $0xf900c128
@@ -16420,7 +16420,7 @@ TEXT ·poll_scan(SB), $168-48
 	WORD $0x2a1f03f9
 	WORD $0x2a1f03e0
 	WORD $0x52800037
-	MOVD $·engine_rodata+13788(SB), R8
+	MOVD $·engine_rodata+13785(SB), R8
 	WORD $0xf2e000f8
 	WORD $0x52800022
 	WORD $0xf9002be8
@@ -16435,7 +16435,7 @@ TEXT ·poll_scan(SB), $168-48
 	WORD $0x6b17013f
 	WORD $0x54fff3ac
 	WORD $0x17ffff7d
-	MOVD $·engine_rodata+13699(SB), R9
+	MOVD $·engine_rodata+13696(SB), R9
 	WORD $0x17ffffdd
 	WORD $0xf94043f4
 	WORD $0xb900abee
@@ -16655,19 +16655,19 @@ TEXT ·poll_scan(SB), $168-48
 	WORD $0x5280002d
 	WORD $0x38296a0d
 	WORD $0x17ffffbb
-	MOVD $·engine_rodata+13659(SB), R8
+	MOVD $·engine_rodata+13656(SB), R8
 	WORD $0xf9002be8
 	WORD $0x17fffefe
 	WORD $0xb9409be9
 	WORD $0x37ffef60
-	MOVD $·engine_rodata+13902(SB), R8
+	MOVD $·engine_rodata+13899(SB), R8
 	WORD $0x7100013f
 	WORD $0x9a8803e8
 	WORD $0x17fffff8
 	WORD $0xb88051aa
 	WORD $0x110016cc
 	WORD $0x17ffffed
-	MOVD $·engine_rodata+13845(SB), R8
+	MOVD $·engine_rodata+13842(SB), R8
 	WORD $0x17fffff2
 	WORD $0x3707f4cc
 	WORD $0x7101b57f
@@ -25869,7 +25869,7 @@ TEXT ·insert_polls(SB), $312-32
 	WORD $0x2a1f03eb
 	WORD $0x17ffff9f
 	WORD $0xa95257f7
-	MOVD $·engine_rodata+13616(SB), R22
+	MOVD $·engine_rodata+13613(SB), R22
 	WORD $0xaa1703f4
 	WORD $0xf8040680
 	WORD $0xf90007f4
@@ -27257,7 +27257,7 @@ TEXT ·fuse_code(SB), $184-24
 	WORD $0x92679a91
 	MOVD $·engine_rodata+7912(SB), R14
 	MOVD $·engine_rodata+34793(SB), R21
-	MOVD $·engine_rodata+13958(SB), R22
+	MOVD $·engine_rodata+13955(SB), R22
 	WORD $0xb90073ff
 	WORD $0xf9004be0
 	WORD $0xa907c3f1
@@ -27393,7 +27393,7 @@ TEXT ·fuse_code(SB), $184-24
 	WORD $0xa947c3f1
 	MOVD $·engine_rodata+34793(SB), R21
 	WORD $0xf9404fed
-	MOVD $·engine_rodata+13958(SB), R22
+	MOVD $·engine_rodata+13955(SB), R22
 	WORD $0x17ffff82
 	WORD $0xb8801129
 	WORD $0x110005ea
@@ -27427,7 +27427,7 @@ TEXT ·fuse_code(SB), $184-24
 	WORD $0xaa1f03f0
 	WORD $0x2a1f03f5
 	WORD $0x2a0803f1
-	MOVD $·engine_rodata+13955(SB), R19
+	MOVD $·engine_rodata+13952(SB), R19
 	WORD $0x92679a88
 	WORD $0xf94047ed
 	WORD $0xf940c108
@@ -27558,7 +27558,7 @@ TEXT ·fuse_code(SB), $184-24
 	WORD $0xf94057f4
 	WORD $0xa947c7f5
 	WORD $0xa9493bf7
-	MOVD $·engine_rodata+13955(SB), R19
+	MOVD $·engine_rodata+13952(SB), R19
 	WORD $0x92679a88
 	WORD $0xf9405ff0
 	MOVD $·engine_rodata+7912(SB), R15
@@ -27637,7 +27637,7 @@ TEXT ·fuse_code(SB), $184-24
 	WORD $0xf90007f4
 	BL ·host_poll(SB)
 	WORD $0xa947c3f1
-	MOVD $·engine_rodata+13958(SB), R22
+	MOVD $·engine_rodata+13955(SB), R22
 	WORD $0xa94937e0
 	MOVD $·engine_rodata+34793(SB), R21
 	WORD $0xb9406bf3
@@ -27661,7 +27661,7 @@ TEXT ·fuse_code(SB), $184-24
 	WORD $0xa947c3f1
 	WORD $0x92679a88
 	WORD $0xa94937e0
-	MOVD $·engine_rodata+13958(SB), R22
+	MOVD $·engine_rodata+13955(SB), R22
 	WORD $0xf9402ff9
 	MOVD $·engine_rodata+34793(SB), R21
 	MOVD $·engine_rodata+7912(SB), R14
@@ -27793,7 +27793,7 @@ TEXT ·fuse_code(SB), $184-24
 	WORD $0xf94057f4
 	WORD $0xa946dbf8
 	WORD $0xa947c7f5
-	MOVD $·engine_rodata+13955(SB), R19
+	MOVD $·engine_rodata+13952(SB), R19
 	WORD $0xa9493bf7
 	WORD $0x92679a88
 	WORD $0xf9402be1
@@ -27818,7 +27818,7 @@ TEXT ·fuse_code(SB), $184-24
 	WORD $0xf94057f4
 	WORD $0xa94533f9
 	WORD $0xa946dbf8
-	MOVD $·engine_rodata+13955(SB), R19
+	MOVD $·engine_rodata+13952(SB), R19
 	WORD $0xa947c7f5
 	WORD $0x92679a88
 	WORD $0xa9493bf7
@@ -27893,7 +27893,7 @@ TEXT ·fuse_code(SB), $184-24
 	WORD $0xf90007f4
 	BL ·host_poll(SB)
 	WORD $0xa947c7f5
-	MOVD $·engine_rodata+13955(SB), R19
+	MOVD $·engine_rodata+13952(SB), R19
 	WORD $0xa9493bf7
 	MOVD $·engine_rodata+7912(SB), R15
 	WORD $0xf9405ff0

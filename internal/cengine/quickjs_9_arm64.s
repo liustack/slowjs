@@ -4045,7 +4045,7 @@ TEXT ·js_regexp_Symbol_replace(SB), $376-48
 	WORD $0xf9008be8
 	WORD $0x52800068
 	WORD $0x17fffc14
-	MOVD $·engine_rodata+12672(SB), R9
+	MOVD $·engine_rodata+12688(SB), R9
 	WORD $0xeb09011f
 	WORD $0x54000281
 	WORD $0xf940b7e8
@@ -19663,7 +19663,7 @@ TEXT ·js_create_function(SB), $232-24
 	WORD $0xb400b620
 	WORD $0xf9406beb
 	WORD $0x52800028
-	MOVD $·engine_rodata+12672(SB), R9
+	MOVD $·engine_rodata+12688(SB), R9
 	WORD $0xb81fc008
 	WORD $0xf9408d6a
 	WORD $0xf9003809

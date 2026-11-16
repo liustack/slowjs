@@ -677,6 +677,7 @@ func js_async_function_resolve_call(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintp
 func js_async_function_resolve_finalizer(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
 func js_async_function_resolve_mark(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr)
 func js_async_function_resume(a0 uintptr, a1 uintptr, a2 uintptr)
+func js_async_function_start(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr, a7 uintptr, a8 uintptr)
 func js_async_generator_completed_return(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr)
 func js_async_generator_finalizer(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
 func js_async_generator_free(a0 uintptr, a1 uintptr, a2 uintptr)
