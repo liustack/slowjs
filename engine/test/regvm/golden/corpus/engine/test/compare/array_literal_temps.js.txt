@@ -10,6 +10,6 @@ result a getter in an element 3:o1,s3,o1 true got
 result spread among them 6:o1,s1,s1,s1,s1,s1
 result loop 0s00,50s5050,100s100100,150s150150,200s200200,250s250250 299
 result folded 130 1 true
-mem-end obj=204 atom=566 shape=133 prop=986 jsfunc=4 cfunc=136 array=2 fast_array=2 elements=12 binary=0
-mem-gc obj=204 atom=566 shape=133 prop=986 jsfunc=4 cfunc=136 array=2 fast_array=2 elements=12 binary=0
+mem-end obj=204 atom=567 shape=133 prop=986 jsfunc=4 cfunc=136 array=2 fast_array=2 elements=12 binary=0
+mem-gc obj=204 atom=567 shape=133 prop=986 jsfunc=4 cfunc=136 array=2 fast_array=2 elements=12 binary=0
 --- status exit 0

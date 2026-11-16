@@ -29,6 +29,6 @@ result -1n => 0n -2n 1n -3n 2n
 result 9007199254740993n => 9007199254740994n 9007199254740992n 9007199254740995n 9007199254740991n 9007199254740996n
 result sym => TypeError:cannot convert symbol to number TypeError:cannot convert symbol to number TypeError:cannot convert symbol to number TypeError:cannot convert symbol to number TypeError:cannot convert symbol to number
 result calls 155
-mem-end obj=189 atom=541 shape=120 prop=945 jsfunc=0 cfunc=127 array=1 fast_array=1 elements=0 binary=0
-mem-gc obj=189 atom=541 shape=120 prop=945 jsfunc=0 cfunc=127 array=1 fast_array=1 elements=0 binary=0
+mem-end obj=189 atom=542 shape=120 prop=945 jsfunc=0 cfunc=127 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=189 atom=542 shape=120 prop=945 jsfunc=0 cfunc=127 array=1 fast_array=1 elements=0 binary=0
 --- status exit 0

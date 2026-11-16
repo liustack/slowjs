@@ -10,6 +10,6 @@ result String object of a 16-bit rope: \u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9
 result number:     "x": 1
 result Number object:    "x": 1
 result nested: {\u{a}abcccccccc"x": 1,\u{a}abcccccccc"y": [\u{a}abccccccccabcccccccc2,\u{a}abccccccccabcccccccc{\u{a}abccccccccabccccccccabcccccccc"z": 3\u{a}abccccccccabcccccccc}\u{a}abcccccccc]\u{a}}
-mem-end obj=200 atom=562 shape=127 prop=976 jsfunc=2 cfunc=134 array=2 fast_array=2 elements=12 binary=0
-mem-gc obj=200 atom=562 shape=127 prop=976 jsfunc=2 cfunc=134 array=2 fast_array=2 elements=12 binary=0
+mem-end obj=200 atom=563 shape=127 prop=976 jsfunc=2 cfunc=134 array=2 fast_array=2 elements=12 binary=0
+mem-gc obj=200 atom=563 shape=127 prop=976 jsfunc=2 cfunc=134 array=2 fast_array=2 elements=12 binary=0
 --- status exit 0

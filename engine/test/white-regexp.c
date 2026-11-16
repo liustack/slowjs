@@ -166,17 +166,18 @@ int white_lre_literal(const char *re, int flags, void *opaque, char *out, size_t
     char msg[64];
     int len, k, count, used = 0, fold;
     uint8_t *bc = lre_compile(&len, msg, sizeof(msg), re, strlen(re), flags, opaque);
-    const uint8_t *plan;
+    const uint8_t *plan, *lit;
     uint32_t c;
 
     if (!bc)
         return -1;
     plan = bc + RE_HEADER_LEN + get_u32(bc + RE_HEADER_BYTECODE_LEN);
-    count = plan[LRE_PLAN_LIT];
-    fold = get_u16(plan + LRE_PLAN_LIT_FOLD);
+    lit = lre_plan_lit(plan);
+    count = plan[0] & LRE_PLAN_LITERAL ? lit[LRE_LIT_LEN] : 0;
+    fold = count ? get_u16(lit + LRE_LIT_FOLD) : 0;
     out[0] = '\0';
     for (k = 0; k < count; k++) {
-        c = get_u16(plan + LRE_PLAN_LIT_UNITS + 2 * k);
+        c = get_u16(lit + LRE_LIT_UNITS + 2 * k);
         if ((fold >> k) & 1)
             used += snprintf(out + used, n - used, "~%c", (int)c);
         else if (c >= 0x20 && c < 0x7f && c != '~')
@@ -187,14 +188,36 @@ int white_lre_literal(const char *re, int flags, void *opaque, char *out, size_t
     if (count == 0) {
         snprintf(out, n, "-");
     } else {
-        used += snprintf(out + used, n - used, " key %d", plan[LRE_PLAN_LIT_KEY]);
-        if (plan[LRE_PLAN_LIT_BEFORE] == LRE_LIT_UNKNOWN)
+        used += snprintf(out + used, n - used, " key %d", lit[LRE_LIT_KEY]);
+        if (lit[LRE_LIT_BEFORE] == LRE_LIT_UNKNOWN)
             used += snprintf(out + used, n - used, " before ?");
         else
-            used += snprintf(out + used, n - used, " before %d", plan[LRE_PLAN_LIT_BEFORE]);
-        if (plan[LRE_PLAN_LIT_WIDE])
+            used += snprintf(out + used, n - used, " before %d", lit[LRE_LIT_BEFORE]);
+        if (lit[LRE_LIT_WIDE])
             snprintf(out + used, n - used, " wide");
     }
     lre_realloc(opaque, bc, 0);
     return count;
+}
+
+/* white_lre_plan_size compiles the pattern re with the flags of lre_compile
+   and returns the bytes of its plan and chains (lre_plan_size), or -1 when
+   the compile fails. *rest gets the bytes after them, which hold the group
+   names, and *names the first group name lre_get_groupnames finds, or "" when
+   it finds none (at most n bytes). opaque is the context of lre_compile. */
+int white_lre_plan_size(const char *re, int flags, void *opaque, int *rest, char *names, size_t n)
+{
+    char msg[64];
+    int len, size;
+    uint8_t *bc = lre_compile(&len, msg, sizeof(msg), re, strlen(re), flags, opaque);
+    const char *g;
+
+    if (!bc)
+        return -1;
+    size = lre_plan_size(bc);
+    *rest = len - (RE_HEADER_LEN + (int)get_u32(bc + RE_HEADER_BYTECODE_LEN) + size);
+    g = lre_get_groupnames(bc);
+    snprintf(names, n, "%s", g ? g : "");
+    lre_realloc(opaque, bc, 0);
+    return size;
 }

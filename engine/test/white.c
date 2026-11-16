@@ -237,6 +237,45 @@ int white_string_wide(JSValueConst v)
     }
 }
 
+/* A flat string of 16 bits that holds the bytes of s, each a unit under
+   0x100: a form the engine also makes (a wide buffer with no wide character
+   left), which a script cannot ask for. */
+JSValue white_wide_latin1(JSContext *ctx, const char *s)
+{
+    size_t i, n = strlen(s);
+    JSString *p = js_alloc_string(ctx, n, 1);
+
+    if (!p)
+        return JS_EXCEPTION;
+    for (i = 0; i < n; i++)
+        p->u.str16[i] = (uint8_t)s[i];
+    return JS_MKPTR(JS_TAG_STRING, p);
+}
+
+/* js_join_plan of the array a with the separator sep (a string, or undefined
+   for the comma): 1 with the length and width of the join in *len and *wide,
+   0 when join reads the elements one at a time, -1 when interrupted. */
+int white_join_plan(JSContext *ctx, JSValueConst a, JSValueConst sep, int64_t *len, int *wide)
+{
+    JSValue s = JS_UNDEFINED;
+    JSString *p = NULL;
+    int64_t n;
+    int c = ',', r;
+
+    if (js_get_length64(ctx, &n, a))
+        return -2;
+    if (!JS_IsUndefined(sep)) {
+        s = JS_ToString(ctx, sep);
+        if (JS_IsException(s))
+            return -2;
+        p = JS_VALUE_GET_STRING(s);
+        c = p->len == 1 && !p->is_wide_char ? p->u.str8[0] : -1;
+    }
+    r = js_join_plan(ctx, a, n, c, p, len, wide);
+    JS_FreeValue(ctx, s);
+    return r;
+}
+
 /* a + b as the generic add makes it into a temp (rv_binop_slow in
    regvm-ops-basic.h): JS_ConcatString of the two strings. */
 JSValue white_concat(JSContext *ctx, JSValueConst a, JSValueConst b)

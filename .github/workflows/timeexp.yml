@@ -1,0 +1,117 @@
+# An experiment, not a gate: can a hosted runner time a change? Twenty jobs do
+# the same thing: each times the same binaries by the protocol of
+# docs/measuring.md, as far as a runner allows, and keeps its raw records. The
+# sides: main at the 16 layouts, aa (the same binaries under a second name),
+# and s1 and s3 (main built with the tag pagesspin1 or pagesspin3 of
+# internal/measure/pages: every timed render also waits on the clock for 1% or
+# 3% of the median warm render, inside its time). It runs when a branch
+# timeexp/<name> is pushed, or by hand.
+name: timeexp
+
+on:
+  push:
+    branches:
+      - "timeexp/**"
+  workflow_dispatch:
+    inputs:
+      kinds:
+        description: "The kinds of pages to time, in this order"
+        default: "react wb"
+
+# A newer push to the same ref stops the older run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CGO_ENABLED: "0"
+
+jobs:
+  build:
+    name: build the sides
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+      - name: The 16 layouts of each side
+        run: |
+          go build -o bin/measure ./internal/measure/cmd/measure
+          bin/measure bench build -side main -tree . -app internal/measure/pages -pkg . -test -out bin/sides
+          bin/measure bench build -side s1 -tags pagesspin1 -tree . -app internal/measure/pages -pkg . -test -out bin/sides
+          bin/measure bench build -side s3 -tags pagesspin3 -tree . -app internal/measure/pages -pkg . -test -out bin/sides
+          ls bin/sides | wc -l
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: bin
+          path: |
+            bin/measure
+            bin/sides/*@*
+            bin/sides/layouts.tsv
+          retention-days: 3
+
+  time:
+    name: time ${{ matrix.job }}
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        job: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: bin
+          path: bin
+      - name: The machine
+        run: |
+          mkdir -p out
+          {
+            echo "job ${{ matrix.job }}, runner ${RUNNER_NAME:-?}, $(date -u +%FT%TZ)"
+            lscpu
+            echo
+            grep -m1 "model name" /proc/cpuinfo
+            for c in /sys/devices/system/cpu/cpu[0-9]*; do
+              echo "$(basename "$c"): siblings $(cat "$c/topology/thread_siblings_list")"
+            done
+            echo
+            uptime
+          } | tee out/machine.txt
+      - name: Time
+        env:
+          KINDS: ${{ inputs.kinds || 'react wb' }}
+        run: |
+          chmod +x bin/measure bin/sides/*@*
+          # aa: the binaries of main under a second name
+          for f in bin/sides/main@*; do cp "$f" "bin/sides/aa@${f##*@}"; done
+          # the timing core is the last CPU, and its sibling the other thread of its core
+          cpu=$(($(nproc) - 1))
+          sib=$(tr ',-' '\n\n' </sys/devices/system/cpu/cpu$cpu/topology/thread_siblings_list | grep -vx "$cpu" | head -1)
+          echo "timing on cpu $cpu, sibling ${sib:-none}" | tee -a out/machine.txt
+          for kind in $KINDS; do
+            start=$(date +%s)
+            taskset -c "$cpu" bin/measure bench run -bin bin/sides -out "out/$kind.jsonl" -kind "$kind" \
+              -parse gobench:p50-ms -env GOMAXPROCS=1 -cpu "$cpu" -sib "${sib:--1}" -dir "$PWD" \
+              -- -test.run '^$' -test.bench Pages -test.benchtime 1x -kind "$kind" -repo "$PWD" \
+              >"out/$kind.log" 2>&1 || { tail -n 30 "out/$kind.log"; exit 1; }
+            echo "$kind: $(( $(date +%s) - start )) s" | tee -a out/machine.txt
+            for side in aa s1 s3; do
+              echo "## $kind: $side against main"
+              bin/measure bench judge -in "out/$kind.jsonl" -kind "$kind" -base main -new "$side" || true
+              echo
+            done >"out/judge-$kind.md"
+            cat "out/judge-$kind.md" >>"$GITHUB_STEP_SUMMARY"
+          done
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: time-${{ matrix.job }}
+          path: out/
+          retention-days: 30

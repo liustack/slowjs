@@ -60,6 +60,8 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A sloppy function with a simple parameter list makes its arguments object only when a read needs it, and `f.apply(this, arguments)` calls `f` in the register loop with the frame's arguments, with no arguments object, no list and one level of call depth | v0.31.1 | [c-engine.md](c-engine.md#passing-arguments-on-with-apply-makes-no-arguments-object) |
 | A step of a `for in` loop over an object that still has the shape the loop started from takes its key and branches back in one op of the register loop (FINEXT), without the call of `js_for_in_next` | v0.31.1 | [c-engine.md](c-engine.md#the-next-key-of-a-for-in-loop-is-taken-in-the-register-loop) |
 | A read `o[k]` of the key a `for in` loop just gave, on an object of the shape the loop walks, takes the value from the slot of that key in the shape (GETELE, GETELET), without looking the key up | v0.31.1 | [c-engine.md](c-engine.md#the-read-of-the-key-a-for-in-loop-just-gave) |
+| The return of a frame of more than 8 slots frees them 8 to a turn, with one poll tick a turn, where it took one slot a turn | v0.31.2 | [c-engine.md](c-engine.md#the-frame-and-the-window-of-a-call) |
+| `new` of a constructor given more arguments than it has parameters runs in the register loop, with the extra arguments below its frame as a call keeps them, and starts no run of `JS_RegvmRun` | v0.31.2 | [c-engine.md](c-engine.md#the-frame-and-the-window-of-a-call) |
 
 ## The generator
 
@@ -133,6 +135,9 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | TrackRejections and UnhandledRejections | v0.31.1 | [go-api.md](go-api.md#trackrejections-and-unhandledrejections) |
 | More values than the engine can count fail | v0.31.1 | [go-api.md](go-api.md#more-values-than-the-engine-can-count-fail) |
 | Package tifa: `tifa.Register` sets a VM up as tifa does | v0.31.1 | [go-api.md](go-api.md#package-tifa) |
+| The start tag function writes img and the void elements as React DOM's `pushSelfClosing` does, and `input` and emotion's inline `style` as `pushStartInstance` does, when its seventh argument, the mode, is 1, 2 or 3 | v0.31.2 | [go-api.md](go-api.md#registerstarttag-and-registerendtag) |
+| NewArray makes an array of fewer than 16,384 values in one call of the engine | v0.31.2 | [builtin.go](../../builtin.go) |
+| NewMurmur2Function: the hash of @emotion/hash in C, which package tifa gives as `__tifa_murmur2__` | v0.31.2 | [murmur2.go](../../murmur2.go) |
 
 ## Limits that hold
 
@@ -215,6 +220,9 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A Date finds its year, month and day with no loop | v0.31.1 | [time-and-intl.md](time-and-intl.md#a-date-finds-its-year-month-and-day-with-no-loop) |
 | The strings of a Date are written without snprintf | v0.31.1 | [time-and-intl.md](time-and-intl.md#the-strings-of-a-date-are-written-without-snprintf) |
 | A context keeps the fields of the last time value | v0.31.1 | [time-and-intl.md](time-and-intl.md#a-context-keeps-the-fields-of-the-last-time-value) |
+| `Intl.NumberFormat.prototype.formatRange` and `formatRangeToParts`, on the range formatter of `internal/gointl` | v0.31.2 | [intl/intl.js](../../intl/intl.js), `numberRangeFormatted` in [intl/bridge.go](../../intl/bridge.go) |
+| A collator compares two short Latin strings from a table of their characters, with no normal form, and `localeCompare` with no locales or options keeps one collator | v0.31.2 | [internal/gointl/qjs_collshort.go](../../internal/gointl/qjs_collshort.go), `localeCompare` in [intl/intl.js](../../intl/intl.js) |
+| `formatToParts` gives the types of parts as atoms, which intl.js makes once from the list of Go | v0.31.2 | `partTypes` in [intl/bridge.go](../../intl/bridge.go), `parts` in [intl/intl.js](../../intl/intl.js) |
 
 ## Temporal
 
@@ -227,6 +235,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Change | Release | Doc |
 | --- | --- | --- |
 | URL and URLSearchParams on a Go parser, with the limits of the VM | v0.30.3 | [url.md](url.md#url-and-urlsearchparams-on-a-go-parser) |
+| A VM keeps the last base it parsed and the last record it made, so a URL made against the same base, and a setter on the URL made last, parse nothing again | v0.31.2 | [url/bridge.go](../../url/bridge.go) |
 
 ## Regular expressions
 
@@ -237,7 +246,9 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Where a regexp starts to look is worked out once, with a table of first characters and a compare of a literal prefix. Bytecode version 9 | v0.30.2 | [regexp.md](regexp.md#where-a-regexp-starts-is-worked-out-once) |
 | A long list of alternatives that start with a literal goes straight to the ones that start with the character. Bytecode version 10 | v0.30.2 | [regexp.md](regexp.md#long-lists-of-alternatives-that-start-with-a-literal) |
 | A regexp looks for the literal every match holds before the backtracking machine runs, and has no match when the string does not hold it. Bytecode version 13 | v0.31.1 | [regexp.md](regexp.md#a-literal-every-match-holds) |
+| Only a regexp with a literal every match holds carries it: the plan of one without is 36 bytes again, where v0.31.1 gave every regexp 74. Bytecode version 14 | v0.31.2 | [regexp.md](regexp.md#a-literal-every-match-holds) |
 | Compiled regexps kept per VM | v0.27.0 | [regexp.md](regexp.md#compiled-regexps-kept-per-vm) |
+| A new VM keeps 512 compiled regexps, not 256, in the same 1 MiB | v0.31.2 | `JS_REGEXP_CACHE_ENTRIES` in [engine/quickjs.h](../../engine/quickjs.h), `DefaultRegExpCache` in [vm.go](../../vm.go) |
 | Classes of regexps with the v flag parsed as the specification does | v0.28.3 | [regexp.md](regexp.md#classes-of-regexps-with-the-v-flag) |
 
 ## Strings
@@ -251,6 +262,8 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | The register loop adds two strings in a small function of its own, not in the generic path of add, sub and the compares | v0.30.7 | [strings.md](strings.md#two-strings-are-added-without-the-generic-path) |
 | A power of two prints its shortest digits, as Node does: 54 of them printed one digit too many | v0.31.1 | [strings.md](strings.md#a-power-of-two-prints-its-shortest-digits) |
 | A number that is not an integer converts to text in radix 10 by Schubfach, with integer arithmetic and a table of 617 powers of ten, not with big numbers | v0.31.1 | [strings.md](strings.md#numbers-that-are-not-integers-convert-to-text-without-big-numbers) |
+| `Array.prototype.join` of a fast array of strings, ropes, `undefined` and `null` makes one block of the length and width of the result and reads the elements in place, without a property read for each | v0.31.2 | `js_join_plan` in [engine/quickjs.c](../../engine/quickjs.c) |
+| The search for a needle of more than 8 characters keeps a table of 256 one-byte shifts and moves over a run of windows in one tight loop, checking the step counter as often as before | v0.31.2 | `js_string_two_way` in [engine/quickjs.c](../../engine/quickjs.c) |
 
 ## JSON
 
@@ -310,6 +323,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | `Array.from` on a constructor passes the mapping function the whole index and sets the whole length | v0.31.1 | [objects-and-shapes.md](objects-and-shapes.md#arrayfrom-on-a-constructor-passes-the-whole-index-and-length) |
 | A define that changes the flags of a property that is there makes the shape the object's own before it changes anything, so a define that runs out of memory leaves the property, the length of an array included. A refused define copies nothing, and shortening an array past index 2^31 - 1 makes no names | v0.31.1 | [objects-and-shapes.md](objects-and-shapes.md#a-define-that-changes-the-flags-of-a-property-fails-before-it-changes-anything) |
 | A shape that an object finds for its next key keeps the shape the object left, so that the objects of a constructor find every shape the objects before them went through | v0.31.1 | [objects-and-shapes.md](objects-and-shapes.md#objects-of-a-constructor-find-the-shapes-the-objects-before-them-went-through) |
+| `new f()` takes the prototype of the object it makes from the own `prototype` of `f` in its shape when that is a plain data property that holds an object, without the generic read, and reads the interrupt flag once, as a call does | v0.31.2 | [objects-and-shapes.md](objects-and-shapes.md#objects-of-a-constructor-find-the-shapes-the-objects-before-them-went-through) |
 
 ## Memory
 

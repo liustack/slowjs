@@ -32,6 +32,6 @@ result 20108
 result 97,NaN,99
 result vvvvvvvvvvs
 result RangeError
-mem-end obj=378 atom=547 shape=244 prop=1913 jsfunc=1 cfunc=253 array=2 fast_array=2 elements=0 binary=0
-mem-gc obj=194 atom=544 shape=127 prop=979 jsfunc=0 cfunc=131 array=1 fast_array=1 elements=0 binary=0
+mem-end obj=378 atom=548 shape=244 prop=1913 jsfunc=1 cfunc=253 array=2 fast_array=2 elements=0 binary=0
+mem-gc obj=194 atom=545 shape=127 prop=979 jsfunc=0 cfunc=131 array=1 fast_array=1 elements=0 binary=0
 --- status exit 0

@@ -14,6 +14,6 @@ result function name with keys: z
 result var in a function: function
 result initializer throws: throws RangeError
 result the initializer runs once: 1
-mem-end obj=193 atom=554 shape=131 prop=955 jsfunc=3 cfunc=125 array=2 fast_array=2 elements=16 binary=0
-mem-gc obj=189 atom=553 shape=128 prop=947 jsfunc=1 cfunc=125 array=2 fast_array=2 elements=16 binary=0
+mem-end obj=193 atom=555 shape=131 prop=955 jsfunc=3 cfunc=125 array=2 fast_array=2 elements=16 binary=0
+mem-gc obj=189 atom=554 shape=128 prop=947 jsfunc=1 cfunc=125 array=2 fast_array=2 elements=16 binary=0
 --- status exit 0

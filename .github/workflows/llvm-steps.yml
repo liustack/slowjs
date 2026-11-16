@@ -6,6 +6,13 @@ name: llvm-steps
 
 on:
   push:
+    # count/** and timeexp/** carry their own runs (count.yml, timeexp.yml)
+    # and are pushed only to start them. Tags still run here.
+    branches-ignore:
+      - "count/**"
+      - "timeexp/**"
+    tags:
+      - "**"
   pull_request:
   workflow_dispatch:
 

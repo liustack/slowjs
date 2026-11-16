@@ -430,6 +430,54 @@ static void test_compile_oom(void)
     }
 }
 
+/* new from the register loop of constructors whose register code is made at
+   that new and runs out of memory: rv_new_frame must send them out of the
+   loop as functions without register code, with more arguments than
+   parameters too, and the new ends with the out of memory error. Each room
+   gives the result or that error, and the runtime frees every block. */
+static void test_new_convert_oom(void)
+{
+    static const char js[] =
+        "function C(a) { this.a = a; }\n"
+        "function D() { this.d = 1; }\n"
+        "function f(n) {\n"
+        "    var s = 0;\n"
+        "    for (var i = 0; i < n; i++) s += new C(i, 1, 2).a + new D(1).d + new C(1).a;\n"
+        "    return s;\n"
+        "}\n"
+        "f(0);\n";
+    size_t n;
+    int failed = 0, ran = 0;
+
+    for (n = 0; n <= 16 << 10 && ran < 4; n += 8) {
+        VM v = vm_new();
+        JSContext *ctx = v.ctx;
+        JSValue g, f, arg = JS_NewInt32(ctx, 3), val;
+        int32_t r = 0;
+
+        CHECK(eval_ok(ctx, js), "new_convert_oom: the script");
+        g = JS_GetGlobalObject(ctx);
+        f = JS_GetPropertyStr(ctx, g, "f");
+        room(&v, n);
+        val = JS_Call(ctx, f, JS_UNDEFINED, 1, &arg);
+        if (JS_IsException(val)) {
+            CHECK(JS_IsUncatchableException(ctx), "new_convert_oom, room %zu: fails without the out of memory error", n);
+            free(exception_text(ctx));
+            failed++;
+        } else {
+            CHECK(JS_ToInt32(ctx, &r, val) == 0 && r == 9, "new_convert_oom, room %zu: f(3) is %d, want 9", n, r);
+            ran++;
+        }
+        JS_FreeValue(ctx, val);
+        unlimit(&v);
+        CHECK(eval_is(ctx, "f(3)", "9"), "new_convert_oom, room %zu: f(3) afterwards", n);
+        JS_FreeValue(ctx, f);
+        JS_FreeValue(ctx, g);
+        vm_free(&v);
+    }
+    CHECK(failed > 0 && ran > 0, "new_convert_oom: %d rooms failed and %d ran", failed, ran);
+}
+
 /* test_compile_oom in steps of 4 bytes, from no memory left up to well past
    where the script first runs. */
 static void test_compile_oom_fine(void)
@@ -2178,6 +2226,15 @@ static void test_tags_oom(void)
         "  r = startTag(T, { id: 'z' }, 'i', fc, hop, d);\n"
         "  s = T.length === 2 ? T.pop() : '';\n"
         "  out.push('/' + r + s);\n"
+        "  r = startTag(T, { alt: 'a<b', style: { width: 1 } }, 'img', fc, hop, d, 1);\n"
+        "  s = T.length === 2 ? T.pop() : '';\n"
+        "  out.push('/' + r + s);\n"
+        "  r = startTag(T, { type: 'checkbox', value: 'v<', checked: true, name: 'n' + L.slice(0, 3) }, 'input', fc, hop, d, 2);\n"
+        "  s = T.length === 2 ? T.pop() : '';\n"
+        "  out.push('/' + r + s);\n"
+        "  r = startTag(T, { 'data-emotion': 'css ' + L.slice(0, 3), dangerouslySetInnerHTML: { __html: '.a{}' + L.slice(0, 2) } }, 'style', fc, hop, d, 3);\n"
+        "  s = T.length === 2 ? T.pop() : '';\n"
+        "  out.push('/' + r + s);\n"
         "  return out.join('');\n"
         "}\n";
     static const char *const want[] = {
@@ -2187,7 +2244,7 @@ static void test_tags_oom(void)
         "<div class=\"c3\" data-3=\"3\" style=\"margin-top:3px;width:3.5px;--v3:a&amp;b\">text &lt;3\xc4\x80</div></s3></u3></v3>"
         "<div class=\"c4\" data-4=\"4\" style=\"margin-top:4px;width:4.5px;--v4:a&amp;b\">text &lt;4</div></s4></u4></v4>"
         "<div class=\"c5\" data-5=\"5\" style=\"margin-top:5px;width:5.5px;--v5:a&amp;b\">text &lt;5\xc4\x80</div></s5></u5></v5>"
-        "/null<i id=\"z\">",
+        "/null<i id=\"z\">/null<img alt=\"a&lt;b\" style=\"width:1px\"/>/null<input type=\"checkbox\" name=\"nyyy\" checked=\"\" value=\"v&lt;\"/>/null<style data-emotion=\"css yyy\">.a{}yy</style>",
         NULL
     };
 
@@ -3192,6 +3249,7 @@ int main(void)
     test_define_oom();
     test_function_name_oom();
     test_compile_oom();
+    test_new_convert_oom();
     test_compile_oom_fine();
     test_write_bytecode_oom();
     test_buffer_after_failure();

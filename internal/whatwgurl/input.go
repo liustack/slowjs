@@ -49,7 +49,11 @@ type Input struct{ s string }
 // UTF-16 units. A byte that is not part of valid UTF-8 counts as one unit, as
 // the parser reads it as U+FFFD.
 func NewInput(s string) (Input, bool) {
-	// A unit takes at most 3 bytes (a pair of units 4), so this needs no count.
+	// A unit takes at least 1 byte and at most 3 (a pair of units 4), so
+	// neither of these needs a count.
+	if len(s) <= MaxUnits {
+		return Input{s}, true
+	}
 	if len(s) > 3*MaxUnits {
 		return Input{}, false
 	}

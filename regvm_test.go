@@ -717,6 +717,18 @@ var depthNewBig = (function () {
   function X(n) { BIGVARS; this.v = g(n + 1) + v1 + v2000; }
   return function () { return g(0); };
 })();
+var depthNewExtra = (function () {
+  var o = depthO;
+  function g(n) { o.d = n; return new X(n + 1, n, n); }
+  function X(n) { this.v = g(n + 1); }
+  return function () { return g(0); };
+})();
+var depthNewExtraBig = (function () {
+  var o = depthO;
+  function g(n) { o.d = n; return new X(n + 1, n, n); }
+  function X(n) { BIGVARS; this.v = g(n + 1) + v1 + v2000; }
+  return function () { return g(0); };
+})();
 `
 
 // regvmDepthFloor is, for each recursion of TestRegvmDepth and each
@@ -737,8 +749,8 @@ var depthNewBig = (function () {
 // darwin/arm64 and linux/amd64 and on darwin/amd64 under Rosetta, all the
 // same.
 var regvmDepthFloor = map[string]map[string]int{
-	"arm64": {"depthJS": 4997, "depthBig": 4997, "depthC": 4997, "depthBigC": 4997, "depthMap": 2499, "depthNew": 9996, "depthNewBig": 9996},
-	"amd64": {"depthJS": 4997, "depthBig": 4997, "depthC": 4997, "depthBigC": 4997, "depthMap": 2499, "depthNew": 9996, "depthNewBig": 9996},
+	"arm64": {"depthJS": 4997, "depthBig": 4997, "depthC": 4997, "depthBigC": 4997, "depthMap": 2499, "depthNew": 9996, "depthNewBig": 9996, "depthNewExtra": 9996, "depthNewExtraBig": 9996},
+	"amd64": {"depthJS": 4997, "depthBig": 4997, "depthC": 4997, "depthBigC": 4997, "depthMap": 2499, "depthNew": 9996, "depthNewBig": 9996, "depthNewExtra": 9996, "depthNewExtraBig": 9996},
 }
 
 // No path recurses less deep than it did before: pure JavaScript, with small
@@ -749,7 +761,7 @@ func TestRegvmDepth(t *testing.T) {
 	if !ok {
 		t.Fatalf("no depth floors for %s", runtime.GOARCH)
 	}
-	for _, fn := range []string{"depthJS", "depthBig", "depthC", "depthBigC", "depthMap", "depthNew", "depthNewBig"} {
+	for _, fn := range []string{"depthJS", "depthBig", "depthC", "depthBigC", "depthMap", "depthNew", "depthNewBig", "depthNewExtra", "depthNewExtraBig"} {
 		m := newTestVM(t)
 		if strings.HasPrefix(fn, "depthNew") {
 			// the most levels, so that a frame of depthNewBig that

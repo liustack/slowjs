@@ -1,0 +1,164 @@
+# Instruction counts of tifa's pages and of the V8 suite, the pushed commit
+# against its base, counted by callgrind in the window of
+# internal/measure/pages. It runs when a branch count/<name> is pushed, or by
+# hand. The counts do not depend on the machine, so the groups of pages run as
+# jobs side by side. See "Counts in CI" in docs/measuring.md.
+name: count
+
+on:
+  push:
+    branches:
+      - "count/**"
+  workflow_dispatch:
+    inputs:
+      base:
+        description: "Count against the merge base of the commit with this branch or commit"
+        default: main
+      gen:
+        description: "Generate the amd64 engine of the commit first (make gen), for a branch whose generated files are stale"
+        type: boolean
+        default: false
+
+# A newer push to the same ref stops the older run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CGO_ENABLED: "0"
+
+jobs:
+  build:
+    name: build both sides
+    # ubuntu-24.04 for LLVM 22.1.8 from apt.llvm.org, as in llvm-steps.yml.
+    # The binaries are static, so they run on the runners of the counts too.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          path: new
+          fetch-depth: 0
+      - name: Check out the base
+        env:
+          BASE_REF: ${{ inputs.base || 'main' }}
+        run: |
+          ref=$BASE_REF
+          git -C new rev-parse -q --verify "origin/$ref^{commit}" >/dev/null && ref=origin/$ref
+          base=$(git -C new merge-base HEAD "$ref")
+          git clone -q --no-checkout --shared new base
+          git -C base checkout -q --detach "$base"
+          echo "new: $(git -C new log --oneline -1)" | tee sides.txt
+          echo "base: $(git -C base log --oneline -1) (the merge base with $ref)" | tee -a sides.txt
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: new/go.mod
+          cache-dependency-path: new/go.sum
+      - name: Install LLVM 22 from apt.llvm.org
+        if: ${{ inputs.gen }}
+        run: |
+          curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc >/dev/null
+          echo "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-22 main" | sudo tee /etc/apt/sources.list.d/llvm22.list
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends clang-22 llvm-22-dev lld-22
+          /usr/lib/llvm-22/bin/clang --version
+      - name: Generate the engine of the commit
+        if: ${{ inputs.gen }}
+        run: |
+          make -C new gen
+          echo "new: engine generated again (make gen)" | tee -a sides.txt
+        env:
+          GEN_JOBS: "4"
+      - name: Build the pages program of both sides
+        run: new/scripts/count-pages.sh build base new bin && cp sides.txt bin/
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: bin
+          path: bin/
+          retention-days: 7
+
+  count:
+    name: count ${{ matrix.group }}
+    needs: build
+    # ubuntu-26.04 has valgrind 3.26, the version of the build machines.
+    runs-on: ubuntu-26.04
+    # About 15 minutes each at most, with four pages counted at once.
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [wb, store-en, store-zh, mui, react, v8]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Show the machine
+        run: lscpu | grep "Model name" && nproc
+      - name: Install valgrind
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends valgrind
+          valgrind --version
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: bin
+          path: bin
+      - name: Count
+        run: |
+          chmod +x bin/*@0.0
+          mkdir -p out
+          scripts/count-pages.sh count bin . out ${{ matrix.group }} | tee out/table.txt
+      - name: The table
+        if: always()
+        run: |
+          {
+            echo "### ${{ matrix.group }}"
+            echo
+            sed 's/^/    /' bin/sides.txt
+            echo
+            grep '^|' out/table.txt || echo "no table"
+          } >>"$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: count-${{ matrix.group }}
+          path: |
+            out/*.tsv
+            out/raw/*.log
+            out/raw/*.cg.1
+          if-no-files-found: ignore
+          retention-days: 7
+
+  table:
+    name: the table
+    needs: count
+    if: always() && needs.count.result != 'skipped'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          pattern: count-*
+          path: counts
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: bin
+          path: bin
+      - name: Join the tables
+        run: |
+          {
+            echo "## Instructions a render, in the window of callgrind"
+            echo
+            sed 's/^/    /' bin/sides.txt
+            echo
+            scripts/count-pages.sh table counts/*/*.tsv
+            echo
+            echo "Groups counted: $(ls counts/*/*.tsv | xargs -n1 basename | sed 's/\.tsv$//' | tr '\n' ' ')"
+          } | tee table.md >>"$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: table
+          path: table.md
+          retention-days: 30

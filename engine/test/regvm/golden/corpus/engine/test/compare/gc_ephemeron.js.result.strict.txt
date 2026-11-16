@@ -40,6 +40,6 @@ result mutation after a collection: ok
 result registry unregister: ok
 result mixed graphs, 20 seeds: ok
 result young mixed graphs, 20 seeds: ok
-mem-end obj=314 atom=772 shape=283 prop=1240 jsfunc=26 cfunc=146 array=5 fast_array=5 elements=123 binary=0
-mem-gc obj=314 atom=772 shape=283 prop=1240 jsfunc=26 cfunc=146 array=5 fast_array=5 elements=123 binary=0
+mem-end obj=314 atom=773 shape=283 prop=1240 jsfunc=26 cfunc=146 array=5 fast_array=5 elements=123 binary=0
+mem-gc obj=314 atom=773 shape=283 prop=1240 jsfunc=26 cfunc=146 array=5 fast_array=5 elements=123 binary=0
 --- status exit 0

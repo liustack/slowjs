@@ -45071,7 +45071,7 @@ typedef enum BCTagEnum {
     BC_TAG_OBJECT_REFERENCE,
 } BCTagEnum;
 
-#define BC_VERSION 13
+#define BC_VERSION 14
 
 typedef struct BCWriterState {
     JSContext *ctx;
@@ -51185,14 +51185,140 @@ static JSValue js_array_toString(JSContext *ctx, JSValueConst this_val,
     return ret;
 }
 
+/* 1 when a unit of the string or rope v is above 0xff, so that the buffer of
+   js_array_join must be 16 bits wide, 0 when none is, -1 when interrupted. It
+   reads the flag as hash_string_poll does: *pwork is the units since the last
+   reading, each string of a rope counted one more than its length. A string of
+   8 bits is not read. */
+static int js_join_wide(JSContext *ctx, JSValueConst v, uint32_t *pwork)
+{
+    JSStringRopeIter it;
+    JSString *p;
+    uint32_t off, n, j, work = *pwork;
+    uint16_t c = 0;
+
+    string_rope_iter_init(&it, v);
+    while (c <= 0xff && (p = string_rope_iter_next(&it)) != NULL) {
+        for (off = 0; p->is_wide_char && off < p->len && c <= 0xff; off += n) {
+            n = min_uint32(p->len - off, JS_ROPE_STEP - work);
+            for (j = 0; j < n; j++)
+                c |= p->u.str16[off + j];
+            JS_WORK(n);
+            work += n;
+            if (work >= JS_ROPE_STEP) {
+                work = 0;
+                if (js_poll_interrupts(ctx))
+                    return -1;
+            }
+        }
+        JS_WORK(1);
+        if (++work >= JS_ROPE_STEP) {
+            work = 0;
+            if (js_poll_interrupts(ctx))
+                return -1;
+        }
+    }
+    *pwork = work;
+    return c > 0xff;
+}
+
+/* The length and width of the result of js_array_join when obj is a fast
+   array whose count is its length n and whose elements are all strings,
+   ropes, undefined or null: 1 with them in *plen and *pwide, 0 when it is
+   not such an array, when the result would be too long (the loop of
+   js_array_join then reads the elements and throws as before) or when its
+   length is one at which the loop makes room for some arrays and not for
+   others (JS_JOIN_ROOM_SOME), -1 when interrupted. sep is the separator
+   when it is not the one character c. The width is the one the buffer would
+   come to as it copies (16 bits only for a unit above 0xff), so the result
+   is the same string in the same form.
+
+   The fast join makes room under the memory limit (js_trigger_gc_block)
+   where the loop would, and nowhere else. The loop's buffer starts empty and
+   makes room when a growth takes it to JS_JOIN_ROOM_ALL characters or more
+   (string_buffer_realloc, string_buffer_widen), at either width, and a
+   growth to new_len characters takes max(new_len, size * 3 / 2). It grows
+   only while its size is less than the result, so from a size of at most
+   len - 1, and size * 3 / 2 stays under JS_JOIN_ROOM_ALL for a result of
+   fewer than JS_JOIN_ROOM_SOME characters: there the loop never makes room,
+   and neither does the fast join. A result of JS_JOIN_ROOM_ALL characters
+   or more takes a growth to that size (the few bytes of slack the allocator
+   gives a block aside), which makes room, and so does the fast join. In
+   between, it depends on the lengths of the elements and on that slack
+   (45,000 and 5,000 characters make room, 30,000 and 15,000 do not), so
+   those joins take the loop. */
+#define JS_JOIN_ROOM_ALL (64 << 10)
+#define JS_JOIN_ROOM_SOME ((JS_JOIN_ROOM_ALL * 2 + 2) / 3 + 1) /* 43,692 */
+_Static_assert((JS_JOIN_ROOM_SOME - 2) * 3 / 2 < JS_JOIN_ROOM_ALL &&
+               (JS_JOIN_ROOM_SOME - 1) * 3 / 2 >= JS_JOIN_ROOM_ALL,
+               "JS_JOIN_ROOM_SOME is the shortest result whose buffer may grow to JS_JOIN_ROOM_ALL");
+
+static int js_join_plan(JSContext *ctx, JSValueConst obj, int64_t n, int c,
+                        JSString *sep, int64_t *plen, int *pwide)
+{
+    JSValue *arrp;
+    uint32_t cnt, k, work = 0;
+    int64_t len = 0;
+    int wide = 0, r;
+
+    if (!js_get_fast_array(ctx, obj, &arrp, &cnt) || cnt != n || n == 0)
+        return 0;
+    for (k = 0; k < cnt; k++) {
+        JSValueConst e = arrp[k];
+
+        if ((k & 1023) == 1023 && js_poll_interrupts(ctx))
+            return -1;
+        switch (JS_VALUE_GET_TAG(e)) {
+        case JS_TAG_STRING:
+            len += JS_VALUE_GET_STRING(e)->len;
+            if (!wide && JS_VALUE_GET_STRING(e)->is_wide_char)
+                goto scan;
+            break;
+        case JS_TAG_STRING_ROPE:
+            len += JS_VALUE_GET_STRING_ROPE(e)->len;
+            if (!wide && JS_VALUE_GET_STRING_ROPE(e)->is_wide_char)
+                goto scan;
+            break;
+        scan:
+            r = js_join_wide(ctx, e, &work);
+            if (r < 0)
+                return -1;
+            wide = r;
+            break;
+        case JS_TAG_UNDEFINED:
+        case JS_TAG_NULL:
+            break;
+        default:
+            return 0;
+        }
+    }
+    if (c < 0 && cnt > 1) {
+        len += (int64_t)(cnt - 1) * sep->len;
+        if (!wide && sep->is_wide_char) {
+            r = js_join_wide(ctx, JS_MKPTR(JS_TAG_STRING, sep), &work);
+            if (r < 0)
+                return -1;
+            wide = r;
+        }
+    } else {
+        len += cnt - 1;
+    }
+    if (len > JS_STRING_LEN_MAX ||
+        (len >= JS_JOIN_ROOM_SOME && len < JS_JOIN_ROOM_ALL))
+        return 0;
+    *plen = len;
+    *pwide = wide;
+    return 1;
+}
+
 static JSValue js_array_join(JSContext *ctx, JSValueConst this_val,
                              int argc, JSValueConst *argv, int toLocaleString)
 {
     JSValue obj, sep = JS_UNDEFINED, el;
     StringBuffer b_s, *b = &b_s;
     JSString *p = NULL;
-    int64_t i, n;
-    int c;
+    int64_t i, n, len;
+    int c, wide, fast = 0;
 
     obj = JS_ToObject(ctx, this_val);
     if (js_get_length64(ctx, &n, obj))
@@ -51209,7 +51335,32 @@ static JSValue js_array_join(JSContext *ctx, JSValueConst this_val,
         else
             c = -1;
     }
-    string_buffer_init(ctx, b, 0);
+    /* A fast array of strings: one buffer of the length and width of the
+       result, and the elements read in place, as no read can run a script.
+       Its block makes room under the memory limit where the loop would: for
+       a result of JS_JOIN_ROOM_ALL characters or more, and not for a
+       shorter one (js_join_plan). A check for every short join would
+       collect at every call near the limit when nothing can be freed. Here,
+       with nothing made yet, a collection is as safe as at the entry of the
+       call, and it frees nothing obj holds, so its elements stay where they
+       are. */
+    if (!toLocaleString) {
+        fast = js_join_plan(ctx, obj, n, c, p, &len, &wide);
+        if (fast < 0) {
+            JS_FreeValue(ctx, sep);
+            goto exception;
+        }
+    }
+    if (fast) {
+        if (len >= JS_JOIN_ROOM_ALL)
+            js_trigger_gc_block(ctx->rt, (size_t)len << wide);
+        if (string_buffer_init2(ctx, b, len, wide)) {
+            JS_FreeValue(ctx, sep);
+            goto exception;
+        }
+    } else {
+        string_buffer_init(ctx, b, 0);
+    }
     /* the buffer grows where a full collection is as safe as at the
        creation of an object: between the reads of two elements, each of
        which may run a getter, with obj and the element counted, and a
@@ -51220,6 +51371,27 @@ static JSValue js_array_join(JSContext *ctx, JSValueConst this_val,
         ctx->rt->gc_join_sb[ctx->rt->gc_join_depth] = b;
     ctx->rt->gc_join_depth++;
 
+    if (fast) {
+        /* the buffer has the room and the width of the result, so it does
+           not grow, and nothing here collects or runs a script */
+        const JSValue *arrp = JS_VALUE_GET_OBJ(obj)->u.array.u.values;
+
+        for(i = 0; i < n; i++) {
+            if ((i & 1023) == 1023 && js_poll_interrupts(ctx))
+                goto fail;
+            if (i > 0) {
+                if (c >= 0) {
+                    string_buffer_putc8(b, c);
+                } else {
+                    string_buffer_concat(b, p, 0, p->len);
+                }
+            }
+            if (!JS_IsNull(arrp[i]) && !JS_IsUndefined(arrp[i]) &&
+                string_buffer_concat_value(b, arrp[i]))
+                goto fail;
+        }
+        goto done;
+    }
     for(i = 0; i < n; i++) {
         if ((i & 1023) == 1023 && js_poll_interrupts(ctx))
             goto fail;
@@ -51241,6 +51413,7 @@ static JSValue js_array_join(JSContext *ctx, JSValueConst this_val,
                 goto fail;
         }
     }
+ done:
     ctx->rt->gc_join_depth--;
     JS_FreeValue(ctx, sep);
     JS_FreeValue(ctx, obj);
@@ -54708,9 +54881,14 @@ static no_inline int js_string_find_short(JSStringFind *f, const void *hay,
    looks at each character of the needle a few times to find its critical
    factorization, and compares at most two characters for each index of hay.
    It checks the interrupt counter after at most 2 JS_STRING_FIND_STEP units
-   of work. The table of shifts has an entry for each low byte: 16-bit
-   characters with the same low byte share one, which holds the shift of the
-   one nearest the end of the needle, and a shorter shift is still safe. */
+   of work. The table of shifts has an entry for each low byte: how far the
+   last character of the needle with that low byte is from its end, or the
+   length of the needle for a byte it does not have, at most 255 so that the
+   table is 256 bytes. 16-bit characters with the same low byte share one
+   entry, which holds the shift of the one nearest the end of the needle, and
+   a shorter shift is still safe. A run of windows whose last character has a
+   shift is skipped in one tight loop, at most as many windows as are left of
+   the step, so that the counter is checked as often as before. */
 static force_inline int js_string_two_way(JSStringFind *f, const void *hay,
                                           int hw, int lo, int hi,
                                           const void *needle, int nw, int l,
@@ -54718,17 +54896,16 @@ static force_inline int js_string_two_way(JSStringFind *f, const void *hay,
 {
 #define JS_TW_HAY(v) js_string_unit(hay, hw, rev ? hi + l - 1 - (v) : lo + (v))
 #define JS_TW_NEEDLE(j) js_string_unit(needle, nw, rev ? l - 1 - (j) : (j))
-    uint32_t shift[256], set[256 / 32] = { 0 };
-    int i, ip, jp, k, p, p0, ms, mem, mem0, s, last, a, b, e;
+    uint8_t shift[256];
+    int i, ip, jp, k, p, p0, ms, mem, mem0, s, last, a, b, e, n;
 
+    memset(shift, min_int(l, 255), sizeof(shift));
     for(i = 0; i < l; i++) {
         a = JS_TW_NEEDLE(i);
         /* a string of 8-bit characters cannot have it */
         if (!hw && a > 0xff)
             return -1;
-        a &= 0xff;
-        set[a >> 5] |= 1u << (a & 31);
-        shift[a] = i + 1;
+        shift[a & 0xff] = min_int(l - 1 - i, 255);
         JS_STRING_FIND_WORK(f, 1);
     }
 
@@ -54809,20 +54986,25 @@ static force_inline int js_string_two_way(JSStringFind *f, const void *hay,
             return -1;
         JS_STRING_FIND_WORK(f, 1);
         /* the last character first: move on by its shift when it is not
-           the last of the needle */
-        a = JS_TW_HAY(s + l - 1) & 0xff;
-        if (set[a >> 5] >> (a & 31) & 1) {
-            k = l - shift[a];
-            if (k) {
-                if (k < mem)
-                    k = mem;
-                s += k;
-                mem = 0;
-                continue;
-            }
-        } else {
-            s += l;
+           the last of the needle, and so on over the next windows, as many
+           as are left of the step */
+        k = shift[JS_TW_HAY(s + l - 1) & 0xff];
+        if (k) {
+            if (k < mem)
+                k = mem;
+            s += k;
             mem = 0;
+            n = JS_STRING_FIND_STEP - f->work;
+            while (n > 0 && s <= last &&
+                   (k = shift[JS_TW_HAY(s + l - 1) & 0xff]) != 0) {
+                s += k;
+                n--;
+            }
+            /* each window skipped is a unit of work, and the counter is
+               checked when they used up the step, as one window at a time
+               did, also when the last of them ends the search */
+            f->work = JS_STRING_FIND_STEP - n;
+            JS_STRING_FIND_WORK(f, 0);
             continue;
         }
         /* the right half */
@@ -56608,6 +56790,137 @@ JSValue JS_NewEscapeTextFunction(JSContext *ctx, const char *name, size_t name_l
     return func_obj;
 }
 
+/* murmur2 of @emotion/hash 0.9, which emotion takes of every style it
+   serializes, for a host that asks for it (JS_NewMurmur2Function): the hash
+   of the low byte of each UTF-16 code unit of a string, in base 36, as the
+   function of emotion gives it while String.prototype.charCodeAt and
+   Number.prototype.toString are the built-ins. Its JavaScript multiplies in
+   two halves that stay exact doubles, and its bit operators cut each product
+   to 32 bits, so each step is a product of uint32_t. */
+
+/* units between two reads of the interrupt flag, a multiple of 16 */
+#define JS_MURMUR2_STEP 4096
+
+static inline uint32_t murmur2_mix(uint32_t h, uint32_t k)
+{
+    const uint32_t m = 0x5bd1e995;
+
+    k *= m;
+    k ^= k >> 24;
+    return k * m ^ h * m;
+}
+
+/* the 4 units at s as one block: the first in the low byte */
+static inline uint32_t murmur2_block8(const uint8_t *s)
+{
+    if (is_be())
+        return s[0] | s[1] << 8 | s[2] << 16 | (uint32_t)s[3] << 24;
+    return get_u32(s);
+}
+
+/* the low bytes of the 4 units at s as one block */
+static inline uint32_t murmur2_block16(const uint16_t *s)
+{
+    uint64_t x;
+
+    if (is_be())
+        return (s[0] & 0xff) | (s[1] & 0xff) << 8 | (s[2] & 0xff) << 16 |
+            (uint32_t)(s[3] & 0xff) << 24;
+    x = get_u64((const uint8_t *)s) & 0x00ff00ff00ff00ffULL;
+    x = (x | x >> 8) & 0x0000ffff0000ffffULL;
+    return (uint32_t)(x | x >> 16);
+}
+
+/* h after the units [i, end) of p, end - i a multiple of 4 */
+static uint32_t murmur2_blocks(const JSString *p, uint32_t i, uint32_t end,
+                               uint32_t h)
+{
+    if (p->is_wide_char) {
+        const uint16_t *s = p->u.str16 + i, *e = p->u.str16 + end;
+        for (; e - s >= 16; s += 16) {
+            h = murmur2_mix(h, murmur2_block16(s));
+            h = murmur2_mix(h, murmur2_block16(s + 4));
+            h = murmur2_mix(h, murmur2_block16(s + 8));
+            h = murmur2_mix(h, murmur2_block16(s + 12));
+        }
+        for (; s < e; s += 4)
+            h = murmur2_mix(h, murmur2_block16(s));
+    } else {
+        const uint8_t *s = p->u.str8 + i, *e = p->u.str8 + end;
+        for (; e - s >= 16; s += 16) {
+            h = murmur2_mix(h, murmur2_block8(s));
+            h = murmur2_mix(h, murmur2_block8(s + 4));
+            h = murmur2_mix(h, murmur2_block8(s + 8));
+            h = murmur2_mix(h, murmur2_block8(s + 12));
+        }
+        for (; s < e; s += 4)
+            h = murmur2_mix(h, murmur2_block8(s));
+    }
+    return h;
+}
+
+static JSValue js_murmur2(JSContext *ctx, JSValueConst this_val,
+                          int argc, JSValueConst *argv)
+{
+    const uint32_t m = 0x5bd1e995;
+    JSValue str = JS_UNDEFINED; /* the rope argument joined */
+    JSValueConst v = argv[0];
+    JSString *p;
+    uint32_t h = 0, b[3], n, i, end, full;
+    int j;
+    char d[8], out[8];
+
+    if (JS_VALUE_GET_TAG(v) == JS_TAG_STRING_ROPE) {
+        str = JS_ToString(ctx, v);
+        if (JS_IsException(str))
+            return str;
+        v = str;
+    } else if (JS_VALUE_GET_TAG(v) != JS_TAG_STRING) {
+        return JS_UNDEFINED;
+    }
+    p = JS_VALUE_GET_STRING(v);
+    n = p->len;
+    full = n & ~3u;
+    for (i = 0; i < full; i = end) {
+        if (i > 0 && js_poll_interrupts(ctx)) {
+            JS_FreeValue(ctx, str);
+            return JS_EXCEPTION;
+        }
+        end = full - i > JS_MURMUR2_STEP ? i + JS_MURMUR2_STEP : full;
+        h = murmur2_blocks(p, i, end, h);
+    }
+    for (j = 0; i + j < n; j++)
+        b[j] = (p->is_wide_char ? p->u.str16[i + j] : p->u.str8[i + j]) & 0xff;
+    switch (j) {
+    case 3:
+        h ^= b[2] << 16;
+        /* fall through */
+    case 2:
+        h ^= b[1] << 8;
+        /* fall through */
+    case 1:
+        h ^= b[0];
+        h *= m;
+    }
+    JS_FreeValue(ctx, str);
+    h ^= h >> 13;
+    h *= m;
+    h ^= h >> 15;
+    i = 0;
+    do {
+        d[i++] = "0123456789abcdefghijklmnopqrstuvwxyz"[h % 36];
+        h /= 36;
+    } while (h);
+    for (j = 0; i > 0; j++)
+        out[j] = d[--i];
+    return js_new_string8_len(ctx, out, j);
+}
+
+JSValue JS_NewMurmur2Function(JSContext *ctx)
+{
+    return JS_NewCFunction(ctx, js_murmur2, "murmur2", 1);
+}
+
 /* ---- the copy of the props of an element in React ---- */
 
 /* React's createElement and cloneElement copy the keys of their config into
@@ -56906,6 +57219,28 @@ JSValue JS_NewCopyPropsFunction(JSContext *ctx, const char *name, size_t name_le
    js_end_tag gives the end tag. target then holds other strings than React's
    would, and the same text when they are joined.
 
+   Its seventh argument, mode, says which of React's functions it stands in
+   for. undefined (a caller that passes six) and 0: pushStartGenericElement.
+   1: pushSelfClosing, which React uses for img (after its image preload) and
+   the void elements (br, hr, meta, source and the like): the same loop, with
+   "children" and "dangerouslySetInnerHTML" a throw when not null or
+   undefined, then pushViewTransitionAttributes, "/>" and no text, and a
+   return of null. js_start_tag declines a call with children, so that React
+   throws, and is otherwise the generic call with "/>" for ">". 2: the case
+   "input" of pushStartInstance, the same as 1 except that the loop holds back
+   name, formAction, formEncType, formMethod, formTarget, checked,
+   defaultChecked, value and defaultValue, and writes them after the other
+   props as pushFormActionAttribute, pushBooleanAttribute and pushAttribute
+   do (js_emit_input_tail). It declines a formAction that is a function. 3:
+   the branch of the case "style" of pushStartInstance that writes the
+   element where it is, which emotion's style elements take: the loop of 0,
+   with dangerouslySetInnerHTML held back, then ">", its __html as it is, the
+   end tag and a return of null (js_emit_inner_html). It declines children,
+   which React writes with its own escape, and an __html that React would
+   read through a getter, the prototype or a toString. The caller asks only
+   once React has chosen that branch. It declines any other mode, so that a caller that asks for a mode this engine
+   does not have gets React's function.
+
    js_start_tag returns its argument decline, having changed nothing, for any
    call where React's functions could do something else than it does, and the
    script then runs them. It writes only when:
@@ -56992,10 +57327,42 @@ enum {
     JS_EMIT_STYLE_CUSTOM, /* a style name that starts with --, as it is */
 };
 
+/* the mode of a start tag: the function of React it writes as */
+enum {
+    JS_EMIT_MODE_GENERIC, /* pushStartGenericElement */
+    JS_EMIT_MODE_SELF,    /* pushSelfClosing */
+    JS_EMIT_MODE_INPUT,   /* the case "input" of pushStartInstance */
+    JS_EMIT_MODE_STYLE,   /* the case "style", written in place */
+    JS_EMIT_MODE_LAST = JS_EMIT_MODE_STYLE,
+};
+
+/* the props the case "input" holds back, in the order it writes them, then
+   dangerouslySetInnerHTML, which the case "style" holds back */
+enum {
+    JS_EMIT_HELD_NAME,
+    JS_EMIT_HELD_FORM_ACTION,
+    JS_EMIT_HELD_FORM_ENC_TYPE,
+    JS_EMIT_HELD_FORM_METHOD,
+    JS_EMIT_HELD_FORM_TARGET,
+    JS_EMIT_HELD_CHECKED,
+    JS_EMIT_HELD_DEFAULT_CHECKED,
+    JS_EMIT_HELD_VALUE,
+    JS_EMIT_HELD_DEFAULT_VALUE,
+    JS_EMIT_HELD_INNER_HTML,
+    JS_EMIT_HELD_COUNT
+};
+
+static const char *const js_emit_held_names[JS_EMIT_HELD_COUNT] = {
+    "name", "formAction", "formEncType", "formMethod", "formTarget",
+    "checked", "defaultChecked", "value", "defaultValue",
+    "dangerouslySetInnerHTML",
+};
+
 enum {
     JS_EMIT_ATOM_VIEW_TRANSITION,
     JS_EMIT_ATOM_CALL,
     JS_EMIT_ATOM_PUSH,
+    JS_EMIT_ATOM_HTML,
     JS_EMIT_ATOM_COUNT
 };
 
@@ -57003,6 +57370,8 @@ typedef struct JSEmitName {
     JSAtom atom;        /* the key, held, or JS_ATOM_NULL for an empty entry */
     uint8_t kind;
     uint8_t unitless;   /* a style name of unitlessNumbers */
+    uint8_t held;       /* 1 + JS_EMIT_HELD_x for a prop the case "input"
+                           or "style" holds back, else 0 */
     JSValue chunk;      /* ` name="`, ` name=""` or the style name, or undefined */
 } JSEmitName;
 
@@ -57687,7 +58056,7 @@ static int js_emit_attr_fill(JSContext *ctx, JSEmitName *e, JSAtom atom)
     const JSString *p = ctx->rt->atom_array[atom];
     const char *out = NULL;
     char buf[64], pre[6];
-    int kind = JS_EMIT_DECLINE, c;
+    int kind = JS_EMIT_DECLINE, held = 0, c;
     size_t i, n;
     StringBuffer b;
     JSValue chunk = JS_UNDEFINED;
@@ -57696,6 +58065,12 @@ static int js_emit_attr_fill(JSContext *ctx, JSEmitName *e, JSAtom atom)
         n = p->len;
         memcpy(buf, p->u.str8, n);
         buf[n] = '\0';
+        for (i = 0; i < JS_EMIT_HELD_COUNT; i++) {
+            if (js_emit_name_is(buf, n, js_emit_held_names[i])) {
+                held = i + 1;
+                break;
+            }
+        }
         for (i = 0; i < countof(js_emit_attr_names); i++) {
             if (js_emit_name_is(buf, n, js_emit_attr_names[i].name)) {
                 kind = js_emit_attr_names[i].kind;
@@ -57762,6 +58137,7 @@ static int js_emit_attr_fill(JSContext *ctx, JSEmitName *e, JSAtom atom)
     e->atom = JS_DupAtom(ctx, atom);
     e->kind = kind;
     e->unitless = 0;
+    e->held = held;
     e->chunk = chunk;
     return 0;
 }
@@ -57859,6 +58235,7 @@ static int js_emit_style_fill(JSContext *ctx, JSEmitName *e, JSAtom atom)
     e->atom = JS_DupAtom(ctx, atom);
     e->kind = kind;
     e->unitless = unitless;
+    e->held = 0;
     e->chunk = chunk;
     return 0;
 }
@@ -58187,7 +58564,222 @@ static BOOL js_emit_target_plain(JSContext *ctx, JSEmitCache *ec, JSObject *p)
         f->u.cfunc.magic == 0;
 }
 
-/* startTag(target, props, type, formatContext, hasOwnProperty, decline) */
+/* writes into b the attribute of entry e, not children, for the value v, not
+   null or undefined, as pushAttribute does: 0, 1 to decline, or -1 when the
+   engine has no memory or the host stops it */
+static force_inline int js_emit_attr(JSContext *ctx, JSEmitCache *ec,
+                                     StringBuffer *b, const JSEmitName *e,
+                                     JSValueConst v)
+{
+    int tag = JS_VALUE_GET_NORM_TAG(v), r;
+
+    switch (e->kind) {
+    case JS_EMIT_SKIP:
+        return 0;
+    case JS_EMIT_STYLE:
+        return js_emit_put_style(ctx, ec, b, v);
+    case JS_EMIT_STRING:
+    case JS_EMIT_DEFAULT:
+        if (tag == JS_TAG_BOOL || js_emit_fn_or_sym(ctx, v))
+            return 0;
+        break;
+    case JS_EMIT_PLAIN:
+    case JS_EMIT_DEFAULT_DA:
+        if (js_emit_fn_or_sym(ctx, v))
+            return 0;
+        break;
+    case JS_EMIT_URL_SRC:
+        if (tag == JS_TAG_STRING && JS_VALUE_GET_STRING(v)->len == 0)
+            return 0;
+        /* fall through */
+    case JS_EMIT_URL:
+        if (tag == JS_TAG_BOOL || js_emit_fn_or_sym(ctx, v))
+            return 0;
+        /* a javascript: URL React writes as one of its own, and a rope is
+           not looked at: 1 to decline, or -1 when the host stops the check */
+        if (tag == JS_TAG_STRING_ROPE)
+            return 1;
+        if (tag == JS_TAG_STRING) {
+            r = js_emit_is_javascript_url(ctx, JS_VALUE_GET_STRING(v));
+            if (r)
+                return r;
+        }
+        break;
+    case JS_EMIT_BOOL:
+        if (!js_emit_fn_or_sym(ctx, v) && JS_ToBool(ctx, v))
+            js_emit_put_chunk(b, e->chunk);
+        return 0;
+    default:
+        return 1;
+    }
+    js_emit_put_chunk(b, e->chunk);
+    r = js_emit_put_text(ctx, b, v);
+    js_emit_c8(b, '"');
+    return r;
+}
+
+/* what the case "input" of pushStartInstance writes after the loop over the
+   other props, for the props it held back (held: their index in the props
+   p, or -1): pushFormActionAttribute writes name, formAction, formEncType,
+   formMethod and formTarget, each with pushAttribute under its own name, then
+   checked, or else defaultChecked, goes to pushBooleanAttribute as checked,
+   and value, or else defaultValue, to pushAttribute as value. 1 to decline a
+   formAction that is a function, which React writes as a URL of its own with
+   hidden fields and a script, or -1 as js_emit_attr */
+static no_inline int js_emit_input_tail(JSContext *ctx, JSEmitCache *ec,
+                                        StringBuffer *b, JSObject *p,
+                                        const int8_t *held)
+{
+    JSShapeProperty *prs = get_shape_prop(p->shape);
+    JSEmitName *e;
+    JSValueConst v;
+    int i, k, r;
+
+    k = held[JS_EMIT_HELD_FORM_ACTION];
+    if (k >= 0 && JS_IsFunction(ctx, p->prop[k].u.value))
+        return 1;
+    for (i = JS_EMIT_HELD_NAME; i <= JS_EMIT_HELD_FORM_TARGET; i++) {
+        k = held[i];
+        if (k < 0)
+            continue;
+        e = js_emit_attr_entry(ctx, ec, prs[k].atom);
+        if (!e)
+            return -1;
+        r = js_emit_attr(ctx, ec, b, e, p->prop[k].u.value);
+        if (r)
+            return r;
+    }
+    k = held[JS_EMIT_HELD_CHECKED];
+    if (k < 0)
+        k = held[JS_EMIT_HELD_DEFAULT_CHECKED];
+    if (k >= 0) {
+        v = p->prop[k].u.value;
+        if (!js_emit_fn_or_sym(ctx, v) && JS_ToBool(ctx, v))
+            js_emit_s8(b, " checked=\"\"");
+    }
+    k = held[JS_EMIT_HELD_VALUE];
+    if (k < 0)
+        k = held[JS_EMIT_HELD_DEFAULT_VALUE];
+    if (k >= 0) {
+        v = p->prop[k].u.value;
+        if (!js_emit_fn_or_sym(ctx, v)) {
+            js_emit_s8(b, " value=\"");
+            r = js_emit_put_text(ctx, b, v);
+            js_emit_c8(b, '"');
+            return r;
+        }
+    }
+    return 0;
+}
+
+/* what the case "style" of pushStartInstance writes after the attributes of
+   a style it writes in place, with no children: ">", what pushInnerHTML
+   writes for dangerouslySetInnerHTML (its index k in the props p, or -1 when
+   it is null, undefined or not there), and the end tag, "</style>" for tp.
+   1 to decline what React throws for or reads otherwise: dangerouslySetInnerHTML that is not
+   an ordinary object of Object.prototype with __html of its own as a plain
+   data property, and an __html that is not a string, null or undefined. -1
+   when the engine has no memory or the host stops the copy */
+static no_inline int js_emit_inner_html(JSContext *ctx, JSEmitCache *ec,
+                                        StringBuffer *b, JSObject *p, int k,
+                                        const JSString *tp)
+{
+    JSShapeProperty *prs;
+    JSProperty *pr;
+    JSObject *h;
+    JSValueConst v;
+    JSValue hold;
+    JSString *s;
+    int tag;
+
+    js_emit_c8(b, '>');
+    if (k >= 0) {
+        v = p->prop[k].u.value;
+        if (JS_VALUE_GET_TAG(v) != JS_TAG_OBJECT)
+            return 1;
+        h = JS_VALUE_GET_OBJ(v);
+        if (h->class_id != JS_CLASS_OBJECT ||
+            h->shape->proto != JS_VALUE_GET_OBJ(ctx->class_proto[JS_CLASS_OBJECT]))
+            return 1;
+        prs = find_own_property(&pr, h, ec->atoms[JS_EMIT_ATOM_HTML]);
+        if (!prs || (prs->flags & JS_PROP_TMASK) != JS_PROP_NORMAL)
+            return 1;
+        v = pr->u.value;
+        tag = JS_VALUE_GET_TAG(v);
+        if (tag == JS_TAG_STRING || tag == JS_TAG_STRING_ROPE) {
+            s = js_emit_flat(ctx, v, &hold);
+            if (!s)
+                return -1;
+            if (!js_emit_fits(b, s->len)) {
+                JS_FreeValue(ctx, hold);
+                return 1;
+            }
+            js_emit_wstr(b, s, 0, s->len);
+            JS_FreeValue(ctx, hold);
+        } else if (tag != JS_TAG_NULL && tag != JS_TAG_UNDEFINED) {
+            return 1;
+        }
+    }
+    js_emit_s8(b, "</");
+    js_emit_wstr(b, tp, 0, tp->len);
+    js_emit_c8(b, '>');
+    return 0;
+}
+
+/* the attributes of the start tag of a mode other than the generic one, into
+   b after "<" and the tag tp, and what the mode writes after them (see
+   js_start_tag), for the props p of the kinds of keys kinds: 0, 1 to decline
+   or -1 as js_emit_attr */
+static no_inline int js_emit_mode_attrs(JSContext *ctx, JSEmitCache *ec,
+                                        StringBuffer *b, JSObject *p,
+                                        const uint8_t *kinds,
+                                        const JSString *tp, int mode)
+{
+    JSShapeProperty *prs = get_shape_prop(p->shape);
+    JSValueConst v;
+    JSEmitName *e;
+    int i, tag, n = p->shape->prop_count, r = 0;
+    /* the index in p of each prop the case "input" or "style" holds back,
+       or -1 */
+    int8_t held[JS_EMIT_HELD_COUNT];
+
+    memset(held, -1, sizeof(held));
+    for (i = 0; i < n && r == 0 && !b->error_status; i++) {
+        if (kinds[i] != JS_OWN_KIND_STRING || !(prs[i].flags & JS_PROP_ENUMERABLE))
+            continue;
+        v = p->prop[i].u.value;
+        tag = JS_VALUE_GET_NORM_TAG(v);
+        if (tag == JS_TAG_NULL || tag == JS_TAG_UNDEFINED)
+            continue;
+        e = js_emit_attr_entry(ctx, ec, prs[i].atom);
+        if (!e)
+            return -1;
+        if (e->kind == JS_EMIT_CHILDREN) {
+            /* pushSelfClosing and the case "input" throw, and the style
+               element is written with children by React */
+            r = 1;
+        } else if ((mode == JS_EMIT_MODE_INPUT && e->held &&
+                    e->held <= JS_EMIT_HELD_DEFAULT_VALUE + 1) ||
+                   (mode == JS_EMIT_MODE_STYLE &&
+                    e->held == JS_EMIT_HELD_INNER_HTML + 1)) {
+            held[e->held - 1] = i;
+        } else {
+            r = js_emit_attr(ctx, ec, b, e, v);
+        }
+    }
+    if (r != 0 || b->error_status)
+        return r;
+    if (mode == JS_EMIT_MODE_STYLE)
+        return js_emit_inner_html(ctx, ec, b, p, held[JS_EMIT_HELD_INNER_HTML], tp);
+    if (mode == JS_EMIT_MODE_INPUT)
+        r = js_emit_input_tail(ctx, ec, b, p, held);
+    if (r == 0)
+        js_emit_s8(b, "/>");
+    return r;
+}
+
+/* startTag(target, props, type, formatContext, hasOwnProperty, decline,
+            mode) */
 static JSValue js_start_tag(JSContext *ctx, JSValueConst this_val,
                             int argc, JSValueConst *argv)
 {
@@ -58202,9 +58794,16 @@ static JSValue js_start_tag(JSContext *ctx, JSValueConst this_val,
     uint8_t kinds[JS_EMIT_PROPS_MAX];
     JSValue str, ret;
     uint32_t count;
-    int i, n, tag, valid, r = 0;
+    int i, n, tag, valid, mode, r = 0;
 
-    /* argv has the six values: that is the length of the function */
+    /* argv has the seven values: that is the length of the function */
+    if (JS_VALUE_GET_TAG(argv[6]) == JS_TAG_UNDEFINED)
+        mode = JS_EMIT_MODE_GENERIC;
+    else if (JS_VALUE_GET_TAG(argv[6]) == JS_TAG_INT &&
+             (uint32_t)JS_VALUE_GET_INT(argv[6]) <= JS_EMIT_MODE_LAST)
+        mode = JS_VALUE_GET_INT(argv[6]);
+    else
+        goto decline;
     if (JS_VALUE_GET_TAG(target) != JS_TAG_OBJECT ||
         JS_VALUE_GET_TAG(props) != JS_TAG_OBJECT ||
         JS_VALUE_GET_TAG(typev) != JS_TAG_STRING ||
@@ -58235,7 +58834,10 @@ static JSValue js_start_tag(JSContext *ctx, JSValueConst this_val,
     js_emit_buf_take(ctx, ec, &b);
     js_emit_c8(&b, '<');
     js_emit_wstr(&b, tp, 0, tp->len);
-    for (i = 0; i < n && r == 0 && !b.error_status; i++) {
+    /* the loop of a generic element has no test of the mode */
+    if (mode != JS_EMIT_MODE_GENERIC)
+        r = js_emit_mode_attrs(ctx, ec, &b, pp, kinds, tp, mode);
+    else for (i = 0; i < n && r == 0 && !b.error_status; i++) {
         JSValueConst v;
         JSEmitName *e;
 
@@ -58250,60 +58852,12 @@ static JSValue js_start_tag(JSContext *ctx, JSValueConst this_val,
             r = -1;
             break;
         }
-        switch (e->kind) {
-        case JS_EMIT_SKIP:
-            break;
-        case JS_EMIT_CHILDREN:
+        if (e->kind == JS_EMIT_CHILDREN)
             children = v;
-            break;
-        case JS_EMIT_STYLE:
-            r = js_emit_put_style(ctx, ec, &b, v);
-            break;
-        case JS_EMIT_STRING:
-        case JS_EMIT_DEFAULT:
-            if (tag == JS_TAG_BOOL || js_emit_fn_or_sym(ctx, v))
-                break;
-            goto text;
-        case JS_EMIT_PLAIN:
-        case JS_EMIT_DEFAULT_DA:
-            if (js_emit_fn_or_sym(ctx, v))
-                break;
-        text:
-            js_emit_put_chunk(&b, e->chunk);
-            r = js_emit_put_text(ctx, &b, v);
-            js_emit_c8(&b, '"');
-            break;
-        case JS_EMIT_URL_SRC:
-            if (tag == JS_TAG_STRING && JS_VALUE_GET_STRING(v)->len == 0)
-                break;
-            /* fall through */
-        case JS_EMIT_URL:
-            if (tag == JS_TAG_BOOL || js_emit_fn_or_sym(ctx, v))
-                break;
-            /* a javascript: URL React writes as one of its own, and a rope is
-               not looked at: r is 1 to decline, or -1 when the host stops
-               the check */
-            if (tag == JS_TAG_STRING_ROPE) {
-                r = 1;
-                break;
-            }
-            if (tag == JS_TAG_STRING) {
-                r = js_emit_is_javascript_url(ctx, JS_VALUE_GET_STRING(v));
-                if (r)
-                    break;
-            }
-            goto text;
-        case JS_EMIT_BOOL:
-            if (js_emit_fn_or_sym(ctx, v) || !JS_ToBool(ctx, v))
-                break;
-            js_emit_put_chunk(&b, e->chunk);
-            break;
-        default:
-            r = 1;
-            break;
-        }
+        else
+            r = js_emit_attr(ctx, ec, &b, e, v);
     }
-    if (r == 0) {
+    if (r == 0 && mode == JS_EMIT_MODE_GENERIC) {
         js_emit_c8(&b, '>');
         tag = JS_VALUE_GET_TAG(children);
         if (tag == JS_TAG_STRING || tag == JS_TAG_STRING_ROPE)
@@ -58487,7 +59041,7 @@ static int js_emit_make_builtin(JSContext *ctx, JSValueConst obj, JSAtom atom)
 static int js_emit_init(JSContext *ctx)
 {
     static const char *const names[JS_EMIT_ATOM_COUNT] = {
-        "viewTransition", "call", "push",
+        "viewTransition", "call", "push", "__html",
     };
     JSEmitCache *ec;
     int i;
@@ -58556,7 +59110,7 @@ static JSValue js_emit_new_function(JSContext *ctx, JSCFunction *func, int lengt
 
 JSValue JS_NewStartTagFunction(JSContext *ctx, const char *name, size_t name_len)
 {
-    return js_emit_new_function(ctx, js_start_tag, 6, name, name_len);
+    return js_emit_new_function(ctx, js_start_tag, 7, name, name_len);
 }
 
 JSValue JS_NewEndTagFunction(JSContext *ctx, const char *name, size_t name_len)

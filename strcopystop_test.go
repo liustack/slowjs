@@ -35,6 +35,11 @@ func TestStringCompareCopyStops(t *testing.T) {
 		{"join", s, `[s, 'x'].join('')`},
 		{"join of wide strings", w, `[w, 'x'].join('')`},
 		{"join of one", s, `[s].join()`},
+		// a fast array of strings: the elements are read in place
+		{"join of many strings", `var a = Array(1 << 22).fill('ab')`, `a.join('')`},
+		{"join of many wide strings", `var a = Array(1 << 22).fill('\u3000')`, `a.join('-')`},
+		{"join of many ropes", `var r = 'x'.repeat(600) + 'y'.repeat(600), a = Array(1 << 16).fill(r)`, `a.join()`},
+		{"join of wide ropes", `var r = 'x'.repeat(1 << 20) + '\u3000', a = Array(64).fill(r)`, `a.join()`},
 		{"padEnd", s, `s.padEnd(n + 1)`},
 		{"replace", s, `s.replace('a', 'c')`},
 		{"replace in a wide string", w, `w.replace('\u3000', 'c')`},
@@ -57,6 +62,10 @@ func TestStringCompareCopyStops(t *testing.T) {
 					m.Close()
 					t.Fatal(err)
 				}
+				// collect now: the heap the setup grew would have the first
+				// object of the timed eval start a collection, which marks
+				// every element of a large array and reads no flag
+				m.RunGC()
 				return m
 			}
 			// one call, then a stop at each sixth of it

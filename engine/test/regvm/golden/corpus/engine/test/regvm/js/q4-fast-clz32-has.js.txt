@@ -41,6 +41,6 @@ result replaced1,ptrue,true,true,true,false,true,false
 result true
 result vvvvv
 result !RangeError: Maximum call stack size exceeded at depth 4997
-mem-end obj=581 atom=591 shape=367 prop=2968 jsfunc=4 cfunc=388 array=3 fast_array=3 elements=0 binary=0
-mem-gc obj=206 atom=585 shape=127 prop=1042 jsfunc=0 cfunc=142 array=1 fast_array=1 elements=0 binary=0
+mem-end obj=581 atom=592 shape=367 prop=2968 jsfunc=4 cfunc=388 array=3 fast_array=3 elements=0 binary=0
+mem-gc obj=206 atom=586 shape=127 prop=1042 jsfunc=0 cfunc=142 array=1 fast_array=1 elements=0 binary=0
 --- status exit 0

@@ -122,6 +122,6 @@ result ReferenceError: z is not initialized
 result "123:00"
 result ReferenceError: z is not initialized
 result "122:0019900"
-mem-end obj=196 atom=587 shape=123 prop=1006 jsfunc=0 cfunc=132 array=1 fast_array=1 elements=0 binary=0
-mem-gc obj=196 atom=587 shape=123 prop=1006 jsfunc=0 cfunc=132 array=1 fast_array=1 elements=0 binary=0
+mem-end obj=196 atom=588 shape=123 prop=1006 jsfunc=0 cfunc=132 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=196 atom=588 shape=123 prop=1006 jsfunc=0 cfunc=132 array=1 fast_array=1 elements=0 binary=0
 --- status exit 0

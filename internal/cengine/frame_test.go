@@ -145,3 +145,48 @@ func TestLocalsFreedInFewTurns(t *testing.T) {
 		t.Errorf("a call of a function with 200 locals takes %.1f turns, want 60 or fewer", turns)
 	}
 }
+
+// TestFrameSlotTurns counts the turns of the loop that frees the slots of a
+// frame at its return (rv_free_slots in engine/regvm-run.h), for functions
+// of k parameters called with k arguments that each hold an object: the
+// arguments come in the window of the call, so no loop of the entry sets
+// them, and the return frees func, them and this, k + 2 slots. With an
+// interval of 1 each turn polls, so the polls of a call, less those of a call
+// with one argument (3 slots, freed in straight code), are the turns of the
+// return, give or take a part of a poll the calls make on the side. It frees
+// the first slots 8 to a turn, with a poll tick a turn, and the last 1 to 8
+// in straight code: about one turn for each 8 slots, no more, so that the
+// return of a big frame stays cheap (it took one turn a slot), and no fewer,
+// so that a poll comes within 8 slots of work and the frees they make
+// wherever the return is. A call of more than 32 arguments takes another
+// way, which polls more, so the frames here stay under that.
+func TestFrameSlotTurns(t *testing.T) {
+	needPolls(t)
+	run := func(k int) float64 {
+		params, args := make([]string, k), make([]string, k)
+		for i := range k {
+			params[i], args[i] = fmt.Sprintf("a%d", i), "o"
+		}
+		src := fmt.Sprintf("function f(%s) { return 1 } var o = {}, s = 0; for (var i = 0; i < 1000; i++) s += f(%s); s",
+			strings.Join(params, ", "), strings.Join(args, ", "))
+		v := newVM(t, Options{Seed: 1})
+		v.Host().SetPollInterval(1)
+		got, err := v.Eval(src, "turns.js")
+		if err != nil || got != "1000" {
+			t.Fatalf("%d arguments: %q, %v", k, got, err)
+		}
+		polls := v.Host().Counts().Polls
+		closeVM(t, v)
+		return float64(polls)
+	}
+	one := run(1)
+	for _, k := range []int{6, 7, 14, 15, 22, 23, 30} {
+		slots := k + 2
+		lo, hi := float64(slots-16)/8, float64(slots)/8+1
+		turns := (run(k) - one) / 1000
+		t.Logf("%d slots: %.2f turns at the return", slots, turns)
+		if turns < lo || turns > hi {
+			t.Errorf("the return of a frame of %d slots takes %.2f turns, want %.2f to %.2f", slots, turns, lo, hi)
+		}
+	}
+}

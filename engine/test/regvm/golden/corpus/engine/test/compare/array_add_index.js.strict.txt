@@ -547,6 +547,6 @@ result length set preventedFixedLength: ["TypeError",3]
 result splice grow preventedFixedLength: ["TypeError",3]
 result fill preventedFixedLength: [3,0]
 result copyWithin preventedFixedLength: [3,2]
-mem-end obj=216 atom=561 shape=127 prop=1024 jsfunc=10 cfunc=139 array=3 fast_array=3 elements=560 binary=0
-mem-gc obj=216 atom=561 shape=127 prop=1024 jsfunc=10 cfunc=139 array=3 fast_array=3 elements=560 binary=0
+mem-end obj=216 atom=562 shape=127 prop=1024 jsfunc=10 cfunc=139 array=3 fast_array=3 elements=560 binary=0
+mem-gc obj=216 atom=562 shape=127 prop=1024 jsfunc=10 cfunc=139 array=3 fast_array=3 elements=560 binary=0
 --- status exit 0

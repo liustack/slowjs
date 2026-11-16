@@ -24,6 +24,6 @@ result global function 2 4 gf:wec gh:wec gz:wec
 result after global k0:wec k1:wec k2:wec k3:wec k4:wec k5:wec {"k0":0,"k1":1,"k2":2,"k3":3,"k4":4,"k5":5}
 result mixed 5:wec k1:wec z:wec k0:wec Symbol(s):wec {"5":5,"k1":1,"z":"z","k0":0}
 result mixed again k0:wec k1:wec z:wec Symbol(s):wec {"k0":0,"k1":1,"z":"z"}
-mem-end obj=231 atom=604 shape=165 prop=1140 jsfunc=8 cfunc=133 array=5 fast_array=4 elements=37 binary=0
-mem-gc obj=231 atom=604 shape=165 prop=1140 jsfunc=8 cfunc=133 array=5 fast_array=4 elements=37 binary=0
+mem-end obj=231 atom=605 shape=165 prop=1140 jsfunc=8 cfunc=133 array=5 fast_array=4 elements=37 binary=0
+mem-gc obj=231 atom=605 shape=165 prop=1140 jsfunc=8 cfunc=133 array=5 fast_array=4 elements=37 binary=0
 --- status exit 0

@@ -69,6 +69,6 @@ result ES2026 drop(100000000000000000000): throws RangeError
 result ES2026 take(1.1805916207174113e+21): throws RangeError
 result ES2026 drop(1.1805916207174113e+21): throws RangeError
 result limit conversion order: valueOf,return,RangeError
-mem-end obj=206 atom=558 shape=125 prop=980 jsfunc=3 cfunc=134 array=5 fast_array=5 elements=102 binary=0
-mem-gc obj=206 atom=558 shape=125 prop=980 jsfunc=3 cfunc=134 array=5 fast_array=5 elements=102 binary=0
+mem-end obj=206 atom=559 shape=125 prop=980 jsfunc=3 cfunc=134 array=5 fast_array=5 elements=102 binary=0
+mem-gc obj=206 atom=559 shape=125 prop=980 jsfunc=3 cfunc=134 array=5 fast_array=5 elements=102 binary=0
 --- status exit 0

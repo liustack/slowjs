@@ -53,6 +53,6 @@ result tagged array under Boolean.prototype again: abc=[object String] empty=[ob
 result null prototype of String.prototype: abc=[object String] empty=[object String] rope=[object String] 1=[object Number] 1.5=[object Number] -0=[object Number] NaN=[object Number] 2^31=[object Number] true=[object Boolean] false=[object Boolean] null=[object Null] undefined=[object Undefined] symbol=[object Symbol] bigint=[object BigInt] String=[object String] Number=[object Number] Boolean=[object Boolean] array=[object Array] function=[object Function] object=[object Object] bare=[object Object] regexp=[object RegExp] error=[object Error] date=[object Date]
 result null prototype of String.prototype again: abc=[object String] empty=[object String] rope=[object String] 1=[object Number] 1.5=[object Number] -0=[object Number] NaN=[object Number] 2^31=[object Number] true=[object Boolean] false=[object Boolean] null=[object Null] undefined=[object Undefined] symbol=[object Symbol] bigint=[object BigInt] String=[object String] Number=[object Number] Boolean=[object Boolean] array=[object Array] function=[object Function] object=[object Object] bare=[object Object] regexp=[object RegExp] error=[object Error] date=[object Date]
 result other realm: [object String] [object Number] [object Boolean] [object Null] here: [object Here]
-mem-end obj=383 atom=541 shape=248 prop=1929 jsfunc=0 cfunc=259 array=2 fast_array=2 elements=0 binary=0
-mem-gc obj=200 atom=541 shape=130 prop=998 jsfunc=0 cfunc=137 array=1 fast_array=1 elements=0 binary=0
+mem-end obj=383 atom=542 shape=248 prop=1929 jsfunc=0 cfunc=259 array=2 fast_array=2 elements=0 binary=0
+mem-gc obj=200 atom=542 shape=130 prop=998 jsfunc=0 cfunc=137 array=1 fast_array=1 elements=0 binary=0
 --- status exit 0

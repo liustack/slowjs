@@ -40,6 +40,6 @@ result getter on abcd
 result string getter 1: ["k",4,1]
 result getter on abcd
 result string getter 2: ["k",4,1]
-mem-end obj=196 atom=544 shape=123 prop=963 jsfunc=0 cfunc=133 array=1 fast_array=1 elements=0 binary=0
-mem-gc obj=196 atom=544 shape=123 prop=963 jsfunc=0 cfunc=133 array=1 fast_array=1 elements=0 binary=0
+mem-end obj=196 atom=545 shape=123 prop=963 jsfunc=0 cfunc=133 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=196 atom=545 shape=123 prop=963 jsfunc=0 cfunc=133 array=1 fast_array=1 elements=0 binary=0
 --- status exit 0

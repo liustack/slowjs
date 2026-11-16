@@ -32,6 +32,6 @@ result Map with its prototype set: [] 1 ["k"] [] true 1
 result Array with the prototype of Map: ["length","x"] ["length"] 3 true [] true
 result Array after its prototype changed: ["length"] ["length"] 1 {"value":2,"writable":true,"enumerable":false,"configurable":false} true
 result changed Map.prototype: ["own"] [] 1
-mem-end obj=252 atom=570 shape=155 prop=1079 jsfunc=21 cfunc=140 array=22 fast_array=21 elements=79 binary=0
-mem-gc obj=252 atom=570 shape=155 prop=1079 jsfunc=21 cfunc=140 array=22 fast_array=21 elements=79 binary=0
+mem-end obj=252 atom=571 shape=155 prop=1079 jsfunc=21 cfunc=140 array=22 fast_array=21 elements=79 binary=0
+mem-gc obj=252 atom=571 shape=155 prop=1079 jsfunc=21 cfunc=140 array=22 fast_array=21 elements=79 binary=0
 --- status exit 0

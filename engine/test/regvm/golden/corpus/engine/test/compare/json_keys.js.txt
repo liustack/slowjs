@@ -60,6 +60,6 @@ result long latin-1: 262835 9000 304835/1b82719d
 result long wide: 262835 9000 310835/c681679
 result long string: 160001,1 160001/ab228bc4
 result rawJSON: {"a":"abc","b":12} true
-mem-end obj=223 atom=838 shape=525 prop=1093 jsfunc=8 cfunc=150 array=2 fast_array=2 elements=62 binary=0
-mem-gc obj=223 atom=838 shape=525 prop=1093 jsfunc=8 cfunc=150 array=2 fast_array=2 elements=62 binary=0
+mem-end obj=223 atom=839 shape=525 prop=1093 jsfunc=8 cfunc=150 array=2 fast_array=2 elements=62 binary=0
+mem-gc obj=223 atom=839 shape=525 prop=1093 jsfunc=8 cfunc=150 array=2 fast_array=2 elements=62 binary=0
 --- status exit 0

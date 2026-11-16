@@ -67,7 +67,8 @@ Releases from v0.29.0 run the C engine. Instructions are counted with callgrind 
 | v0.30.6 | [Built-ins answered in the register loop](changes/c-engine.md#built-ins-answered-in-the-register-loop), [fewer argument words into hot calls](changes/c-engine.md#fewer-argument-words-into-hot-calls), and the profile trained again on them | Against v0.30.5, on linux/amd64 (an AMD EPYC 7B13 with 4 cores, one core, the mean of 16 code layouts, sums of the pages' medians): the fourteen store pages of the shop take 0.979 of the time, React's page 0.979, the six workbench pages 0.987 and the long Markdown page 0.994. The three MUI pages (0.993) and the loads of three bundles show no change ([v0.30.6 against v0.30.5](#v0306-against-v0305)) |
 | v0.30.7 | [Stores that add a key](#keyed-and-named-stores-that-add-a-key), [two strings added without the generic path](#two-strings-added-without-the-generic-path), [the spread of a plain array with no iterator](#the-spread-of-a-plain-array-with-no-iterator), [property descriptors and bind without generic lookups](#property-descriptors-and-bind-without-generic-lookups), [the UTF-8 of a page eight ASCII units at a time](#the-utf-8-of-a-page-eight-ascii-units-at-a-time), and the profile trained again with [its second input](#the-second-input-of-the-profile) | Against v0.30.6, on linux/amd64 (an AMD EPYC 7B13 with 4 cores, one core, the mean of 16 code layouts, sums of the pages' medians): the six workbench pages of the shop take 0.977 of the time, the three MUI pages 0.983, its fourteen store pages 0.984 and the long Markdown page 0.986. React's page shows no change. A render runs 2.9% to 4.7% fewer instructions, React's 0.8% ([v0.30.7 against v0.30.6](#v0307-against-v0306)) |
 | v0.31.0 | [Arrays that are no longer fast arrays](#arrays-that-are-no-longer-fast-arrays), [instanceof without the call of Symbol.hasInstance](#instanceof-without-the-call-of-symbolhasinstance), [the iterator of a for in loop and its shape](#the-iterator-of-a-for-in-loop-and-its-shape), and the profile trained again on them | Against v0.30.7, on linux/amd64 (an AMD EPYC 7B13 with 4 cores, one core, the mean of 16 code layouts, sums of the pages' medians): no kind of tifa's pages is slower beyond the delta of 1%, and none runs more instructions. React's page runs 0.63% fewer. The V8 suite scores 5.4% higher, Crypto 29.6% and EarleyBoyer 14.1% ([v0.31.0 against v0.30.7](#v0310-against-v0307)) |
-| v0.31.1 | [Numbers converted to text by Schubfach](#numbers-converted-to-text-by-schubfach), [the fields and strings of a Date](#the-fields-and-strings-of-a-date), [integrity levels from the shape](#integrity-levels-from-the-shape), [objects of a constructor that find their shapes](#objects-of-a-constructor-that-find-their-shapes), [passing arguments on with apply](#passing-arguments-on-with-apply), [the next key of a for in loop and the read of it](#the-next-key-of-a-for-in-loop-and-the-read-of-it), [numbers added and subtracted without the shared tail](#numbers-added-and-subtracted-without-the-shared-tail), [a literal every match holds](#a-literal-every-match-holds), and the profile trained again on them | Against v0.31.0, on linux/amd64 (an AMD EPYC 7B13 with 4 cores, one core, the mean of 16 code layouts, sums of the pages' medians): React's page takes 2.2% less time, the six workbench pages 1.5% less and the three MUI pages 1.1% less, and the store pages show no change. The long Markdown page is 2.6% slower. The V8 suite scores 18.7% higher, RegExp 97.2% and RayTrace 48.6% ([v0.31.1 against v0.31.0](#v0311-against-v0310)) |
+| v0.31.1 | [Numbers converted to text by Schubfach](#numbers-converted-to-text-by-schubfach), [the fields and strings of a Date](#the-fields-and-strings-of-a-date), [integrity levels from the shape](#integrity-levels-from-the-shape), [objects of a constructor that find their shapes](#objects-of-a-constructor-that-find-their-shapes), [passing arguments on with apply](#passing-arguments-on-with-apply), [the next key of a for in loop and the read of it](#the-next-key-of-a-for-in-loop-and-the-read-of-it), [numbers added and subtracted without the shared tail](#numbers-added-and-subtracted-without-the-shared-tail), [a literal every match holds](#a-literal-every-match-holds), and the profile trained again on them | Against v0.31.0, on linux/amd64 (an AMD EPYC 7B13 with 4 cores, one core, the mean of 16 code layouts, sums of the pages' medians): React's page takes 2.2% less time, the six workbench pages 1.5% less and the three MUI pages 1.1% less, and the store pages show no change. The long Markdown page measured 2.6% slower, which a later run did not see again. The V8 suite scores 18.7% higher, RegExp 97.2% and RayTrace 48.6% ([v0.31.1 against v0.31.0](#v0311-against-v0310)) |
+| v0.31.2 | [img, the void elements, input and style](#img-the-void-elements-input-and-style-v0312), [the plan of a regexp without a literal](#the-plan-of-a-regexp-without-a-literal), [the slots of a return, 8 to a turn](#the-slots-of-a-return-8-to-a-turn), [`new` with extra arguments in the register loop](#new-with-extra-arguments-in-the-register-loop-and-the-own-prototype-read-directly), the last URL base and record kept per VM, `NewArray` in one call, emotion's style hash in C, `localeCompare` of short strings from a table, the types of `formatToParts` as atoms, `join` of strings in one block, a tighter loop for long searches, 512 regexps kept, and the profile trained again on them | Against v0.31.1 with its profile trained again the same way, on linux/amd64 (an AMD EPYC 7B13 with 4 cores, one core, the mean of 16 code layouts, sums of the pages' medians): the three MUI pages take 3.0% less time and the fourteen store pages 2.7% less, and the workbench pages and React's page show no change beyond the delta of 1%. A render runs 2.9% to 4.9% fewer instructions, the long Markdown page 1.0%, with the same HTML on every page. On the V8 suite RayTrace scores 8.5% higher and Crypto 7.0%, RegExp 5.9% lower, and the score shows no change ([v0.31.2 against v0.31.1](#v0312-against-v0311)) |
 
 ## Measuring in tifa
 
@@ -447,6 +448,18 @@ A profile of the render on linux/amd64 puts the share of the time spent in these
 | tifa's bench app | -33.02% [-33.60, -32.44] | -32.33% [-32.66, -32.00] | -20.08% | -31.88% |
 
 The instructions compare v0.29.9 without the calls to v0.29.10 with them, one run of each. Against v0.29.9, the same tifa on v0.29.10 without the calls changes by no more than 1% on each kind, except the bench pages at the formal layout, +1.61% [+0.49, +2.75], which the mean of the layouts does not show (+0.20% [-0.62, +1.02]). The HTML of the pages is the same byte for byte.
+
+#### img, the void elements, input and style (v0.31.2)
+
+The modes 1 to 3 of the start tag write `img` and the void elements, `input`, and a `style` written where it is (emotion's). Counted on the 23 pages of `engine/pgo/pages` with bundles that make the calls tifa's plugin would make, already sending `a` and `button` to the start tag. Both engines have a profile trained again with `engine/pgo/train.sh`. Instructions per render are callgrind's on linux/amd64, summed over the pages of a kind:
+
+| Pages | The engine alone (bundles unchanged) | The calls of the modes |
+| --- | ---: | ---: |
+| the shop's store pages (14) | -0.04% | -1.06% |
+| the shop's workbench pages (6) | -0.01% | -0.94% |
+| tifa's MUI test app (3) | -0.01% | -0.96% |
+
+The engine alone moves a page by -0.28% to +0.03%, the noise of training the profile. With the calls, every page runs fewer instructions: the store's checkout and products pages 1.5% to 2.1% fewer, its post pages 0.2%. The HTML of every page is the same byte for byte, and no call declines. Time was not measured.
 
 ### Object literals that share their shape
 
@@ -934,6 +947,21 @@ A regexp [looks first for the longest literal every match must hold](changes/reg
 
 On tifa's pages the literal rules out little: the scan runs 0 to 156 times a render. On the native host the regexp functions there cost at most 28K instructions a render (0.009%), and the rest of the rise is in functions that hash on addresses, which move with any change to where memory lands. In the product the gain comes from the profile trained on the new C, which lays out `lre_find` and `lre_exec_backtrack` better with the same calls. A regexp that finds its literal but rules nothing out pays for the scan, up to +0.36% on one of the 13 wider pages (an i18n page) natively and +0.17% in the product. The time was not measured.
 
+#### The plan of a regexp without a literal
+
+v0.31.1 made the plan of every regexp 74 bytes, 38 of them for the literal. Now [only a regexp with a literal carries it](changes/regexp.md#a-literal-every-match-holds), and the plan of one without is 36 bytes again. The long Markdown page compiles 468 regexps a render, 120 of them with a literal. Its regexp bytecode takes 347,466 bytes a render, against 364,012 in v0.31.1 and 346,228 in v0.31.0. Callgrind on linux/amd64, the Go product with each C trained the same way, gives tifa's pages at most 0.06% more engine instructions than v0.31.1, and no regexp function moves. The rise is in caches indexed by address, such as that of the own keys of a shape: with 38 bytes less the literal's put back after every plan, the pages run the instructions of v0.31.1 within 0.05%. The V8 RegExp benchmark keeps its gain.
+
+When the page renders in one VM without a pool, the time and the peak memory follow when the collector runs, and that moves with any change to the bytes allocated. md-0400 alone, 1 warm and 3 timed renders, on a GCP t2d (AMD EPYC 7B13, core 0, nothing else running), the mean of 10 or 12 rounds:
+
+| Build | Regexp bytes a render | Render (p50) | Peak RSS |
+| --- | ---: | ---: | ---: |
+| v0.31.0 | 346,228 | 4.40 s | 311 MB |
+| v0.31.1 | 364,012 | 4.21 s | 310 MB |
+| This change | 347,466 | 4.22 s | 237 MB |
+| v0.31.0, 2 to 24 bytes added to every regexp (another run, where v0.31.0 took 4.50 s) | 347,164 to 357,460 | 4.31 to 4.45 s | 253 to 309 MB |
+
+v0.31.1 is not slower than v0.31.0 here. The counts of md-0400 move with the schedule too: this change runs 1.0% more instructions than v0.31.1, all of them in the collector and in freeing.
+
 ### Arrays that are appended to take room for 8 elements at first
 
 [An array that is appended to takes room for 8 elements at first](changes/objects-and-shapes.md#an-array-that-is-appended-to-takes-room-for-8-elements-at-first). Counted on 2026-11-12 on the native C tree at 641f7dc7 (linux/arm64 callgrind, the timed render only, `host_poll` and `__shadow_remaining` left out): a render makes 1.3K (React) to 20.5K (the shop's products page) arrays, and 0.25K to 8.2K of the allocations are regrows of an array that outgrew its first allocation (React 246, the shop's home 5.1K, products 8.2K, a workbench page 3.6K, MUI's orders page 7.0K, 3.0K of them in the results of `concat`), at about 108 instructions for a first allocation and 160 and 3 for each element copied for a regrow, so growth is 0.8% to 1.2% of a render and its regrows 0.30% to 0.58%. A first allocation of 4 slots took 0.09% (React), 0.10% (home), 0.19% (products), 0.20% (workbench) and 0.36% (MUI orders), and of 8 slots 0.10%, 0.23%, 0.23%, 0.19% and 0.39%. With the URL stand-in (a URL object reused after the first render) 8 slots took 0.14% (home), 0.14% (products), 0.19% (workbench) and 0.39% (MUI orders). Memory after 200 renders stays the same within 0.1%. A room remembered per place and the exact length for the results of `concat` and `map`, `Array(n)` and the own keys are in [What was tried and not done](#what-was-tried-and-not-done).
@@ -1368,6 +1396,20 @@ The ways of placing the code that were tried, each generated with a profile trai
 
 The code inline gives most of the gain on NavierStokes, but it moves the register allocation of the whole interpreter: on the shop `ctx` is read from the stack about 3.2 million more times a render, in the call and return path, not in the arithmetic. Mul through a block of its own makes Crypto, which multiplies ints, run its int path of mul with `ip` kept on the stack and a few moves more, about 8 instructions more on each of its 158,000 int muls an iteration. As generated with the profile of v0.30.7, which has no data for `JS_RegvmRun` once its C changes, the pages run 1.2% to 1.9% more in the engine (NavierStokes still 1.9% fewer), so the profile must be trained again before the release ([releasing.md](releasing.md#the-profile)).
 
+### The slots of a return, 8 to a turn
+
+[A return frees the slots of a frame of more than 8 slots 8 to a turn](changes/c-engine.md#the-frame-and-the-window-of-a-call), counted on 2026-11-16 against v0.31.1. A return frees 6.7 (the store's home page) to 8.5 (the workbench's stats page) slots on average. The returns of frames of more than 8 slots, which take the loop, are 21% to 31% of the returns and free 17 to 19 slots each, 54% to 67% of all slots. In llc's output a slot that holds no counted value took 9 instructions and takes 3, and a turn of 8 adds 7. Callgrind on linux/amd64, the whole program in tifa mode (`internal/measure/pages`), both sides with the profile trained again the same way. Every page gives the same HTML.
+
+| Pages | Instructions |
+| --- | ---: |
+| React's page | -2.86% |
+| tifa's shop, 14 store pages | -0.63% to -2.68% |
+| tifa's shop, 6 workbench pages | -1.95% to -2.44% |
+| tifa's MUI app, 3 pages | -1.89% to -2.03% |
+| Long Markdown (100 sections) | -0.46% |
+
+As generated with the checked-in profile, which `rv_free_slots` alone loses, the store's home page runs 2.16% fewer, the workbench's studio page 1.96%, MUI's orders page 1.71% and React's page 2.86%. The time falls much less than the instructions. On linux/amd64 with an AMD EPYC 7B13, over 16 code layouts with both sides trained the same way (the mean of the layouts, `go tool measure bench`), React's page took 0.60% less time (8 rounds, -0.99% to -0.21%), and the store (two runs of 2 rounds), the workbench (2 rounds) and MUI (6 rounds) moved by -0.07% and -0.23%, -0.26% and 0.00%, all within 1%.
+
 ### The register interpreter
 
 [The register interpreter](changes/c-engine.md#the-register-interpreter) runs JavaScript in place of the stack interpreter of QuickJS. Two readings of it in tifa, each of one engine against another, with the HTML of every page the same. Neither has a control of a build against itself.
@@ -1639,6 +1681,21 @@ Memory, the bytes the runtime holds after a full collection: after 200 renders o
 | a V8 benchmark | | -4,184 (Boyer) to +5,208 (DeltaBlue) |
 
 The frames of `JS_RegvmRun` (a shadow frame of 256 bytes on amd64, 176 on arm64) and `JS_CallInternal` (112, 96) are those of v0.30.7.
+
+### `new` with extra arguments in the register loop, and the own prototype read directly
+
+[`new` with more arguments than parameters stays in the register loop](changes/c-engine.md#the-frame-and-the-window-of-a-call) and [`new` reads the own `prototype` of its function directly](changes/objects-and-shapes.md#objects-of-a-constructor-find-the-shapes-the-objects-before-them-went-through), both against main at 420dc95a, with the profile trained again on each side in a scratch copy. The generated engine on linux/amd64, callgrind: a V8 benchmark is the difference of two runs in one VM, a page of `internal/measure/pages` in the tifa mode is 3 renders after 8 warm ones. The HTML of every page and the result of every benchmark are the same.
+
+| | Instructions |
+| --- | ---: |
+| RayTrace | -8.36% |
+| Boyer | -1.86% |
+| Earley | -0.83% |
+| DeltaBlue, Splay | -0.15%, -0.24% |
+| Richards | +0.04% |
+| the 24 pages of the shop, MUI and React, without the Go runtime | -0.025% to +0.005% |
+
+A page moves by up to 0.03% between runs of one binary: the Chinese products page, at +0.005%, gave -0.005% and +0.022% in two more runs. The functions the change touches (`rv_new_frame`, `js_create_from_ctor`, `JS_GetPropertyObj`, `rv_new_slow`, `JS_CallConstructorInternal`) run 160 (React's page) to 65,000 (the post pages) fewer instructions a render on every page. The V8 suite as timed with the release is in [v0.31.2 against v0.31.1](#v0312-against-v0311).
 
 ### A profile of tifa's pages
 
@@ -1980,7 +2037,49 @@ The V8 suite, measured as for v0.31.0:
 | Richards | 1106 | 1131.5 | +2.3% |
 | Crypto | 1423.5 | 1447 | +1.7% |
 
-The long Markdown page is slower although it runs fewer instructions, and 100 and then 400 sections rendered in one VM peak at 460 MB where v0.31.0 peaked at 258 MB: the plan the engine keeps for each regexp grew from 36 to 74 bytes, so the engine's own collections land at other points (one more in the three timed renders of 400 sections), and the next version is to fix it. Under tifa's limit of 128 MiB the page of 400 sections does not render, on v0.31.0 as on v0.31.1. The shop and MUI times of v0.30.5 to v0.31.0 were taken with an app that did not register tifa's functions, so they are of another workload.
+The long Markdown page measured slower although it runs fewer instructions, and 100 and then 400 sections rendered in one VM peak at 460 MB where v0.31.0 peaked at 258 MB: the plan the engine keeps for each regexp grew from 36 to 74 bytes, so the engine's own collections land at other points (one more in the three timed renders of 400 sections). The slowdown was not seen again: in a later run of 400 sections alone v0.31.1 took 4.21 s and v0.31.0 4.40 s, and a few bytes added to every regexp of v0.31.0 move that page by up to 6% ([the plan of a regexp without a literal](#the-plan-of-a-regexp-without-a-literal)). Under tifa's limit of 128 MiB the page of 400 sections does not render, on v0.31.0 as on v0.31.1. The shop and MUI times of v0.30.5 to v0.31.0 were taken with an app that did not register tifa's functions, so they are of another workload.
+
+#### v0.31.2 against v0.31.1
+
+v0.31.2 (c6383ce9, its profile trained again on its C, 2,849 functions, none stale) was timed against v0.31.1 (the engine of 420dc95a, with its profile trained again the same way on the same server) on 2026-11-16 on a server of the same type and in the way of v0.31.0 above (core 0 with the whole machine quiet, the 16 layouts, 2 rounds, 18 units of every kind, a delta of 1% and 95% intervals), with the shop and MUI pages in an app that registers tifa's functions as tifa does. Both sides give the same HTML on every page. Every kind ran its 18 units, with no block run again. The run SD of one page was 2.5% to 11.5%, so the intervals of single pages are wide. The long Markdown page was not timed for this release.
+
+| Pages | Mean of the layouts | Formal layout |
+| --- | ---: | ---: |
+| tifa's shop, six workbench pages | -0.54% (-1.36% to +0.29%) no regression beyond delta | -0.68% (-3.22% to +1.92%) inconclusive |
+| tifa's shop, fourteen store pages | -2.70% (-3.87% to -1.52%) faster | -3.07% (-5.15% to -0.96%) faster |
+| tifa's MUI test app, three pages | -2.98% (-4.40% to -1.55%) faster | -4.38% (-7.78% to -0.85%) faster |
+| React's page | -1.13% (-2.39% to +0.14%) no regression beyond delta | +0.20% (-2.34% to +2.81%) inconclusive |
+
+The post pages, which compile no regexp again after their first render, take 5.6% (en-US) and 5.5% (zh-CN) less time, the mean of the layouts. No page is judged slower. Seven pages are inconclusive, their intervals reaching past +1%, the furthest the English checkout page at -0.18% (-4.30% to +4.11%) and the workbench's weekend stats page at +1.25% (-0.40% to +2.92%).
+
+Instructions a render (callgrind on linux/amd64, `scripts/count-pages.sh`: the whole program with Go's collector off, 3 renders after 2 warm ones, the same two builds), sums of the pages of each kind. Every page gives the same HTML, and every page of tifa's runs fewer instructions.
+
+| Pages | Instructions | The engine alone |
+| --- | ---: | ---: |
+| tifa's shop, fourteen store pages | -4.86% (-3.76% to -8.16% a page) | -3.81% |
+| tifa's shop, six workbench pages | -3.21% (-2.83% to -3.59%) | -2.93% |
+| tifa's MUI test app, three pages | -3.26% (-3.00% to -3.68%) | -2.01% |
+| React's page | -2.89% | -2.89% |
+| The long Markdown page, 100 and 400 sections | -0.98% (-1.57% and -0.84%) | -0.98% |
+| The V8 suite, one run of each benchmark | -0.96% | -0.96% |
+
+On the V8 suite RayTrace runs 8.93% fewer instructions, DeltaBlue 2.20%, EarleyBoyer 1.96%, Richards 1.13%, Crypto 0.56% and Splay 0.25%, NavierStokes the same, and RegExp 1.14% more. All of the rise of RegExp is in `lre_exec_backtrack`, whose C did not change: the C of v0.31.2 generated with the profile trained before its last three changes (the join of strings, the search and the 512 regexps) runs RegExp 0.04% below the build of that profile, so the rise comes with the profile trained again, not with the code.
+
+The V8 suite, the formal builds of `jsbench v8` of each side, 20 runs each in turn on core 0 of the same server with the whole machine quiet: the median score of each side, and the median of the 20 ratios of a run of v0.31.2 to the run of v0.31.1 next to it. The score of either side moved from about 1,400 to 1,700 over the runs, so a change of a few percent is no reading. Only RayTrace and Crypto are faster in nearly every pair.
+
+| Benchmark | v0.31.1 | v0.31.2 | Change | Change, pairs | v0.31.2 faster |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Score | 1565 | 1569.5 | +0.3% | +0.7% | 11 of 20 |
+| RayTrace | 2104 | 2283 | +8.5% | +9.6% | 19 of 20 |
+| Crypto | 1251 | 1338.5 | +7.0% | +6.7% | 17 of 20 |
+| EarleyBoyer | 2444.5 | 2415.5 | -1.2% | +1.5% | 12 of 20 |
+| DeltaBlue | 930 | 934.5 | +0.5% | -0.8% | 8 of 20 |
+| Richards | 1119.5 | 1114 | -0.5% | -0.9% | 7 of 20 |
+| NavierStokes | 2108 | 2062 | -2.2% | -1.7% | 8 of 20 |
+| RegExp | 886 | 833.5 | -5.9% | -2.9% | 7 of 20 |
+| Splay | 2818 | 2601 | -7.7% | -4.0% | 4 of 20 |
+
+Splay moves by tens of percent from run to run with the collector (-38% to +26% in these pairs).
 
 #### The study of 2026-11-13
 
@@ -2191,6 +2290,7 @@ Each item says what it would give and why it was dropped. Check here before tryi
   - `engine/libc` compiled without the profile, which was the way named to take `memmove` back to a leaf without a frame. All of the libc: 219 functions change on amd64, the renders move by 0.03% or less, a bundle load runs 0.07% to 0.15% fewer instructions, and `date_parse` 4.4% more. Only `memcpy.c`, `memmove.c` and `memset.c`: 128 functions change (the post-link optimizer inlines those by name), 0.01% to 0.11% fewer a render, 0.02% fewer on the micro benchmarks. The vectorizer pin gives `memmove` back its leaf form with fewer changes and more gain, so neither was kept.
   - A fix of the inline replay for the calls it misses: about a day of work, and the functions those calls keep run 0 instructions in every count ([generator.md](changes/generator.md#limits)).
 - **A frozen bit on the shape**, as Hermes marks a hidden class sealed or frozen, so that `Object.isFrozen` of a frozen object answers without going over its properties. Counted on 2026-11-15 on top of [integrity levels from the shape](#integrity-levels-from-the-shape): on the state page `js_object_isSealed` runs 161 instructions a call, about 98 of them in the pass over some 20 properties, so the bit would save about 15 million instructions a render, 2.1% of that page and nothing on tifa's pages. Every change in place of a shape that is not hashed would have to clear the bit: adding a property, a private field added to a frozen object, changing flags, deleting, a property made on first read, the flags of bindings, about 15 places in the C. One missed place gives a wrong answer and no error. Not done.
+- **Less work between two renders, for more renders per core per second**, counted on 2026-11-16 on a copy of tifa's pool (callgrind on linux/amd64, one core, tifa's seven judged pages, React's page and a long Markdown page). All the work between two renders (the young collection, the release, the goroutine that puts the VM back) is 0.3% to 2.7% of a render's instructions. A young collection only every 4 renders saves at most 0.25% and loses on the workbench pages, since its cost follows the garbage, and holds 0.5 MB to 1.6 MB more per VM for each render skipped. A warm snapshot copied back after each render would copy 900 to 1,500 changed pages of a store render, 2 to 4.5 ms against about 0.5 ms for the young collection, and needs the kernel to find them. Sharing what the VMs of a pool have in common saves no instructions: about 1 MB is read only today, and two VMs on two cores already give 2.00 times one. None was built. The one cost found is on a page whose render passes the GC threshold, such as the Markdown page: `ReleaseMemory(0)` after the full collection between renders gives back about 50 MB that the next render faults in again (23,577 page faults a render), and keeping the room up to the threshold cut the faults by 59%, an estimated 0.6% to 1.2% of such a render. That is a change to tifa's pool, not to the engine.
 
 ## Where to continue
 

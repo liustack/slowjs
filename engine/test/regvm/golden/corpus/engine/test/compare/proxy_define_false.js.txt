@@ -38,6 +38,6 @@ result strict array push, length: throws TypeError
 result strict super store, existing: throws TypeError
 result sloppy super store, existing: ok
 result strict store in with, existing: throws TypeError
-mem-end obj=208 atom=563 shape=128 prop=1013 jsfunc=16 cfunc=131 array=2 fast_array=2 elements=40 binary=0
-mem-gc obj=208 atom=563 shape=128 prop=1013 jsfunc=16 cfunc=131 array=2 fast_array=2 elements=40 binary=0
+mem-end obj=208 atom=564 shape=128 prop=1013 jsfunc=16 cfunc=131 array=2 fast_array=2 elements=40 binary=0
+mem-gc obj=208 atom=564 shape=128 prop=1013 jsfunc=16 cfunc=131 array=2 fast_array=2 elements=40 binary=0
 --- status exit 0

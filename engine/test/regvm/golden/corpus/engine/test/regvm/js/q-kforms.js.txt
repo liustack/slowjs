@@ -28,6 +28,6 @@ result x=1wec;y=ywec;z=nullwec;w=undefinedwec
 result 110000,100000,011110,100000,001000,011110
 result a,0,length,1,Symbol(Symbol.iterator),
 result TypeError,TypeError,TypeError,TypeError,TypeError,TypeError
-mem-end obj=201 atom=561 shape=134 prop=969 jsfunc=5 cfunc=131 array=1 fast_array=1 elements=0 binary=0
-mem-gc obj=193 atom=554 shape=130 prop=953 jsfunc=0 cfunc=131 array=1 fast_array=1 elements=0 binary=0
+mem-end obj=201 atom=562 shape=134 prop=969 jsfunc=5 cfunc=131 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=193 atom=555 shape=130 prop=953 jsfunc=0 cfunc=131 array=1 fast_array=1 elements=0 binary=0
 --- status exit 0

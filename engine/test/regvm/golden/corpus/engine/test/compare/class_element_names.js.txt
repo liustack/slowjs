@@ -112,6 +112,6 @@ result "0\nget" => static [] proto [constructor] inst [0,get]
 result "get 1" => SyntaxError
 result "get \"x\"() { return 1 }" => static [] proto [constructor,x] inst []
 result "get [k]() { return 1 }" => static [] proto [constructor,k] inst []
-mem-end obj=450 atom=667 shape=161 prop=1530 jsfunc=159 cfunc=131 array=3 fast_array=3 elements=228 binary=0
-mem-gc obj=198 atom=657 shape=129 prop=979 jsfunc=2 cfunc=131 array=3 fast_array=3 elements=228 binary=0
+mem-end obj=450 atom=668 shape=161 prop=1530 jsfunc=159 cfunc=131 array=3 fast_array=3 elements=228 binary=0
+mem-gc obj=198 atom=658 shape=129 prop=979 jsfunc=2 cfunc=131 array=3 fast_array=3 elements=228 binary=0
 --- status exit 0

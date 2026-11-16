@@ -25,6 +25,6 @@ result numeric strings: 1,10,9
 result comparator: 1,3,5,9
 result toSorted keeps the array: 1,2
 result memory after: 0
-mem-end obj=204 atom=549 shape=136 prop=992 jsfunc=1 cfunc=138 array=2 fast_array=2 elements=27 binary=0
-mem-gc obj=204 atom=549 shape=136 prop=992 jsfunc=1 cfunc=138 array=2 fast_array=2 elements=27 binary=0
+mem-end obj=204 atom=550 shape=136 prop=992 jsfunc=1 cfunc=138 array=2 fast_array=2 elements=27 binary=0
+mem-gc obj=204 atom=550 shape=136 prop=992 jsfunc=1 cfunc=138 array=2 fast_array=2 elements=27 binary=0
 --- status exit 0

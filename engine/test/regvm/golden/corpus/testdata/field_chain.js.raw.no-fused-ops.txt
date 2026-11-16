@@ -104,6 +104,6 @@ result eval: "ABC7.0"
 result indirect eval: "c9"
 result new Function: "abab2"
 result after clean up: "undefined,undefined,undefined,undefined"
-mem-end obj=225 atom=552 shape=139 prop=1063 jsfunc=2 cfunc=157 array=1 fast_array=1 elements=0 binary=0
-mem-gc obj=222 atom=545 shape=137 prop=1057 jsfunc=0 cfunc=157 array=1 fast_array=1 elements=0 binary=0
+mem-end obj=225 atom=553 shape=139 prop=1063 jsfunc=2 cfunc=157 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=222 atom=546 shape=137 prop=1057 jsfunc=0 cfunc=157 array=1 fast_array=1 elements=0 binary=0
 --- status exit 0

@@ -39,6 +39,6 @@ result slow shr:1,1048575,0,4294967293,0,2147483646,0,4294967293,0,4294967293,26
 result bigint 8,14,6,48,-16
 result mixed:TypeError
 result shr bigint:TypeError
-mem-end obj=189 atom=540 shape=119 prop=945 jsfunc=0 cfunc=127 array=1 fast_array=1 elements=0 binary=0
-mem-gc obj=189 atom=540 shape=119 prop=945 jsfunc=0 cfunc=127 array=1 fast_array=1 elements=0 binary=0
+mem-end obj=189 atom=541 shape=119 prop=945 jsfunc=0 cfunc=127 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=189 atom=541 shape=119 prop=945 jsfunc=0 cfunc=127 array=1 fast_array=1 elements=0 binary=0
 --- status exit 0

@@ -266,6 +266,6 @@ result depth sloppy 4988 RangeError: Maximum call stack size exceeded
 result depth array 2497 RangeError: Maximum call stack size exceeded
 result depth strict 2495 RangeError: Maximum call stack size exceeded
 result named o:1:q
-mem-end obj=396 atom=603 shape=255 prop=1978 jsfunc=7 cfunc=261 array=2 fast_array=2 elements=0 binary=0
-mem-gc obj=199 atom=591 shape=132 prop=1013 jsfunc=0 cfunc=135 array=1 fast_array=1 elements=0 binary=0
+mem-end obj=396 atom=604 shape=255 prop=1978 jsfunc=7 cfunc=261 array=2 fast_array=2 elements=0 binary=0
+mem-gc obj=199 atom=592 shape=132 prop=1013 jsfunc=0 cfunc=135 array=1 fast_array=1 elements=0 binary=0
 --- status exit 0

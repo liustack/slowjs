@@ -4,13 +4,16 @@
 // root of this repository.
 // startTag and endTag (JS_NewStartTagFunction, JS_NewEndTagFunction) against
 // the functions of React DOM 19.3 they stand in for: pushStartGenericElement,
-// with what it calls, and endChunkForTag. The functions between the two
-// "React DOM" lines are those of react-dom-server-legacy.browser.production.js
-// of react-dom 19.3.1, as they are (MIT, Copyright (c) Meta Platforms, Inc. and
-// affiliates). For every call, listed or random, startTag either pushes onto
-// target one string that is the text React's function pushes, and returns
-// what it returns, or returns decline and leaves target as it was. It never
-// takes a call where React throws, and it throws nothing here.
+// with what it calls, pushSelfClosing (startTag with mode 1), the case
+// "input" of pushStartInstance (mode 2), the branch of its case "style" that
+// writes the element in place (mode 3) and endChunkForTag. The functions
+// between the two "React DOM" lines are those of
+// react-dom-server-legacy.browser.production.js of react-dom 19.3.1, as they
+// are (MIT, Copyright (c) Meta Platforms, Inc. and affiliates). For
+// every call, listed or random, startTag either pushes onto target one string
+// that is the text React's function pushes, and returns what it returns, or
+// returns decline and leaves target as it was. It never takes a call where
+// React throws, and it throws nothing here.
 'use strict'
 // ---- React DOM 19.3.1 ----
 function formatProdErrorMessage(code) {
@@ -430,6 +433,90 @@ function pushInnerHTML(target, innerHTML, children) {
     null !== innerHTML && void 0 !== innerHTML && target.push("" + innerHTML);
   }
 }
+var actionJavaScriptURL = escapeTextForBrowser(
+  "javascript:throw new Error('React form unexpectedly submitted.')"
+);
+function pushAdditionalFormField(value, key) {
+  this.push('<input type="hidden"');
+  validateAdditionalFormField(value);
+  pushStringAttribute(this, "name", key);
+  pushStringAttribute(this, "value", value);
+  this.push("/>");
+}
+function validateAdditionalFormField(value) {
+  if ("string" !== typeof value) throw Error(formatProdErrorMessage(480));
+}
+function getCustomFormFields(resumableState, formAction) {
+  if ("function" === typeof formAction.$$FORM_ACTION) {
+    var id = resumableState.nextFormID++;
+    resumableState = resumableState.idPrefix + id;
+    try {
+      var customFields = formAction.$$FORM_ACTION(resumableState);
+      if (customFields) {
+        var formData = customFields.data;
+        null != formData && formData.forEach(validateAdditionalFormField);
+      }
+      return customFields;
+    } catch (x) {
+      if ("object" === typeof x && null !== x && "function" === typeof x.then)
+        throw x;
+    }
+  }
+  return null;
+}
+function pushFormActionAttribute(
+  target,
+  resumableState,
+  renderState,
+  formAction,
+  formEncType,
+  formMethod,
+  formTarget,
+  name
+) {
+  var formData = null;
+  if ("function" === typeof formAction) {
+    var customFields = getCustomFormFields(resumableState, formAction);
+    null !== customFields
+      ? ((name = customFields.name),
+        (formAction = customFields.action || ""),
+        (formEncType = customFields.encType),
+        (formMethod = customFields.method),
+        (formTarget = customFields.target),
+        (formData = customFields.data))
+      : (target.push(" ", "formAction", '="', actionJavaScriptURL, '"'),
+        (formTarget = formMethod = formEncType = formAction = name = null),
+        injectFormReplayingRuntime(resumableState, renderState));
+  }
+  null != name && pushAttribute(target, "name", name);
+  null != formAction && pushAttribute(target, "formAction", formAction);
+  null != formEncType && pushAttribute(target, "formEncType", formEncType);
+  null != formMethod && pushAttribute(target, "formMethod", formMethod);
+  null != formTarget && pushAttribute(target, "formTarget", formTarget);
+  return formData;
+}
+var styleRegex = /(<\/|<)(s)(tyle)/gi;
+function styleReplacer(match, prefix, s, suffix) {
+  return "" + prefix + ("s" === s ? "\\73 " : "\\53 ") + suffix;
+}
+function pushSelfClosing(target, props, tag, formatContext) {
+  target.push(startChunkForTag(tag));
+  for (var propKey in props)
+    if (hasOwnProperty.call(props, propKey)) {
+      var propValue = props[propKey];
+      if (null != propValue)
+        switch (propKey) {
+          case "children":
+          case "dangerouslySetInnerHTML":
+            throw Error(formatProdErrorMessage(399, tag));
+          default:
+            pushAttribute(target, propKey, propValue);
+        }
+    }
+  pushViewTransitionAttributes(target, formatContext);
+  target.push("/>");
+  return null;
+}
 function pushStartGenericElement(target, props, tag, formatContext) {
   target.push(startChunkForTag(tag));
   var innerHTML = (tag = null),
@@ -475,6 +562,136 @@ function endChunkForTag(tag) {
   return chunk;
 }
 // ---- end of React DOM ----
+// The case "input" of pushStartInstance as React DOM 19.3.1 has it, made a
+// function of its own (startTag with mode 2), and a stand-in for
+// injectFormReplayingRuntime, which writes into renderState and not into
+// target and runs only for a formAction that is a function
+function pushInput(target$jscomp$0, props, formatContext, resumableState, renderState) {
+  switch ("input") {
+    case "input":
+      target$jscomp$0.push(startChunkForTag("input"));
+      var name = null,
+        formAction = null,
+        formEncType = null,
+        formMethod = null,
+        formTarget = null,
+        value$jscomp$1 = null,
+        defaultValue$jscomp$0 = null,
+        checked = null,
+        defaultChecked = null,
+        propKey$jscomp$3;
+      for (propKey$jscomp$3 in props)
+        if (hasOwnProperty.call(props, propKey$jscomp$3)) {
+          var propValue$jscomp$3 = props[propKey$jscomp$3];
+          if (null != propValue$jscomp$3)
+            switch (propKey$jscomp$3) {
+              case "children":
+              case "dangerouslySetInnerHTML":
+                throw Error(formatProdErrorMessage(399, "input"));
+              case "name":
+                name = propValue$jscomp$3;
+                break;
+              case "formAction":
+                formAction = propValue$jscomp$3;
+                break;
+              case "formEncType":
+                formEncType = propValue$jscomp$3;
+                break;
+              case "formMethod":
+                formMethod = propValue$jscomp$3;
+                break;
+              case "formTarget":
+                formTarget = propValue$jscomp$3;
+                break;
+              case "defaultChecked":
+                defaultChecked = propValue$jscomp$3;
+                break;
+              case "defaultValue":
+                defaultValue$jscomp$0 = propValue$jscomp$3;
+                break;
+              case "checked":
+                checked = propValue$jscomp$3;
+                break;
+              case "value":
+                value$jscomp$1 = propValue$jscomp$3;
+                break;
+              default:
+                pushAttribute(
+                  target$jscomp$0,
+                  propKey$jscomp$3,
+                  propValue$jscomp$3
+                );
+            }
+        }
+      var formData = pushFormActionAttribute(
+        target$jscomp$0,
+        resumableState,
+        renderState,
+        formAction,
+        formEncType,
+        formMethod,
+        formTarget,
+        name
+      );
+      null !== checked
+        ? pushBooleanAttribute(target$jscomp$0, "checked", checked)
+        : null !== defaultChecked &&
+          pushBooleanAttribute(target$jscomp$0, "checked", defaultChecked);
+      null !== value$jscomp$1
+        ? pushAttribute(target$jscomp$0, "value", value$jscomp$1)
+        : null !== defaultValue$jscomp$0 &&
+          pushAttribute(target$jscomp$0, "value", defaultValue$jscomp$0);
+      pushViewTransitionAttributes(target$jscomp$0, formatContext);
+      target$jscomp$0.push("/>");
+      null != formData &&
+        formData.forEach(pushAdditionalFormField, target$jscomp$0);
+      return null;
+  }
+}
+function injectFormReplayingRuntime() {}
+// The branch of the case "style" of pushStartInstance that writes the element
+// in place, as React DOM 19.3.1 has it, made a function of its own (startTag
+// with mode 3): the caller asks startTag only once React has chosen it
+function pushStyleInPlace(target$jscomp$0, props) {
+        target$jscomp$0.push(startChunkForTag("style"));
+        var children$jscomp$6 = null,
+          innerHTML$jscomp$5 = null,
+          propKey$jscomp$8;
+        for (propKey$jscomp$8 in props)
+          if (hasOwnProperty.call(props, propKey$jscomp$8)) {
+            var propValue$jscomp$8 = props[propKey$jscomp$8];
+            if (null != propValue$jscomp$8)
+              switch (propKey$jscomp$8) {
+                case "children":
+                  children$jscomp$6 = propValue$jscomp$8;
+                  break;
+                case "dangerouslySetInnerHTML":
+                  innerHTML$jscomp$5 = propValue$jscomp$8;
+                  break;
+                default:
+                  pushAttribute(
+                    target$jscomp$0,
+                    propKey$jscomp$8,
+                    propValue$jscomp$8
+                  );
+              }
+          }
+        target$jscomp$0.push(">");
+        var child = Array.isArray(children$jscomp$6)
+          ? 2 > children$jscomp$6.length
+            ? children$jscomp$6[0]
+            : null
+          : children$jscomp$6;
+        "function" !== typeof child &&
+          "symbol" !== typeof child &&
+          null !== child &&
+          void 0 !== child &&
+          target$jscomp$0.push(("" + child).replace(styleRegex, styleReplacer));
+        pushInnerHTML(target$jscomp$0, innerHTML$jscomp$5, children$jscomp$6);
+        target$jscomp$0.push(endChunkForTag("style"));
+        var JSCompiler_inline_result$jscomp$6 = null;
+  return JSCompiler_inline_result$jscomp$6;
+}
 
 const D = {}
 const FC = { insertionMode: 2, selectedValue: null, tagScope: 0, viewTransition: null }
@@ -488,20 +705,26 @@ function show(v) {
   try { return typeof v === 'string' ? JSON.stringify(v) : String(v) } catch (e) { return typeof v }
 }
 
-// pushStartGenericElement and startTag on the same arguments. want is 'take',
-// 'decline' or undefined (either is right).
-function check(name, tag, props, want, fc, hop, target) {
+// pushStartGenericElement and startTag on the same arguments, or with mode 1
+// pushSelfClosing, with mode 2 the case "input", with mode 3 the style written
+// in place, and startTag with the mode. want is 'take', 'decline' or undefined (either is right).
+function check(name, tag, props, want, fc, hop, target, mode) {
   fc = fc || FC
   hop = hop || hasOwnProperty
   count++
   const o = []
   let ro, oerr = null
-  try { ro = pushStartGenericElement(o, props, tag, fc) } catch (e) { oerr = e }
+  try {
+    ro = mode === 1 ? pushSelfClosing(o, props, tag, fc)
+      : mode === 2 ? pushInput(o, props, fc, { idPrefix: '', nextFormID: 0, instructions: 0 }, {})
+      : mode === 3 ? pushStyleInPlace(o, props)
+      : pushStartGenericElement(o, props, tag, fc)
+  } catch (e) { oerr = e }
   const c = target || ['before']
   const before = c.slice()
   let rc
   try {
-    rc = startTag(c, props, tag, fc, hop, D)
+    rc = mode ? startTag(c, props, tag, fc, hop, D, mode) : startTag(c, props, tag, fc, hop, D)
   } catch (e) {
     fail(name + ': threw ' + e)
     return
@@ -686,6 +909,179 @@ cases.forEach(([tag, props, want], i) => check('case ' + i + ' <' + show(tag) + 
   if (startTag(t, f, 'ul', FC, hasOwnProperty, D) !== fn) fail('function children not returned')
 }
 
+// pushSelfClosing, which writes img and the void elements: the props and
+// "/>", and a throw for children or dangerouslySetInnerHTML
+const selfCases = [
+  ['img', { src: '/i/kettle.jpg', alt: 'Pour-over kettle', width: 640, height: 480, loading: 'lazy', decoding: 'async', className: cls60 }, 'take'],
+  ['img', { src: '/a.png', srcSet: '/a.png 1x, /a@2x.png 2x', sizes: '100vw', fetchPriority: 'low', crossOrigin: 'anonymous' }, 'take'],
+  ['img', { alt: '<"&>', src: '', style: { width: 10, objectFit: 'cover', aspectRatio: 1.5 } }, 'take'],
+  ['img', { src: fn, alt: sym, hidden: true, onLoad: fn, ref: fn, suppressHydrationWarning: true }, 'take'],
+  ['img', { 'data-x': true, 'aria-hidden': false, draggable: false, title: 0 }, 'take'],
+  ['img', { alt: '中文 \ud800', title: 'Ā'.repeat(3000) }, 'take'],
+  ['br', {}, 'take'],
+  ['hr', { className: 'my-4 border-zinc-200' }, 'take'],
+  ['wbr', { children: null }, 'take'],
+  ['br', { children: undefined, dangerouslySetInnerHTML: null }, 'take'],
+  ['meta', { name: 'description', content: 'a "b" <c>' }, 'take'],
+  ['meta', { charSet: 'utf-8' }, 'take'],
+  ['link', { rel: 'stylesheet', href: '/s.css', precedence: 'default' }, 'take'],
+  ['source', { srcSet: '/x.webp', type: 'image/webp', media: '(min-width: 600px)' }, 'take'],
+  ['area', { href: '/x', alt: 'x', shape: 'rect', coords: '0,0,1,1' }, 'take'],
+  ['embed', { src: '/x.svg', type: 'image/svg+xml', width: '1.5' }, 'take'],
+  ['base', { href: 'https://example.com/' }, 'take'],
+  ['track', { kind: 'captions', srcLang: 'en', default: true }, 'take'],
+  ['param', { name: 'a', value: 'b' }, 'take'],
+  ['keygen', { name: 'k' }, 'take'],
+  ['col', { span: 2 }, 'decline'],
+  ['img', { src: '/a.png', children: 'x' }, 'decline'],
+  ['img', { src: '/a.png', children: '' }, 'decline'],
+  ['img', { children: 0 }, 'decline'],
+  ['img', { children: false }, 'decline'],
+  ['img', { children: [] }, 'decline'],
+  ['img', { children: fn }, 'decline'],
+  ['br', { dangerouslySetInnerHTML: { __html: 'x' } }, 'decline'],
+  ['img', { src: 'javascript:alert(1)' }, 'decline'],
+  ['img', { src: ' JAVASCRIPT:x' }, 'decline'],
+  ['img', { srcSet: 'javascript:x' }, 'take'],
+  ['img', { xlinkHref: '/a' }, 'decline'],
+  ['img', { a: {} }, 'decline'],
+  ['img', { a: 1n }, 'decline'],
+  ['1img', {}, 'decline'],
+  ['', {}, 'decline'],
+]
+selfCases.forEach(([tag, props, want], i) => check('self case ' + i + ' <' + show(tag) + '>', tag, props, want, FC, null, null, 1))
+check('self with viewTransition', 'img', { src: '/a.png' }, 'decline', { viewTransition: { name: 'auto', nameIdx: 0, update: 'u', enter: 'none', exit: 'none', share: 'none' } }, null, null, 1)
+check('self into a frozen target', 'br', {}, 'decline', FC, null, Object.freeze([]), 1)
+check('self into a target that grew', 'br', {}, 'take', FC, null, Array.from({ length: 100 }, (_, i) => 's' + i), 1)
+
+// the mode: undefined and 0 are the generic element, which returns its
+// children, and a mode the function does not know declines
+for (const m of [undefined, 0]) {
+  count++
+  const t = [], r = startTag(t, { children: 'x' }, 'b', FC, hasOwnProperty, D, m)
+  if (r !== null || t.length !== 1 || t[0] !== '<b>x') fail('mode ' + show(m) + ': ' + show(r) + ' ' + show(t[0]))
+  const k = startTag(t, { children: kids }, 'b', FC, hasOwnProperty, D, m)
+  if (k !== kids || t[1] !== '<b>') fail('mode ' + show(m) + ': children not returned')
+}
+for (const m of [false, true, null, -1, 4, 2 ** 31 - 1, 1.5, NaN, '1', 1n, {}, [1], fn, sym]) {
+  count++
+  const t = ['x']
+  if (startTag(t, {}, 'br', FC, hasOwnProperty, D, m) !== D || t.length !== 1) fail('mode ' + show(m) + ' taken')
+}
+
+// the case "input": the other props in order, then name and the four form
+// props, checked or else defaultChecked, value or else defaultValue, "/>"
+const inputCases = [
+  [{ type: 'email', name: 'email', placeholder: 'you@example.com', className: cls60, value: 'a&b', onChange: fn, required: true }, 'take'],
+  [{ value: 'v', type: 'text', name: 'n', checked: 'yes', id: 'i', defaultValue: 'd', defaultChecked: false }, 'take'],
+  [{ type: 'checkbox', checked: true, onChange: fn, id: 'c1' }, 'take'],
+  [{ type: 'checkbox', defaultChecked: true }, 'take'],
+  [{ type: 'checkbox', checked: false, defaultChecked: true }, 'take'],
+  [{ type: 'radio', checked: 0, defaultChecked: 1 }, 'take'],
+  [{ checked: '', defaultChecked: 'x' }, 'take'],
+  [{ checked: fn }, 'take'],
+  [{ checked: sym, defaultChecked: true }, 'take'],
+  [{ checked: {} }, 'take'],
+  [{ checked: null, defaultChecked: true }, 'take'],
+  [{ checked: undefined, defaultChecked: 'on' }, 'take'],
+  [{ defaultValue: 'x', value: undefined }, 'take'],
+  [{ defaultValue: 'x', value: null }, 'take'],
+  [{ value: 0 }, 'take'],
+  [{ value: -0, defaultValue: 'no' }, 'take'],
+  [{ value: false }, 'take'],
+  [{ value: true }, 'take'],
+  [{ value: '' }, 'take'],
+  [{ value: 1.5e300 }, 'take'],
+  [{ value: '<"\'&>' }, 'take'],
+  [{ value: fn, defaultValue: 'd' }, 'take'],
+  [{ value: sym }, 'take'],
+  [{ defaultValue: fn }, 'take'],
+  [{ value: {} }, 'decline'],
+  [{ value: [1, 2] }, 'decline'],
+  [{ value: 1n }, 'decline'],
+  [{ defaultValue: {} }, 'decline'],
+  [{ name: 'q', formAction: '/search?a=1&b=2', formMethod: 'get', formEncType: 'text/plain', formTarget: '_blank', type: 'submit', value: 'Go' }, 'take'],
+  [{ formTarget: 't', formMethod: 'm', formEncType: 'e', formAction: 'a', name: 'n' }, 'take'],
+  [{ formAction: '' }, 'take'],
+  [{ formAction: true, name: false, formMethod: 1 }, 'take'],
+  [{ name: fn, formTarget: sym }, 'take'],
+  [{ name: {} }, 'decline'],
+  [{ formAction: fn }, 'decline'],
+  [{ formAction: class {} }, 'decline'],
+  [{ formAction: fn.bind(null), name: 'n' }, 'decline'],
+  [{ formAction: 'javascript:void 0' }, 'decline'],
+  [{ formAction: ' JAVASCRIPT:x', name: 'n' }, 'decline'],
+  [{ formAction: {} }, 'decline'],
+  [{ children: 'x' }, 'decline'],
+  [{ children: null, value: 'v' }, 'take'],
+  [{ children: [], value: 'v' }, 'decline'],
+  [{ dangerouslySetInnerHTML: { __html: 'x' } }, 'decline'],
+  [{ style: { width: 120, borderColor: 'red' }, disabled: true, readOnly: true, autoFocus: true, size: 3 }, 'decline'],
+  [{ style: { width: 120, borderColor: 'red' }, disabled: true, readOnly: true, autoFocus: true, 'aria-invalid': false, 'data-x': true }, 'take'],
+  [{ ref: fn, suppressHydrationWarning: true, defaultValue: 'x', key: 'k' }, 'take'],
+  [{ name: 'a'.repeat(200) + '中', value: 'Ā\ud800' }, 'take'],
+  [{ value: 'Ā'.repeat(3000), name: '"'.repeat(3000) }, 'take'],
+  [{}, 'take'],
+]
+inputCases.forEach(([props, want], i) => check('input case ' + i, 'input', props, want, FC, null, null, 2))
+check('input with viewTransition', 'input', { value: 'v' }, 'decline', { viewTransition: { name: 'auto', nameIdx: 0, update: 'u', enter: 'none', exit: 'none', share: 'none' } }, null, null, 2)
+check('input into a frozen target', 'input', { value: 'v' }, 'decline', FC, null, Object.freeze([]), 2)
+check('input of 32 props', 'input', Object.fromEntries(Array.from({ length: 23 }, (_, i) => ['data-' + i, i])
+  .concat([['name', 'n'], ['formAction', '/a'], ['formEncType', 'e'], ['formMethod', 'm'], ['formTarget', 't'], ['checked', 1], ['defaultChecked', 1], ['value', 'v'], ['defaultValue', 'd']])), 'take', FC, null, null, 2)
+check('input of 33 props', 'input', Object.fromEntries(Array.from({ length: 24 }, (_, i) => ['data-' + i, i])
+  .concat([['name', 'n'], ['formAction', '/a'], ['formEncType', 'e'], ['formMethod', 'm'], ['formTarget', 't'], ['checked', 1], ['defaultChecked', 1], ['value', 'v'], ['defaultValue', 'd']])), 'decline', FC, null, null, 2)
+
+// the style written in place: the props, ">", the __html of
+// dangerouslySetInnerHTML as it is, and "</style>", and a throw for children
+// with dangerouslySetInnerHTML or for dangerouslySetInnerHTML with no __html
+const css = '.css-1n2mv2k{display:flex;-webkit-box-pack:center;justify-content:center;}'
+const proto = { __html: css }
+const styleCases = [
+  [{ 'data-emotion': 'css 1n2mv2k', dangerouslySetInnerHTML: { __html: css } }, 'take'],
+  [{ 'data-emotion': 'css-global 0', dangerouslySetInnerHTML: { __html: css }, nonce: undefined }, 'take'],
+  [{ 'data-emotion': 'css a', dangerouslySetInnerHTML: { __html: css }, nonce: 'n"<' }, 'take'],
+  [{ 'data-emotion': 'css', dangerouslySetInnerHTML: { __html: '' } }, 'take'],
+  [{ dangerouslySetInnerHTML: { __html: '</style><script>alert(1)</script>' } }, 'take'],
+  [{ dangerouslySetInnerHTML: { __html: 'Ā'.repeat(3000) + '\ud800' } }, 'take'],
+  [{ dangerouslySetInnerHTML: { __html: css + css.repeat(2) } }, 'take'],
+  [{ dangerouslySetInnerHTML: { __html: null } }, 'take'],
+  [{ dangerouslySetInnerHTML: { __html: undefined } }, 'take'],
+  [{ dangerouslySetInnerHTML: { __html: css, other: 1 } }, 'take'],
+  [{ dangerouslySetInnerHTML: null, children: null }, 'take'],
+  [{ dangerouslySetInnerHTML: undefined }, 'take'],
+  [{}, 'take'],
+  [{ media: 'print', className: 'c', style: { color: 'red' }, precedence: 'p', href: 'h' }, 'take'],
+  [{ dangerouslySetInnerHTML: { __html: 5 } }, 'decline'],
+  [{ dangerouslySetInnerHTML: { __html: true } }, 'decline'],
+  [{ dangerouslySetInnerHTML: { __html: { toString() { return 'x' } } } }, 'decline'],
+  [{ dangerouslySetInnerHTML: { __html: fn } }, 'decline'],
+  [{ dangerouslySetInnerHTML: { __html: sym } }, 'decline'],
+  [{ dangerouslySetInnerHTML: {} }, 'decline'],
+  [{ dangerouslySetInnerHTML: 'x' }, 'decline'],
+  [{ dangerouslySetInnerHTML: 1 }, 'decline'],
+  [{ dangerouslySetInnerHTML: [css] }, 'decline'],
+  [{ dangerouslySetInnerHTML: fn }, 'decline'],
+  [{ dangerouslySetInnerHTML: Object.create(proto) }, 'decline'],
+  [{ dangerouslySetInnerHTML: Object.assign(Object.create(null), { __html: css }) }, 'decline'],
+  [{ dangerouslySetInnerHTML: Object.defineProperty({}, '__html', { get() { return css }, enumerable: true }) }, 'decline'],
+  [{ dangerouslySetInnerHTML: new Proxy({ __html: css }, {}) }, 'decline'],
+  [{ dangerouslySetInnerHTML: { __html: css }, children: 'x' }, 'decline'],
+  [{ children: 'a{}' }, 'decline'],
+  [{ children: ['a{}'] }, 'decline'],
+  [{ children: 7 }, 'decline'],
+  [{ dangerouslySetInnerHTML: { __html: css }, xlinkHref: 'x' }, 'decline'],
+  [{ dangerouslySetInnerHTML: { __html: css }, onLoad: fn, 'data-n': 1 }, 'take'],
+]
+styleCases.forEach(([props, want], i) => check('style case ' + i, 'style', props, want, FC, null, null, 3))
+check('style of a rope', 'style', { dangerouslySetInnerHTML: { __html: css.repeat(40) + String(count) } }, 'take', FC, null, null, 3)
+check('style with viewTransition', 'style', { dangerouslySetInnerHTML: { __html: css } }, 'decline', { viewTransition: { name: 'auto', nameIdx: 0, update: 'u', enter: 'none', exit: 'none', share: 'none' } }, null, null, 3)
+check('style into a frozen target', 'style', { dangerouslySetInnerHTML: { __html: css } }, 'decline', FC, null, Object.freeze([]), 3)
+{
+  count++
+  const t = [], r = startTag(t, { 'data-emotion': 'css x', dangerouslySetInnerHTML: { __html: css } }, 'style', FC, hasOwnProperty, D, 3)
+  if (r !== null || t.length !== 1 || t[0] !== '<style data-emotion="css x">' + css + '</style>') fail('style: ' + show(r) + ' ' + show(t[0]))
+}
+
 // what the call finds around it
 check('another hasOwnProperty', 'div', { a: 1 }, 'decline', FC, function () {})
 check('a bound hasOwnProperty', 'div', { a: 1 }, 'decline', FC, hasOwnProperty.bind(null))
@@ -830,6 +1226,21 @@ function props() {
 }
 for (let t = 0; t < 4000; t++)
   check('random ' + t, rand(20) === 0 ? pick(['1x', 'my-el', 'svg', 'x:y', '']) : 'div', props())
+for (let t = 0; t < 2000; t++)
+  check('random self ' + t, rand(20) === 0 ? pick(['1x', 'x:y', '']) : pick(['img', 'br', 'hr', 'source', 'meta']), props(), undefined, FC, null, null, 1)
+const heldNames = ['name', 'formAction', 'formEncType', 'formMethod', 'formTarget', 'checked', 'defaultChecked', 'value', 'defaultValue']
+for (let t = 0; t < 2000; t++) {
+  const p = props()
+  for (let i = rand(5); i > 0; i--) p[pick(heldNames)] = rand(3) ? str() : value()
+  check('random input ' + t, 'input', p, undefined, FC, null, null, 2)
+}
+const htmls = [null, undefined, css, '', '<\/style>', 5, {}, 'x'.repeat(rand(200))]
+for (let t = 0; t < 2000; t++) {
+  const p = props()
+  if (rand(3)) p.dangerouslySetInnerHTML = rand(8) ? { __html: pick(htmls) } : pick(htmls)
+  if (rand(2)) delete p.children
+  check('random style ' + t, 'style', p, undefined, FC, null, null, 3)
+}
 
 // An index on Array.prototype makes push set it there, and React's push runs
 // the setter. startTag declines from then on, as push leaves its fast path.
@@ -876,7 +1287,7 @@ out.unshift(count + ' calls: ' + (bad ? bad + ' wrong' : 'all as React') + '; st
 }
 
 // the functions are built-ins
-for (const [f, name, length] of [[startTag, 'startTag', 6], [endTag, 'endTag', 1]]) {
+for (const [f, name, length] of [[startTag, 'startTag', 7], [endTag, 'endTag', 1]]) {
   const shape = JSON.stringify([f.name, f.length, Object.hasOwn(f, 'prototype'), Object.getPrototypeOf(f) === Function.prototype,
     (() => { try { new f([], {}, 'div', FC, hasOwnProperty, D); return 'made' } catch (e) { return e.name } })(), String(f).includes('[native code]')])
   if (shape !== JSON.stringify([name, length, false, true, 'TypeError', true])) fail('shape of ' + name + ': ' + shape)

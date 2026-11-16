@@ -424,7 +424,7 @@ static void test_host_function(void)
 
 /* The handles test_host_release saw released, in order. */
 static struct {
-    uint32_t vm, handles[8];
+    uint32_t vm, handles[64];
     int n;
 } released;
 
@@ -504,7 +504,7 @@ static void test_host_release(void)
    returned say which values the end of the call freed, how many times and in
    which order. */
 
-/* order_run makes the globals h1 to h16, functions that release their number,
+/* order_run makes the globals h1 to h64, functions that release their number,
    runs src, which defines f, and calls f. take(name) in src hands a global
    over to a local: nothing else holds the function then. */
 static void order_run(const char *src, const char *what, int want_n, const uint32_t *want, int gc)
@@ -519,7 +519,7 @@ static void order_run(const char *src, const char *what, int want_n, const uint3
     host_release_call = test_release_call;
     memset(&released, 0, sizeof(released));
     g = JS_GetGlobalObject(v.ctx);
-    for (i = 1; i <= 16; i++) {
+    for (i = 1; i <= 64; i++) {
         snprintf(name, sizeof(name), "h%d", i);
         JS_SetPropertyStr(v.ctx, g, name, new_release(v.ctx, name, i));
     }
@@ -557,6 +557,68 @@ static void order_slots(int n, const int *slots, int k, const char *what)
     }
     sprintf(p, "}");
     order_run(src, what, k, want, 0);
+}
+
+/* A function g of m arguments and n locals, every one of them set first and
+   live to its end (so that no two share a slot), called with h1 to hm: the local at
+   slots[i] takes h(m+i+1), for k slots. The return of g frees its arguments,
+   then its locals, each from the first to the last, in whatever groups the
+   loop takes them. */
+static void order_live(int m, int n, const int *slots, int k, const char *what)
+{
+    char src[8192], *p = src;
+    uint32_t want[64];
+    int i;
+
+    p += sprintf(p, "function g(");
+    for (i = 0; i < m; i++)
+        p += sprintf(p, "%sa%d", i ? ", " : "", i);
+    p += sprintf(p, ") {");
+    for (i = 0; i < n; i++)
+        p += sprintf(p, "var s%d = %d;", i, i);
+    for (i = 0; i < k; i++)
+        p += sprintf(p, "s%d = take('h%d');", slots[i], m + i + 1);
+    p += sprintf(p, "if (globalThis.never) {");
+    for (i = 0; i < m + n; i++)
+        p += i < m ? sprintf(p, " keep(a%d);", i) : sprintf(p, " keep(s%d);", i - m);
+    p += sprintf(p, " } }\nfunction f() { g(");
+    for (i = 0; i < m; i++)
+        p += sprintf(p, "%stake('h%d')", i ? ", " : "", i + 1);
+    sprintf(p, ") }");
+    for (i = 0; i < m + k; i++)
+        want[i] = i + 1;
+    order_run(src, what, m + k, want, 0);
+}
+
+/* Frames of up to 44 slots, whose return frees them in a loop: every slot
+   full, the last one alone, values on each side of the boundaries of the
+   groups of 8, and arguments before the locals. */
+static void test_release_order_live(void)
+{
+    static const int edges[] = { 6, 7, 8, 14, 15, 16, 22, 23, 24, 30, 31, 32, 38, 39 };
+    int slots[64], n, m, i;
+    char what[64];
+
+    for (n = 0; n <= 40; n++) {
+        for (i = 0; i < n; i++)
+            slots[i] = i;
+        snprintf(what, sizeof(what), "all %d live locals", n);
+        order_live(0, n, slots, n, what);
+        if (n > 0) {
+            slots[0] = n - 1;
+            snprintf(what, sizeof(what), "the last of %d live locals", n);
+            order_live(0, n, slots, 1, what);
+        }
+    }
+    order_live(0, 40, edges, countof(edges), "40 live locals, values at the edges of the groups");
+    for (m = 1; m <= 20; m += 3) {
+        for (n = 0; n <= 20; n += 5) {
+            for (i = 0; i < n; i++)
+                slots[i] = i;
+            snprintf(what, sizeof(what), "%d arguments and %d live locals", m, n);
+            order_live(m, n, slots, n, what);
+        }
+    }
 }
 
 static void test_release_order(void)
@@ -2051,6 +2113,80 @@ static void test_c_call_hop_checks(void)
     }
 }
 
+/* new in the register loop (engine/regvm-ops-ctor.h): a constructor given
+   more arguments than it has parameters runs in the loop of the function
+   that calls new, as a call with extra arguments does, and starts no run of
+   JS_RegvmRun of its own (JS_RegvmStat 2 counts those runs). */
+static void test_rv_new_in_loop(void)
+{
+    VM v = vm_new();
+    JSValue f, arg, r;
+    int32_t got;
+    int runs;
+
+    CHECK(eval_ok(v.ctx,
+                  "function K(a) { this.a = a; this.n = arguments.length; this.x = arguments[2]; }\n"
+                  "class D extends K { constructor(a) { super(a, 1, 2, 3); } }\n"
+                  "function extra(n) { var s = 0; for (var i = 0; i < n; i++)"
+                  " s += new K(i, 1, 2).n + new K(i, 1, i).x + new D(i, 5).n; return s; }"),
+          "the scripts of new");
+    f = global_prop(v.ctx, "extra");
+    for (int k = 0; k < 2; k++) {
+        arg = JS_NewInt32(v.ctx, k ? 100 : 2);
+        runs = JS_RegvmStat(v.ctx, 2);
+        r = JS_Call(v.ctx, f, JS_UNDEFINED, 1, (JSValueConst *)&arg);
+        runs = JS_RegvmStat(v.ctx, 2) - runs;
+        CHECK(JS_ToInt32(v.ctx, &got, r) == 0 && got == (k ? 7 * 100 + 4950 : 15),
+              "extra(%d) gave %d", k ? 100 : 2, got);
+        JS_FreeValue(v.ctx, r);
+        /* the first call converts K and D in runs of their own */
+        if (k)
+            CHECK(runs == 1, "extra(100) made %d runs of the register loop, want 1", runs);
+    }
+    JS_FreeValue(v.ctx, f);
+
+    /* a new whose function holds its prototype as a plain data property
+       reads the interrupt flag once, as a call does: no JavaScript runs
+       between the call's read and the object made. One whose prototype is
+       not an object, or is made at the first read, reads it again after,
+       as QuickJS's interpreter does after the getter of a prototype. */
+    CHECK(eval_ok(v.ctx,
+                  "function P(a) { this.a = a; }\n"
+                  "function Q(a) { this.a = a; } Q.prototype = 1;\n"
+                  "function c(a) { return a; }\n"
+                  "function news(n) { var s = 0; for (var i = 0; i < n; i++) s += new P(i).a; return s; }\n"
+                  "function prims(n) { var s = 0; for (var i = 0; i < n; i++) s += new Q(i).a; return s; }\n"
+                  "function extras(n) { var s = 0; for (var i = 0; i < n; i++) s += new P(i, i).a; return s; }\n"
+                  "function calls(n) { var s = 0; for (var i = 0; i < n; i++) s += c(i); return s; }\n"
+                  "news(2); prims(2); extras(2); calls(2);"),
+          "the scripts of the reads");
+    {
+        /* the reads of 100 more turns of the loop of each function, and
+           how many more than those of calls they must be */
+        static const struct { const char *fn; int more; } cases[] = {
+            { "calls", 0 }, { "news", 0 }, { "extras", 0 }, { "prims", 100 },
+        };
+        long calls = 0;
+        for (size_t i = 0; i < countof(cases); i++) {
+            JSValue g = global_prop(v.ctx, cases[i].fn);
+            long reads[2];
+            BOOL ok;
+            for (int k = 0; k < 2; k++) {
+                arg = JS_NewInt32(v.ctx, k ? 200 : 100);
+                reads[k] = hop_reads(v.ctx, g, JS_UNDEFINED, 1, (JSValueConst *)&arg, &ok);
+                CHECK(ok, "%s threw", cases[i].fn);
+            }
+            JS_FreeValue(v.ctx, g);
+            if (!i)
+                calls = reads[1] - reads[0];
+            CHECK(reads[1] - reads[0] == calls + cases[i].more,
+                  "100 more turns of %s read the flag %ld more times, those of calls %ld, want %ld more",
+                  cases[i].fn, reads[1] - reads[0], calls, calls + cases[i].more);
+        }
+    }
+    vm_free(&v);
+}
+
 /* The parameters and locals of a function, with this, the function and
    new.target, fit RV_FAR_MAX (32768, engine/regvm-func.h): 32765 of them
    together compile and run, one more fails to compile with the parser's
@@ -2223,6 +2359,7 @@ int main(void)
     test_host_function();
     test_host_release();
     test_release_order();
+    test_release_order_live();
     test_module_top_level();
     test_new_string_chars();
     test_throw_error_kind();
@@ -2235,6 +2372,7 @@ int main(void)
     test_call_frames_measured();
     test_c_call_recursions();
     test_c_call_hop_checks();
+    test_rv_new_in_loop();
     test_rv_frame_limits();
     test_rv_nesting_limits();
     if (failures) {

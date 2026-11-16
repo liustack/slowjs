@@ -53,6 +53,6 @@ result proxy: preventExtensions returns false: throws TypeError
 result revoked proxy: throws TypeError
 result proxy of a frozen array: true isExtensible,ownKeys,gopd 0,gopd 1,gopd length
 result global object: 100
-mem-end obj=236 atom=690 shape=246 prop=1109 jsfunc=20 cfunc=153 array=2 fast_array=2 elements=55 binary=0
-mem-gc obj=223 atom=681 shape=240 prop=1078 jsfunc=11 cfunc=153 array=2 fast_array=2 elements=55 binary=0
+mem-end obj=236 atom=691 shape=246 prop=1109 jsfunc=20 cfunc=153 array=2 fast_array=2 elements=55 binary=0
+mem-gc obj=223 atom=682 shape=240 prop=1078 jsfunc=11 cfunc=153 array=2 fast_array=2 elements=55 binary=0
 --- status exit 0

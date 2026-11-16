@@ -3,7 +3,7 @@ summary: 'How liustack/slowjs compares with the other JavaScript engines for Go 
 read_when:
   - Saying anything in public about how this engine compares with other Go engines, C QuickJS, Hermes or Node
   - Choosing a JavaScript engine for Go for a job
-  - Making a minor release, or a patch release the owner names (rerun the comparison and update this page)
+  - The owner asks for the comparison to be run again (rerun it and update this page)
   - Changing compare/engines
 ---
 

@@ -67,6 +67,6 @@ result get 1
 result field twice 1 threw TypeError: private class field '#t' already exists
 result get 1
 result field twice 2 threw TypeError: private class field '#t' already exists
-mem-end obj=367 atom=625 shape=145 prop=1434 jsfunc=30 cfunc=127 array=1 fast_array=1 elements=0 binary=0
-mem-gc obj=190 atom=549 shape=129 prop=950 jsfunc=0 cfunc=127 array=1 fast_array=1 elements=0 binary=0
+mem-end obj=367 atom=626 shape=145 prop=1434 jsfunc=30 cfunc=127 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=190 atom=550 shape=129 prop=950 jsfunc=0 cfunc=127 array=1 fast_array=1 elements=0 binary=0
 --- status exit 0

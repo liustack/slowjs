@@ -102,6 +102,6 @@ result "(async function () { await 1 })" => ok / ok
 result "(function* () { yield\n })" => ok / ok
 result "function* g() { var x = { yield } }" => SyntaxError / SyntaxError
 result "async function f() { var x = { await } }" => SyntaxError / SyntaxError
-mem-end obj=192 atom=649 shape=121 prop=957 jsfunc=0 cfunc=127 array=3 fast_array=3 elements=208 binary=0
-mem-gc obj=192 atom=649 shape=121 prop=957 jsfunc=0 cfunc=127 array=3 fast_array=3 elements=208 binary=0
+mem-end obj=192 atom=650 shape=121 prop=957 jsfunc=0 cfunc=127 array=3 fast_array=3 elements=208 binary=0
+mem-gc obj=192 atom=650 shape=121 prop=957 jsfunc=0 cfunc=127 array=3 fast_array=3 elements=208 binary=0
 --- status exit 0

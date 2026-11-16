@@ -157,7 +157,7 @@ func (m *VM) SetShapeCache(n int) error {
 // regexps a new VM keeps at most, and in how many bytes (see
 // [VM.SetRegExpCache]).
 const (
-	DefaultRegExpCache      = 256
+	DefaultRegExpCache      = 512
 	DefaultRegExpCacheBytes = 1 << 20
 )
 

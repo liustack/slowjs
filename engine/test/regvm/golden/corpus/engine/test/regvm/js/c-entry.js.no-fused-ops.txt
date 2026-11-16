@@ -37,6 +37,6 @@ result bound nt TypeError: not a function
 result noproto 1
 result spread 7 NaN
 result cb 4,6
-mem-end obj=206 atom=553 shape=135 prop=992 jsfunc=6 cfunc=131 array=2 fast_array=2 elements=9 binary=0
-mem-gc obj=194 atom=544 shape=127 prop=967 jsfunc=0 cfunc=131 array=1 fast_array=1 elements=0 binary=0
+mem-end obj=206 atom=554 shape=135 prop=992 jsfunc=6 cfunc=131 array=2 fast_array=2 elements=9 binary=0
+mem-gc obj=194 atom=545 shape=127 prop=967 jsfunc=0 cfunc=131 array=1 fast_array=1 elements=0 binary=0
 --- status exit 0

@@ -192,6 +192,6 @@ result nested: throws TypeError
 result keys: throws TypeError
 result has own: throws TypeError
 result memory after: 0
-mem-end obj=236 atom=588 shape=151 prop=1124 jsfunc=22 cfunc=135 array=2 fast_array=2 elements=194 binary=0
-mem-gc obj=236 atom=588 shape=151 prop=1124 jsfunc=22 cfunc=135 array=2 fast_array=2 elements=194 binary=0
+mem-end obj=236 atom=589 shape=151 prop=1124 jsfunc=22 cfunc=135 array=2 fast_array=2 elements=194 binary=0
+mem-gc obj=236 atom=589 shape=151 prop=1124 jsfunc=22 cfunc=135 array=2 fast_array=2 elements=194 binary=0
 --- status exit 0

@@ -53,6 +53,6 @@ result throws ctor: none
 result throws set: SyntaxError
 result define: ok
 result define len: 1
-mem-end obj=201 atom=557 shape=121 prop=969 jsfunc=3 cfunc=132 array=6 fast_array=6 elements=83 binary=0
-mem-gc obj=201 atom=557 shape=121 prop=969 jsfunc=3 cfunc=132 array=6 fast_array=6 elements=83 binary=0
+mem-end obj=201 atom=558 shape=121 prop=969 jsfunc=3 cfunc=132 array=6 fast_array=6 elements=83 binary=0
+mem-gc obj=201 atom=558 shape=121 prop=969 jsfunc=3 cfunc=132 array=6 fast_array=6 elements=83 binary=0
 --- status exit 0

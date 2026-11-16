@@ -73,6 +73,6 @@ result -1 -1 -1 -1 -1 0 0 d5 0 -1 0
 result true
 result true
 result calls 210
-mem-end obj=188 atom=571 shape=150 prop=943 jsfunc=0 cfunc=126 array=1 fast_array=1 elements=0 binary=0
-mem-gc obj=188 atom=571 shape=150 prop=943 jsfunc=0 cfunc=126 array=1 fast_array=1 elements=0 binary=0
+mem-end obj=188 atom=572 shape=150 prop=943 jsfunc=0 cfunc=126 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=188 atom=572 shape=150 prop=943 jsfunc=0 cfunc=126 array=1 fast_array=1 elements=0 binary=0
 --- status exit 0

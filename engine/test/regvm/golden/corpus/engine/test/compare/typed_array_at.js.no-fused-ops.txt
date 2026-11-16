@@ -45,6 +45,6 @@ result Uint8Array resized: undefined
 result Int16Array resized: undefined
 result Float64Array resized: undefined
 result Float32Array resized: undefined
-mem-end obj=195 atom=554 shape=128 prop=961 jsfunc=2 cfunc=130 array=2 fast_array=2 elements=47 binary=0
-mem-gc obj=195 atom=554 shape=128 prop=961 jsfunc=2 cfunc=130 array=2 fast_array=2 elements=47 binary=0
+mem-end obj=195 atom=555 shape=128 prop=961 jsfunc=2 cfunc=130 array=2 fast_array=2 elements=47 binary=0
+mem-gc obj=195 atom=555 shape=128 prop=961 jsfunc=2 cfunc=130 array=2 fast_array=2 elements=47 binary=0
 --- status exit 0

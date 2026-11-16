@@ -48,6 +48,6 @@ result arguments: "2z"
 result label: "key1,key2"
 result switch: 2
 result memory after: 0
-mem-end obj=207 atom=558 shape=138 prop=989 jsfunc=1 cfunc=142 array=2 fast_array=2 elements=50 binary=0
-mem-gc obj=207 atom=558 shape=138 prop=989 jsfunc=1 cfunc=142 array=2 fast_array=2 elements=50 binary=0
+mem-end obj=207 atom=559 shape=138 prop=989 jsfunc=1 cfunc=142 array=2 fast_array=2 elements=50 binary=0
+mem-gc obj=207 atom=559 shape=138 prop=989 jsfunc=1 cfunc=142 array=2 fast_array=2 elements=50 binary=0
 --- status exit 0

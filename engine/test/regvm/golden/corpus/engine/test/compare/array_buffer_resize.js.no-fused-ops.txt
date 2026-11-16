@@ -40,6 +40,6 @@ result not resizable: throws TypeError
 result detached: throws TypeError
 result length tracking: 12
 result order: valueOf,TypeError
-mem-end obj=202 atom=557 shape=126 prop=974 jsfunc=3 cfunc=131 array=5 fast_array=5 elements=78 binary=0
-mem-gc obj=202 atom=557 shape=126 prop=974 jsfunc=3 cfunc=131 array=5 fast_array=5 elements=78 binary=0
+mem-end obj=202 atom=558 shape=126 prop=974 jsfunc=3 cfunc=131 array=5 fast_array=5 elements=78 binary=0
+mem-gc obj=202 atom=558 shape=126 prop=974 jsfunc=3 cfunc=131 array=5 fast_array=5 elements=78 binary=0
 --- status exit 0

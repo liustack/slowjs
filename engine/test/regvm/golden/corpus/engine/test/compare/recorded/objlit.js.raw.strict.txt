@@ -46,6 +46,6 @@ result object freeze after literal => a:number=1:e ext=false
 result template object => 0:string=a:e,1:string=b:e,length:number=2:,raw:object=[obj]:
 result defineProperties => a:number=1:e,b:get/set:
 result structured via assign => a:number=1:wec,b:number=2:wec
-mem-end obj=275 atom=638 shape=243 prop=1141 jsfunc=39 cfunc=149 array=3 fast_array=3 elements=48 binary=0
-mem-gc obj=216 atom=628 shape=214 prop=1022 jsfunc=2 cfunc=149 array=2 fast_array=2 elements=46 binary=0
+mem-end obj=275 atom=639 shape=243 prop=1141 jsfunc=39 cfunc=149 array=3 fast_array=3 elements=48 binary=0
+mem-gc obj=216 atom=629 shape=214 prop=1022 jsfunc=2 cfunc=149 array=2 fast_array=2 elements=46 binary=0
 --- status exit 0

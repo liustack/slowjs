@@ -141,6 +141,9 @@ func BenchmarkPages(b *testing.B) {
 		b.Fatal(err)
 	}
 	defer runner.Close()
+	if spinShare > 0 {
+		fmt.Fprintf(os.Stderr, "pages: each timed render also waits %g of the median warm render of its page (spin.go)\n", float64(spinShare))
+	}
 	pages := r.inputs
 	if r.o.React {
 		pages = []string{""}
@@ -163,10 +166,18 @@ func BenchmarkPages(b *testing.B) {
 		input, name := page(b, in)
 		b.Run(name, func(b *testing.B) {
 			ds := make([]time.Duration, 0, r.timed)
+			var warm []time.Duration // for spinShare (spin.go)
 			for i := 0; i < r.warm+r.timed; i++ {
 				html, d, err := runner.Render(input)
 				if err != nil {
 					b.Fatalf("%s, render %d: %v", name, i, err)
+				}
+				if spinShare > 0 {
+					if i < r.warm {
+						warm = append(warm, d)
+					} else {
+						d += spinFor(spinTarget(warm, spinShare))
+					}
 				}
 				if i == 0 && *flagHash {
 					fmt.Fprintf(os.Stderr, "html %s %x\n", name, sha256.Sum256([]byte(html)))

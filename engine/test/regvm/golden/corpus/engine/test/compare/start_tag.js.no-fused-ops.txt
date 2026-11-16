@@ -1,6 +1,6 @@
-result 6673 calls: all as React; startTag took 4447
+result 12820 calls: all as React; startTag took 6911
 result 641 end tags: all as React
 result ok
-mem-end obj=594 atom=4782 shape=2267 prop=3115 jsfunc=31 cfunc=168 array=151 fast_array=150 elements=674 binary=0
-mem-gc obj=592 atom=4782 shape=2265 prop=3111 jsfunc=30 cfunc=168 array=151 fast_array=150 elements=674 binary=0
+mem-end obj=901 atom=4945 shape=2323 prop=3611 jsfunc=43 cfunc=170 array=281 fast_array=280 elements=1091 binary=0
+mem-gc obj=899 atom=4945 shape=2321 prop=3607 jsfunc=42 cfunc=170 array=281 fast_array=280 elements=1091 binary=0
 --- status exit 0

@@ -73,6 +73,6 @@ result strict calls sloppy 3: ok 1
 result sloppy calls strict 3: TypeError: '0' is read-only
 result strict, sloppy, strict 3: TypeError: '0' is read-only
 result delete: ok false / TypeError: could not delete property / ok true / ok true
-mem-end obj=197 atom=549 shape=127 prop=978 jsfunc=2 cfunc=133 array=1 fast_array=1 elements=0 binary=0
-mem-gc obj=197 atom=549 shape=127 prop=978 jsfunc=2 cfunc=133 array=1 fast_array=1 elements=0 binary=0
+mem-end obj=197 atom=550 shape=127 prop=978 jsfunc=2 cfunc=133 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=197 atom=550 shape=127 prop=978 jsfunc=2 cfunc=133 array=1 fast_array=1 elements=0 binary=0
 --- status exit 0

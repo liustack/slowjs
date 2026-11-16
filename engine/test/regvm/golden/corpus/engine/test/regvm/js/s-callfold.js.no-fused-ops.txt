@@ -44,6 +44,6 @@ result boom t     at boom (<eval>:20:58)     at throwsIn (<eval>:40:41)
 result TypeError     at <anonymous> (<eval>:50:17)
 result     at stackIn (<eval>:42:42)     at stackAt (<eval>:43:23)     at <anonymous> (<eval>:50:29)
 result deep1
-mem-end obj=196 atom=591 shape=124 prop=1004 jsfunc=1 cfunc=132 array=1 fast_array=1 elements=0 binary=0
-mem-gc obj=195 atom=587 shape=123 prop=1001 jsfunc=0 cfunc=132 array=1 fast_array=1 elements=0 binary=0
+mem-end obj=196 atom=592 shape=124 prop=1004 jsfunc=1 cfunc=132 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=195 atom=588 shape=123 prop=1001 jsfunc=0 cfunc=132 array=1 fast_array=1 elements=0 binary=0
 --- status exit 0

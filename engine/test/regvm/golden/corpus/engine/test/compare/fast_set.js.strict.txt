@@ -16,6 +16,6 @@ result mapped arguments: 1,2,x,y
 result mapped define: 1,z
 result frozen: false 1,2,3
 result inherited: true 9,2,3 0
-mem-end obj=234 atom=551 shape=140 prop=1037 jsfunc=18 cfunc=138 array=17 fast_array=17 elements=74 binary=0
-mem-gc obj=234 atom=551 shape=140 prop=1037 jsfunc=18 cfunc=138 array=17 fast_array=17 elements=74 binary=0
+mem-end obj=234 atom=552 shape=140 prop=1037 jsfunc=18 cfunc=138 array=17 fast_array=17 elements=74 binary=0
+mem-gc obj=234 atom=552 shape=140 prop=1037 jsfunc=18 cfunc=138 array=17 fast_array=17 elements=74 binary=0
 --- status exit 0

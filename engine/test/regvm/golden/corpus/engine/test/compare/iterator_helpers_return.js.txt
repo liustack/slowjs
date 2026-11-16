@@ -64,6 +64,6 @@ result flatMap inner is a string: throws TypeError
 result flatMap inner next getter throws: get next,next,get return,return,caught RangeError
 result take return after the limit: 0,true get next,next,get return,return
 result drop return: get next,next,next,next,get return,return
-mem-end obj=236 atom=570 shape=139 prop=1037 jsfunc=23 cfunc=136 array=6 fast_array=6 elements=76 binary=0
-mem-gc obj=209 atom=569 shape=136 prop=998 jsfunc=20 cfunc=136 array=2 fast_array=2 elements=66 binary=0
+mem-end obj=236 atom=571 shape=139 prop=1037 jsfunc=23 cfunc=136 array=6 fast_array=6 elements=76 binary=0
+mem-gc obj=209 atom=570 shape=136 prop=998 jsfunc=20 cfunc=136 array=2 fast_array=2 elements=66 binary=0
 --- status exit 0

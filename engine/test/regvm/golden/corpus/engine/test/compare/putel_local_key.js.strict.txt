@@ -20,6 +20,6 @@ result frozen threw TypeError: 'f' is read-only
 result frozen sloppy threw TypeError: 'f' is read-only
 result string object 1 3
 result loop a:14850,b:14950,c:15050
-mem-end obj=199 atom=569 shape=142 prop=975 jsfunc=5 cfunc=132 array=2 fast_array=2 elements=22 binary=0
-mem-gc obj=199 atom=569 shape=142 prop=975 jsfunc=5 cfunc=132 array=2 fast_array=2 elements=22 binary=0
+mem-end obj=199 atom=570 shape=142 prop=975 jsfunc=5 cfunc=132 array=2 fast_array=2 elements=22 binary=0
+mem-gc obj=199 atom=570 shape=142 prop=975 jsfunc=5 cfunc=132 array=2 fast_array=2 elements=22 binary=0
 --- status exit 0

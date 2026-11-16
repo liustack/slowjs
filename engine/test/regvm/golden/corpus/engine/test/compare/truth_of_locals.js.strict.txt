@@ -21,6 +21,6 @@ result arguments -btruefalse a-falsetrue a-falsetrue
 result dropped 3
 result builtins false,true,false,true,false,true,false,true 4 1 true false
 result loop 1000
-mem-end obj=200 atom=562 shape=120 prop=972 jsfunc=4 cfunc=130 array=4 fast_array=4 elements=42 binary=0
-mem-gc obj=200 atom=562 shape=120 prop=972 jsfunc=4 cfunc=130 array=4 fast_array=4 elements=42 binary=0
+mem-end obj=200 atom=563 shape=120 prop=972 jsfunc=4 cfunc=130 array=4 fast_array=4 elements=42 binary=0
+mem-gc obj=200 atom=563 shape=120 prop=972 jsfunc=4 cfunc=130 array=4 fast_array=4 elements=42 binary=0
 --- status exit 0

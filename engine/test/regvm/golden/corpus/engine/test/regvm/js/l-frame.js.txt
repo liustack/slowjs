@@ -110,6 +110,6 @@ result [25202,"8:7",1,225]
 result 25204
 result RangeError: g
 result 25204
-mem-end obj=193 atom=548 shape=124 prop=958 jsfunc=1 cfunc=129 array=1 fast_array=1 elements=0 binary=0
-mem-gc obj=192 atom=545 shape=123 prop=954 jsfunc=0 cfunc=129 array=1 fast_array=1 elements=0 binary=0
+mem-end obj=193 atom=549 shape=124 prop=958 jsfunc=1 cfunc=129 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=192 atom=546 shape=123 prop=954 jsfunc=0 cfunc=129 array=1 fast_array=1 elements=0 binary=0
 --- status exit 0

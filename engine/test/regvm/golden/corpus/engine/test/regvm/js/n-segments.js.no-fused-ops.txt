@@ -17,6 +17,6 @@ result argy 2967
 result extra 2970
 result many 40000:39999 40000:39999 40000:39999 465
 result segments true true
-mem-end obj=210 atom=624 shape=124 prop=1002 jsfunc=12 cfunc=130 array=2 fast_array=2 elements=6 binary=0
-mem-gc obj=192 atom=543 shape=122 prop=951 jsfunc=0 cfunc=130 array=1 fast_array=1 elements=0 binary=0
+mem-end obj=210 atom=625 shape=124 prop=1002 jsfunc=12 cfunc=130 array=2 fast_array=2 elements=6 binary=0
+mem-gc obj=192 atom=544 shape=122 prop=951 jsfunc=0 cfunc=130 array=1 fast_array=1 elements=0 binary=0
 --- status exit 0

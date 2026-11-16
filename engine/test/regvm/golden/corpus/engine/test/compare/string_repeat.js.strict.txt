@@ -51,6 +51,6 @@ result bigint count: throws TypeError
 result symbol this: throws TypeError
 result null this: throws TypeError
 result order: this,count,RangeError
-mem-end obj=195 atom=551 shape=124 prop=963 jsfunc=2 cfunc=129 array=2 fast_array=2 elements=53 binary=0
-mem-gc obj=195 atom=551 shape=124 prop=963 jsfunc=2 cfunc=129 array=2 fast_array=2 elements=53 binary=0
+mem-end obj=195 atom=552 shape=124 prop=963 jsfunc=2 cfunc=129 array=2 fast_array=2 elements=53 binary=0
+mem-gc obj=195 atom=552 shape=124 prop=963 jsfunc=2 cfunc=129 array=2 fast_array=2 elements=53 binary=0
 --- status exit 0

@@ -10,6 +10,6 @@ result frozen: true false length=2c name=namedc prototype=objectw false
 result proto key: length=2c name=namedc prototype=objectw fp undefined
 result names: 1,k2,[Symbol.iterator] length=0c name=1c prototype=objectw
 result realm: length=1c name=fc prototype=objectw false false true
-mem-end obj=417 atom=550 shape=270 prop=1980 jsfunc=3 cfunc=255 array=2 fast_array=2 elements=0 binary=0
-mem-gc obj=197 atom=543 shape=132 prop=974 jsfunc=0 cfunc=134 array=1 fast_array=1 elements=0 binary=0
+mem-end obj=417 atom=551 shape=270 prop=1980 jsfunc=3 cfunc=255 array=2 fast_array=2 elements=0 binary=0
+mem-gc obj=197 atom=544 shape=132 prop=974 jsfunc=0 cfunc=134 array=1 fast_array=1 elements=0 binary=0
 --- status exit 0
