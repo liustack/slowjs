@@ -2281,8 +2281,16 @@ static no_inline JSMallocArena *js_malloc_new_arena(JSMallocContext *s, int bloc
     n_blocks = (JS_MALLOC_ARENA_SIZE - sizeof(JSMallocArena)) / block_size;
     arena_size = sizeof(JSMallocArena) + n_blocks * block_size;
     ar = js_heap_alloc(s, arena_size);
-    if (!ar)
-        return NULL;
+    if (!ar) {
+        /* the heap refused the arena after js_heap_drain gave back what it
+           could: the kept shapes it let go may have left free slots of this
+           size in arenas that still hold other blocks, which give no memory
+           back to the heap but serve the block the arena was for */
+        struct list_head *head = &s->free_arena_list[block_size_idx];
+        if (head->next == head)
+            return NULL;
+        return list_entry(head->next, JSMallocArena, free_link);
+    }
 
     ar->block_size_idx = block_size_idx;
     ar->n_blocks = n_blocks;

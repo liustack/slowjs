@@ -174,6 +174,9 @@ size_t white_sb_block_usable(const struct StringBuffer *b);
 void white_front_drain(JSContext *ctx);
 size_t white_heap_limit(JSContext *ctx);
 size_t white_gc_count(JSRuntime *rt);
+int white_kept_shapes(JSRuntime *rt);
+void *white_kept_shape(JSRuntime *rt, size_t *size);
+int white_take_slots(JSRuntime *rt, size_t size, void **out, int cap);
 
 /* ---- texts of every kind of character ---- */
 
@@ -2182,6 +2185,47 @@ static void test_putel_atom_shape(void)
               "values of the objects");
         vm_free(&v);
     }
+}
+
+/* ---- the kept shapes let go on a refused request ---- */
+
+#define SLOTS_MAX 4096
+
+/* A block whose size has no free slot left needs a new arena. Under the
+   memory limit the heap refuses it, and js_heap_drain lets the kept shapes
+   go: a kept shape in an arena that still holds other blocks leaves a free
+   slot there, which gives no memory back to the heap, and the block is
+   taken from that slot. The keys are atoms of the engine, so that the
+   shapes are all that goes. */
+static void test_shape_drop_slot(void)
+{
+    static void *slots[SLOTS_MAX];
+    VM v;
+    void *shape, *p;
+    size_t size;
+    int n, kept;
+
+    if (white_every_block_is_a_request())
+        return;
+    v = vm_new();
+    JS_SetShapeCache(v.ctx, 64);
+    CHECK(eval_ok(v.ctx, "function mk() { var o = {}; o.length = 1; o.name = 2; return 0 }\nmk(); mk();"),
+          "the script threw");
+    JS_RunGC(v.rt);
+    kept = white_kept_shapes(v.rt);
+    shape = white_kept_shape(v.rt, &size);
+    CHECK(kept > 0 && shape, "no shape kept");
+    n = white_take_slots(v.rt, size, slots, SLOTS_MAX);
+    CHECK(n >= 0, "more than %d free blocks of %lu bytes", SLOTS_MAX, (unsigned long)size);
+    JS_SetMemoryLimit(v.rt, JS_GetMemorySize(v.rt));
+    p = js_malloc_rt(v.rt, size);
+    JS_SetMemoryLimit(v.rt, (size_t)-1);
+    CHECK(white_kept_shapes(v.rt) == 0, "%d shapes kept after the refused request, %d before", white_kept_shapes(v.rt), kept);
+    CHECK(p == shape, "a block of %lu bytes: %p, want the slot the kept shape left, %p", (unsigned long)size, p, shape);
+    js_free_rt(v.rt, p);
+    while (n > 0)
+        js_free_rt(v.rt, slots[--n]);
+    vm_free(&v);
 }
 
 /* each_vm_failing calls the global f of setup with each call of the
@@ -9361,6 +9405,7 @@ int main(int argc, char **argv)
     test_object_inline_limit();
     test_object_lit_shared_shape();
     test_putel_atom_shape();
+    test_shape_drop_slot();
     test_putel_atom_each_failing();
     test_object_rest_cache();
     test_object_spread_cache();

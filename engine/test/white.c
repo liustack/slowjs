@@ -2719,3 +2719,50 @@ unsigned long white_json_walks(void)
     white_json_walked = 0;
     return n;
 }
+
+/* ---- the shapes the shape cache lets go on a refused request ---- */
+
+/* the shapes the shape cache keeps */
+int white_kept_shapes(JSRuntime *rt)
+{
+    return rt->shape_cache.count;
+}
+
+/* white_kept_shape gives the block of the first shape the shape cache
+   keeps, NULL when it keeps none, and the size to ask js_malloc_rt for to
+   get a block of its size in *size. */
+void *white_kept_shape(JSRuntime *rt, size_t *size)
+{
+    JSShapeCache *sc = &rt->shape_cache;
+    int i;
+
+    for(i = 0; sc->ring && i < sc->n; i++) {
+        if (sc->ring[i]) {
+            *size = js_malloc_usable_size_rt(rt, sc->ring[i]);
+            return sc->ring[i];
+        }
+    }
+    return NULL;
+}
+
+/* white_take_slots takes every free block of the size of size that the
+   front cache and the arenas have, without a new arena, into out (cap of
+   them), so that the next block of that size needs a new arena. It gives
+   their number, -1 when cap is short. */
+int white_take_slots(JSRuntime *rt, size_t size, void **out, int cap)
+{
+    JSMallocContext *s = &rt->malloc_ctx;
+    size_t total = ((size + JS_MALLOC_ALIGN - 1) & ~(JS_MALLOC_ALIGN - 1)) +
+        sizeof(JSMallocBlockHeader);
+    struct list_head *head = &s->free_arena_list[get_block_size_index(total)];
+    int n = 0;
+
+    js_front_drain(s);
+    while (head->next != head) {
+        if (n == cap)
+            return -1;
+        out[n++] = js_malloc_rt(rt, size);
+    }
+    return n;
+}
+
