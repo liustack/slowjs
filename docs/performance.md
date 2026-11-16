@@ -94,6 +94,19 @@ TIFA_SSR_SHOP=1 go test -run '^$' -bench ShopParallel -benchtime 15s ./test/ssr
 
 After a release, upgrade tifa (see [releasing.md](releasing.md#after-the-release)).
 
+### The pages of tifa 63a2099e
+
+From 2026-11-16, `engine/pgo/pages` holds the pages of tifa 63a2099e (v0.0.10) in place of those of tifa 07b6ce0f: the same 23 pages, with the shop on react-i18next 18, whose `useTranslation` no longer copies the i18n object on each call, and the bundles of tifa's newer plugin. They do less work, so a count or a time on the old pages does not compare with one on these. The base for the next comparison is v0.31.2 (main at 8aa30db0) on these pages. Instructions a render, summed over the pages of each kind, counted by `scripts/count-pages.sh` on linux/amd64 (AMD EPYC 7B13), the same binary on both sets:
+
+| kind | pages | old pages | these pages | change |
+| --- | ---: | ---: | ---: | ---: |
+| wb | 6 | 480,754,335 | 460,449,911 | -4.22% |
+| store, en-US | 7 | 1,061,261,019 | 942,359,579 | -11.20% |
+| store, zh-CN | 7 | 1,023,379,913 | 906,201,218 | -11.45% |
+| mui | 3 | 365,197,275 | 356,965,078 | -2.25% |
+
+On the store, the own keys of objects take 12.7 million fewer instructions a kind, and the register loop 45 to 47 million fewer. The Proxy of react-i18next is made and freed once a render (about 26,000 instructions a page) and its traps do not run. The profile of v0.31.2 was trained on the old pages, which never wrote the modes of the start tag (`js_emit_mode_attrs` had no count). Trained again on these pages, the engine runs -0.01% to +0.12% instructions on each kind.
+
 
 ### Code positions
 
