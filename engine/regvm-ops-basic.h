@@ -844,7 +844,13 @@ static inline int rv_str_length(JSValueConst v)
    0 when p is p0, its slot and the id of the shape of p0 when p is the
    prototype of p0 and that shape is in the shape hash table (an id names
    its prototype, keys and flags, so that p0 has no such key of its own),
-   p0 is not exotic and the ids never ran out. Else the cache stays. */
+   p0 is not exotic and the ids never ran out. Else the cache stays. An
+   exotic p0 is kept when goasm_field_goes_on says its lookup of the key
+   goes on to the prototype as for a plain object: an array or an arguments
+   object with fast elements read by a key that is not an index, whose own
+   keys of that kind are all in its shape (a method of Array.prototype). The
+   hit makes the same test on the object it reads, since a shape id does not
+   name the class. */
 static force_inline void rv_getf_keep(JSContext *ctx, const uint8_t *ip, JSObject *p0,
                                       JSObject *p, JSShapeProperty *prs)
 {
@@ -853,7 +859,9 @@ static force_inline void rv_getf_keep(JSContext *ctx, const uint8_t *ip, JSObjec
     if (p == p0) {
         id = 0;
     } else {
-        if (p != p0->shape->proto || p0->is_exotic || ctx->rv_renumbered)
+        if (p != p0->shape->proto ||
+            (p0->is_exotic && !goasm_field_goes_on(p0, prs->atom)) ||
+            ctx->rv_renumbered)
             return;
         id = p0->shape->id;
         if (id == 0)
@@ -1572,7 +1580,10 @@ static inline BOOL rv_unwrap_in_loop(JSValueConst f)
        the shape of the object (rv_getf_keep): the same id, which a shape
        has only while it is in the shape hash table, means the same
        prototype, keys and flags, so the object has no such key of its own
-       and the slot is checked in the shape its prototype has now. */
+       and the slot is checked in the shape its prototype has now. Of the
+       exotic objects only an array or arguments object with fast elements,
+       read by a key that is not an index, takes that slot (a method of
+       Array.prototype before a call). */
 #define RV_GETFIELD(label, temp, tdst)                                  \
  label:                                                                 \
     ip = pc; pc += 14;                                                  \
@@ -1590,7 +1601,8 @@ static inline BOOL rv_unwrap_in_loop(JSValueConst f)
             JSShape *sh_ = p->shape;                                    \
             JSObject *p0_ = p, *h_ = p;                                 \
             if (id_ != 0) {                                             \
-                if (sh_->id != id_ || p->is_exotic ||                   \
+                if (sh_->id != id_ ||                                   \
+                    (p->is_exotic && !goasm_field_goes_on(p, atom)) ||  \
                     ctx->rv_renumbered)                                 \
                     goto label ## _look;                                \
                 h_ = sh_->proto;                                        \
