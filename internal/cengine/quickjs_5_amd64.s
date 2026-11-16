@@ -19727,7 +19727,7 @@ TEXT ·async_func_resume(SB), $112-24
 	QUAD $0x6c894c2424894c68
 	BYTE $0x24
 	BYTE $0x08
-	CALL ·JS_ThrowOutOfMemory(SB)
+	CALL ·rv_convert_error(SB)
 	QUAD $0x4924eb6824648b4c
 	QUAD $0x402444894c70c083
 	QUAD $0x4c2424894cc4894d

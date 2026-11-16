@@ -167,7 +167,8 @@ static inline BOOL rv_args_mapped(const JSFunctionBytecode *b)
    entry. Error.stack and the backtrace show no argument, and
    Function.prototype.arguments throws. Not for a function that folds or
    names slots past -128 (the pass reads those differently). One walk for
-   the prologue and the writes, one for the reads. */
+   the prologue and the writes, one for the reads. 0 too when the pass is
+   stopped (rv_pass_stop), which rv_build then looks at. */
 static int rv_lazy_args(RVPass *s)
 {
     JSFunctionBytecode *b = s->b;
@@ -178,6 +179,8 @@ static int rv_lazy_args(RVPass *s)
     if (b->func_kind != JS_FUNC_NORMAL || s->fold || s->wide)
         return 0;
     for (pos = 0; pos < s->len; pos += size) {
+        if (rv_pass_stop(s))
+            return 0;
         op = bc[pos];
         size = short_opcode_info(op).size;
         switch (op) {
@@ -224,6 +227,8 @@ static int rv_lazy_args(RVPass *s)
             return 0;
     }
     for (pos = 0; pos < s->len; pos += size) {
+        if (rv_pass_stop(s))
+            return 0;
         op = bc[pos];
         size = short_opcode_info(op).size;
         idx = rv_named_local(bc + pos, op, &get);

@@ -481,6 +481,9 @@ struct JSRuntime {
 
     /* see JS_GetInterruptFlag */
     volatile int interrupt_flag;
+    /* the work the parser and the compiler may do before they read the
+       flag again (js_compile_poll) */
+    int compile_left;
 
     JSHostPromiseRejectionTracker *host_promise_rejection_tracker;
     void *host_promise_rejection_tracker_opaque;
@@ -1547,6 +1550,7 @@ static void rv_scratch_free(JSRuntime *rt);
 static void rv_scratch_drop(JSRuntime *rt);
 static int rv_stack_make(JSRuntime *rt);
 static no_inline RVFunc *rv_convert(JSContext *ctx, struct JSFunctionBytecode *b);
+static JSValue rv_convert_error(JSContext *ctx);
 static int rv_read_check(JSContext *ctx, struct JSFunctionBytecode *b);
 static no_inline JSValue JS_RegvmRun(JSContext *caller_ctx, JSValueConst func_obj,
                                      JSValueConst this_obj, JSValue new_target,
@@ -4837,6 +4841,14 @@ JSAtom JS_NewAtomLen(JSContext *ctx, const char *str, size_t len)
 {
     JSValue val;
 
+    if (unlikely(len >= JS_POLL_SHORT_STEP)) {
+        /* a long name: the scan of its token read the flag where its
+           address met a multiple of JS_ROPE_STEP, up to a step before its
+           end, and the look in the table, the string and its hash start
+           from a reading */
+        if (js_poll_interrupts(ctx))
+            return JS_ATOM_NULL;
+    }
     if (len == 0 ||
         (len < JS_ROPE_STEP && !is_digit(*str) &&
          count_ascii((const uint8_t *)str, len) == len)) {
@@ -12639,6 +12651,89 @@ static inline __exception int js_poll_interrupts(JSContext *ctx)
         return __js_poll_interrupts(ctx);
     return 0;
 }
+
+/* The parse and the compile of a source read the interrupt flag after a
+   count of their work rather than where a pointer meets an address: a
+   source of short tokens, the passes over its code and the conversion to
+   register code would otherwise go on to their end, hundreds of polls for a
+   few hundred KB, past the kill for a few MB. The work is counted down in
+   rt->compile_left, in units of about one step of a short loop:
+   JS_TOKEN_WORK for a token, JS_CODE_WORK for an instruction a pass goes
+   over, one for each entry a look for a name goes over (js_compile_count).
+   The flag is read when it goes below 0, every JS_COMPILE_POLL_STEP units,
+   a poll or two. A pass keeps the count in a local from js_compile_left to
+   js_compile_keep, so that each step costs a subtraction and a branch
+   (js_compile_tick), and a walk over the code reads the flag by pieces
+   (js_code_more), which costs nothing in its loop. */
+#define JS_COMPILE_POLL_STEP (1 << 14)
+#define JS_TOKEN_WORK 16
+#define JS_CODE_WORK 4
+
+static inline void js_compile_count(JSContext *ctx, int n)
+{
+    ctx->rt->compile_left -= n;
+}
+
+/* out of line, so that the hot loops keep only the count */
+static no_inline __exception int js_compile_read(JSContext *ctx)
+{
+    return js_poll_interrupts(ctx);
+}
+
+/* -1 with "interrupted" thrown when n more units take the count below 0
+   and the flag is set */
+static inline __exception int js_compile_poll(JSContext *ctx, int n)
+{
+    JSRuntime *rt = ctx->rt;
+    if (unlikely((rt->compile_left -= n) < 0)) {
+        rt->compile_left = JS_COMPILE_POLL_STEP;
+        return js_compile_read(ctx);
+    }
+    return 0;
+}
+
+static inline int js_compile_left(JSContext *ctx)
+{
+    return ctx->rt->compile_left;
+}
+
+static inline void js_compile_keep(JSContext *ctx, int left)
+{
+    ctx->rt->compile_left = left;
+}
+
+/* js_compile_poll on the local left of a pass: nonzero with "interrupted"
+   thrown when it was stopped */
+#define js_compile_tick(ctx, left, n)                                   \
+    (unlikely(((left) -= (n)) < 0) &&                                   \
+     ((left) = JS_COMPILE_POLL_STEP, js_compile_read(ctx)))
+
+/* A walk of a pass over the code of a function, or over a table of it, reads
+   the flag at its start and then every JS_CODE_PIECE entries, where its index
+   meets the end of a piece: the loop compares the index with the end of the
+   piece instead of the length and does no other work (js_code_more). A walk
+   with a large body, where that condition costs registers, runs as a loop to
+   the end of the piece, then goes back to read the flag and take the next
+   piece (TDZ_PIECE, CBV_PIECE). */
+#define JS_CODE_PIECE (1 << 13)
+
+/* the end of the piece that starts at pos: pos when the walk is over, -1 with
+   "interrupted" thrown when the flag is set. Without ctx it reads no flag. Out
+   of line, and the end is returned rather than stored through a pointer, so
+   that the loop keeps it in a register and stays as it was. */
+static no_inline int js_code_piece(JSContext *ctx, int pos, int len)
+{
+    if (pos >= len)
+        return pos;
+    if (ctx && js_poll_interrupts(ctx))
+        return -1;
+    return min_int(len, pos + JS_CODE_PIECE);
+}
+
+/* the condition of a walk of pos up to len, with end set to pos before the
+   walk: after it, end < 0 when it was stopped */
+#define js_code_more(ctx, pos, len, end)                                \
+    ((pos) < (end) || ((end) = js_code_piece(ctx, pos, len)) > (pos))
 
 static void JS_SetImmutablePrototype(JSContext *ctx, JSValueConst obj)
 {
@@ -24746,7 +24841,7 @@ static no_inline JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst fun
                 /* its conversion ran out of memory: tried again at the
                    next call */
                 rt->rv_oom_b = NULL;
-                return JS_ThrowOutOfMemory(caller_ctx);
+                return rv_convert_error(caller_ctx);
             }
         }
         if (unlikely(rf->arg_count < 0))
@@ -27107,7 +27202,7 @@ static JSAtom parse_ident(JSParseState *s, const uint8_t **pp,
 }
 
 
-static __exception int next_token(JSParseState *s)
+static no_inline __exception int next_token1(JSParseState *s)
 {
     const uint8_t *p;
     int c;
@@ -27573,6 +27668,19 @@ static __exception int next_token(JSParseState *s)
  fail:
     s->token.val = TOK_ERROR;
     return -1;
+}
+
+/* The scans of a long token read the flag where their pointer meets a
+   multiple of JS_ROPE_STEP, which a source of short tokens may never do,
+   and the parse and the code of each token are work of their own, counted
+   with the looks for names the parse makes, which read no flag themselves
+   (js_compile_poll), here rather than in the code of the scan
+   (next_token1). */
+static inline __exception int next_token(JSParseState *s)
+{
+    if (js_compile_poll(s->ctx, JS_TOKEN_WORK))
+        return -1;
+    return next_token1(s);
 }
 
 /* 'c' is the first character. Return JS_ATOM_NULL in case of error */
@@ -28571,6 +28679,7 @@ static __exception int emit_push_const(JSParseState *s, JSValueConst val,
 static int find_arg(JSContext *ctx, JSFunctionDef *fd, JSAtom name)
 {
     int i;
+    js_compile_count(ctx, fd->arg_count);
     for(i = fd->arg_count; i-- > 0;) {
         if (fd->args[i].var_name == name)
             return i | ARGUMENT_VAR_OFFSET;
@@ -28581,6 +28690,7 @@ static int find_arg(JSContext *ctx, JSFunctionDef *fd, JSAtom name)
 static int find_var(JSContext *ctx, JSFunctionDef *fd, JSAtom name)
 {
     int i;
+    js_compile_count(ctx, fd->var_count);
     for(i = fd->var_count; i-- > 0;) {
         if (fd->vars[i].var_name == name && fd->vars[i].scope_level == 0)
             return i;
@@ -28593,6 +28703,7 @@ static int find_var_in_scope(JSContext *ctx, JSFunctionDef *fd,
                              JSAtom name, int scope_level)
 {
     int scope_idx;
+    js_compile_count(ctx, fd->var_count);
     for(scope_idx = fd->scopes[scope_level].first; scope_idx >= 0;
         scope_idx = fd->vars[scope_idx].scope_next) {
         if (fd->vars[scope_idx].scope_level != scope_level)
@@ -28621,6 +28732,7 @@ static int find_var_in_child_scope(JSContext *ctx, JSFunctionDef *fd,
                                    JSAtom name, int scope_level)
 {
     int i;
+    js_compile_count(ctx, fd->var_count);
     for(i = 0; i < fd->var_count; i++) {
         JSVarDef *vd = &fd->vars[i];
         if (vd->var_name == name && vd->scope_level == 0) {
@@ -28636,6 +28748,7 @@ static int find_var_in_child_scope(JSContext *ctx, JSFunctionDef *fd,
 static JSGlobalVar *find_global_var(JSFunctionDef *fd, JSAtom name)
 {
     int i;
+    js_compile_count(fd->ctx, fd->global_var_count);
     for(i = 0; i < fd->global_var_count; i++) {
         JSGlobalVar *hf = &fd->global_vars[i];
         if (hf->var_name == name)
@@ -28657,6 +28770,7 @@ static JSGlobalVar *find_lexical_global_var(JSFunctionDef *fd, JSAtom name)
 static int find_lexical_decl(JSContext *ctx, JSFunctionDef *fd, JSAtom name,
                              int scope_idx, BOOL check_catch_var)
 {
+    js_compile_count(ctx, fd->var_count);
     while (scope_idx >= 0) {
         JSVarDef *vd = &fd->vars[scope_idx];
         if (vd->var_name == name &&
@@ -29452,6 +29566,9 @@ static int js_parse_skip_parens_token(JSParseState *s, int *pbits, BOOL no_line_
     JSParsePos pos;
     int last_tok, tok = TOK_EOF;
     int c, tok_len, bits = 0;
+    /* the tokens of the lookahead are counted here, in a local, as the parse
+       after it counts them again (next_token) */
+    int left = JS_COMPILE_POLL_STEP / JS_TOKEN_WORK;
     const uint8_t *last_token_ptr;
     
     /* protect from underflow */
@@ -29545,7 +29662,10 @@ static int js_parse_skip_parens_token(JSParseState *s, int *pbits, BOOL no_line_
             last_tok = s->token.val;
         }
         last_token_ptr = s->token.ptr;
-        if (next_token(s)) {
+        if ((unlikely(--left < 0) &&
+             (left = JS_COMPILE_POLL_STEP / JS_TOKEN_WORK,
+              js_poll_interrupts(s->ctx))) ||
+            next_token1(s)) {
             if (js_parse_skip_parens_error(s))
                 return TOK_ERROR;
             break;
@@ -38140,6 +38260,7 @@ static int get_closure_var1(JSContext *ctx, JSFunctionDef *s,
         if (closure_type != JS_CLOSURE_GLOBAL_REF)
             closure_type = JS_CLOSURE_REF;
     }
+    js_compile_count(ctx, s->closure_var_count);
     for(i = 0; i < s->closure_var_count; i++) {
         JSClosureVar *cv = &s->closure_var[i];
         if (cv->var_idx == var_idx && cv->closure_type == closure_type)
@@ -38347,6 +38468,8 @@ static int resolve_scope_var(JSContext *ctx, JSFunctionDef *s,
                      var_name == JS_ATOM_new_target ||
                      var_name == JS_ATOM_this);
 
+    /* the chains of the scopes are as long as the vars of each function */
+    js_compile_count(ctx, s->var_count);
     /* resolve local scoped variables */
     var_idx = -1;
     for (idx = s->scopes[scope_level].first; idx >= 0;) {
@@ -38526,6 +38649,7 @@ static int resolve_scope_var(JSContext *ctx, JSFunctionDef *s,
     for (fd = s; fd->parent;) {
         scope_level = fd->parent_scope_level;
         fd = fd->parent;
+        js_compile_count(ctx, fd->var_count);
         for (idx = fd->scopes[scope_level].first; idx >= 0;) {
             vd = &fd->vars[idx];
             if (vd->var_name == var_name) {
@@ -39466,7 +39590,9 @@ static BOOL code_match(CodeContext *s, int pos, ...)
     return ret;
 }
 
-static void instantiate_hoisted_definitions(JSContext *ctx, JSFunctionDef *s, DynBuf *bc)
+/* -1 with "interrupted" thrown when it was stopped: the global vars not done
+   stay in s, for js_free_function_def */
+static __exception int instantiate_hoisted_definitions(JSContext *ctx, JSFunctionDef *s, DynBuf *bc)
 {
     int i, idx, label_next = -1;
 
@@ -39497,7 +39623,7 @@ static void instantiate_hoisted_definitions(JSContext *ctx, JSFunctionDef *s, Dy
         label_next = new_label_fd(s);
         if (label_next < 0) {
             dbuf_set_error(bc);
-            return;
+            return 0;
         }
         /* if 'this' is true, initialize the global variables and return */
         dbuf_putc(bc, OP_push_this);
@@ -39514,6 +39640,14 @@ static void instantiate_hoisted_definitions(JSContext *ctx, JSFunctionDef *s, Dy
         JSGlobalVar *hf = &s->global_vars[i];
         BOOL has_var_obj = FALSE;
         BOOL force_init = hf->force_init;
+        /* the global vars times the closure vars, as in resolve_variables:
+           the names of those done are freed */
+        if (js_compile_poll(ctx, s->closure_var_count)) {
+            s->global_var_count -= i;
+            memmove(s->global_vars, s->global_vars + i,
+                    sizeof(s->global_vars[0]) * s->global_var_count);
+            return -1;
+        }
         /* we are in an eval, so the closure contains all the
            enclosing variables */
         /* If the outer function has a variable environment,
@@ -39571,6 +39705,7 @@ static void instantiate_hoisted_definitions(JSContext *ctx, JSFunctionDef *s, Dy
     s->global_vars = NULL;
     s->global_var_count = 0;
     s->global_var_size = 0;
+    return 0;
 }
 
 static int skip_dead_code(JSFunctionDef *s, const uint8_t *bc_buf, int bc_len,
@@ -39667,6 +39802,12 @@ static __exception int resolve_variables(JSContext *ctx, JSFunctionDef *s)
     for(i = 0; i < s->global_var_count; i++) {
         JSGlobalVar *hf = &s->global_vars[i];
 
+        /* the global vars times the closure vars: the vars of an eval in a
+           function with many locals. A stop copies all the code. */
+        if (js_compile_poll(ctx, s->closure_var_count)) {
+            pos = 0;
+            goto fail;
+        }
         /* check if global variable (XXX: simplify) */
         for(idx = 0; idx < s->closure_var_count; idx++) {
             JSClosureVar *cv = &s->closure_var[idx];
@@ -39699,6 +39840,9 @@ static __exception int resolve_variables(JSContext *ctx, JSFunctionDef *s)
 
     line_num = 0; /* avoid warning */
     for (pos = 0; pos < bc_len; pos = pos_next) {
+        /* the rest of the code is copied as it is */
+        if (js_compile_poll(ctx, JS_CODE_WORK))
+            goto fail;
         op = bc_buf[pos];
         len = opcode_info[op].size;
         pos_next = pos + len;
@@ -39867,9 +40011,9 @@ static __exception int resolve_variables(JSContext *ctx, JSFunctionDef *s)
             {
                 int scope_idx, scope = get_u16(bc_buf + pos + 1);
 
-                if (scope == s->body_scope) {
-                    instantiate_hoisted_definitions(ctx, s, &bc_out);
-                }
+                if (scope == s->body_scope &&
+                    instantiate_hoisted_definitions(ctx, s, &bc_out))
+                    goto fail;
 
                 for(scope_idx = s->scopes[scope].first; scope_idx >= 0;) {
                     JSVarDef *vd = &s->vars[scope_idx];
@@ -40000,12 +40144,10 @@ static __exception int resolve_variables(JSContext *ctx, JSFunctionDef *s)
  fail:
     /* continue the copy to keep the atom refcounts consistent */
     /* XXX: find a better solution ? */
-    for (; pos < bc_len; pos = pos_next) {
-        op = bc_buf[pos];
-        len = opcode_info[op].size;
-        pos_next = pos + len;
-        dbuf_put(&bc_out, bc_buf + pos, len);
-    }
+    /* in one copy, which reads no flag: the instructions are whole from
+       pos to the end */
+    if (pos < bc_len)
+        dbuf_put(&bc_out, bc_buf + pos, bc_len - pos);
     dbuf_free(&s->byte_code);
     s->byte_code = bc_out;
     return -1;
@@ -40039,7 +40181,7 @@ static int compute_pc2line_info(JSFunctionDef *s)
     if (!s->strip_debug) {
         int last_line_num, last_col_num;
         uint32_t last_pc = 0;
-        int i, line_num, col_num;
+        int i, line_num, col_num, end;
         const uint8_t *buf_start = s->get_line_col_cache->buf_start;
         js_dbuf_init(s->ctx, &s->pc2line);
 
@@ -40051,7 +40193,7 @@ static int compute_pc2line_info(JSFunctionDef *s)
         dbuf_put_leb128(&s->pc2line, last_line_num); /* line number minus 1 */
         dbuf_put_leb128(&s->pc2line, last_col_num); /* column number minus 1 */
 
-        for (i = 0; i < s->line_number_count; i++) {
+        for (i = end = 0; js_code_more(s->ctx, i, s->line_number_count, end); i++) {
             uint32_t pc = s->line_number_slots[i].pc;
             uint32_t source_pos = s->line_number_slots[i].source_pos;
             int diff_pc, diff_line, diff_col;
@@ -40088,6 +40230,8 @@ static int compute_pc2line_info(JSFunctionDef *s)
             last_line_num = line_num;
             last_col_num = col_num;
         }
+        if (end < 0)
+            return -1;
     }
     return 0;
 }
@@ -40354,15 +40498,19 @@ static BOOL fused_run_at(const uint8_t *bc_buf, int bc_len, int pos,
    instruction starts. */
 #define POLL_NONE 0xff
 
-static const char *poll_scan(const uint8_t *bc_buf, int bc_len, uint8_t *run,
-                             uint8_t *ins)
+/* what poll_scan gives when ctx is not NULL and the interrupt flag was set:
+   "interrupted" is thrown */
+static const char poll_scan_stopped[] = "interrupted";
+
+static const char *poll_scan(JSContext *ctx, const uint8_t *bc_buf, int bc_len,
+                             uint8_t *run, uint8_t *ins)
 {
-    int pos, len, op, r, in, falls, next, jumps;
+    int pos, len, op, r, in, falls, next, jumps, end;
     int64_t target;
     const JSOpCode *oi;
 
     memset(run, POLL_NONE, bc_len);
-    for (pos = 0; pos < bc_len; pos += len) {
+    for (pos = end = 0; js_code_more(ctx, pos, bc_len, end); pos += len) {
         op = bc_buf[pos];
         if (op == OP_invalid || op >= OP_COUNT)
             return "an opcode the interpreter does not have";
@@ -40373,10 +40521,12 @@ static const char *poll_scan(const uint8_t *bc_buf, int bc_len, uint8_t *run,
         if (is_fused_op(op) && !fused_run_match(bc_buf, bc_len, pos, op, TRUE))
             return "a fused opcode without the instructions it reads";
     }
+    if (end < 0)
+        return poll_scan_stopped;
     /* the entry counts */
     r = 0;
     falls = TRUE;
-    for (pos = 0; pos < bc_len; pos += len) {
+    for (pos = end = 0; js_code_more(ctx, pos, bc_len, end); pos += len) {
         op = bc_buf[pos];
         oi = &short_opcode_info(op);
         len = oi->size;
@@ -40441,6 +40591,8 @@ static const char *poll_scan(const uint8_t *bc_buf, int bc_len, uint8_t *run,
             run[target] = max_int(run[target], r);
         falls = next;
     }
+    if (end < 0)
+        return poll_scan_stopped;
     if (falls)
         return "a last instruction that runs off the end of the code";
     return NULL;
@@ -40472,13 +40624,18 @@ static int check_polls(JSContext *ctx, const uint8_t *bc_buf, uint32_t bc_len,
         run = js_malloc(ctx, max_int(bc_len, 1));
         if (!run)
             return -1;
-        why = poll_scan(bc_buf, bc_len, run, NULL);
+        why = poll_scan(ctx, bc_buf, bc_len, run, NULL);
         js_free(ctx, run);
+        if (why == poll_scan_stopped)
+            return -1;
     }
     if (!why) {
         if (!memchr(bc_buf, OP_gosub, bc_len))
             return 0;
         for (pos = 0; pos < (int)bc_len; pos += short_opcode_info(bc_buf[pos]).size) {
+            /* the caller frees *ret_bits */
+            if (js_compile_poll(ctx, JS_CODE_WORK))
+                return -1;
             if (bc_buf[pos] == OP_gosub && pos + 5 < (int)bc_len) {
                 if (!*ret_bits) {
                     *ret_bits = js_mallocz(ctx, sizeof(uint32_t) * ((bc_len + 31) / 32));
@@ -40527,7 +40684,9 @@ static int insert_polls(JSContext *ctx, JSFunctionDef *s, DynBuf *bc)
         return -1;
     ins = run + len;
     memset(ins, 0, len + 1);
-    why = poll_scan(buf, len, run, ins);
+    why = poll_scan(ctx, buf, len, run, ins);
+    if (why == poll_scan_stopped)
+        goto fail;
     if (why) {
         JS_ThrowInternalError(ctx, "compiled bytecode: %s", why);
         goto fail;
@@ -40548,6 +40707,8 @@ static int insert_polls(JSContext *ctx, JSFunctionDef *s, DynBuf *bc)
     do {
         cur = 0;
         for (pos = 0; pos < len; pos += sz) {
+            if (js_compile_poll(ctx, JS_CODE_WORK))
+                goto fail;
             sz = short_opcode_info(buf[pos]).size;
             cur += ins[pos];
             for (k = 0; k < sz; k++)
@@ -40557,6 +40718,8 @@ static int insert_polls(JSContext *ctx, JSFunctionDef *s, DynBuf *bc)
         npos[len] = cur;
         changed = FALSE;
         for (pos = 0; pos < len; pos += sz) {
+            if (js_compile_poll(ctx, JS_CODE_WORK))
+                goto fail;
             oi = &short_opcode_info(buf[pos]);
             sz = oi->size;
             if (wide[pos])
@@ -40576,6 +40739,10 @@ static int insert_polls(JSContext *ctx, JSFunctionDef *s, DynBuf *bc)
     } while (changed);
     js_dbuf_bytecode_init(ctx, &out);
     for (pos = 0; pos < len; pos += sz) {
+        if (js_compile_poll(ctx, JS_CODE_WORK)) {
+            dbuf_free(&out);
+            goto fail;
+        }
         op = buf[pos];
         oi = &short_opcode_info(op);
         sz = oi->size;
@@ -40697,7 +40864,7 @@ static no_inline int fuse_code(JSContext *ctx, DynBuf *bc)
     uint8_t small[256], *buf = bc->buf, *mark;
     int at[32];
     const uint8_t *run;
-    int len = bc->size, pos, k, op, end, size, runs = 0, i;
+    int len = bc->size, pos, k, op, end, size, runs = 0, i, piece;
     int64_t to;
 
     if (ctx->rt->no_fused_ops || len == 0)
@@ -40710,7 +40877,7 @@ static no_inline int fuse_code(JSContext *ctx, DynBuf *bc)
         if (!mark)
             return -1;
     }
-    for (pos = 0; pos < len; pos += size) {
+    for (pos = piece = 0; js_code_more(ctx, pos, len, piece); pos += size) {
         op = buf[pos];
         size = short_opcode_info(op).size;
         switch (short_fuse_kind(op)) {
@@ -40745,6 +40912,12 @@ static no_inline int fuse_code(JSContext *ctx, DynBuf *bc)
         }
         if (to >= 0 && to <= len)
             mark[to] |= 1;
+    }
+    /* the code is not changed before the second loop */
+    if (piece < 0) {
+        if (mark != small)
+            js_free(ctx, mark);
+        return -1;
     }
     /* each run, unless a jump lands inside it */
     for (i = 0, pos = 0; i < runs; i++, pos++) {
@@ -40805,8 +40978,10 @@ static no_inline int fuse_code(JSContext *ctx, DynBuf *bc)
    variable a stretch that only grows. It gives up on code it does not know
    the jumps of, and stops looking past a budget of labels. A dropped
    set_loc_uninitialized keeps its place with LOC_DROPPED for its index,
-   and resolve_labels leaves it out. */
-static no_inline void tdz_checks(JSContext *ctx, JSFunctionDef *s)
+   and resolve_labels leaves it out. It reads the interrupt flag as it goes
+   (js_compile_poll): -1 with "interrupted" thrown when it was stopped, the
+   code then half done, which the compile drops. */
+static no_inline __exception int tdz_checks(JSContext *ctx, JSFunctionDef *s)
 {
     typedef struct {
         int pos;   /* the label, or the place after an OP_gosub */
@@ -40831,15 +41006,25 @@ static no_inline void tdz_checks(JSContext *ctx, JSFunctionDef *s)
     TDZPoint *points = NULL;
     TDZVar *vars = NULL;
     BOOL any = FALSE;
+    int ret = 0, piece_end;
     const JSOpCode *oi;
 
-    for (pos = 0; pos < len; pos += opcode_info[op].size) {
+    /* each walk over the code goes by pieces of JS_CODE_PIECE bytes, with a
+       reading of the flag before each (js_code_piece), which leaves its loop
+       as it was */
+#define TDZ_PIECE() do { piece_end = js_code_piece(ctx, pos, len); if (piece_end < 0) { ret = -1; goto done; } } while (0)
+    pos = 0;
+ walk_checks:
+    TDZ_PIECE();
+    for (; pos < piece_end; pos += opcode_info[op].size) {
         op = buf[pos];
         if (op == OP_get_loc_check || op == OP_put_loc_check)
             any = TRUE;
     }
+    if (pos < len)
+        goto walk_checks;
     if (!any || s->var_count == 0 || ctx->rt->no_fused_ops)
-        return;
+        return 0;
     /* without memory for the walk, the checks stay: the requests do not
        throw, so that the compile goes on as it would have */
     lmin = js_malloc_rt(ctx->rt, sizeof(int) * (s->label_count + 1));
@@ -40859,7 +41044,10 @@ static no_inline void tdz_checks(JSContext *ctx, JSFunctionDef *s)
         vars[i].left = 0;
     }
     /* the labels, the jumps to each, and the set_loc_uninitialized */
-    for (pos = 0; pos < len; pos += oi->size) {
+    pos = 0;
+ walk_labels:
+    TDZ_PIECE();
+    for (; pos < piece_end; pos += oi->size) {
         op = buf[pos];
         oi = &opcode_info[op];
         label = -1;
@@ -40906,6 +41094,8 @@ static no_inline void tdz_checks(JSContext *ctx, JSFunctionDef *s)
                 vars[idx].uninit = vars[idx].uninit == -1 ? pos : -2;
         }
     }
+    if (pos < len)
+        goto walk_labels;
     /* the points reached again from the code after them: by a jump back to
        a label, or by an OP_ret back to the place after an OP_gosub */
     reach = -1;
@@ -40914,7 +41104,10 @@ static no_inline void tdz_checks(JSContext *ctx, JSFunctionDef *s)
         points[i].reach = reach;
     }
     /* the checks, in the order of the code */
-    for (pos = 0; pos < len; pos += oi->size) {
+    pos = 0;
+ walk_stretches:
+    TDZ_PIECE();
+    for (; pos < piece_end; pos += oi->size) {
         TDZVar *v;
 
         op = buf[pos];
@@ -40997,6 +41190,8 @@ static no_inline void tdz_checks(JSContext *ctx, JSFunctionDef *s)
             break;
         }
     }
+    if (pos < len)
+        goto walk_stretches;
     if (!s->has_eval_call) {
         for (i = 0; i < s->var_count; i++) {
             if (vars[i].uninit >= 0 && !vars[i].left &&
@@ -41044,6 +41239,8 @@ static no_inline void tdz_checks(JSContext *ctx, JSFunctionDef *s)
     js_free_rt(ctx->rt, lcatch);
     js_free_rt(ctx->rt, vars);
     js_free_rt(ctx->rt, points);
+    return ret;
+#undef TDZ_PIECE
 }
 
 /* Whether nothing but the code of s reads or writes its locals and
@@ -41051,34 +41248,36 @@ static no_inline void tdz_checks(JSContext *ctx, JSFunctionDef *s)
    (whose references to a variable may write it), no mapped arguments
    object (whose elements are the arguments), and not the code of an eval or
    a module. Then a local or an argument no closure captures changes only by
-   the instructions of s that name it, which share_local_slots relies on. */
+   the instructions of s that name it, which share_local_slots relies on.
+   This tests the function, and js_frame_plain_op each instruction of its
+   code, in the walk of share_local_slots. */
 static BOOL js_frame_plain(JSFunctionDef *s)
 {
-    const uint8_t *buf = s->byte_code.buf;
-    int len = s->byte_code.size, pos, op;
-
     if (s->has_eval_call || s->is_eval || s->module)
         return FALSE;
     if (s->arguments_var_idx >= 0 && !(s->js_mode & JS_MODE_STRICT) &&
         s->has_simple_parameter_list)
         return FALSE;
-    for (pos = 0; pos < len; pos += opcode_info[op].size) {
-        op = buf[pos];
-        switch (op) {
-        case OP_with_get_var:
-        case OP_with_put_var:
-        case OP_with_delete_var:
-        case OP_with_make_ref:
-        case OP_with_get_ref:
-        case OP_make_loc_ref:
-        case OP_make_arg_ref:
-        case OP_make_var_ref_ref:
-        case OP_eval:
-        case OP_apply_eval:
-            return FALSE;
-        }
-    }
     return TRUE;
+}
+
+static BOOL js_frame_plain_op(int op)
+{
+    switch (op) {
+    case OP_with_get_var:
+    case OP_with_put_var:
+    case OP_with_delete_var:
+    case OP_with_make_ref:
+    case OP_with_get_ref:
+    case OP_make_loc_ref:
+    case OP_make_arg_ref:
+    case OP_make_var_ref_ref:
+    case OP_eval:
+    case OP_apply_eval:
+        return FALSE;
+    default:
+        return TRUE;
+    }
 }
 
 /* the links of the locals of fd to the variables of their scope and the
@@ -41144,14 +41343,17 @@ static void link_var_scopes(JSFunctionDef *fd)
    the closure variables of the functions of its constant pool, compiled
    already, that name its locals, and the list of its locals change
    together. The pass gives up, with nothing changed, on code it does not
-   know, more than 1024 locals, and when it has no memory. */
-static no_inline void share_local_slots(JSContext *ctx, JSFunctionDef *s)
+   know, more than 1024 locals, and when it has no memory. It reads the
+   interrupt flag as it goes (js_compile_poll), before it changes anything:
+   -1 with "interrupted" thrown when it was stopped. */
+static no_inline __exception int share_local_slots(JSContext *ctx, JSFunctionDef *s)
 {
     JSRuntime *rt = ctx->rt;
+    int ret = 0, work;
     uint8_t *buf = s->byte_code.buf;
     int len = s->byte_code.size, n = s->var_count, words;
     int nb = 0, nl = 0, ncatch = 0, nret = 0, ncolors = 0;
-    int pos, op, idx, label, b, i, k, c, w, changed;
+    int pos, op, idx, label, b, i, k, c, w, changed, piece;
     size_t budget;
     const JSOpCode *oi;
     uint8_t *lead = NULL, *pinned = NULL, *closed = NULL;
@@ -41159,8 +41361,9 @@ static no_inline void share_local_slots(JSContext *ctx, JSFunctionDef *s)
     int *locs = NULL, *ret_blk = NULL, *catch_label = NULL, *color = NULL, *forb = NULL;
     uint64_t *gen = NULL, *kill = NULL, *in = NULL, *out = NULL, *adj = NULL, *live = NULL;
 
-    if (n < 2 || n > 1024)
-        return;
+    if (n < 2 || n > 1024 || !js_frame_plain(s))
+        return 0;
+    work = js_compile_left(ctx);
     words = (n + 63) / 64;
     lead = js_mallocz_rt(rt, len + 1);
     pinned = js_mallocz_rt(rt, n);
@@ -41172,9 +41375,11 @@ static no_inline void share_local_slots(JSContext *ctx, JSFunctionDef *s)
     /* the instructions that start a block, the instructions on locals, and
        code the pass does not know */
     lead[0] = 1;
-    for (pos = 0; pos < len; pos += oi->size) {
+    for (pos = piece = 0; js_code_more(ctx, pos, len, piece); pos += oi->size) {
         op = buf[pos];
         oi = &opcode_info[op];
+        if (!js_frame_plain_op(op))
+            goto done;
         switch (oi->fmt) {
         case OP_FMT_label:
             label = get_u32(buf + pos + 1);
@@ -41244,6 +41449,10 @@ static no_inline void share_local_slots(JSContext *ctx, JSFunctionDef *s)
             break;
         }
     }
+    if (piece < 0) {
+        ret = -1;
+        goto done;
+    }
     for (pos = 0; pos < len; pos++)
         nb += lead[pos];
     if ((size_t)nb * words > (1 << 20))
@@ -41269,7 +41478,7 @@ static no_inline void share_local_slots(JSContext *ctx, JSFunctionDef *s)
        targets of the catches, and what each block reads before it writes
        (gen) and writes (kill) */
     nb = nl = ncatch = nret = 0;
-    for (pos = 0; pos < len; pos += oi->size) {
+    for (pos = piece = 0; js_code_more(ctx, pos, len, piece); pos += oi->size) {
         op = buf[pos];
         oi = &opcode_info[op];
         if (lead[pos]) {
@@ -41308,6 +41517,10 @@ static no_inline void share_local_slots(JSContext *ctx, JSFunctionDef *s)
                 break;
             }
         }
+    }
+    if (piece < 0) {
+        ret = -1;
+        goto done;
     }
     blk_loc[nb] = nl;
     for (i = 0; i < ncatch; i++) {
@@ -41375,6 +41588,10 @@ static no_inline void share_local_slots(JSContext *ctx, JSFunctionDef *s)
             if (budget < (size_t)s1)
                 goto done;
             budget -= s1;
+            if (js_compile_tick(ctx, work, s1)) {
+                ret = -1;
+                goto done;
+            }
         }
     } while (changed);
     /* the locals that keep a slot of their own */
@@ -41425,6 +41642,10 @@ static no_inline void share_local_slots(JSContext *ctx, JSFunctionDef *s)
         for (k = blk_loc[b + 1] - 1; k >= blk_loc[b]; k--) {
             uint64_t bit, *row;
             pos = locs[k];
+            if (js_compile_tick(ctx, work, words)) {
+                ret = -1;
+                goto done;
+            }
             op = buf[pos];
             idx = get_u16(buf + pos + 1);
             bit = (uint64_t)1 << (idx & 63);
@@ -41447,6 +41668,10 @@ static no_inline void share_local_slots(JSContext *ctx, JSFunctionDef *s)
         }
     }
     for (i = 0; i < n; i++) {
+        if (js_compile_tick(ctx, work, n)) {
+            ret = -1;
+            goto done;
+        }
         for (w = 0; w < words; w++) {
             uint64_t m = adj[i * words + w];
             while (m) {
@@ -41461,6 +41686,10 @@ static no_inline void share_local_slots(JSContext *ctx, JSFunctionDef *s)
         forb[i] = -1;
     }
     for (i = 0; i < n; i++) {
+        if (js_compile_tick(ctx, work, i + ncolors)) {
+            ret = -1;
+            goto done;
+        }
         if (pinned[i]) {
             closed[ncolors] = 1;
             color[i] = ncolors++;
@@ -41528,6 +41757,8 @@ static no_inline void share_local_slots(JSContext *ctx, JSFunctionDef *s)
     s->var_count = ncolors;
     link_var_scopes(s);
  done:
+    if (!ret)
+        js_compile_keep(ctx, work);
     js_free_rt(rt, lead);
     js_free_rt(rt, pinned);
     js_free_rt(rt, closed);
@@ -41545,6 +41776,7 @@ static no_inline void share_local_slots(JSContext *ctx, JSFunctionDef *s)
     js_free_rt(rt, out);
     js_free_rt(rt, adj);
     js_free_rt(rt, live);
+    return ret;
 }
 
 /* peephole optimizations and resolve goto/labels */
@@ -41556,7 +41788,7 @@ static __exception int resolve_labels(JSContext *ctx, JSFunctionDef *s)
     LabelSlot *label_slots, *ls;
     RelocEntry *re, *re_next;
     CodeContext cc;
-    int label;
+    int label, piece;
 #if SHORT_OPCODES
     JumpSlot *jp;
 #endif
@@ -41585,9 +41817,11 @@ static __exception int resolve_labels(JSContext *ctx, JSFunctionDef *s)
         s->line_number_last_pc = 0;
     }
     /* the checks of the temporal dead zone that cannot fail */
-    tdz_checks(ctx, s);
-    if (!ctx->rt->no_fused_ops && js_frame_plain(s))
-        share_local_slots(ctx, s);
+    /* stopped there, the code is the function's still, freed with it */
+    if (tdz_checks(ctx, s))
+        return -1;
+    if (!ctx->rt->no_fused_ops && share_local_slots(ctx, s))
+        return -1;
 
     /* initialize the 'home_object' variable if needed */
     if (s->home_object_var_idx >= 0) {
@@ -41655,7 +41889,7 @@ static __exception int resolve_labels(JSContext *ctx, JSFunctionDef *s)
         put_short_code(&bc_out, OP_put_loc, s->arg_var_object_idx);
     }
 
-    for (pos = 0; pos < bc_len; pos = pos_next) {
+    for (pos = piece = 0; js_code_more(ctx, pos, bc_len, piece); pos = pos_next) {
         int val;
         /* a relocation or a jump slot may point after a write that failed */
         if (dbuf_error(&bc_out))
@@ -42392,6 +42626,12 @@ static __exception int resolve_labels(JSContext *ctx, JSFunctionDef *s)
             break;
         }
     }
+    if (piece < 0) {
+        /* the code from pos on is not copied, and nothing before pos freed
+           one of its atoms: they are freed here */
+        free_bytecode_atoms(ctx->rt, bc_buf + pos, bc_len - pos, FALSE);
+        goto fail;
+    }
 
     if (dbuf_error(&bc_out))
         goto out_of_memory;
@@ -42404,7 +42644,8 @@ static __exception int resolve_labels(JSContext *ctx, JSFunctionDef *s)
     if (OPTIMIZE) {
         /* more jump optimizations */
         int patch_offsets = 0;
-        for (i = 0, jp = s->jump_slots; i < s->jump_count; i++, jp++) {
+        for (i = piece = 0, jp = s->jump_slots; js_code_more(ctx, i, s->jump_count, piece);
+             i++, jp++) {
             LabelSlot *ls;
             JumpSlot *jp1;
             int j, pos, diff, delta;
@@ -42435,6 +42676,16 @@ static __exception int resolve_labels(JSContext *ctx, JSFunctionDef *s)
                     delta = 2;
                     bc_out.buf[pos - 1] = jp->op = OP_goto16;
                 shrink:
+                    /* each shrink moves the code after it and goes over
+                       the labels, the jumps after it and the lines: the
+                       flag is read after a count of that work, which is
+                       quadratic in the number of jumps. A stop leaves the
+                       code without the targets of its jumps, which the
+                       freeing of its atoms does not read. */
+                    if (js_compile_poll(ctx, s->label_count + s->jump_count - i +
+                                        s->line_number_count +
+                                        ((bc_out.size - pos) >> 4)))
+                        goto fail;
                     /* XXX: should reduce complexity, using 2 finger copy scheme */
                     memmove(bc_out.buf + pos + jp->size, bc_out.buf + pos + jp->size + delta,
                             bc_out.size - pos - jp->size - delta);
@@ -42457,6 +42708,8 @@ static __exception int resolve_labels(JSContext *ctx, JSFunctionDef *s)
                 break;
             }
         }
+        if (piece < 0)
+            goto fail;
         if (patch_offsets) {
             JumpSlot *jp1;
             int j;
@@ -42601,7 +42854,7 @@ static __exception int compute_stack_size(JSContext *ctx,
                                           int *pstack_size)
 {
     StackSizeState s_s, *s = &s_s;
-    int i, diff, n_pop, pos_next, stack_len, pos, op, catch_pos, catch_level;
+    int i, diff, n_pop, pos_next, stack_len, pos, op, catch_pos, catch_level, work;
     const JSOpCode *oi;
     const uint8_t *bc_buf;
 
@@ -42612,8 +42865,9 @@ static __exception int compute_stack_size(JSContext *ctx,
                                    s->bc_len);
     if (!s->stack_level_tab)
         return -1;
-    for(i = 0; i < s->bc_len; i++)
-        s->stack_level_tab[i] = 0xffff;
+    /* every level 0xffff, in a memset: far fewer polls for long code than a
+       loop over its bytes, which read no flag either */
+    memset(s->stack_level_tab, 0xff, sizeof(s->stack_level_tab[0]) * s->bc_len);
     s->pc_stack = NULL;
     s->catch_pos_tab = js_malloc(ctx, sizeof(s->catch_pos_tab[0]) *
                                    s->bc_len);
@@ -42630,7 +42884,10 @@ static __exception int compute_stack_size(JSContext *ctx,
     if (ss_check(ctx, s, 0, OP_invalid, 0, -1))
         goto fail;
 
+    work = js_compile_left(ctx);
     while (s->pc_stack_len > 0) {
+        if (js_compile_tick(ctx, work, JS_CODE_WORK))
+            goto fail;
         pos = s->pc_stack[--s->pc_stack_len];
         stack_len = s->stack_level_tab[pos];
         catch_pos = s->catch_pos_tab[pos];
@@ -42793,6 +43050,7 @@ static __exception int compute_stack_size(JSContext *ctx,
             goto fail;
     done_insn: ;
     }
+    js_compile_keep(ctx, work);
     /* a function runs in the register loop, which folds a stack deeper than
        RV_STACK_FIT into a frame where its catch offsets have
        RV_FOLD_PINS_MAX temps (regvm-func.h) */
@@ -43054,7 +43312,7 @@ static BOOL cbv_jump(const uint8_t *buf, int pos, int64_t *t)
 
 /* the target of the jump at pos, or -1 when it has none, -2 when it is
    not the start of an instruction (starts marks them) */
-static int cbv_target(const uint8_t *buf, int len, const uint8_t *starts, int pos)
+static force_inline int cbv_target(const uint8_t *buf, int len, const uint8_t *starts, int pos)
 {
     int64_t t;
     if (!cbv_jump(buf, pos, &t))
@@ -43074,7 +43332,7 @@ static BOOL cbv_class_at(const uint8_t *buf, int len, int64_t pos)
     return pos < len && (buf[pos] == OP_define_class || buf[pos] == OP_define_class_computed);
 }
 
-static BOOL cbv_ends(int op)
+static force_inline BOOL cbv_ends(int op)
 {
     switch (op) {
     case OP_return: case OP_return_undef: case OP_return_async: case OP_throw:
@@ -43101,7 +43359,7 @@ static JSFunctionBytecode *cbv_child(JSFunctionBytecode *b, int i)
    with mark, set them, without, tell whether the chain of REFs is at most
    CBV_DEPTH functions deep. A loop over a stack of its own, not a
    recursion, so that it needs no count (engine/test/cycles.sh). */
-static BOOL cbv_mark(JSFunctionBytecode *c, int j, BOOL mark)
+static force_inline BOOL cbv_mark(JSFunctionBytecode *c, int j, BOOL mark)
 {
     struct {
         JSFunctionBytecode *f;
@@ -43170,7 +43428,9 @@ static int capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
     int nlocal = b->arg_count + b->var_count;
     int pos, prev, op, sz, i, j, k, r, s, t, kind, space, idx, base, changed, ngosub;
     int64_t t64;
+    int piece_end;
     BOOL eval = FALSE, mapped = FALSE, bad = FALSE, need_flow = FALSE, oom = FALSE;
+    BOOL stopped = FALSE;
     uint8_t *starts = NULL, *ok = NULL, *site = NULL, *writes = NULL;
     int *ref_of = NULL, *slot_of = NULL, *gosub_after = NULL, *catch_blk = NULL, ncatch;
     uint8_t *lead = NULL;
@@ -43178,6 +43438,9 @@ static int capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
     uint64_t *in = NULL, *gen = NULL, *kill = NULL;
     CBVGraph g;
 
+    /* the flag is read as the walks and the flow go (js_compile_poll): -1
+       with "interrupted" thrown when it was stopped, as with no memory */
+#define CBV_POLL(n) do { if (js_compile_poll(ctx, (n))) { stopped = TRUE; goto bad; } } while (0)
     memset(&g, 0, sizeof(g));
     if (len < 0 || len > INT32_MAX / 8)
         goto bad;
@@ -43185,7 +43448,15 @@ static int capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
     starts = js_mallocz_rt(rt, len + 1);
     if (!starts)
         goto no_mem;
-    for (pos = 0, prev = -1; pos < len; pos += sz) {
+    /* each walk over the code goes by pieces of JS_CODE_PIECE bytes, with a
+       reading of the flag before each (js_code_piece), which leaves its loop
+       as it was */
+#define CBV_PIECE() do { piece_end = js_code_piece(ctx, pos, len); if (piece_end < 0) { stopped = TRUE; goto bad; } } while (0)
+    pos = 0;
+    prev = -1;
+ walk_starts:
+    CBV_PIECE();
+    for (; pos < piece_end; pos += sz) {
         op = buf[pos];
         if (op == OP_invalid || op >= OP_COUNT)
             goto bad;
@@ -43221,11 +43492,16 @@ static int capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
         if (cbv_slot(buf + pos, &space, &idx) == CBV_BAD)
             goto bad;
     }
+    if (pos < len)
+        goto walk_starts;
 
     /* the closure variables of b that b or a function below it writes */
     for (i = 0; i < b->closure_var_count; i++)
         b->closure_var[i].written = eval;
-    for (pos = 0; pos < len; pos += short_opcode_info(buf[pos]).size) {
+    pos = 0;
+ walk_written:
+    CBV_PIECE();
+    for (; pos < piece_end; pos += short_opcode_info(buf[pos]).size) {
         kind = cbv_slot(buf + pos, &space, &idx);
         if ((kind == CBV_WRITE || kind == CBV_REF) && space == 2) {
             if (idx >= b->closure_var_count)
@@ -43233,6 +43509,8 @@ static int capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
             b->closure_var[idx].written = 1;
         }
     }
+    if (pos < len)
+        goto walk_written;
     for (i = 0; i < b->cpool_count; i++) {
         JSFunctionBytecode *c = cbv_child(b, i);
         if (!c)
@@ -43295,7 +43573,10 @@ static int capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
         }
     }
     /* references, the places closures are made, the writes */
-    for (pos = 0; pos < len; pos += short_opcode_info(buf[pos]).size) {
+    pos = 0;
+ walk_refs:
+    CBV_PIECE();
+    for (; pos < piece_end; pos += short_opcode_info(buf[pos]).size) {
         op = buf[pos];
         kind = cbv_slot(buf + pos, &space, &idx);
         if (kind != CBV_NONE && kind != CBV_READ && space != 2) {
@@ -43337,6 +43618,8 @@ static int capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
             }
         }
     }
+    if (pos < len)
+        goto walk_refs;
     /* a slot no closure of b captures stays a JSVarRef (something else made it) */
     for (r = 0; r < n; r++) {
         if (!site[r])
@@ -43358,7 +43641,10 @@ static int capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
             goto no_mem;
         lead[0] = 1;
         ngosub = ncatch = 0;
-        for (pos = 0; pos < len; pos += sz) {
+        pos = 0;
+    walk_lead:
+        CBV_PIECE();
+        for (; pos < piece_end; pos += sz) {
             op = buf[pos];
             sz = short_opcode_info(op).size;
             t = cbv_target(buf, len, starts, pos);
@@ -43375,6 +43661,8 @@ static int capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
             if (op == OP_catch)
                 ncatch++;
         }
+        if (pos < len)
+            goto walk_lead;
         g.blk = js_malloc_rt(rt, sizeof(int) * (len + 1));
         g.start = js_malloc_rt(rt, sizeof(int) * (len + 2));
         gosub_after = js_malloc_rt(rt, sizeof(int) * (ngosub + 1));
@@ -43382,15 +43670,23 @@ static int capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
         if (!g.blk || !g.start || !gosub_after || !catch_blk)
             goto no_mem;
         g.nb = 0;
-        for (pos = 0; pos < len; pos += short_opcode_info(buf[pos]).size) {
+        pos = 0;
+    walk_blocks:
+        CBV_PIECE();
+        for (; pos < piece_end; pos += short_opcode_info(buf[pos]).size) {
             if (lead[pos])
                 g.start[g.nb++] = pos;
             g.blk[pos] = g.nb - 1;
         }
+        if (pos < len)
+            goto walk_blocks;
         g.start[g.nb] = len;
         g.blk[len] = g.nb;
         ngosub = ncatch = 0;
-        for (pos = 0; pos < len; pos += short_opcode_info(buf[pos]).size) {
+        pos = 0;
+    walk_gosubs:
+        CBV_PIECE();
+        for (; pos < piece_end; pos += short_opcode_info(buf[pos]).size) {
             if (buf[pos] == OP_gosub && pos + 5 < len)
                 gosub_after[ngosub++] = g.blk[pos + 5];
             if (buf[pos] == OP_catch) {
@@ -43400,6 +43696,8 @@ static int capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
                 catch_blk[ncatch++] = g.blk[t];
             }
         }
+        if (pos < len)
+            goto walk_gosubs;
         vret = g.nb;
         vexc = g.nb + 1;
         /* count, then fill: normal successors, handlers, events, sites.
@@ -43427,6 +43725,7 @@ static int capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
                     g.hand_at[i] = nhand;
                     g.ev_at[i] = nev;
                 }
+                CBV_POLL(g.start[i + 1] - g.start[i]);
                 for (pos = g.start[i]; pos < g.start[i + 1]; pos += short_opcode_info(buf[pos]).size) {
                     last = pos;
                     op = buf[pos];
@@ -43525,6 +43824,7 @@ static int capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
         if (!want)
             continue;
         for (i = 0; i <= g.nb + 1; i++) {
+            CBV_POLL(JS_CODE_WORK + g.ev_at[i + 1] - g.ev_at[i]);
             gen[i] = kill[i] = seen = 0;
             for (k = g.ev_at[i]; k < g.ev_at[i + 1]; k++) {
                 r = g.ev[k] >> 1;
@@ -43547,6 +43847,7 @@ static int capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
                 budget -= 1 + (g.succ_at[i + 1] - g.succ_at[i]) + (g.hand_at[i + 1] - g.hand_at[i]);
                 if (budget < 0)
                     goto bad;
+                CBV_POLL(1 + (g.succ_at[i + 1] - g.succ_at[i]) + (g.hand_at[i + 1] - g.hand_at[i]));
                 out = 0;
                 for (k = g.succ_at[i]; k < g.succ_at[i + 1]; k++)
                     out |= in[g.succ[k]];
@@ -43564,6 +43865,7 @@ static int capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
             JSFunctionBytecode *c = cbv_child(b, g.site_child[j]);
             uint64_t alias = 0;
             i = g.site_blk[j];
+            CBV_POLL(JS_CODE_WORK + c->closure_var_count + g.ev_at[i + 1] - g.site_ev[j]);
             for (k = 0; k < c->closure_var_count; k++) {
                 JSClosureVar *cv = &c->closure_var[k];
                 if (cv->closure_type == JS_CLOSURE_LOCAL || cv->closure_type == JS_CLOSURE_ARG) {
@@ -43665,7 +43967,9 @@ static int capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
         JS_ThrowOutOfMemory(ctx);
         return -1;
     }
-    return 0;
+    return stopped ? -1 : 0;
+#undef CBV_POLL
+#undef CBV_PIECE
 }
 
 /* JS_ReadFunctionTag on b, which no constant pool holds, once

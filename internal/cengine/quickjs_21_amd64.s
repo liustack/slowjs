@@ -15491,7 +15491,7 @@ TEXT ·JS_CallInternal(SB), $192-16
 	BYTE $0x6c
 	BYTE $0x24
 	BYTE $0x08
-	CALL ·JS_ThrowOutOfMemory(SB)
+	CALL ·rv_convert_error(SB)
 	QUAD $0xc283490000019ee9
 	QUAD $0x4cce8949d4894d70
 	QUAD $0x08246c894c242489

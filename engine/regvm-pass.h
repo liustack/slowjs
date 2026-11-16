@@ -130,6 +130,8 @@ typedef struct RVPass {
                            made again without them */
     BOOL failed;
     BOOL oom;           /* an allocation of the pass failed */
+    BOOL stopped;       /* it read the interrupt flag set (rv_pass_stop) */
+    int poll_n;         /* instructions since the last reading */
     BOOL crafted;       /* it stops at code no compiler makes (RV_CRAFTED) */
     /* the for_of_start that get no DSTART (rv_dst_scan), or dst_off: more
        than dst_no holds, and none gets one */
@@ -407,6 +409,25 @@ static void rv_dst_scan(RVPass *s, int pos, int op, int d, int c, int npop)
    catch offset is the innermost on the stack there (catchpos, -1 for none)
    and the leaders, as compute_stack_size finds them for the instructions
    above, with its rules for the catch offsets */
+/* A long function stops its conversion as it stops its compile (js_compile_poll
+   of quickjs.c): the loops over its instructions read the interrupt flag
+   every RV_POLL_INSNS of them, and the pass gives up with *oom set
+   (rv_build), so that the function stays unconverted and its call reads the
+   flag to throw "interrupted" (rv_convert_error). */
+#define RV_POLL_INSNS 4096
+
+static inline BOOL rv_pass_stop(RVPass *s)
+{
+    if (unlikely(++s->poll_n >= RV_POLL_INSNS)) {
+        s->poll_n = 0;
+        if (poll_flag(&s->rt->interrupt_flag)) {
+            s->stopped = TRUE;
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+
 static int rv_depths(RVPass *s)
 {
     int32_t *work = s->newpc; /* not yet filled in */
@@ -418,6 +439,8 @@ static int rv_depths(RVPass *s)
     while (nwork > 0) {
         pos = work[--nwork];
         for (;;) {
+            if (rv_pass_stop(s))
+                return -1;
             if (rv_old_info(s->bc, pos, &npop, &npush, &term, &target) < 0)
                 goto fail_op;
             op = s->bc[pos];
@@ -1285,6 +1308,10 @@ static int rv_code(RVPass *s)
     if (unlikely(s->fold))
         rv_fold_init(s);
     for (pos = 0; pos < s->len && !s->failed; pos += size) {
+        if (rv_pass_stop(s)) {
+            s->failed = TRUE;
+            break;
+        }
         size = short_opcode_info(s->bc[pos]).size;
         if (s->leader[pos]) {
             if (s->depth[pos] < 0) {
@@ -1630,10 +1657,10 @@ static RVFunc *rv_build(JSRuntime *rt, JSFunctionBytecode *b, BOOL *oom)
         goto done;
     }
     memset(s->leader, 0, s->len);
-    for (i = 0; i < s->len; i++) {
-        s->depth[i] = -1;
-        s->catchpos[i] = -1;
-    }
+    /* every depth and catch offset -1, in a memset: far fewer polls for a
+       long function than a loop over its bytes, which read no flag either */
+    memset(s->depth, 0xff, sizeof(*s->depth) * s->len);
+    memset(s->catchpos, 0xff, sizeof(*s->catchpos) * s->len);
     if (rv_depths(s))
         goto done;
     vr_heap0 = vr_heap;
@@ -1645,6 +1672,8 @@ static RVFunc *rv_build(JSRuntime *rt, JSFunctionBytecode *b, BOOL *oom)
         s->R = RV_FOLD_R;
     }
     s->lazy_args = rv_lazy_args(s);
+    if (s->stopped)
+        goto done;
     /* a function whose code is too long for the off16 of a jump is made
        again with an island (rv_islands) after each jump that was too far,
        until none is. The islands push other jumps farther: after a few
@@ -1772,7 +1801,7 @@ static RVFunc *rv_build(JSRuntime *rt, JSFunctionBytecode *b, BOOL *oom)
     if (!rf && s->crafted)
         rt->rv_stat[3] = RV_CRAFTED;
     if (oom)
-        *oom = !rf && s->oom;
+        *oom = !rf && (s->oom || s->stopped);
     rt->rv_in_pass = FALSE;
     if (rt->rv_scratch_size > RV_SCRATCH_KEEP)
         rv_scratch_free(rt);
@@ -1805,4 +1834,16 @@ static no_inline RVFunc *rv_convert_rt(JSRuntime *rt, JSFunctionBytecode *b)
 static no_inline RVFunc *rv_convert(JSContext *ctx, JSFunctionBytecode *b)
 {
     return rv_convert_rt(ctx->rt, b);
+}
+
+/* the error of a conversion that left b unconverted: the pass gives up when
+   it reads the interrupt flag set (rv_pass_stop), which stays set, or it
+   ran out of memory */
+static JSValue rv_convert_error(JSContext *ctx)
+{
+    if (poll_flag(&ctx->rt->interrupt_flag)) {
+        JS_ThrowInterrupted(ctx);
+        return JS_EXCEPTION;
+    }
+    return JS_ThrowOutOfMemory(ctx);
 }

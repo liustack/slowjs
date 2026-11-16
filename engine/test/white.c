@@ -493,7 +493,7 @@ const char *white_poll_scan(const uint8_t *code, int len)
 
     if (len > (int)sizeof(run))
         return "too long for the test";
-    return poll_scan(code, len, run, NULL);
+    return poll_scan(NULL, code, len, run, NULL);
 }
 
 /* The code with the OP_nop that insert_polls puts in, in out, which has room
