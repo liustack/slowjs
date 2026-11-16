@@ -11,7 +11,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -113,7 +112,7 @@ func fromFlags() (run, error) {
 	case set("prelude"):
 		r.o.Preludes = split(*flagPrelude)
 	case s.Mode == StandIn && !k.React:
-		r.o.Preludes = []string{filepath.Join(repo, "internal", "measure", "pages", "hostjs.js"), filepath.Join(repo, "engine", "pgo", "pages", "fakeintl.js")}
+		r.o.Preludes = StandInPreludes(repo)
 	}
 	if r.warm < 0 || r.timed < 1 {
 		return run{}, fmt.Errorf("-warm %d -timed %d: at least one timed render", r.warm, r.timed)

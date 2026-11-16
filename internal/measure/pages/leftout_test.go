@@ -89,3 +89,26 @@ func readFile(t *testing.T, path string) string {
 	}
 	return string(b)
 }
+
+// The stand-in mode loads the bundles of engine/pgo/pages and renders a page of each kind with
+// its preludes, which stand in for what the native URL and Intl of the tifa mode give.
+func TestStandInRendersThePages(t *testing.T) {
+	repo, err := Repo("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"wb", "store", "mui"} {
+		k, err := FindKind(repo, name, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r, err := Open(Options{Setup: Setup{Mode: StandIn}, Limit: defaultMemory, Bundle: k.Bundle, Preludes: StandInPreludes(repo)})
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if _, _, err := r.Render(readFile(t, k.Inputs[0])); err != nil {
+			t.Errorf("%s: %s: %v", name, PageName(k.Inputs[0]), err)
+		}
+		r.Close()
+	}
+}

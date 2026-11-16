@@ -20,8 +20,8 @@ at commit `8ca9ba5ea52de03308fe8ced94f7b159a44d28ff`, where LICENSE was added.
 
 | Bundle | SHA256 | Source map SHA256 | App lockfile SHA256 |
 | --- | --- | --- | --- |
-| mui | 3c8d8c50d448f80b67e92f89228043c5b8cf7cae7f0268254c593e56f5dbcd1c | 4c400ac60ebb0fe5fdb5d6e89fdd00e8207f0959b9ac88146ff030809caf5b98 | 027f7ee721c83c3d013081c377860c4c4583de9c5da27a0df604b7c0992997fc |
-| shop | 0d2f9542f12c68959572a2dc3e8a0775a01244cfcc0f59778413e6911d3ea6a3 | eed4d6110cf94a98feae854ad172b6feab84a451a1a4f3eabc2e17d01ce3b62f | 4a0112653129928c65371e879f7f30dbe54946cdef710cd9d79ea3411400dbc4 |
+| mui | 881a59600aca99c1f5ac00775cf150a807d054bc893fff419461e7be85f5a586 | 110e5de74f7b51ca52360ed5d888069ea7e7b5bb40fe6539d55e42ea904b52ed | 027f7ee721c83c3d013081c377860c4c4583de9c5da27a0df604b7c0992997fc |
+| shop | 656886554a87dae25a2ced650fe8fbf47b83b8eefaecb0d8ff1a8c327576c3a9 | 687fb7fb0f99a7ef212571e9067430beda2eb48ed1c795cb491452689e40735b | a4404a2c5a6898d5b8605a0cfa3aacecd4e57ffab29d62152808681811a0dadc |
 
 ## Packages
 
@@ -127,7 +127,7 @@ at commit `8ca9ba5ea52de03308fe8ced94f7b159a44d28ff`, where LICENSE was added.
 | highlight.js | 11.11.2 | BSD-3-Clause | shop | [LICENSE](#text-39) |
 | hoist-non-react-statics | 3.3.2 | BSD-3-Clause | mui | [LICENSE.md](#text-40) |
 | html-url-attributes | 3.0.1 | MIT | shop | [license](#text-41) |
-| i18next | 26.5.3 | MIT | shop | [LICENSE](#text-42) |
+| i18next | 27.1.2 | MIT | shop | [LICENSE](#text-42) |
 | inline-style-parser | 0.2.7 | MIT | shop | [LICENSE](#text-43) |
 | is-plain-obj | 4.1.0 | MIT | shop | [license](#text-34) |
 | longest-streak | 3.1.0 | MIT | shop | [license](#text-44) |
@@ -176,7 +176,7 @@ at commit `8ca9ba5ea52de03308fe8ced94f7b159a44d28ff`, where LICENSE was added.
 | react | 19.3.1 | MIT | mui, shop | [LICENSE](#text-49) |
 | react-dom | 19.3.1 | MIT | mui, shop | [LICENSE](#text-49) |
 | react-hook-form | 7.90.0 | MIT | shop | [LICENSE](#text-5) |
-| react-i18next | 17.1.0 | MIT | shop | [LICENSE](#text-50) |
+| react-i18next | 18.0.1 | MIT | shop | [LICENSE](#text-50) |
 | react-is | 16.13.1 | MIT | mui | [LICENSE](#text-51) |
 | react-is | 19.3.1 | MIT | mui | [LICENSE](#text-49) |
 | react-markdown | 10.1.0 | MIT | shop | [license](#text-52) |
