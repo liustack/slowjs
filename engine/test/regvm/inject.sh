@@ -13,21 +13,27 @@
 # and a temp freed twice or not at all shows. Each run (RV_INJECT=N) goes
 # through rvdiff (see rvdiff.c) once and says where the throw was: a
 # bytecode instruction and how many times it ran (its place). A run at a
-# place the goldens have is compared with the old loop's run with the same
-# throw, recorded at deb70815 while the old loop existed: the status, and
-# the count and checksum of each kind (output, result, exception, stack,
-# job, the counts of the runtime after a collection). A run at a place with
-# no golden, or with no place, is judged by its status: it must end with
-# exit 0 or 1 (an uncaught throw). A leak found when the runtime is freed
-# (87), a sanitizer report (86), a signal (an abort of a self check), the
-# time limit, an instruction that was to throw and ran to its end ("miss"),
-# or whose throw a hook of JS it ran took ("outside"), is a difference. The
-# run with no injection must end with exit 0 or 1.
+# place the goldens have is compared with its golden, first recorded from
+# the old loop's run with the same throw at deb70815: the status, and the
+# count and checksum of each kind (output, result, exception, stack, job).
+# A run at a place with no golden, or with no place, is judged by its
+# status: it must end with exit 0 or 1 (an uncaught throw). A leak (87: the
+# host found blocks still in use when the runtime was freed, or rvdiff found
+# the runtime holds other counts of objects, atoms or shapes once the
+# context is freed than before it was made), a sanitizer report (86), a
+# signal (an abort of a self check, as a value freed twice gives), the time
+# limit, an instruction that was to throw and ran to its end ("miss"), or
+# whose throw a hook of JS it ran took ("outside"), is a difference. The
+# run with no injection must end with exit 0 or 1. The counts of memory at
+# the end of a run are not in the goldens: they move with any change of what
+# the engine keeps, and the leak check above compares the run with itself.
 #
 # A run that throws also says at which hook: "hit NAME P", the P-th place
 # of the register instruction NAME. A script that has a line
 # "// inject-hit: NAME P" fails when no run threw there, so that a place a
-# test is written for cannot be lost.
+# test is written for cannot be lost. A place of G/SCRIPT.txt that the
+# runs were to compare and that no run threw at differs too: the places of
+# the script moved, and its golden is to be written again.
 #
 #   engine/test/regvm/inject.sh [-j N] [-max M] [-golden G] [-update] DIR PATH...
 #   engine/test/regvm/inject.sh [-j N] [-every K] [-golden G] DIR PATH...
@@ -48,12 +54,19 @@
 # engine/test/regvm/golden/inject by default. A script with no G/SCRIPT.txt
 # differs, unless G/skip names it on a line "SCRIPT WHY" (a script with too
 # many places to inject in the time of a test): it prints "SKIP SCRIPT: WHY"
-# and runs nothing. -update writes G/SCRIPT.txt again from the run, for a new
-# script or a change of output that is meant: read the diff before it goes
-# into a commit. The places hold while the
-# bytecode of the script is the same. It prints one line per run that
-# differs and a line for each script, and exits with 1 when any run
-# differs. The transcripts of a run that differs are in DIR/inject/SCRIPT-N/.
+# and runs nothing. The places hold while the bytecode of the script is the
+# same. It prints one line per run that differs and a line for each script,
+# and exits with 1 when any run differs. The transcripts of a run that
+# differs are in DIR/inject/SCRIPT-N/.
+#
+# -update writes G/SCRIPT.txt again from the run, for a new script or a
+# change of behaviour that is meant (make inject-goldens does it for the
+# whole set). For each place it prints the keys that changed ("CHANGED
+# SCRIPT PLACE: KEY,..."), the places no run reaches any more ("GONE") and
+# those that are new ("NEW"), then the counts of each script and of all. A
+# run that fails by its status (a leak, a signal) writes no line: the old
+# line of its place stays, and the run still differs. Read the diff before
+# it goes into a commit.
 #
 # -every K runs none of the places the sampling picks: of each script only the
 # lines 1, 1 + K, 1 + 2K and so on of G/SCRIPT.txt and its last line, besides
@@ -132,10 +145,15 @@ ASAN_OPTIONS=${ASAN_OPTIONS:+$ASAN_OPTIONS:}detect_leaks=0
 export ASAN_OPTIONS
 
 # the line of a golden file of rvdiff (see rvdiff.c): its status, and the
-# count and checksum of each kind but expect (the hash of a kind kept as one)
+# count and checksum of each kind (the hash of a kind kept as one) but expect
+# and the counts of memory, mem-end and mem-gc. Those move with any change
+# of what the engine keeps (a shape held for the context, an object it no
+# longer makes) and say nothing of the throw: a leak is the status of the
+# run, 87, which rvdiff gives when the runtime holds more once the context
+# is freed than before it was made.
 summary() {
 	s="status=$(sed -n 's/^--- status //p' "$1" | tr ' ' _)"
-	for k in out result exception stack job job-stack mem-end mem-gc; do
+	for k in out result exception stack job job-stack; do
 		h=$(grep "^hash $k " "$1" | cut -d' ' -f3,4 | tr ' ' /)
 		if [ -n "$h" ]; then
 			s="$s $k=fnv$h"
@@ -144,6 +162,82 @@ summary() {
 		fi
 	done
 	echo "$s"
+}
+
+# changes OLD NEW KEYS: for -update, a line for each place of the golden OLD
+# that the golden NEW gives other values ("CHANGED SCRIPT PLACE: KEY,..."),
+# has and OLD has not ("NEW") or has not and OLD has ("GONE"). It writes to
+# KEYS the count of places of each key that changed and of the new and gone
+# ones, a line "NAME COUNT" each.
+changes() {
+	awk -v sc="$sc" -v keys="$3" -v oldf="$1" '
+	function fields(line, m,   i, n, f, k) {
+		split("", m)
+		n = split(line, f, " ")
+		for (i = 3; i <= n; i++) {
+			k = f[i]
+			sub(/=.*/, "", k)
+			m[k] = f[i]
+		}
+	}
+	FILENAME == oldf { old[$1] = $0; next }
+	{ new[$1] = $0 }
+	END {
+		for (p in new)
+			if (!(p in old)) {
+				print "NEW " sc " " p
+				count["new"]++
+			}
+		for (p in old) {
+			if (!(p in new)) {
+				print "GONE " sc " " p
+				count["gone"]++
+				continue
+			}
+			fields(old[p], a)
+			fields(new[p], b)
+			changed = ""
+			for (k in b)
+				if (!(k in a)) a[k] = ""
+			for (k in a)
+				if (a[k] != b[k]) {
+					changed = changed "," k
+					count["key " k]++
+				}
+			if (changed != "") {
+				print "CHANGED " sc " " p ": " substr(changed, 2)
+				count["changed"]++
+			}
+		}
+		for (k in count)
+			print k, count[k] > keys
+		close(keys)
+	}' "$1" "$2"
+	[ -f "$3" ] || : > "$3"
+}
+
+# changes_line KEYS: the counts of changes of KEYS (lines "NAME COUNT", of
+# one golden or summed over several) as a line: "C changed (KEY N, ...), A
+# new, D gone"
+changes_line() {
+	awk '
+	{ n[$1 == "key" ? "key " $2 : $1] += $NF }
+	END {
+		order = "status out result exception stack job job-stack"
+		m = split(order, o, " ")
+		ks = ""
+		for (i = 1; i <= m; i++)
+			if (("key " o[i]) in n) {
+				ks = ks ", " o[i] " " n["key " o[i]]
+				delete n["key " o[i]]
+			}
+		for (k in n)
+			if (k ~ /^key /)
+				ks = ks ", " substr(k, 5) " " n[k]
+		printf "%d changed", n["changed"]
+		if (ks != "") printf " (%s)", substr(ks, 3)
+		printf ", %d new, %d gone\n", n["new"], n["gone"]
+	}' "$1"
 }
 
 # one_run DIR KEY VAR=VAL: the run with the register loop on alone, its
@@ -166,22 +260,38 @@ if [ -n "$single" ]; then
 	*.*) var=RV_INJECT_SITE val="${n%.*} ${n#*.}" ;;
 	*) var=RV_INJECT val=$n ;;
 	esac
+	# for -update, a run that failed (a leak, a signal, the time limit): it
+	# writes no golden line, the old line of its place stays
+	keep_line() {
+		[ -z "$update" ] || [ -z "$place" ] ||
+			grep "^$place " "$golden/$base.txt" > "$work/$name.gline" 2>/dev/null || true
+	}
 	one_run "$work/$name" "$key" "$var=$val"
 	grep "^hit " "$key" >> "$work/$base.hits" 2>/dev/null || true
 	at=$(grep -E '^(at|nokey|real|skip|miss|outside)' "$key" 2>/dev/null || echo '?')
+	place=$(echo "$at" | sed -n 's/^at //p' | tr ' ' _)
+	# the places reached, by a run that differs too: each place of the golden
+	# the runs were to compare must be one of them
+	[ -z "$place" ] || echo "$place" >> "$work/$base.reached"
 	g=$(find "$work/$name" -name "*.txt" | head -1)
 	if [ -z "$g" ]; then
 		echo "DIFF $sc N=$n status ($at): $(grep '^NOUPDATE' "$work/$name.log" | cut -c1-200)"
+		keep_line
 		exit 0
 	fi
-	place=$(echo "$at" | sed -n 's/^at //p' | tr ' ' _)
 	want=
 	[ -z "$place" ] || want=$(grep "^$place " "$golden/$base.txt" 2>/dev/null | cut -d' ' -f3- || true)
 	got=$(summary "$g")
 	# the line of its golden, for -update: a place where the register loop
-	# threw that the count of its old instruction names
-	[ -z "$update" ] || [ -z "$place" ] || [ ! -s "$key" ] ||
-		echo "$place $n $got" > "$work/$name.gline"
+	# threw that the count of its old instruction names, in a run that ended
+	# as a script does
+	if [ -n "$update" ] && [ -n "$place" ] && [ -s "$key" ]; then
+		if grep -q '^--- status exit [01]$' "$g"; then
+			echo "$place $n $got" > "$work/$name.gline"
+		else
+			keep_line
+		fi
+	fi
 	if echo "$at" | grep -q '^miss'; then
 		echo "DIFF $sc N=$n $at: the instruction ran to its end, no hook of its handler threw"
 	elif echo "$at" | grep -q '^outside'; then
@@ -211,8 +321,11 @@ for p in "$@"; do
 		for f in "$p"/*.js; do
 			if [ -f "$f" ]; then scripts="$scripts $f"; fi
 		done
-	else
+	elif [ -f "$p" ]; then
 		scripts="$scripts $p"
+	else
+		echo "inject.sh: no script $p" >&2
+		exit 2
 	fi
 done
 
@@ -276,16 +389,42 @@ for sc in $scripts; do
 	fi
 	runs=$(echo $ns | wc -w | tr -d ' ')
 	hits=$work/$base.hits
-	rm -f "$hits"
+	rm -f "$hits" "$work/$base.reached"
 	out=$work/$base.diffs
 	find "$work" -maxdepth 1 -name "$base-*.gline" -exec rm -f {} +
 	# shellcheck disable=SC2086
 	printf '%s\n' $ns | xargs -P "$jobs" -I{} "$self" -golden "$golden" ${update:+-update} -one "$dir" {} "$sc" > "$out" || true
+	# for -update, one line a place: two runs can throw at one place when the
+	# places of a script moved
 	if [ -n "$update" ]; then
-		find "$work" -maxdepth 1 -name "$base-*.gline" -exec cat {} + 2>/dev/null | LC_ALL=C sort -u > "$golden/$base.txt"
+		find "$work" -maxdepth 1 -name "$base-*.gline" -exec cat {} + 2>/dev/null | LC_ALL=C sort |
+			LC_ALL=C sort -u -k1,1 > "$work/$base.new"
 		find "$work" -maxdepth 1 -name "$base-*.gline" -exec rm -f {} +
-		echo "UPDATE $golden/$base.txt: $(wc -l < "$golden/$base.txt" | tr -d ' ') places"
+		if [ -f "$golden/$base.txt" ]; then
+			changes "$golden/$base.txt" "$work/$base.new" "$work/$base.keys" | LC_ALL=C sort
+			what=$(changes_line "$work/$base.keys")
+			cat "$work/$base.keys" >> "$work/update.$$"
+			rm -f "$work/$base.keys"
+		else
+			what="a new golden"
+		fi
+		mv "$work/$base.new" "$golden/$base.txt"
+		echo "UPDATE $golden/$base.txt: $(wc -l < "$golden/$base.txt" | tr -d ' ') places, $what"
+	elif [ -f "$golden/$base.txt" ]; then
+		# each place of the golden the runs were to compare was reached: a
+		# place no run threw at any more is compared with nothing
+		if [ -n "$every" ]; then
+			awk -v k="$every" '(NR - 1) % k == 0 { print } END { print }' "$golden/$base.txt"
+		else
+			cat "$golden/$base.txt"
+		fi | LC_ALL=C sort -u -k1,1 > "$work/$base.want"
+		LC_ALL=C sort -u "$work/$base.reached" 2>/dev/null | LC_ALL=C join -v 1 "$work/$base.want" - |
+			while read -r p n rest; do
+				echo "DIFF $sc: no run threw at the place $p of the golden (its run $n): the places of the script moved, record its golden again (inject.sh -update)"
+			done >> "$out"
+		rm -f "$work/$base.want"
 	fi
+	rm -f "$work/$base.reached"
 	# the places the script says a run must throw at: "// inject-hit: NAME P"
 	[ -n "$every" ] || sed -n "s|^// inject-hit: \(.*\)$|hit \1|p" "$sc" | while read -r want; do
 		grep -qxF "$want" "$hits" 2>/dev/null ||
@@ -298,5 +437,9 @@ for sc in $scripts; do
 	nruns=$((nruns + runs)) nbad=$((nbad + bad))
 	[ "$bad" = 0 ] || status=1
 done
+if [ -n "$update" ] && [ -f "$work/update.$$" ]; then
+	echo "inject: the goldens written again, against the old ones: $(changes_line "$work/update.$$")"
+	rm -f "$work/update.$$"
+fi
 echo "inject: $nscripts scripts, $nruns injected, $nbad differ"
 exit $status
