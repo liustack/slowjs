@@ -1,0 +1,148 @@
+result -- round 0
+result own ok, value number 10
+result own moved ok, value number 11
+result other key at the slot ok, value number 12
+result other key kept value number 2
+result own accessor ok, accessor, log own set 13
+result own read-only throws TypeError, value number 2 ro
+result own frozen throws TypeError, value number 4 ro
+result array length ok, value number 1
+result array length real ok, value number 1
+result array cut 1
+result array length again ok, value number 2
+result constant ok, value string k
+result step ok, value number 20
+result step temp ok, value number 21
+result proto setter ok, none, log C set 22
+result proto setter temp ok, none, log C set 23
+result proto setter gone ok, value number 24
+result proto read-only throws TypeError, none
+result proto read-only gone ok, value number 26
+result proto writable ok, value number 27
+result proto frozen throws TypeError, none
+result proto of proto ok, none, log S set 29
+result shadowed ok, value number 30
+result shadow deleted ok, none, log H set 31
+result plain ok, value number 32
+result Object.prototype setter ok, none, log OP set 33
+result Object.prototype setter gone ok, value number 34
+result not extensible throws TypeError, none
+result extensible ok, value number 36
+result kept shape grew ok, value number 37
+result kept shape grew keys a,x
+result grown keys a,x,z
+result kept shape freed ok, value number 38
+result kept shape freed keys j7,k
+result after gc ok, value number 39
+result kept shape moved ok, value number 40
+result kept shape moved keys a,x
+result inline ok, value number 41
+result inline keys p,q,y
+result room ok, value number 42
+result room keys a,b,c,d,e,f,x
+result function ok, value number 43
+result array ok, value number 44
+result global ok, value number 45
+result realm ok, value number 46
+result realm here ok, value number 47
+result realm code here ok, value number 48
+result -- round 1
+result own ok, value number 10
+result own moved ok, value number 11
+result other key at the slot ok, value number 12
+result other key kept value number 2
+result own accessor ok, accessor, log own set 13
+result own read-only throws TypeError, value number 2 ro
+result own frozen throws TypeError, value number 4 ro
+result array length ok, value number 1
+result array length real ok, value number 1
+result array cut 1
+result array length again ok, value number 2
+result constant ok, value string k
+result step ok, value number 20
+result step temp ok, value number 21
+result proto setter ok, none, log C set 22
+result proto setter temp ok, none, log C set 23
+result proto setter gone ok, value number 24
+result proto read-only throws TypeError, none
+result proto read-only gone ok, value number 26
+result proto writable ok, value number 27
+result proto frozen throws TypeError, none
+result proto of proto ok, none, log S set 29
+result shadowed ok, value number 30
+result shadow deleted ok, none, log H set 31
+result plain ok, value number 32
+result Object.prototype setter ok, none, log OP set 33
+result Object.prototype setter gone ok, value number 34
+result not extensible throws TypeError, none
+result extensible ok, value number 36
+result kept shape grew ok, value number 37
+result kept shape grew keys a,x
+result grown keys a,x,z
+result kept shape freed ok, value number 38
+result kept shape freed keys j7,k
+result after gc ok, value number 39
+result kept shape moved ok, value number 40
+result kept shape moved keys a,x
+result inline ok, value number 41
+result inline keys p,q,y
+result room ok, value number 42
+result room keys a,b,c,d,e,f,x
+result function ok, value number 43
+result array ok, value number 44
+result global ok, value number 45
+result realm ok, value number 46
+result realm here ok, value number 47
+result realm code here ok, value number 48
+result -- round 2
+result own ok, value number 10
+result own moved ok, value number 11
+result other key at the slot ok, value number 12
+result other key kept value number 2
+result own accessor ok, accessor, log own set 13
+result own read-only throws TypeError, value number 2 ro
+result own frozen throws TypeError, value number 4 ro
+result array length ok, value number 1
+result array length real ok, value number 1
+result array cut 1
+result array length again ok, value number 2
+result constant ok, value string k
+result step ok, value number 20
+result step temp ok, value number 21
+result proto setter ok, none, log C set 22
+result proto setter temp ok, none, log C set 23
+result proto setter gone ok, value number 24
+result proto read-only throws TypeError, none
+result proto read-only gone ok, value number 26
+result proto writable ok, value number 27
+result proto frozen throws TypeError, none
+result proto of proto ok, none, log S set 29
+result shadowed ok, value number 30
+result shadow deleted ok, none, log H set 31
+result plain ok, value number 32
+result Object.prototype setter ok, none, log OP set 33
+result Object.prototype setter gone ok, value number 34
+result not extensible throws TypeError, none
+result extensible ok, value number 36
+result kept shape grew ok, value number 37
+result kept shape grew keys a,x
+result grown keys a,x,z
+result kept shape freed ok, value number 38
+result kept shape freed keys j7,k
+result after gc ok, value number 39
+result kept shape moved ok, value number 40
+result kept shape moved keys a,x
+result inline ok, value number 41
+result inline keys p,q,y
+result room ok, value number 42
+result room keys a,b,c,d,e,f,x
+result function ok, value number 43
+result array ok, value number 44
+result global ok, value number 45
+result realm ok, value number 46
+result realm here ok, value number 47
+result realm code here ok, value number 48
+result all match
+mem-end obj=419 atom=964 shape=1082 prop=1977 jsfunc=10 cfunc=253 array=3 fast_array=3 elements=0 binary=0
+mem-gc obj=194 atom=949 shape=941 prop=961 jsfunc=0 cfunc=132 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0
