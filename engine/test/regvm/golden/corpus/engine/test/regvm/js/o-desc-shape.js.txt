@@ -1,0 +1,69 @@
+result data 0: proto true, ext true: value=number 1 writable=boolean true enumerable=boolean true configurable=boolean true
+result read-only 0: proto true, ext true: value=string r writable=boolean false enumerable=boolean false configurable=boolean false
+result accessor 0: proto true, ext true: get=fn getter set=fn setter enumerable=boolean true configurable=boolean true
+result getter only 0: proto true, ext true: get=fn getter set=undefined undefined enumerable=boolean false configurable=boolean false
+result setter only 0: proto true, ext true: get=undefined undefined set=fn setter enumerable=boolean false configurable=boolean false
+result symbol 0: proto true, ext true: value=string sv writable=boolean true enumerable=boolean true configurable=boolean true
+result missing 0: undefined
+result reflect 0: proto true, ext true: value=number 1 writable=boolean true enumerable=boolean true configurable=boolean true
+result string index 0: proto true, ext true: value=string y writable=boolean false enumerable=boolean true configurable=boolean false
+result array length 0: proto true, ext true: value=number 2 writable=boolean true enumerable=boolean false configurable=boolean false
+result all keys 0: a,ro,acc,g,s,Symbol(k)
+result all a 0: proto true, ext true: value=number 1 writable=boolean true enumerable=boolean true configurable=boolean true
+result all acc 0: proto true, ext true: get=fn getter set=fn setter enumerable=boolean true configurable=boolean true
+result after a change 0: proto true, ext true: value=number 1 writable=boolean true enumerable=boolean true configurable=boolean true
+result the changed one 0: proto true, ext true: value=number 7 enumerable=boolean true configurable=boolean true extra=number 1
+result after a freeze 0: proto true, ext true: get=fn getter set=fn setter enumerable=boolean true configurable=boolean true
+result written 0: object null fn getter
+result round trip 0: proto true, ext true: value=string r writable=boolean false enumerable=boolean false configurable=boolean false
+result data 1: proto true, ext true: value=number 1 writable=boolean true enumerable=boolean true configurable=boolean true
+result read-only 1: proto true, ext true: value=string r writable=boolean false enumerable=boolean false configurable=boolean false
+result accessor 1: proto true, ext true: get=fn getter set=fn setter enumerable=boolean true configurable=boolean true
+result getter only 1: proto true, ext true: get=fn getter set=undefined undefined enumerable=boolean false configurable=boolean false
+result setter only 1: proto true, ext true: get=undefined undefined set=fn setter enumerable=boolean false configurable=boolean false
+result symbol 1: proto true, ext true: value=string sv writable=boolean true enumerable=boolean true configurable=boolean true
+result missing 1: undefined
+result reflect 1: proto true, ext true: value=number 1 writable=boolean true enumerable=boolean true configurable=boolean true
+result string index 1: proto true, ext true: value=string y writable=boolean false enumerable=boolean true configurable=boolean false
+result array length 1: proto true, ext true: value=number 2 writable=boolean true enumerable=boolean false configurable=boolean false
+result all keys 1: a,ro,acc,g,s,Symbol(k)
+result all a 1: proto true, ext true: value=number 1 writable=boolean true enumerable=boolean true configurable=boolean true
+result all acc 1: proto true, ext true: get=fn getter set=fn setter enumerable=boolean true configurable=boolean true
+result after a change 1: proto true, ext true: value=number 1 writable=boolean true enumerable=boolean true configurable=boolean true
+result the changed one 1: proto true, ext true: value=number 7 enumerable=boolean true configurable=boolean true extra=number 1
+result after a freeze 1: proto true, ext true: get=fn getter set=fn setter enumerable=boolean true configurable=boolean true
+result written 1: object null fn getter
+result round trip 1: proto true, ext true: value=string r writable=boolean false enumerable=boolean false configurable=boolean false
+result data 2: proto true, ext true: value=number 1 writable=boolean true enumerable=boolean true configurable=boolean true
+result read-only 2: proto true, ext true: value=string r writable=boolean false enumerable=boolean false configurable=boolean false
+result accessor 2: proto true, ext true: get=fn getter set=fn setter enumerable=boolean true configurable=boolean true
+result getter only 2: proto true, ext true: get=fn getter set=undefined undefined enumerable=boolean false configurable=boolean false
+result setter only 2: proto true, ext true: get=undefined undefined set=fn setter enumerable=boolean false configurable=boolean false
+result symbol 2: proto true, ext true: value=string sv writable=boolean true enumerable=boolean true configurable=boolean true
+result missing 2: undefined
+result reflect 2: proto true, ext true: value=number 1 writable=boolean true enumerable=boolean true configurable=boolean true
+result string index 2: proto true, ext true: value=string y writable=boolean false enumerable=boolean true configurable=boolean false
+result array length 2: proto true, ext true: value=number 2 writable=boolean true enumerable=boolean false configurable=boolean false
+result all keys 2: a,ro,acc,g,s,Symbol(k)
+result all a 2: proto true, ext true: value=number 1 writable=boolean true enumerable=boolean true configurable=boolean true
+result all acc 2: proto true, ext true: get=fn getter set=fn setter enumerable=boolean true configurable=boolean true
+result after a change 2: proto true, ext true: value=number 1 writable=boolean true enumerable=boolean true configurable=boolean true
+result the changed one 2: proto true, ext true: value=number 7 enumerable=boolean true configurable=boolean true extra=number 1
+result after a freeze 2: proto true, ext true: get=fn getter set=fn setter enumerable=boolean true configurable=boolean true
+result written 2: object null fn getter
+result round trip 2: proto true, ext true: value=string r writable=boolean false enumerable=boolean false configurable=boolean false
+result proto setters data 0: proto true, ext true: value=number 1 writable=boolean true enumerable=boolean true configurable=boolean true
+result proto setters accessor 0: proto true, ext true: get=fn getter set=fn setter enumerable=boolean true configurable=boolean true
+result proto setters data 1: proto true, ext true: value=number 1 writable=boolean true enumerable=boolean true configurable=boolean true
+result proto setters accessor 1: proto true, ext true: get=fn getter set=fn setter enumerable=boolean true configurable=boolean true
+result proto setters data 2: proto true, ext true: value=number 1 writable=boolean true enumerable=boolean true configurable=boolean true
+result proto setters accessor 2: proto true, ext true: get=fn getter set=fn setter enumerable=boolean true configurable=boolean true
+result setters called: 
+result proto read-only: proto true, ext true: value=number 1 writable=boolean true enumerable=boolean true configurable=boolean true
+result kept: 2000
+result realm: true
+result realm here: true
+result all match
+mem-end obj=381 atom=546 shape=256 prop=1913 jsfunc=0 cfunc=257 array=2 fast_array=2 elements=0 binary=0
+mem-gc obj=198 atom=546 shape=140 prop=982 jsfunc=0 cfunc=135 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0
