@@ -43,7 +43,7 @@ On a Linux machine with four cores that nothing else uses, with Go, clang, and N
 ```sh
 cd compare/engines
 sh native/build.sh $HOME/jsnative                 # C QuickJS, Hermes, Node
-export PATH=$HOME/jsnative/node-v24.22.3-linux-x64/bin:$PATH
+export PATH=$HOME/jsnative/node-v26.13.1-linux-x64/bin:$PATH
 tifa/polyfill/build.sh                            # the two polyfill files
 go build -pgo=off -trimpath -o bin/compare ./cmd/compare
 ./bin/compare -build-only -bindir bin             # one jsbench per engine
