@@ -100,9 +100,10 @@ cycle("youngGC");
     for (var i = 0; i < n; i++) new G(i);
     objs.length = 0;
   }
-  // the register code of fill, made at its first call, stays with it: made
-  // before the count, the count sees the objects alone
-  fill(0);
+  // what a first call makes and keeps (the register code of fill and G, and
+  // what G keeps for the objects it makes) is made before the count, so
+  // that the count sees the objects alone, with the system malloc too
+  fill(1);
   gc();
   var before = memoryBlocks();
   fill(200);
