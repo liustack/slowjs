@@ -56906,6 +56906,28 @@ JSValue JS_NewCopyPropsFunction(JSContext *ctx, const char *name, size_t name_le
    js_end_tag gives the end tag. target then holds other strings than React's
    would, and the same text when they are joined.
 
+   Its seventh argument, mode, says which of React's functions it stands in
+   for. undefined (a caller that passes six) and 0: pushStartGenericElement.
+   1: pushSelfClosing, which React uses for img (after its image preload) and
+   the void elements (br, hr, meta, source and the like): the same loop, with
+   "children" and "dangerouslySetInnerHTML" a throw when not null or
+   undefined, then pushViewTransitionAttributes, "/>" and no text, and a
+   return of null. js_start_tag declines a call with children, so that React
+   throws, and is otherwise the generic call with "/>" for ">". 2: the case
+   "input" of pushStartInstance, the same as 1 except that the loop holds back
+   name, formAction, formEncType, formMethod, formTarget, checked,
+   defaultChecked, value and defaultValue, and writes them after the other
+   props as pushFormActionAttribute, pushBooleanAttribute and pushAttribute
+   do (js_emit_input_tail). It declines a formAction that is a function. 3:
+   the branch of the case "style" of pushStartInstance that writes the
+   element where it is, which emotion's style elements take: the loop of 0,
+   with dangerouslySetInnerHTML held back, then ">", its __html as it is, the
+   end tag and a return of null (js_emit_inner_html). It declines children,
+   which React writes with its own escape, and an __html that React would
+   read through a getter, the prototype or a toString. The caller asks only
+   once React has chosen that branch. It declines any other mode, so that a caller that asks for a mode this engine
+   does not have gets React's function.
+
    js_start_tag returns its argument decline, having changed nothing, for any
    call where React's functions could do something else than it does, and the
    script then runs them. It writes only when:
@@ -56992,10 +57014,42 @@ enum {
     JS_EMIT_STYLE_CUSTOM, /* a style name that starts with --, as it is */
 };
 
+/* the mode of a start tag: the function of React it writes as */
+enum {
+    JS_EMIT_MODE_GENERIC, /* pushStartGenericElement */
+    JS_EMIT_MODE_SELF,    /* pushSelfClosing */
+    JS_EMIT_MODE_INPUT,   /* the case "input" of pushStartInstance */
+    JS_EMIT_MODE_STYLE,   /* the case "style", written in place */
+    JS_EMIT_MODE_LAST = JS_EMIT_MODE_STYLE,
+};
+
+/* the props the case "input" holds back, in the order it writes them, then
+   dangerouslySetInnerHTML, which the case "style" holds back */
+enum {
+    JS_EMIT_HELD_NAME,
+    JS_EMIT_HELD_FORM_ACTION,
+    JS_EMIT_HELD_FORM_ENC_TYPE,
+    JS_EMIT_HELD_FORM_METHOD,
+    JS_EMIT_HELD_FORM_TARGET,
+    JS_EMIT_HELD_CHECKED,
+    JS_EMIT_HELD_DEFAULT_CHECKED,
+    JS_EMIT_HELD_VALUE,
+    JS_EMIT_HELD_DEFAULT_VALUE,
+    JS_EMIT_HELD_INNER_HTML,
+    JS_EMIT_HELD_COUNT
+};
+
+static const char *const js_emit_held_names[JS_EMIT_HELD_COUNT] = {
+    "name", "formAction", "formEncType", "formMethod", "formTarget",
+    "checked", "defaultChecked", "value", "defaultValue",
+    "dangerouslySetInnerHTML",
+};
+
 enum {
     JS_EMIT_ATOM_VIEW_TRANSITION,
     JS_EMIT_ATOM_CALL,
     JS_EMIT_ATOM_PUSH,
+    JS_EMIT_ATOM_HTML,
     JS_EMIT_ATOM_COUNT
 };
 
@@ -57003,6 +57057,8 @@ typedef struct JSEmitName {
     JSAtom atom;        /* the key, held, or JS_ATOM_NULL for an empty entry */
     uint8_t kind;
     uint8_t unitless;   /* a style name of unitlessNumbers */
+    uint8_t held;       /* 1 + JS_EMIT_HELD_x for a prop the case "input"
+                           or "style" holds back, else 0 */
     JSValue chunk;      /* ` name="`, ` name=""` or the style name, or undefined */
 } JSEmitName;
 
@@ -57687,7 +57743,7 @@ static int js_emit_attr_fill(JSContext *ctx, JSEmitName *e, JSAtom atom)
     const JSString *p = ctx->rt->atom_array[atom];
     const char *out = NULL;
     char buf[64], pre[6];
-    int kind = JS_EMIT_DECLINE, c;
+    int kind = JS_EMIT_DECLINE, held = 0, c;
     size_t i, n;
     StringBuffer b;
     JSValue chunk = JS_UNDEFINED;
@@ -57696,6 +57752,12 @@ static int js_emit_attr_fill(JSContext *ctx, JSEmitName *e, JSAtom atom)
         n = p->len;
         memcpy(buf, p->u.str8, n);
         buf[n] = '\0';
+        for (i = 0; i < JS_EMIT_HELD_COUNT; i++) {
+            if (js_emit_name_is(buf, n, js_emit_held_names[i])) {
+                held = i + 1;
+                break;
+            }
+        }
         for (i = 0; i < countof(js_emit_attr_names); i++) {
             if (js_emit_name_is(buf, n, js_emit_attr_names[i].name)) {
                 kind = js_emit_attr_names[i].kind;
@@ -57762,6 +57824,7 @@ static int js_emit_attr_fill(JSContext *ctx, JSEmitName *e, JSAtom atom)
     e->atom = JS_DupAtom(ctx, atom);
     e->kind = kind;
     e->unitless = 0;
+    e->held = held;
     e->chunk = chunk;
     return 0;
 }
@@ -57859,6 +57922,7 @@ static int js_emit_style_fill(JSContext *ctx, JSEmitName *e, JSAtom atom)
     e->atom = JS_DupAtom(ctx, atom);
     e->kind = kind;
     e->unitless = unitless;
+    e->held = 0;
     e->chunk = chunk;
     return 0;
 }
@@ -58187,7 +58251,222 @@ static BOOL js_emit_target_plain(JSContext *ctx, JSEmitCache *ec, JSObject *p)
         f->u.cfunc.magic == 0;
 }
 
-/* startTag(target, props, type, formatContext, hasOwnProperty, decline) */
+/* writes into b the attribute of entry e, not children, for the value v, not
+   null or undefined, as pushAttribute does: 0, 1 to decline, or -1 when the
+   engine has no memory or the host stops it */
+static force_inline int js_emit_attr(JSContext *ctx, JSEmitCache *ec,
+                                     StringBuffer *b, const JSEmitName *e,
+                                     JSValueConst v)
+{
+    int tag = JS_VALUE_GET_NORM_TAG(v), r;
+
+    switch (e->kind) {
+    case JS_EMIT_SKIP:
+        return 0;
+    case JS_EMIT_STYLE:
+        return js_emit_put_style(ctx, ec, b, v);
+    case JS_EMIT_STRING:
+    case JS_EMIT_DEFAULT:
+        if (tag == JS_TAG_BOOL || js_emit_fn_or_sym(ctx, v))
+            return 0;
+        break;
+    case JS_EMIT_PLAIN:
+    case JS_EMIT_DEFAULT_DA:
+        if (js_emit_fn_or_sym(ctx, v))
+            return 0;
+        break;
+    case JS_EMIT_URL_SRC:
+        if (tag == JS_TAG_STRING && JS_VALUE_GET_STRING(v)->len == 0)
+            return 0;
+        /* fall through */
+    case JS_EMIT_URL:
+        if (tag == JS_TAG_BOOL || js_emit_fn_or_sym(ctx, v))
+            return 0;
+        /* a javascript: URL React writes as one of its own, and a rope is
+           not looked at: 1 to decline, or -1 when the host stops the check */
+        if (tag == JS_TAG_STRING_ROPE)
+            return 1;
+        if (tag == JS_TAG_STRING) {
+            r = js_emit_is_javascript_url(ctx, JS_VALUE_GET_STRING(v));
+            if (r)
+                return r;
+        }
+        break;
+    case JS_EMIT_BOOL:
+        if (!js_emit_fn_or_sym(ctx, v) && JS_ToBool(ctx, v))
+            js_emit_put_chunk(b, e->chunk);
+        return 0;
+    default:
+        return 1;
+    }
+    js_emit_put_chunk(b, e->chunk);
+    r = js_emit_put_text(ctx, b, v);
+    js_emit_c8(b, '"');
+    return r;
+}
+
+/* what the case "input" of pushStartInstance writes after the loop over the
+   other props, for the props it held back (held: their index in the props
+   p, or -1): pushFormActionAttribute writes name, formAction, formEncType,
+   formMethod and formTarget, each with pushAttribute under its own name, then
+   checked, or else defaultChecked, goes to pushBooleanAttribute as checked,
+   and value, or else defaultValue, to pushAttribute as value. 1 to decline a
+   formAction that is a function, which React writes as a URL of its own with
+   hidden fields and a script, or -1 as js_emit_attr */
+static no_inline int js_emit_input_tail(JSContext *ctx, JSEmitCache *ec,
+                                        StringBuffer *b, JSObject *p,
+                                        const int8_t *held)
+{
+    JSShapeProperty *prs = get_shape_prop(p->shape);
+    JSEmitName *e;
+    JSValueConst v;
+    int i, k, r;
+
+    k = held[JS_EMIT_HELD_FORM_ACTION];
+    if (k >= 0 && JS_IsFunction(ctx, p->prop[k].u.value))
+        return 1;
+    for (i = JS_EMIT_HELD_NAME; i <= JS_EMIT_HELD_FORM_TARGET; i++) {
+        k = held[i];
+        if (k < 0)
+            continue;
+        e = js_emit_attr_entry(ctx, ec, prs[k].atom);
+        if (!e)
+            return -1;
+        r = js_emit_attr(ctx, ec, b, e, p->prop[k].u.value);
+        if (r)
+            return r;
+    }
+    k = held[JS_EMIT_HELD_CHECKED];
+    if (k < 0)
+        k = held[JS_EMIT_HELD_DEFAULT_CHECKED];
+    if (k >= 0) {
+        v = p->prop[k].u.value;
+        if (!js_emit_fn_or_sym(ctx, v) && JS_ToBool(ctx, v))
+            js_emit_s8(b, " checked=\"\"");
+    }
+    k = held[JS_EMIT_HELD_VALUE];
+    if (k < 0)
+        k = held[JS_EMIT_HELD_DEFAULT_VALUE];
+    if (k >= 0) {
+        v = p->prop[k].u.value;
+        if (!js_emit_fn_or_sym(ctx, v)) {
+            js_emit_s8(b, " value=\"");
+            r = js_emit_put_text(ctx, b, v);
+            js_emit_c8(b, '"');
+            return r;
+        }
+    }
+    return 0;
+}
+
+/* what the case "style" of pushStartInstance writes after the attributes of
+   a style it writes in place, with no children: ">", what pushInnerHTML
+   writes for dangerouslySetInnerHTML (its index k in the props p, or -1 when
+   it is null, undefined or not there), and the end tag, "</style>" for tp.
+   1 to decline what React throws for or reads otherwise: dangerouslySetInnerHTML that is not
+   an ordinary object of Object.prototype with __html of its own as a plain
+   data property, and an __html that is not a string, null or undefined. -1
+   when the engine has no memory or the host stops the copy */
+static no_inline int js_emit_inner_html(JSContext *ctx, JSEmitCache *ec,
+                                        StringBuffer *b, JSObject *p, int k,
+                                        const JSString *tp)
+{
+    JSShapeProperty *prs;
+    JSProperty *pr;
+    JSObject *h;
+    JSValueConst v;
+    JSValue hold;
+    JSString *s;
+    int tag;
+
+    js_emit_c8(b, '>');
+    if (k >= 0) {
+        v = p->prop[k].u.value;
+        if (JS_VALUE_GET_TAG(v) != JS_TAG_OBJECT)
+            return 1;
+        h = JS_VALUE_GET_OBJ(v);
+        if (h->class_id != JS_CLASS_OBJECT ||
+            h->shape->proto != JS_VALUE_GET_OBJ(ctx->class_proto[JS_CLASS_OBJECT]))
+            return 1;
+        prs = find_own_property(&pr, h, ec->atoms[JS_EMIT_ATOM_HTML]);
+        if (!prs || (prs->flags & JS_PROP_TMASK) != JS_PROP_NORMAL)
+            return 1;
+        v = pr->u.value;
+        tag = JS_VALUE_GET_TAG(v);
+        if (tag == JS_TAG_STRING || tag == JS_TAG_STRING_ROPE) {
+            s = js_emit_flat(ctx, v, &hold);
+            if (!s)
+                return -1;
+            if (!js_emit_fits(b, s->len)) {
+                JS_FreeValue(ctx, hold);
+                return 1;
+            }
+            js_emit_wstr(b, s, 0, s->len);
+            JS_FreeValue(ctx, hold);
+        } else if (tag != JS_TAG_NULL && tag != JS_TAG_UNDEFINED) {
+            return 1;
+        }
+    }
+    js_emit_s8(b, "</");
+    js_emit_wstr(b, tp, 0, tp->len);
+    js_emit_c8(b, '>');
+    return 0;
+}
+
+/* the attributes of the start tag of a mode other than the generic one, into
+   b after "<" and the tag tp, and what the mode writes after them (see
+   js_start_tag), for the props p of the kinds of keys kinds: 0, 1 to decline
+   or -1 as js_emit_attr */
+static no_inline int js_emit_mode_attrs(JSContext *ctx, JSEmitCache *ec,
+                                        StringBuffer *b, JSObject *p,
+                                        const uint8_t *kinds,
+                                        const JSString *tp, int mode)
+{
+    JSShapeProperty *prs = get_shape_prop(p->shape);
+    JSValueConst v;
+    JSEmitName *e;
+    int i, tag, n = p->shape->prop_count, r = 0;
+    /* the index in p of each prop the case "input" or "style" holds back,
+       or -1 */
+    int8_t held[JS_EMIT_HELD_COUNT];
+
+    memset(held, -1, sizeof(held));
+    for (i = 0; i < n && r == 0 && !b->error_status; i++) {
+        if (kinds[i] != JS_OWN_KIND_STRING || !(prs[i].flags & JS_PROP_ENUMERABLE))
+            continue;
+        v = p->prop[i].u.value;
+        tag = JS_VALUE_GET_NORM_TAG(v);
+        if (tag == JS_TAG_NULL || tag == JS_TAG_UNDEFINED)
+            continue;
+        e = js_emit_attr_entry(ctx, ec, prs[i].atom);
+        if (!e)
+            return -1;
+        if (e->kind == JS_EMIT_CHILDREN) {
+            /* pushSelfClosing and the case "input" throw, and the style
+               element is written with children by React */
+            r = 1;
+        } else if ((mode == JS_EMIT_MODE_INPUT && e->held &&
+                    e->held <= JS_EMIT_HELD_DEFAULT_VALUE + 1) ||
+                   (mode == JS_EMIT_MODE_STYLE &&
+                    e->held == JS_EMIT_HELD_INNER_HTML + 1)) {
+            held[e->held - 1] = i;
+        } else {
+            r = js_emit_attr(ctx, ec, b, e, v);
+        }
+    }
+    if (r != 0 || b->error_status)
+        return r;
+    if (mode == JS_EMIT_MODE_STYLE)
+        return js_emit_inner_html(ctx, ec, b, p, held[JS_EMIT_HELD_INNER_HTML], tp);
+    if (mode == JS_EMIT_MODE_INPUT)
+        r = js_emit_input_tail(ctx, ec, b, p, held);
+    if (r == 0)
+        js_emit_s8(b, "/>");
+    return r;
+}
+
+/* startTag(target, props, type, formatContext, hasOwnProperty, decline,
+            mode) */
 static JSValue js_start_tag(JSContext *ctx, JSValueConst this_val,
                             int argc, JSValueConst *argv)
 {
@@ -58202,9 +58481,16 @@ static JSValue js_start_tag(JSContext *ctx, JSValueConst this_val,
     uint8_t kinds[JS_EMIT_PROPS_MAX];
     JSValue str, ret;
     uint32_t count;
-    int i, n, tag, valid, r = 0;
+    int i, n, tag, valid, mode, r = 0;
 
-    /* argv has the six values: that is the length of the function */
+    /* argv has the seven values: that is the length of the function */
+    if (JS_VALUE_GET_TAG(argv[6]) == JS_TAG_UNDEFINED)
+        mode = JS_EMIT_MODE_GENERIC;
+    else if (JS_VALUE_GET_TAG(argv[6]) == JS_TAG_INT &&
+             (uint32_t)JS_VALUE_GET_INT(argv[6]) <= JS_EMIT_MODE_LAST)
+        mode = JS_VALUE_GET_INT(argv[6]);
+    else
+        goto decline;
     if (JS_VALUE_GET_TAG(target) != JS_TAG_OBJECT ||
         JS_VALUE_GET_TAG(props) != JS_TAG_OBJECT ||
         JS_VALUE_GET_TAG(typev) != JS_TAG_STRING ||
@@ -58235,7 +58521,10 @@ static JSValue js_start_tag(JSContext *ctx, JSValueConst this_val,
     js_emit_buf_take(ctx, ec, &b);
     js_emit_c8(&b, '<');
     js_emit_wstr(&b, tp, 0, tp->len);
-    for (i = 0; i < n && r == 0 && !b.error_status; i++) {
+    /* the loop of a generic element has no test of the mode */
+    if (mode != JS_EMIT_MODE_GENERIC)
+        r = js_emit_mode_attrs(ctx, ec, &b, pp, kinds, tp, mode);
+    else for (i = 0; i < n && r == 0 && !b.error_status; i++) {
         JSValueConst v;
         JSEmitName *e;
 
@@ -58250,60 +58539,12 @@ static JSValue js_start_tag(JSContext *ctx, JSValueConst this_val,
             r = -1;
             break;
         }
-        switch (e->kind) {
-        case JS_EMIT_SKIP:
-            break;
-        case JS_EMIT_CHILDREN:
+        if (e->kind == JS_EMIT_CHILDREN)
             children = v;
-            break;
-        case JS_EMIT_STYLE:
-            r = js_emit_put_style(ctx, ec, &b, v);
-            break;
-        case JS_EMIT_STRING:
-        case JS_EMIT_DEFAULT:
-            if (tag == JS_TAG_BOOL || js_emit_fn_or_sym(ctx, v))
-                break;
-            goto text;
-        case JS_EMIT_PLAIN:
-        case JS_EMIT_DEFAULT_DA:
-            if (js_emit_fn_or_sym(ctx, v))
-                break;
-        text:
-            js_emit_put_chunk(&b, e->chunk);
-            r = js_emit_put_text(ctx, &b, v);
-            js_emit_c8(&b, '"');
-            break;
-        case JS_EMIT_URL_SRC:
-            if (tag == JS_TAG_STRING && JS_VALUE_GET_STRING(v)->len == 0)
-                break;
-            /* fall through */
-        case JS_EMIT_URL:
-            if (tag == JS_TAG_BOOL || js_emit_fn_or_sym(ctx, v))
-                break;
-            /* a javascript: URL React writes as one of its own, and a rope is
-               not looked at: r is 1 to decline, or -1 when the host stops
-               the check */
-            if (tag == JS_TAG_STRING_ROPE) {
-                r = 1;
-                break;
-            }
-            if (tag == JS_TAG_STRING) {
-                r = js_emit_is_javascript_url(ctx, JS_VALUE_GET_STRING(v));
-                if (r)
-                    break;
-            }
-            goto text;
-        case JS_EMIT_BOOL:
-            if (js_emit_fn_or_sym(ctx, v) || !JS_ToBool(ctx, v))
-                break;
-            js_emit_put_chunk(&b, e->chunk);
-            break;
-        default:
-            r = 1;
-            break;
-        }
+        else
+            r = js_emit_attr(ctx, ec, &b, e, v);
     }
-    if (r == 0) {
+    if (r == 0 && mode == JS_EMIT_MODE_GENERIC) {
         js_emit_c8(&b, '>');
         tag = JS_VALUE_GET_TAG(children);
         if (tag == JS_TAG_STRING || tag == JS_TAG_STRING_ROPE)
@@ -58487,7 +58728,7 @@ static int js_emit_make_builtin(JSContext *ctx, JSValueConst obj, JSAtom atom)
 static int js_emit_init(JSContext *ctx)
 {
     static const char *const names[JS_EMIT_ATOM_COUNT] = {
-        "viewTransition", "call", "push",
+        "viewTransition", "call", "push", "__html",
     };
     JSEmitCache *ec;
     int i;
@@ -58556,7 +58797,7 @@ static JSValue js_emit_new_function(JSContext *ctx, JSCFunction *func, int lengt
 
 JSValue JS_NewStartTagFunction(JSContext *ctx, const char *name, size_t name_len)
 {
-    return js_emit_new_function(ctx, js_start_tag, 6, name, name_len);
+    return js_emit_new_function(ctx, js_start_tag, 7, name, name_len);
 }
 
 JSValue JS_NewEndTagFunction(JSContext *ctx, const char *name, size_t name_len)

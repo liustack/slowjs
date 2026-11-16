@@ -448,6 +448,18 @@ A profile of the render on linux/amd64 puts the share of the time spent in these
 
 The instructions compare v0.29.9 without the calls to v0.29.10 with them, one run of each. Against v0.29.9, the same tifa on v0.29.10 without the calls changes by no more than 1% on each kind, except the bench pages at the formal layout, +1.61% [+0.49, +2.75], which the mean of the layouts does not show (+0.20% [-0.62, +1.02]). The HTML of the pages is the same byte for byte.
 
+#### img, the void elements, input and style (Unreleased)
+
+The modes 1 to 3 of the start tag write `img` and the void elements, `input`, and a `style` written where it is (emotion's). Counted on the 23 pages of `engine/pgo/pages` with bundles that make the calls tifa's plugin would make, already sending `a` and `button` to the start tag. Both engines have a profile trained again with `engine/pgo/train.sh`. Instructions per render are callgrind's on linux/amd64, summed over the pages of a kind:
+
+| Pages | The engine alone (bundles unchanged) | The calls of the modes |
+| --- | ---: | ---: |
+| the shop's store pages (14) | -0.04% | -1.06% |
+| the shop's workbench pages (6) | -0.01% | -0.94% |
+| tifa's MUI test app (3) | -0.01% | -0.96% |
+
+The engine alone moves a page by -0.28% to +0.03%, the noise of training the profile. With the calls, every page runs fewer instructions: the store's checkout and products pages 1.5% to 2.1% fewer, its post pages 0.2%. The HTML of every page is the same byte for byte, and no call declines. Time was not measured.
+
 ### Object literals that share their shape
 
 [Object literals of the same keys share one shape](changes/objects-and-shapes.md#object-literals-of-the-same-keys-share-one-shape). Against v0.29.4 (c2e07b7d), with the same HTML on the 16 pages. Memory is the engine's `MallocSize` of one VM made by `ssr.Load`, after one render of each page of the app and after 120, with a full collection. Instructions per render of every page of an app are from callgrind at position 0.0 (the difference of 3 renders and 1).

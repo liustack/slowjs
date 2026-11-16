@@ -49,10 +49,11 @@ func TestRegisterTags(t *testing.T) {
 		call     string // a call of __f, and what it gives
 		want     string
 	}{
-		{"start", (*VM).RegisterStartTag, "6",
+		{"start", (*VM).RegisterStartTag, "7",
 			`(() => { var t = [], d = {}; var r = __f(t, { className: 'a', children: 'x<' }, 'p', { viewTransition: null }, Object.prototype.hasOwnProperty, d);
-			  return JSON.stringify([r, t, __f(t, { a: 1 }, 'p', {}, Object.prototype.hasOwnProperty, d) === d]) })()`,
-			`[null,["<p class=\"a\">x&lt;"],true]`},
+			  return JSON.stringify([r, t.slice(), __f(t, { a: 1 }, 'p', {}, Object.prototype.hasOwnProperty, d) === d,
+			    __f(t, { alt: 'a&' }, 'img', { viewTransition: null }, Object.prototype.hasOwnProperty, d, 1), t]) })()`,
+			`[null,["<p class=\"a\">x&lt;"],true,null,["<p class=\"a\">x&lt;","<img alt=\"a&amp;\"/>"]]`},
 		{"end", (*VM).RegisterEndTag, "1", `__f('div') + __f(7)`, `</div></7>`},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -170,6 +171,11 @@ func TestTagsStop(t *testing.T) {
 		{"clean children", `var p = { children: 'a'.repeat(1 << 24) }`, `for (;;) st([], p, 'div', fc, hop, d)`, stopPolls},
 		{"16-bit children", `var p = { children: 'Ā&'.repeat(1 << 23) }`, `for (;;) st([], p, 'div', fc, hop, d)`, stopPolls},
 		{"attribute", `var p = { title: '"'.repeat(1 << 24) }`, `for (;;) st([], p, 'div', fc, hop, d)`, stopPolls},
+		{"self-closing attribute", `var p = { alt: '"'.repeat(1 << 24) }`, `for (;;) st([], p, 'img', fc, hop, d, 1)`, stopPolls},
+		{"self-closing style value", `var p = { style: { width: ' '.repeat(1 << 25) + 'x' + ' '.repeat(1 << 25) } }`, `for (;;) st([], p, 'img', fc, hop, d, 1)`, stopPolls},
+		{"input value", `var p = { value: '"'.repeat(1 << 24), name: 'n' }`, `for (;;) st([], p, 'input', fc, hop, d, 2)`, stopPolls},
+		{"input name", `var p = { type: 'text', name: '<'.repeat(1 << 24) }`, `for (;;) st([], p, 'input', fc, hop, d, 2)`, stopPolls},
+		{"style in place", `var p = { dangerouslySetInnerHTML: { __html: 'a'.repeat(1 << 25) } }`, `for (;;) st([], p, 'style', fc, hop, d, 3)`, stopPolls},
 		// a rope, made flat by the first call
 		{"style value", `var p = { style: { color: ' '.repeat(1 << 25) + 'x' + ' '.repeat(1 << 25) } }`, `for (;;) st([], p, 'div', fc, hop, d)`, stopPolls},
 		// the scan of a style name for a character that is not ASCII reads
@@ -179,6 +185,7 @@ func TestTagsStop(t *testing.T) {
 		{"custom style name", `var p = { style: { ['--' + '&'.repeat(1 << 23)]: 1 } }`, `for (;;) st([], p, 'div', fc, hop, d)`, stopPolls},
 		// the scan of a tag reads the flag every 524,288 characters: up to 53 polls
 		{"tag", `var p = {}, tag = 'a'.repeat(1 << 25)`, `for (;;) st([], p, tag, fc, hop, d)`, 80},
+		{"self-closing tag", `var p = {}, tag = 'a'.repeat(1 << 25)`, `for (;;) st([], p, tag, fc, hop, d, 1)`, 80},
 		{"end tag", `var s = 'a'.repeat(1 << 25), o = { toString() { return s } }`, `for (;;) et(o)`, stopPolls},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -265,6 +272,13 @@ func TestTagsMemoryLimit(t *testing.T) {
 	      if (T.length !== 1) throw new Error('target changed');
 	      st(T, P[i], 'div', fc, hop, d);
 	      if (T.pop() !== '<div data-n' + i + '="v" style="w' + i + ':1px">') throw new Error('wrote ' + i);
+	      if (T.length !== 1) throw new Error('target changed');
+	      st(T, P[i], 'img', fc, hop, d, 1);
+	      if (T.pop() !== '<img data-n' + i + '="v" style="w' + i + ':1px"/>') throw new Error('wrote img ' + i);
+	      st(T, P[i], 'input', fc, hop, d, 2);
+	      if (T.pop() !== '<input data-n' + i + '="v" style="w' + i + ':1px"/>') throw new Error('wrote input ' + i);
+	      st(T, P[i], 'style', fc, hop, d, 3);
+	      if (T.pop() !== '<style data-n' + i + '="v" style="w' + i + ':1px"></style>') throw new Error('wrote style ' + i);
 	      if (et(E[i]) !== '</t' + i + '>') throw new Error('end ' + i);
 	    }
 	    return P.length;

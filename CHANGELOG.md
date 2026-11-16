@@ -4,6 +4,10 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 
 ## [Unreleased]
 
+### Added
+
+- The start tag function of `VM.RegisterStartTag` takes a seventh argument, the mode: 1 writes `img` and the void elements as React DOM's `pushSelfClosing` does, 2 writes `input` and 3 an inline `style` such as emotion's as its `pushStartInstance` does. With tifa's plugin calling it, the store pages run 1.1% fewer instructions, the workbench and MUI pages 0.9% to 1.0% fewer, with the same HTML ([performance.md](docs/performance.md#img-the-void-elements-input-and-style-unreleased)).
+
 ### Changed
 
 - A regexp without a literal every match must hold no longer carries 38 bytes for one: its plan after the bytecode is 36 bytes again, as in v0.31.0, and a regexp with a literal carries 6 bytes and 2 for each of its units ([regexp.md](docs/changes/regexp.md#a-literal-every-match-holds)).

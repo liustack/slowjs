@@ -1342,17 +1342,25 @@ JSValue JS_NewEscapeTextFunction(JSContext *ctx, const char *name, size_t name_l
 JSValue JS_NewCopyPropsFunction(JSContext *ctx, const char *name, size_t name_len);
 /* Returns a function named by the name_len bytes at name that writes the start
    tag of an element as React DOM's pushStartGenericElement does (react-dom
-   19.3, the server renderer). Its six arguments are target, props, type and
-   formatContext, those of pushStartGenericElement, React's hasOwnProperty and
-   decline, an object of the caller. It pushes the start tag onto target as one
-   string, with the escaped text after it when props.children is a string, and
-   returns what pushStartGenericElement returns: null for a string children,
-   else props.children (null when there is none). It writes only where React's
-   functions could do nothing else (see js_start_tag in quickjs.c), and
-   otherwise returns decline having changed nothing, for the caller to run
-   React's function. It throws only when the engine has no memory or the host
-   interrupts it, with target unchanged. Its length is 6, it has no prototype
-   property and cannot be called with new. */
+   19.3, the server renderer). Its first six arguments are target, props,
+   type and formatContext, those of pushStartGenericElement, React's
+   hasOwnProperty and decline, an object of the caller. It pushes the start
+   tag onto target as one string, with the escaped text after it when
+   props.children is a string, and returns what pushStartGenericElement
+   returns: null for a string children, else props.children (null when there
+   is none). It writes only where React's functions could do nothing else (see
+   js_start_tag in quickjs.c), and otherwise returns decline having changed
+   nothing, for the caller to run React's function. The seventh argument, a
+   mode, picks the function of React: undefined or 0 pushStartGenericElement,
+   1 pushSelfClosing, for img and the void elements ("/>" in place of ">", no
+   text, a decline for children, and null returned), 2 the case "input" of
+   pushStartInstance (as 1, with name, the form attributes, checked and value
+   written last as React does, and a decline for a formAction that is a
+   function), 3 the branch of the case "style" that writes the element where
+   it is (the attributes, ">", the __html of dangerouslySetInnerHTML, the end
+   tag, and a decline for children). It declines any other mode. It throws only when the engine has no memory or the host interrupts
+   it, with target unchanged. Its length is 7, it has no prototype property
+   and cannot be called with new. */
 JSValue JS_NewStartTagFunction(JSContext *ctx, const char *name, size_t name_len);
 /* Returns a function named by the name_len bytes at name that returns
    "</" + tag + ">" for its argument tag, as React DOM's endChunkForTag does.

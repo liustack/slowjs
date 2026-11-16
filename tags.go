@@ -18,14 +18,30 @@ import (
 // is written in C inside the engine and writes the whole tag in one call, a
 // few times faster than those functions.
 //
-// The function takes six arguments: target, props, type and formatContext,
+// The function takes seven arguments: target, props, type and formatContext,
 // those of pushStartGenericElement, then React's hasOwnProperty (the
 // Object.prototype.hasOwnProperty it took when it loaded) and decline, an
 // object only the caller holds. It pushes onto target one string, the start
 // tag with its attributes and, when props.children is a string, the escaped
 // text after it, and returns what pushStartGenericElement returns: null when
 // children is a string, else props.children, or null when there is none.
-// React pushes the same text in several strings. When it cannot be sure to
+// React pushes the same text in several strings. A seventh argument, the
+// mode, makes it stand in for another function of React: 1 for
+// pushSelfClosing, which React DOM writes img (after its image preload) and
+// the void elements such as br and hr with: the attributes, "/>" and no text,
+// null returned, and a decline when children is set, where React throws. 2 is
+// the case "input" of pushStartInstance: the same, with name, formAction,
+// formEncType, formMethod, formTarget, checked and value (or defaultChecked
+// and defaultValue) written after the other props, as React writes them, and a
+// decline when formAction is a function. 3 is the branch of the case "style"
+// of pushStartInstance that writes the element where it is, as emotion's style
+// elements are written: the attributes, ">", the __html of
+// dangerouslySetInnerHTML as it is and the end tag, null returned, and a
+// decline for children and for an __html that is not a string, null or
+// undefined.
+// undefined and 0 are pushStartGenericElement, and any other mode declines,
+// so that a script that asks for a mode the engine does not have gets
+// React's function. When it cannot be sure to
 // write what React writes it returns decline, having changed nothing, and the
 // script runs React's function. That is the case for an unusual target (not a
 // plain array, an index property ever put on Array.prototype or
