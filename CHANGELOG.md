@@ -11,6 +11,7 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 ### Changed
 
 - A write of a property by name keeps, at each place in the code, the slot it last set and, when it added the key, the shape the object moved to, and takes them again without a lookup. On a linux/amd64 machine with an AMD EPYC 7B13 the V8 suite takes 3.3% less time (Boyer 12% less, Richards 5% less, NavierStokes 2% more), and tifa's pages show no change beyond 1%, for up to 1% more memory in a VM.
+- `Object.getOwnPropertyDescriptor` makes each descriptor at once at a shape the context keeps, where it added the four keys one by one: about 580 fewer instructions a call, and 0.1% to 0.2% fewer in a render of tifa's store and workbench pages, whose Radix components call it for each element.
 - `JSON.stringify` remembers which strings it wrote with nothing to escape and copies them the next time without looking at them. Writing a small options object again runs 16% fewer instructions, 300 orders 21% fewer, and the react-intl page 1.9% fewer ([changes](docs/changes/README.md#json)).
 
 ### Fixed

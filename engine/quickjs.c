@@ -766,6 +766,10 @@ struct JSContext {
     JSShape *mapped_arguments_shape;  /* shape for mapped arguments objects */
     JSShape *regexp_shape;  /* shape for regexp objects */
     JSShape *regexp_result_shape;  /* shape for regexp result objects */
+    /* the shapes of the objects Object.getOwnPropertyDescriptor makes,
+       a data descriptor (0) and an accessor one (1), at their first use
+       (js_new_desc_object) */
+    JSShape *desc_shape[2];
     /* for each prototype of new functions, the empty shape and the shape
        with length and name, or NULL (see js_function_shape) */
     JSShape *func_shapes[4][2];
@@ -4172,6 +4176,10 @@ static void JS_MarkContext(JSRuntime *rt, JSContext *ctx,
 
     if (ctx->regexp_result_shape)
         mark_func(rt, &ctx->regexp_result_shape->header);
+    for(i = 0; i < countof(ctx->desc_shape); i++) {
+        if (ctx->desc_shape[i])
+            mark_func(rt, &ctx->desc_shape[i]->header);
+    }
 
     for(i = 0; i < countof(ctx->func_shapes); i++) {
         if (ctx->func_shapes[i][0]) {
@@ -4264,6 +4272,8 @@ void JS_FreeContext(JSContext *ctx)
     js_free_shape_null(ctx->rt, ctx->mapped_arguments_shape);
     js_free_shape_null(ctx->rt, ctx->regexp_shape);
     js_free_shape_null(ctx->rt, ctx->regexp_result_shape);
+    js_free_shape_null(ctx->rt, ctx->desc_shape[0]);
+    js_free_shape_null(ctx->rt, ctx->desc_shape[1]);
 
     list_del(&ctx->link);
     remove_gc_object(&ctx->header);
@@ -48637,6 +48647,55 @@ static JSValue js_object___defineGetter__(JSContext *ctx, JSValueConst this_val,
     }
 }
 
+/* The object FromPropertyDescriptor makes for desc: an ordinary object of
+   Object.prototype with value, writable, enumerable and configurable, or
+   get, set, enumerable and configurable for an accessor, in that order,
+   each a plain data property (CreateDataPropertyOrThrow on a new object,
+   which no setter of a prototype sees). The shape of each form is the one
+   an object literal of those keys has (js_shape_of_keys), which defining
+   the keys one by one leads to, made at the first use in ctx and kept
+   there, so that a descriptor is made with no lookup of a key: a shape
+   held twice is copied before an object of it changes. It takes nothing
+   of desc. */
+static JSValue js_new_desc_object(JSContext *ctx, const JSPropertyDescriptor *desc)
+{
+    static const JSAtom keys[2][4] = {
+        { JS_ATOM_value, JS_ATOM_writable, JS_ATOM_enumerable, JS_ATOM_configurable },
+        { JS_ATOM_get, JS_ATOM_set, JS_ATOM_enumerable, JS_ATOM_configurable },
+    };
+    int acc = (desc->flags & JS_PROP_GETSET) != 0;
+    JSShape *sh = ctx->desc_shape[acc];
+    JSValue obj;
+    JSObject *p;
+
+    if (unlikely(!sh)) {
+        sh = js_shape_of_keys(ctx, JS_VALUE_GET_OBJ(ctx->class_proto[JS_CLASS_OBJECT]),
+                              keys[acc], 4);
+        if (!sh)
+            return JS_ThrowOutOfMemory(ctx);
+        ctx->desc_shape[acc] = sh;
+    }
+    if (likely(!sh->inline_grew &&
+               offsetof(JSObject, u) + sizeof(JSProperty) * (size_t)sh->prop_size <=
+               JS_OBJ_INLINE_MAX_SIZE))
+        obj = js_new_object_inline(ctx, js_dup_shape(sh));
+    else
+        obj = JS_NewObjectFromShape(ctx, js_dup_shape(sh), JS_CLASS_OBJECT, NULL);
+    if (JS_IsException(obj))
+        return obj;
+    p = JS_VALUE_GET_OBJ(obj);
+    if (acc) {
+        p->prop[0].u.value = JS_DupValue(ctx, desc->getter);
+        p->prop[1].u.value = JS_DupValue(ctx, desc->setter);
+    } else {
+        p->prop[0].u.value = JS_DupValue(ctx, desc->value);
+        p->prop[1].u.value = JS_NewBool(ctx, desc->flags & JS_PROP_WRITABLE);
+    }
+    p->prop[2].u.value = JS_NewBool(ctx, desc->flags & JS_PROP_ENUMERABLE);
+    p->prop[3].u.value = JS_NewBool(ctx, desc->flags & JS_PROP_CONFIGURABLE);
+    return obj;
+}
+
 static JSValue js_object_getOwnPropertyDescriptor(JSContext *ctx, JSValueConst this_val,
                                                   int argc, JSValueConst *argv, int magic)
 {
@@ -48644,7 +48703,7 @@ static JSValue js_object_getOwnPropertyDescriptor(JSContext *ctx, JSValueConst t
     JSAtom atom;
     JSValue ret, obj;
     JSPropertyDescriptor desc;
-    int res, flags;
+    int res;
 
     if (magic) {
         /* Reflect.getOwnPropertyDescriptor case */
@@ -48666,35 +48725,16 @@ static JSValue js_object_getOwnPropertyDescriptor(JSContext *ctx, JSValueConst t
         if (res < 0)
             goto exception;
         if (res) {
-            ret = JS_NewObject(ctx);
-            if (JS_IsException(ret))
-                goto exception1;
-            flags = JS_PROP_C_W_E | JS_PROP_THROW;
-            if (desc.flags & JS_PROP_GETSET) {
-                if (JS_DefinePropertyValue(ctx, ret, JS_ATOM_get, JS_DupValue(ctx, desc.getter), flags) < 0
-                ||  JS_DefinePropertyValue(ctx, ret, JS_ATOM_set, JS_DupValue(ctx, desc.setter), flags) < 0)
-                    goto exception1;
-            } else {
-                if (JS_DefinePropertyValue(ctx, ret, JS_ATOM_value, JS_DupValue(ctx, desc.value), flags) < 0
-                ||  JS_DefinePropertyValue(ctx, ret, JS_ATOM_writable,
-                                           JS_NewBool(ctx, desc.flags & JS_PROP_WRITABLE), flags) < 0)
-                    goto exception1;
-            }
-            if (JS_DefinePropertyValue(ctx, ret, JS_ATOM_enumerable,
-                                       JS_NewBool(ctx, desc.flags & JS_PROP_ENUMERABLE), flags) < 0
-            ||  JS_DefinePropertyValue(ctx, ret, JS_ATOM_configurable,
-                                       JS_NewBool(ctx, desc.flags & JS_PROP_CONFIGURABLE), flags) < 0)
-                goto exception1;
+            ret = js_new_desc_object(ctx, &desc);
             js_free_desc(ctx, &desc);
+            if (JS_IsException(ret))
+                goto exception;
         }
     }
     JS_FreeAtom(ctx, atom);
     JS_FreeValue(ctx, obj);
     return ret;
 
-exception1:
-    js_free_desc(ctx, &desc);
-    JS_FreeValue(ctx, ret);
 exception:
     JS_FreeAtom(ctx, atom);
     JS_FreeValue(ctx, obj);

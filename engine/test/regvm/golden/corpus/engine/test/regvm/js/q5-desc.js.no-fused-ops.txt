@@ -16,6 +16,6 @@ result v=5 falsetruetrue
 result v=6 falsetruefalse
 result k0,m0,k1,m2,k3,k4,m4 v=g falsetruefalse v=p truefalsefalse v=3 falsefalsetrue v=1 falsefalsefalse
 result k0,m0,k1,m2,k3,k4,m4 v=g falsetruefalse v=p truefalsefalse v=3 falsefalsetrue v=1 falsefalsefalse
-mem-end obj=384 atom=588 shape=282 prop=1925 jsfunc=7 cfunc=252 array=3 fast_array=3 elements=18 binary=0
-mem-gc obj=384 atom=588 shape=282 prop=1925 jsfunc=7 cfunc=252 array=3 fast_array=3 elements=18 binary=0
+mem-end obj=384 atom=588 shape=281 prop=1925 jsfunc=7 cfunc=252 array=3 fast_array=3 elements=18 binary=0
+mem-gc obj=384 atom=588 shape=281 prop=1925 jsfunc=7 cfunc=252 array=3 fast_array=3 elements=18 binary=0
 --- status exit 0

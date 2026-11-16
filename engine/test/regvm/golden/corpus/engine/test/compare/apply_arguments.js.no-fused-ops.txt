@@ -169,6 +169,6 @@ result 10000 arguments, strict: number:118904
 result callee throws: string:throws TypeError k2
 result callee throws, strict: string:throws TypeError k3
 result callee throws, caught by the caller: string:caught k4 2
-mem-end obj=275 atom=695 shape=156 prop=1244 jsfunc=49 cfunc=143 array=11 fast_array=11 elements=10192 binary=0
-mem-gc obj=275 atom=695 shape=156 prop=1244 jsfunc=49 cfunc=143 array=11 fast_array=11 elements=10192 binary=0
+mem-end obj=275 atom=695 shape=153 prop=1244 jsfunc=49 cfunc=143 array=11 fast_array=11 elements=10192 binary=0
+mem-gc obj=275 atom=695 shape=153 prop=1244 jsfunc=49 cfunc=143 array=11 fast_array=11 elements=10192 binary=0
 --- status exit 0
