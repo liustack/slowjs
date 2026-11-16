@@ -639,8 +639,8 @@ func TestPollKill(t *testing.T) {
 	// sets the flag, and so does an inner script entry in it.
 	g := newVM(t, small)
 	gb, _ := g.Stack()
-	testFlag = 0
-	g.SetInterruptFlag(uintptr(unsafe.Pointer(&testFlag)))
+	testFlag[0] = 0
+	g.SetInterruptFlag(uintptr(unsafe.Pointer(&testFlag[0])))
 	g.SetKillGrace(0)
 	g.Enter()
 	g.Interrupt()
@@ -653,8 +653,8 @@ func TestPollKill(t *testing.T) {
 		Poll(gb + 64)
 	}
 	g.Leave()
-	if g.Broken() || g.Killed() || testFlag != 1 {
-		t.Fatalf("an entry that runs no script: broken %v, killed %v, flag %d", g.Broken(), g.Killed(), testFlag)
+	if g.Broken() || g.Killed() || testFlag[0] != 1 {
+		t.Fatalf("an entry that runs no script: broken %v, killed %v, flag %d", g.Broken(), g.Killed(), testFlag[0])
 	}
 	g.Leave()
 	// The next outermost entry decides again, and counts its polls anew.
@@ -705,20 +705,20 @@ func TestPollStallNoKill(t *testing.T) {
 func TestPollDeadline(t *testing.T) {
 	v := newVM(t, small)
 	base, _ := v.Stack()
-	testFlag = 0
-	v.SetInterruptFlag(uintptr(unsafe.Pointer(&testFlag)))
+	testFlag[0] = 0
+	v.SetInterruptFlag(uintptr(unsafe.Pointer(&testFlag[0])))
 	v.SetKillGrace(-1)
 	v.EnterScript(50 * time.Millisecond)
 	Poll(base + 64)
-	if v.Interrupted() || testFlag != 0 {
+	if v.Interrupted() || testFlag[0] != 0 {
 		t.Fatal("interrupted before the deadline")
 	}
 	v.EnterScript(time.Hour)
 	v.Enter()
 	time.Sleep(60 * time.Millisecond)
 	Poll(base + 64)
-	if !v.Interrupted() || testFlag != 1 {
-		t.Fatalf("past the deadline: interrupted %v, flag %d", v.Interrupted(), testFlag)
+	if !v.Interrupted() || testFlag[0] != 1 {
+		t.Fatalf("past the deadline: interrupted %v, flag %d", v.Interrupted(), testFlag[0])
 	}
 	v.Leave()
 	v.Leave()
@@ -736,7 +736,7 @@ func TestPollDeadline(t *testing.T) {
 		c.enter()
 		time.Sleep(2 * time.Millisecond)
 		Poll(base + 64)
-		if v.Interrupted() || testFlag != 0 {
+		if v.Interrupted() || testFlag[0] != 0 {
 			t.Fatalf("%s: interrupted", c.name)
 		}
 		v.Leave()
@@ -788,9 +788,39 @@ func TestPollDeadline(t *testing.T) {
 	y.Leave()
 }
 
-// testFlag stands for the engine's interrupt flag: a global, which does not
-// move as a variable of a goroutine's stack could.
-var testFlag int32
+// testFlag stands for the engine's interrupt flag and the word after it,
+// where the engine marks the freeing of the code of a compile that stopped: a global, which does not move as a variable of a goroutine's stack
+// could.
+var testFlag [2]int32
+
+// TestFreeingCodeNotCounted: while the word after the flag is not 0, a poll
+// after Interrupt sets the flag but counts neither in StopPolls nor toward
+// the kill, however many come. Once it is 0 again the polls count from
+// where they were, and the poll after KillPolls kills.
+func TestFreeingCodeNotCounted(t *testing.T) {
+	v := newVM(t, small)
+	base, _ := v.Stack()
+	testFlag = [2]int32{}
+	v.SetInterruptFlag(uintptr(unsafe.Pointer(&testFlag[0])))
+	v.SetKillGrace(0)
+	v.EnterScript(0)
+	v.Interrupt()
+	for range 10 {
+		Poll(base + 64)
+	}
+	testFlag[1] = 1
+	for range 4 * KillPolls {
+		Poll(base + 64)
+	}
+	if v.Broken() || v.Killed() || v.StopPolls() != 10 || testFlag[0] != 1 {
+		t.Fatalf("polls while the code is freed: broken %v, killed %v, %d polls counted, flag %d", v.Broken(), v.Killed(), v.StopPolls(), testFlag[0])
+	}
+	testFlag[1] = 0
+	if n := pollUntilKilled(t, base+64); n != KillPolls-9 {
+		t.Fatalf("killed at poll %d after the freeing, want %d", n, KillPolls-9)
+	}
+	v.Leave()
+}
 
 // TestInterruptFlag: a poll after Interrupt sets the engine's interrupt
 // flag, a poll before it does not, and the outermost Enter clears it. A flag
@@ -798,32 +828,32 @@ var testFlag int32
 func TestInterruptFlag(t *testing.T) {
 	v := newVM(t, small)
 	base, _ := v.Stack()
-	testFlag = 0
-	v.SetInterruptFlag(uintptr(unsafe.Pointer(&testFlag)))
+	testFlag[0] = 0
+	v.SetInterruptFlag(uintptr(unsafe.Pointer(&testFlag[0])))
 	v.SetKillGrace(-1)
 	v.Enter()
 	Poll(base + 64)
-	if testFlag != 0 {
-		t.Fatalf("a poll with no Interrupt set the flag to %d", testFlag)
+	if testFlag[0] != 0 {
+		t.Fatalf("a poll with no Interrupt set the flag to %d", testFlag[0])
 	}
 	v.Interrupt()
 	Poll(base + 64)
-	if testFlag != 1 {
-		t.Fatalf("a poll after Interrupt left the flag at %d", testFlag)
+	if testFlag[0] != 1 {
+		t.Fatalf("a poll after Interrupt left the flag at %d", testFlag[0])
 	}
 	v.Enter()
-	if testFlag != 1 {
+	if testFlag[0] != 1 {
 		t.Fatal("an inner Enter cleared the flag")
 	}
 	v.Leave()
 	v.Leave()
 	v.Enter()
-	if testFlag != 0 || v.Interrupted() {
-		t.Fatalf("the outermost Enter left the flag at %d, interrupted %v", testFlag, v.Interrupted())
+	if testFlag[0] != 0 || v.Interrupted() {
+		t.Fatalf("the outermost Enter left the flag at %d, interrupted %v", testFlag[0], v.Interrupted())
 	}
 	v.Leave()
 	mustPanic(t, "a flag at 0", func() { v.SetInterruptFlag(0) })
-	mustPanic(t, "a flag off a word", func() { v.SetInterruptFlag(uintptr(unsafe.Pointer(&testFlag)) + 1) })
+	mustPanic(t, "a flag off a word", func() { v.SetInterruptFlag(uintptr(unsafe.Pointer(&testFlag[0])) + 1) })
 }
 
 func mustKeep(t *testing.T, v *VM, x any) uint32 {

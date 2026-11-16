@@ -112,11 +112,9 @@ func TestParseStops(t *testing.T) {
 // short tokens with the interrupt, wherever in the call it comes, and the VM
 // goes on. The parser read the flag only in the scans of long tokens and the
 // compile passes read none, so a timeout in the compile of these sources saw
-// more than 1000 polls and killed the VM (ErrKilled). The polls
-// after the request are now nearly all those of freeing the code made so far,
-// about one for each 10,000 instructions of it, which count toward the kill
-// as any other (TestKillWhileFreeing): these sources of 3 and 4 MB keep that
-// under half of KillPolls.
+// more than 1000 polls and killed the VM (ErrKilled). The freeing of the
+// code made so far, about one poll for each 10,000 instructions of it, does
+// not count (TestStoppedCompileFreeNotKilled).
 func TestCompileStops(t *testing.T) {
 	for _, c := range []struct{ name, setup string }{
 		{"an array literal", `var s = '[' + '1,'.repeat(1 << 21) + '1]'`},

@@ -312,3 +312,93 @@ func TestKillWhileFreeing(t *testing.T) {
 		}
 	}
 }
+
+// wantKillWhileFreeing runs the case of 100,000 elements of
+// TestKillWhileFreeing on m: the poll after KillPolls kills the call. A VM
+// that still counts every poll of a script toward the kill gives it, so the
+// mark of the freeing of a stopped compile (TestStoppedCompileFreeNotKilled)
+// was not left set. m is good only for Close afterwards.
+func wantKillWhileFreeing(t *testing.T, m *VM, what string) {
+	t.Helper()
+	mustHost(t, m, "stop", func([]any) (any, error) {
+		m.Interrupt()
+		return nil, nil
+	})
+	if _, err := m.Eval(`globalThis.go = function (n) {
+	var r = Array.from({length: n}, (_, i) => i);
+	stop();
+	for (;;) {}
+}`, EvalGlobal); err != nil {
+		t.Fatal(err)
+	}
+	m.h.SetKillGrace(0)
+	m.h.SetPollInterval(100)
+	_, err := m.Eval(`go(100000)`, EvalGlobal)
+	if polls := m.h.StopPolls(); !errors.Is(err, ErrKilled) || polls != gohost.KillPolls+1 {
+		t.Fatalf("%s: a script that frees 100,000 elements after its stop got %v after %d polls saw the request, want a kill at poll %d", what, err, polls, gohost.KillPolls+1)
+	}
+}
+
+// TestStoppedCompileFreeNotKilled stops the compile of a source of 8.4 MB,
+// a function of 1.4 million statements, at two, five and nine tenths of its
+// time (in the parse and in the passes), with no grace. The compile then
+// frees the code it made, in the pass that stopped and in the function defs
+// and functions made of them, about one poll for each 10,000 instructions:
+// more than KillPolls polls for that much code, which killed the VM. Those
+// polls do not count toward the kill (JS_GetInterruptFlag in
+// engine/quickjs.h), so the call ends interrupted with few polls counted,
+// and the VM goes on. The VM then still kills a script that frees what it
+// made for longer than KillPolls polls (wantKillWhileFreeing), so the end
+// of the compile cleared the mark.
+func TestStoppedCompileFreeNotKilled(t *testing.T) {
+	m := newTestVM(t)
+	if _, err := m.Eval(`var a = 0, s = '(function(){' + 'a=a+1;'.repeat(1400000) + '})'; 0`, EvalGlobal); err != nil {
+		t.Fatal(err)
+	}
+	const call = `(0, eval)(s); 0`
+	start := time.Now()
+	if _, err := m.Eval(call, EvalGlobal); err != nil {
+		t.Fatal(err)
+	}
+	whole := time.Since(start)
+	m.h.SetKillGrace(0)
+	for _, part := range []int64{2, 5, 9} {
+		if err := m.SetEvalTimeout(time.Duration(int64(whole) * part / 10)); err != nil {
+			t.Fatal(err)
+		}
+		before := m.h.Polls()
+		_, err := m.Eval(`for (;;) `+call, EvalGlobal)
+		polls, counted := m.h.Polls()-before, m.h.StopPolls()
+		t.Logf("stopped at %d/10 of a call of %v: %d polls counted toward the kill, %d polls in the call", part, whole, counted, polls)
+		var e *Error
+		if errors.Is(err, ErrKilled) || !errors.As(err, &e) || !e.Interrupted || !e.Uncatchable {
+			t.Fatalf("stopped at %d/10 of a call of %v: got %v (killed %v) after %d polls counted toward the kill, want interrupted", part, whole, err, errors.Is(err, ErrKilled), counted)
+		}
+		if counted > gohost.KillPolls/2 {
+			t.Errorf("stopped at %d/10 of a call of %v: %d polls counted toward the kill, want at most %d", part, whole, counted, gohost.KillPolls/2)
+		}
+		if err := m.SetEvalTimeout(0); err != nil {
+			t.Fatal(err)
+		}
+		if v, err := m.Eval(`1+1`, EvalGlobal); err != nil || v != 2 {
+			t.Fatalf("the VM after the stop: 1+1 got %v, %v", v, err)
+		}
+	}
+	wantKillWhileFreeing(t, m, "after the stopped compiles")
+}
+
+// TestCompileOutOfMemoryLeavesNoMark: a compile that runs out of memory
+// leaves through the exits a stopped one takes (js_compile_end), and the VM
+// still kills a script that frees for longer than KillPolls polls after its
+// stop.
+func TestCompileOutOfMemoryLeavesNoMark(t *testing.T) {
+	m := newTestVM(t)
+	if _, err := m.Eval(`var a = 0, s = '(function(){' + 'a=a+1;'.repeat(1 << 18) + '})'; 0`, EvalGlobal); err != nil {
+		t.Fatal(err)
+	}
+	m.SetMemoryLimit(uintptr(vmMemory(m).Fmalloc_size) + 1<<20)
+	_, err := m.Eval(`(0, eval)(s); 0`, EvalGlobal)
+	m.SetMemoryLimit(^uintptr(0))
+	wantOutOfMemory(t, "a compile of 1.5 MB with 1 MB left", err)
+	wantKillWhileFreeing(t, m, "after a compile out of memory")
+}

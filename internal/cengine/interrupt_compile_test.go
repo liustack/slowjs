@@ -28,8 +28,8 @@ const compileStopPolls = 16
 // capture_by_value follows, and two loops whose work grows as a square: the
 // jumps resolve_labels makes shorter, each of which moves the code after it,
 // and the vars of an eval, each looked for among the variables of the
-// function around it. They are small enough that what a stop frees after it,
-// a few polls, leaves room for the gap between two readings.
+// function around it. The polls of the freeing of the code a stopped compile
+// made are not counted (JS_GetInterruptFlag in engine/quickjs.h).
 var compileCases = []struct{ name, setup, source string }{
 	{"an array literal of 24,576 numbers", `var S = '[' + '1,'.repeat(3 << 13)`, `S + n++ + ']'`},
 	{"8,192 statements at the top level", `var a = 0, S = 'a=a+1;'.repeat(1 << 13)`, `S + n++`},

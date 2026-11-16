@@ -481,6 +481,12 @@ struct JSRuntime {
 
     /* see JS_GetInterruptFlag */
     volatile int interrupt_flag;
+    /* not 0 from the reading of the flag that stops a compile to the end
+       of that compile (JS_ThrowInterrupted, js_compile_end): the host reads
+       it next to the flag (JS_GetInterruptFlag) */
+    volatile int freeing_code;
+    /* a compile runs (__JS_EvalInternal) */
+    BOOL compiling;
     /* the work the parser and the compiler may do before they read the
        flag again (js_compile_poll) */
     int compile_left;
@@ -3344,6 +3350,11 @@ void JS_SetGCThreshold(JSRuntime *rt, size_t gc_threshold)
 #define malloc(s) malloc_is_forbidden(s)
 #define free(p) free_is_forbidden(p)
 #define realloc(p,s) realloc_is_forbidden(p,s)
+
+/* the host reads freeing_code in the word after the flag */
+_Static_assert(offsetof(JSRuntime, freeing_code) ==
+               offsetof(JSRuntime, interrupt_flag) + sizeof(int),
+               "freeing_code after interrupt_flag");
 
 volatile int *JS_GetInterruptFlag(JSRuntime *rt)
 {
@@ -12628,6 +12639,15 @@ static JSValue JS_ThrowTypeErrorInvalidClass(JSContext *ctx, int class_id)
 
 static void JS_ThrowInterrupted(JSContext *ctx)
 {
+    /* A compile that stops then frees the code it made, in the passes that
+       fail and in the frees of the function defs and of the functions made
+       of them: about one poll for each 10,000 instructions of code, more
+       than a kill allows for a source of 8 MB. That work is bounded by what
+       the compile already did, which read the flag as it went, so the host
+       leaves its polls out of the kill (freeing_code) until the compile has
+       returned (js_compile_end). */
+    if (ctx->rt->compiling)
+        ctx->rt->freeing_code = 1;
     /* the flag stops while an uncatchable exception is pending
        (JS_INTERRUPT_UNCATCHABLE): that exception ends the call, and no
        error is made in vain, with no memory left for it */
@@ -45314,6 +45334,15 @@ JSValue JS_EvalFunction(JSContext *ctx, JSValue fun_obj)
     return ret;
 }
 
+/* the end of a compile (__JS_EvalInternal): the freeing of what a stop left
+   is done, and its polls count toward a kill again (JS_ThrowInterrupted) */
+static void js_compile_end(JSRuntime *rt, BOOL was)
+{
+    rt->compiling = was;
+    if (!was)
+        rt->freeing_code = 0;
+}
+
 /* 'input' must be zero terminated i.e. input[input_len] = '\0'. */
 static JSValue __JS_EvalInternal(JSContext *ctx, JSValueConst this_obj,
                                  const char *input, size_t input_len,
@@ -45327,6 +45356,7 @@ static JSValue __JS_EvalInternal(JSContext *ctx, JSValueConst this_obj,
     JSFunctionBytecode *b;
     JSFunctionDef *fd;
     JSModuleDef *m;
+    BOOL was_compiling = ctx->rt->compiling;
 
     js_parse_init(ctx, s, input, input_len, filename);
     if (skip_shebang(&s->buf_ptr, s->buf_end, &ctx->rt->interrupt_flag)) {
@@ -45367,6 +45397,7 @@ static JSValue __JS_EvalInternal(JSContext *ctx, JSValueConst this_obj,
                              s->buf_start, &s->get_line_col_cache);
     if (!fd)
         goto fail1;
+    ctx->rt->compiling = TRUE;
     s->cur_func = fd;
     fd->eval_type = eval_type;
     fd->has_this_binding = (eval_type != JS_EVAL_TYPE_DIRECT);
@@ -45403,6 +45434,7 @@ static JSValue __JS_EvalInternal(JSContext *ctx, JSValueConst this_obj,
     fail:
         free_token(s, &s->token);
         js_free_function_def(ctx, fd);
+        js_compile_end(ctx->rt, was_compiling);
         goto fail1;
     }
 
@@ -45411,6 +45443,7 @@ static JSValue __JS_EvalInternal(JSContext *ctx, JSValueConst this_obj,
 
     /* create the function object and all the enclosed functions */
     fun_obj = js_create_function(ctx, fd);
+    js_compile_end(ctx->rt, was_compiling);
     if (JS_IsException(fun_obj))
         goto fail1;
     /* Could add a flag to avoid resolution if necessary */

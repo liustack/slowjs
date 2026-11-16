@@ -263,8 +263,8 @@ TEXT ·js_object_getOwnPropertyDescriptor(SB), $136-16
 	WORD $0x1b087d0b
 	WORD $0x8b568129
 	WORD $0x1b082d2b
-	WORD $0xb94a6148
-	WORD $0xf9453949
+	WORD $0xb94a6948
+	WORD $0xf9453d49
 	WORD $0x4b0803e8
 	WORD $0x1ac82568
 	WORD $0xf8685920
@@ -1767,7 +1767,7 @@ TEXT ·js_string_match(SB), $152-16
 	WORD $0xeb09011f
 	WORD $0x54ffeaa1
 	WORD $0xf9400975
-	WORD $0xf955aea8
+	WORD $0xf955b2a8
 	WORD $0xeb16011f
 	WORD $0x54ffea20
 	WORD $0x91028154
@@ -2588,7 +2588,7 @@ TEXT ·js_string_replace(SB), $312-16
 	WORD $0x54ffed01
 	WORD $0xf94097e8
 	WORD $0xf9400915
-	WORD $0xf955aea8
+	WORD $0xf955b2a8
 	WORD $0xeb16011f
 	WORD $0x54ffec60
 	WORD $0xf9409fe8
@@ -2638,7 +2638,7 @@ TEXT ·js_string_replace(SB), $312-16
 	WORD $0xeb09011f
 	WORD $0x54ffa281
 	WORD $0xf94009d5
-	WORD $0xf955aea8
+	WORD $0xf955b2a8
 	WORD $0xeb16011f
 	WORD $0x54ffa200
 	WORD $0x910341b4
@@ -10918,7 +10918,7 @@ TEXT ·js_iterator_helper_next(SB), $168-16
 	WORD $0xeb09011f
 	WORD $0x54fff2e1
 	WORD $0xf94009b5
-	WORD $0xf955aea8
+	WORD $0xf955b2a8
 	WORD $0xeb16011f
 	WORD $0x54fff260
 	WORD $0x91040154
@@ -11219,7 +11219,7 @@ TEXT ·js_iterator_helper_next(SB), $168-16
 	WORD $0xeb09011f
 	WORD $0x54ffebe1
 	WORD $0xf9400995
-	WORD $0xf955aea8
+	WORD $0xf955b2a8
 	WORD $0xeb16011f
 	WORD $0x54ffeb60
 	WORD $0x91040174
@@ -11877,7 +11877,7 @@ TEXT ·js_iterator_concat_next(SB), $168-16
 	WORD $0xeb09011f
 	WORD $0x54ffe201
 	WORD $0xf9400955
-	WORD $0xf955aea8
+	WORD $0xf955b2a8
 	WORD $0xeb16011f
 	WORD $0x54ffe180
 	WORD $0x91028174
@@ -12251,8 +12251,8 @@ TEXT ·js_create_iterator_helper(SB), $168-16
 	WORD $0x1b087d0b
 	WORD $0x8b568129
 	WORD $0x1b082d2b
-	WORD $0xb94a6148
-	WORD $0xf9453949
+	WORD $0xb94a6948
+	WORD $0xf9453d49
 	WORD $0x4b0803e8
 	WORD $0x1ac82568
 	WORD $0xf8685920
@@ -12720,7 +12720,7 @@ TEXT ·js_iterator_proto_func(SB), $152-16
 	WORD $0xeb09011f
 	WORD $0x54fff361
 	WORD $0xf9400975
-	WORD $0xf955aea8
+	WORD $0xf955b2a8
 	WORD $0xeb16011f
 	WORD $0x54fff2e0
 	WORD $0x91020154
@@ -12888,7 +12888,7 @@ TEXT ·js_iterator_proto_func(SB), $152-16
 	WORD $0xeb09011f
 	WORD $0x54fff2a1
 	WORD $0xf9400975
-	WORD $0xf955aea8
+	WORD $0xf955b2a8
 	WORD $0xeb16011f
 	WORD $0x54fff220
 	WORD $0x91020154
@@ -13050,7 +13050,7 @@ TEXT ·js_iterator_proto_func(SB), $152-16
 	WORD $0xeb09011f
 	WORD $0x54fff2a1
 	WORD $0xf9400975
-	WORD $0xf955aea8
+	WORD $0xf955b2a8
 	WORD $0xeb16011f
 	WORD $0x54fff220
 	WORD $0x91020154
@@ -13221,7 +13221,7 @@ TEXT ·js_iterator_proto_func(SB), $152-16
 	WORD $0xeb09011f
 	WORD $0x54fff181
 	WORD $0xf9400975
-	WORD $0xf955aea8
+	WORD $0xf955b2a8
 	WORD $0xeb16011f
 	WORD $0x54fff100
 	WORD $0x91020154
@@ -14543,8 +14543,8 @@ TEXT ·js_new_host_function(SB), $152-16
 	WORD $0x1b087d0b
 	WORD $0x8b568129
 	WORD $0x1b082d2b
-	WORD $0xb94a6148
-	WORD $0xf9453949
+	WORD $0xb94a6948
+	WORD $0xf9453d49
 	WORD $0xb9401aaa
 	WORD $0x4b0803e8
 	WORD $0x1ac82568
@@ -15223,7 +15223,7 @@ TEXT ·JS_Call_block(SB), $136-32
 	WORD $0xeb09011f
 	WORD $0x54fff961
 	WORD $0xf9400995
-	WORD $0xf955aea8
+	WORD $0xf955b2a8
 	WORD $0xeb16011f
 	WORD $0x54fff8e0
 	WORD $0x910181b4
@@ -15446,7 +15446,7 @@ TEXT ·JS_Invoke(SB), $136-16
 	WORD $0x54fff581
 	WORD $0xf94047e8
 	WORD $0xf9400915
-	WORD $0xf955aea8
+	WORD $0xf955b2a8
 	WORD $0xeb16011f
 	WORD $0x54fff4e0
 	WORD $0xf9403fe8

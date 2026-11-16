@@ -21,6 +21,7 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 - An interrupt or the eval timeout stops the parse of a regexp literal of megabytes within the usual number of polls wherever its text falls in memory, where up to 13 polls could pass.
 - A call of Intl on a long list of locales no longer has Go clear memory for the whole list before it first checks the eval timeout: 189 MiB for a million tags, which held a timeout of 20 ms for up to 103 ms on an AMD EPYC.
 - An interrupt or the eval timeout stops the parse and the compile of a script of many short tokens, and the conversion of a long function to register code, within a few polls: a timeout in the compile of a script of 3 MB or more killed the VM (ErrKilled).
+- A timeout that stops the compile of a script of several MB no longer kills the VM while the engine frees the code the compile made: those polls no longer count toward the kill.
 
 ## [v0.31.2] - 2026-11-16
 
