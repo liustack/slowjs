@@ -143,6 +143,6 @@ result realm ok, value number 46
 result realm here ok, value number 47
 result realm code here ok, value number 48
 result all match
-mem-end obj=421 atom=965 shape=1083 prop=1981 jsfunc=11 cfunc=253 array=3 fast_array=3 elements=0 binary=0
-mem-gc obj=194 atom=949 shape=941 prop=961 jsfunc=0 cfunc=132 array=1 fast_array=1 elements=0 binary=0
+mem-end obj=421 atom=965 shape=1077 prop=1981 jsfunc=11 cfunc=253 array=3 fast_array=3 elements=0 binary=0
+mem-gc obj=194 atom=949 shape=935 prop=961 jsfunc=0 cfunc=132 array=1 fast_array=1 elements=0 binary=0
 --- status exit 0
