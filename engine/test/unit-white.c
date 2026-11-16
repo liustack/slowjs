@@ -68,6 +68,8 @@ int white_json_quote_run(struct StringBuffer *b, JSValueConst s, int *pi);
 uintptr_t white_json_run_limit(uintptr_t p, uintptr_t end);
 const uint8_t *white_json_plain_run(const uint8_t *p, const uint8_t *end);
 int white_json_count_high_bytes(const uint8_t *p, int n);
+void white_json_walk(int on);
+unsigned long white_json_walks(void);
 int white_atom_refs(JSContext *ctx, const char *s);
 int white_ref_count(JSValueConst v);
 int white_emit_tables(JSContext *ctx, int size[3], int count[3]);
@@ -815,6 +817,137 @@ static void test_shared_shape_oom(void)
    each call either throws the out of memory error or returns the whole
    string with no error pending, and leaves as many objects and strings as
    there were before it. */
+/* The walks of JSON.stringify against its general path. First which objects
+   and arrays the walks take. Then values made at random from a seed:
+   nested objects and arrays of numbers, strings with escapes and lone
+   surrogates, keys that are indexes or need escapes, values left out,
+   getters, toJSON methods (own, on a prototype, added to Object.prototype
+   and Array.prototype while the stringify runs), Dates, boxed primitives,
+   proxies, BigInts, holes, cycles, and code that deletes, adds and changes
+   keys and elements of the objects being written. Each value is made and
+   written twice from its seed, with the walks and without them: the result
+   or the error and what the code of the value saw, in its order, must be the
+   same. The code draws from the same generator, so a read made in another
+   order changes what follows. */
+static void test_json_walk(void)
+{
+    static const char setup[] =
+        "var L = []\n"
+        "function rng(seed) { var s = seed >>> 0; return function () { s = (s + 0x6D2B79F5) >>> 0; var t = s;\n"
+        "  t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296 } }\n"
+        "var KEYS = ['a', 'b', 'id', 'name', '', '0', '1', '17', '01', '4294967294', '4294967295', 'k\"q', 'k\\\\b', 'k\\n',\n"
+        "  '\\u00e9', '\\u4e2d', '\\ud800', 'toJSON', 'length', 'x'.repeat(130), 'y\"'.repeat(70)]\n"
+        "var STRS = ['', 'plain', 'a\"b', '\\\\', '\\n\\t', '\\u0001', '\\u00e9t\\u00e9', '\\u4e2d\\u6587', '\\ud83d\\ude00', '\\ud800x', 'x\\udc00', 'y'.repeat(70)]\n"
+        "var NUMS = [0, -0, 1, -1, 42, 2147483647, -2147483648, 2147483648, 1.5, -0.1, 1e21, 1e-7, NaN, Infinity, -Infinity, 5e-324]\n"
+        "function gen(seed) {\n"
+        "  var r = rng(seed), all = []\n"
+        "  function pick(a) { return a[Math.floor(r() * a.length)] }\n"
+        "  function prim() { var x = r()\n"
+        "    if (x < 0.3) return pick(NUMS)\n"
+        "    if (x < 0.6) return pick(STRS)\n"
+        "    if (x < 0.7) return r() < 0.5\n"
+        "    if (x < 0.8) return null\n"
+        "    if (x < 0.86) return undefined\n"
+        "    if (x < 0.9) return function () {}\n"
+        "    if (x < 0.94) return Symbol('s')\n"
+        "    if (x < 0.99) return pick(STRS) + pick(STRS) + 'x'.repeat(20)\n"
+        "    return 'z'.repeat(9000) + pick(STRS) }\n"
+        "  function mutate() { var o = pick(all), x = r(); if (!o) return\n"
+        "    if (x < 0.25) delete o[pick(KEYS)]\n"
+        "    else if (x < 0.45) o[pick(KEYS)] = prim()\n"
+        "    else if (x < 0.55) o[pick(KEYS)] = pick(all)\n"
+        "    else if (x < 0.65) { if (Array.isArray(o)) o.length = Math.floor(r() * 4); else Object.defineProperty(o, pick(KEYS), { enumerable: false }) }\n"
+        "    else if (x < 0.72) Object.prototype.toJSON = function (k) { L.push('O.toJSON ' + k); return 'O' }\n"
+        "    else if (x < 0.78) Array.prototype.toJSON = function (k) { L.push('A.toJSON ' + k); return 'A' }\n"
+        "    else if (x < 0.85) { if (Array.isArray(o)) o.push(prim()); else Object.defineProperty(o, pick(KEYS), { get: function () { L.push('late getter'); return 1 }, enumerable: true, configurable: true }) }\n"
+        "  }\n"
+        "  function odd(d) { var x = r(), k = 'g' + Math.floor(r() * 3), o\n"
+        "    if (x < 0.15) { o = {}; o.a = val(d + 1); Object.defineProperty(o, k, { get: function () { L.push('get ' + k); if (r() < 0.5) mutate(); return prim() }, enumerable: r() < 0.8, configurable: true }); o.z = val(d + 1); all.push(o); return o }\n"
+        "    if (x < 0.3) { o = { v: val(d + 1), toJSON: function (key) { L.push('toJSON ' + key); if (r() < 0.6) mutate(); return r() < 0.5 ? this.v : prim() } }; all.push(o); return o }\n"
+        "    if (x < 0.38) { o = Object.create({ toJSON: function (key) { L.push('proto toJSON ' + key); return { w: prim() } } }); o.q = 1; return o }\n"
+        "    if (x < 0.44) return new Date(Math.floor(r() * 1e12))\n"
+        "    if (x < 0.5) return pick([new Number(r() * 10), new String(pick(STRS)), new Boolean(r() < 0.5), Object(Symbol('b'))])\n"
+        "    if (x < 0.58) { o = obj(d); return new Proxy(o, { get: function (t, p, rc) { L.push('trap ' + String(p)); return Reflect.get(t, p, rc) } }) }\n"
+        "    if (x < 0.63) return r() < 0.5 ? 12345678901234567890n : 3n\n"
+        "    if (x < 0.7) { var a = [1, 2, 3]; delete a[1]; return a }\n"
+        "    if (x < 0.76) return all.length ? pick(all) : 1\n"
+        "    if (x < 0.82) return new Uint8Array([1, 2])\n"
+        "    if (x < 0.88) { o = Object.create(null); o.n = val(d + 1); return o }\n"
+        "    return { get [k]() { L.push('getter ' + k); return val(d + 1) }, b: 2 } }\n"
+        "  function obj(d) { var o = r() < 0.1 ? new (class C {})() : {}, n = Math.floor(r() * 6)\n"
+        "    for (var i = 0; i < n; i++) o[pick(KEYS)] = val(d + 1)\n"
+        "    if (r() < 0.1) delete o[pick(KEYS)]\n"
+        "    if (r() < 0.08) Object.defineProperty(o, 'ne', { value: val(d + 1), enumerable: false })\n"
+        "    if (r() < 0.05) o[Symbol('k')] = 1\n"
+        "    all.push(o); return o }\n"
+        "  function arr(d) { var n = Math.floor(r() * 6), a = []\n"
+        "    for (var i = 0; i < n; i++) a.push(val(d + 1))\n"
+        "    if (r() < 0.05) a.length += 2\n"
+        "    if (r() < 0.05) a.extra = 1\n"
+        "    all.push(a); return a }\n"
+        "  function val(d) { var x = r()\n"
+        "    if (d > 3 || x < 0.35) return prim()\n"
+        "    if (x < 0.62) return obj(d)\n"
+        "    if (x < 0.85) return arr(d)\n"
+        "    return odd(d) }\n"
+        "  var root = val(0)\n"
+        "  if (r() < 0.05 && all.length) { var c = pick(all); c[0] = root }\n"
+        "  return root }\n"
+        "function run(seed) { L.length = 0; var res\n"
+        "  try { res = JSON.stringify(gen(seed)) } catch (e) { res = e.name + ': ' + e.message }\n"
+        "  delete Object.prototype.toJSON; delete Array.prototype.toJSON\n"
+        "  return String(res) + ' | ' + L.join() }\n";
+    enum { SEEDS = 3000, SEEDS_VM = 100 };
+    VM v = vm_new();
+    unsigned long walks = 0;
+    int seed, same = 0;
+
+    CHECK(eval_ok(v.ctx, setup), "the setup threw");
+    white_json_walks();
+    CHECK(eval_is(v.ctx, "JSON.stringify({ a: 1, b: [1, 2, { c: 'x' }], d: { e: null } })",
+                  "{\"a\":1,\"b\":[1,2,{\"c\":\"x\"}],\"d\":{\"e\":null}}"), "a tree");
+    CHECK(white_json_walks() == 4, "the walks wrote the object, the array and the two inside");
+    CHECK(eval_is(v.ctx, "JSON.stringify({ a: [1] }, (k, x) => x) + JSON.stringify({ a: [1] }, ['a']) + JSON.stringify({ a: [1] }, null, 1)",
+                  "{\"a\":[1]}{\"a\":[1]}{\n \"a\": [\n  1\n ]\n}"), "a replacer, a list, a gap");
+    CHECK(white_json_walks() == 0, "the walks take no call with a replacer, a property list or a gap");
+    CHECK(eval_is(v.ctx, "JSON.stringify({ get a() { return 1 }, b: { c: 1 } })", "{\"a\":1,\"b\":{\"c\":1}}"), "a getter");
+    CHECK(white_json_walks() == 1, "an object with an enumerable getter goes to the general path, its value does not");
+    CHECK(eval_is(v.ctx, "JSON.stringify([{ toJSON() { return { x: [1] } } }, new Proxy({}, {}), { 2: 1 }, Object.assign([1, , 3])])",
+                  "[{\"x\":[1]},{},{\"2\":1},[1,null,3]]"), "toJSON, a proxy, an index key, a hole");
+    CHECK(white_json_walks() == 3, "the outer array and what toJSON gives");
+    for (seed = 0; seed < SEEDS; seed++) {
+        char src[64], *a, *b;
+
+        /* a VM for each SEEDS_VM seeds, which the host's timeout counts
+           from its start */
+        if (seed % SEEDS_VM == SEEDS_VM - 1) {
+            vm_free(&v);
+            v = vm_new();
+            CHECK(eval_ok(v.ctx, setup), "the setup threw");
+        }
+        snprintf(src, sizeof(src), "run(%d)", seed);
+        white_json_walk(1);
+        a = eval_text(v.ctx, src);
+        if (!a)
+            a = exception_text(v.ctx);
+        walks += white_json_walks();
+        white_json_walk(0);
+        b = eval_text(v.ctx, src);
+        if (!b)
+            b = exception_text(v.ctx);
+        CHECK(white_json_walks() == 0, "seed %d: a walk without the walks", seed);
+        white_json_walk(1);
+        CHECK(!a || !strstr(a, "interrupted"), "seed %d: the host's timeout stopped it", seed);
+        CHECK(a && b && !strcmp(a, b), "seed %d: with the walks %.300s\nwithout %.300s", seed, a ? a : "(threw)", b ? b : "(threw)");
+        same += a && b && !strcmp(a, b) && strstr(a, " | ") != NULL;
+        free(a);
+        free(b);
+    }
+    CHECK(walks > 5000, "only %lu walks", walks);
+    printf("json walk: %d seeds the same, %lu walks\n", same, walks);
+    vm_free(&v);
+}
+
 static void test_json_stringify_list_oom(void)
 {
     static const char setup[] =
@@ -2294,6 +2427,87 @@ static void test_key_atom(void)
     JS_FreeAtom(v.ctx, b);
     JS_FreeValue(v.ctx, s);
     key_atoms_ok(&v, "atoms freed and made again");
+
+    /* a string that is no atom, whose characters are an atom that exists,
+       keeps that atom as its key, with a reference of its own, from the
+       first time it is made a key, and gives it back when it is freed. A
+       string whose atom is no key (an index, a string that starts with a
+       digit) keeps none */
+    a = JS_NewAtom(v.ctx, "wkaKept");
+    {
+        int refs = white_atom_refs(v.ctx, "wkaKept");
+
+        s = JS_NewString(v.ctx, "wkaKept");
+        b = JS_ValueToAtom(v.ctx, s);
+        CHECK(b == a && white_key_atom(s) == a, "the kept atom: %u, key_atom %u, atom %u", b,
+              white_key_atom(s), a);
+        CHECK(white_atom_refs(v.ctx, "wkaKept") == refs + 2, "the atom kept: %d references, want %d",
+              white_atom_refs(v.ctx, "wkaKept"), refs + 2);
+        c = JS_ValueToAtom(v.ctx, s);
+        CHECK(c == a && white_atom_refs(v.ctx, "wkaKept") == refs + 3, "made a key again: %u, %d references",
+              c, white_atom_refs(v.ctx, "wkaKept"));
+        JS_FreeAtom(v.ctx, c);
+        JS_FreeAtom(v.ctx, b);
+        JS_FreeValue(v.ctx, s);
+        CHECK(white_atom_refs(v.ctx, "wkaKept") == refs, "the string freed: %d references, want %d",
+              white_atom_refs(v.ctx, "wkaKept"), refs);
+    }
+    JS_FreeAtom(v.ctx, a);
+    /* made a registered symbol, which takes the string itself as its
+       atom, the string gives back the atom it kept */
+    a = JS_NewAtom(v.ctx, "wkaSym");
+    {
+        int refs = white_atom_refs(v.ctx, "wkaSym");
+        JSValue g = JS_GetGlobalObject(v.ctx), sy = JS_GetPropertyStr(v.ctx, g, "Symbol");
+        JSValue sfor = JS_GetPropertyStr(v.ctx, sy, "for"), r;
+
+        s = JS_NewString(v.ctx, "wkaSym");
+        JS_FreeAtom(v.ctx, JS_ValueToAtom(v.ctx, s));
+        CHECK(white_key_atom(s) == a && white_atom_refs(v.ctx, "wkaSym") == refs + 1,
+              "the string keeps the atom: key_atom %u, %d references", white_key_atom(s),
+              white_atom_refs(v.ctx, "wkaSym"));
+        r = JS_Call(v.ctx, sfor, sy, 1, &s);
+        CHECK(JS_IsSymbol(r) && white_key_atom(s) == JS_ATOM_NULL, "Symbol.for: key_atom %u",
+              white_key_atom(s));
+        CHECK(white_atom_refs(v.ctx, "wkaSym") == refs, "the symbol made: %d references, want %d",
+              white_atom_refs(v.ctx, "wkaSym"), refs);
+        JS_FreeValue(v.ctx, r);
+        JS_FreeValue(v.ctx, s);
+        JS_FreeValue(v.ctx, sfor);
+        JS_FreeValue(v.ctx, sy);
+        JS_FreeValue(v.ctx, g);
+    }
+    JS_FreeAtom(v.ctx, a);
+    a = JS_NewAtom(v.ctx, "07");
+    s = JS_NewString(v.ctx, "07");
+    b = JS_ValueToAtom(v.ctx, s);
+    CHECK(b == a && white_key_atom(s) == JS_ATOM_NULL, "\"07\": atom %u, key_atom %u", b, white_key_atom(s));
+    JS_FreeAtom(v.ctx, b);
+    JS_FreeAtom(v.ctx, a);
+    JS_FreeValue(v.ctx, s);
+    /* in a script: the string a join makes reads its key from the second
+       read on without a search. Appended to, it is copied, though it has
+       room at its end (the second append made it with some): in place it
+       would keep the atom of its old characters. Made a registered symbol,
+       it is read by its key as before (the string is the atom of the symbol now) */
+    CHECK(eval_ok(v.ctx,
+        "var T = { wkaMonth: 1, wkaMonthx: 2 }, k = ['wka', 'Month'].join(''), r = 0;\n"
+        "for (let i = 0; i < 100; i++) r += T[k];\n"
+        "var m = (function () { let m = 'wk'; m += 'a'; m += 'Month'; r += T[m];\n"
+        "  m += 'x'; r += T[m]; return m })();\n"
+        "var g = ['wka', 'Month'].join(''); r += T[g]; var sym = Symbol.for(g); r += T[g];\n"
+        "r += T[k] + T[m] + T[g]\n"), "the script threw");
+    CHECK(eval_is(v.ctx, "r + ' ' + m + ' ' + String(sym.description)", "109 wkaMonthx wkaMonth"),
+          "reads by kept atoms");
+    {
+        JSValue k = JS_Eval(v.ctx, "k", 1, "<k>", 0);
+        JSAtom month = JS_NewAtom(v.ctx, "wkaMonth");
+
+        CHECK(white_key_atom(k) == month, "the joined key: key_atom %u, atom %u", white_key_atom(k), month);
+        JS_FreeAtom(v.ctx, month);
+        JS_FreeValue(v.ctx, k);
+    }
+    key_atoms_ok(&v, "strings that keep atoms");
 
     /* thousands of atoms made, read by key, freed and made again, through
        the growth of the hash table of atoms and the reuse of numbers */
@@ -8930,6 +9144,7 @@ int main(int argc, char **argv)
     test_json_stringify_oom();
     test_shared_shape_oom();
     test_json_stringify_list_oom();
+    test_json_walk();
     test_backtrace_attribute_checks();
     test_backtrace_class();
     test_backtrace_needs_data_property();

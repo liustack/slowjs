@@ -24,6 +24,8 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 - A search for a string of more than 8 characters moves over the text in a tighter loop, as tifa's search of each page's HTML does: a render of tifa's pages runs up to 0.45% fewer instructions.
 - A new VM keeps 512 compiled regexps where it kept 256 (`DefaultRegExpCache`), in the same 1 MiB: the post pages of tifa's shop compile none again after their first render and run 3.2% to 4.0% fewer instructions, and use less memory.
 - Loops and the code around them run fewer register instructions: a `for` or `while` loop reads its test again at the end of the body, and `++k`, a chained assignment and a destructuring that renames its fields leave out their copies. The NavierStokes benchmark runs 8.4% fewer instructions and tifa's pages 0.1% to 0.5% fewer.
+- `JSON.stringify` with no replacer and no indent writes plain objects and arrays straight from their shapes. A react-intl page, which makes a memo key with it for every formatter, runs 16% fewer instructions, and writing 300 orders as a loader does takes two thirds fewer ([changes](docs/changes/README.md#json)).
+- A string made while the script runs, such as one from `join` or `JSON.parse`, finds a property as fast as a key written in the source from its second use as a key on: 398 instructions a read, not 901 ([changes](docs/changes/README.md#strings)).
 
 ### Fixed
 
