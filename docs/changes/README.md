@@ -69,6 +69,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A full collection marks closures and arrays with no call through the class table, and the mark and the finalizer of a closure skip its closure variables when all of them are cells | v0.31.3 | `js_bytecode_function_mark_in` and `js_array_mark_in` in [quickjs.c](../../engine/quickjs.c) |
 | A read of a name (`o.x`, and `o.m` before a call) keeps in its register instruction the slot of the own data property it last found, and looks at that slot of the object's shape first: the same key there with plain flags is the property, with no lookup in the shape's hash. Nothing to invalidate, no reference held. Cost: 4 bytes of register code per read site | v0.31.3 | [c-engine.md](c-engine.md#the-register-interpreter) |
 | A read of a name that finds a data property on the immediate prototype keeps its slot with the id of the object's shape (one id: the same prototype, keys and flags) and takes it while the object has a shape of that id, until the shape ids of the runtime run out once. Cost: 4 more bytes per read site, 8 with the slot, and 0.4% to 1.4% more memory in a VM after tifa's pages | v0.31.3 | [c-engine.md](c-engine.md#the-register-interpreter) |
+| An array or an arguments object with fast elements takes the slot kept for a key of the prototype too (`a.push`, `a.map` before a call), where an exotic object never did. No more bytes per read site | Unreleased | `rv_getf_keep` in [regvm-ops-basic.h](../../engine/regvm-ops-basic.h) |
 
 ## The generator
 
