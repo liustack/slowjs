@@ -42,7 +42,7 @@ CPU time of one render of the server bundles of tifa's apps, on one core, as a m
 
 Measured on v0.31.2 on a GCP t2d-standard-4 (AMD EPYC 7B13), Go 1.27.4. The comparison is among interpreters: go-quickjs runs with its JIT off, as it comes, Hermes runs `hermesc -O` bytecode and Node runs with `--jitless`. Every engine runs as it comes, on its own `Intl` where it has one and on the FormatJS polyfill where it has none (C QuickJS and Hermes). The second row is liustack/slowjs without its built-in `Intl`, `URL` and `Temporal`, on the same polyfills as C QuickJS and Hermes: it shows how much of the lead on the MUI and shop pages comes from the interpreter and how much from `Intl` written in Go. The bench pages need no `Intl`, so that column is the same JavaScript on every engine.
 
-It is not the fastest on everything: on the V8 benchmark suite it ties with moejs among the pure Go engines, and Hermes and Node score higher.
+It is not the fastest on everything: on the V8 benchmark suite Hermes and Node score higher.
 
 | Engine | Pure Go | V8 suite score |
 | :-- | :-: | --: |
@@ -53,7 +53,7 @@ It is not the fastest on everything: on the V8 benchmark suite it ties with moej
 | go-quickjs | yes | 1303 |
 | C QuickJS 2026-06-04 | no, C | 1056 |
 
-It scores 1.49 times C QuickJS and 1.18 times go-quickjs. moejs is 10 points ahead, less than the scores move from round to round. go-quickjs leads on the RegExp benchmark, moejs on four of eight.
+It scores 1.49 times C QuickJS, 1.18 times go-quickjs and 1.11 times moejs, though in some rounds moejs and it cannot be told apart. go-quickjs leads on the RegExp benchmark, moejs on Richards and NavierStokes.
 
 [docs/benchmarks.md](docs/benchmarks.md) has both tables in full, what each engine was given to run, and how to run it all again.
 

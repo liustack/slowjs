@@ -42,7 +42,7 @@ tifa 几个应用的服务端代码渲染一次的 CPU 时间，跑在一个核�
 
 在 v0.31.2 上量的，机器是 GCP t2d-standard-4（AMD EPYC 7B13），Go 1.27.4。对比只比解释器：go-quickjs 按它的默认设置跑，JIT 是关的，Hermes 跑 `hermesc -O` 的字节码，Node 加 `--jitless`。每个引擎都按它本来的样子跑，有自己的 `Intl` 就用自己的，没有的（C QuickJS 和 Hermes）用 FormatJS polyfill。第二行是不带内置 `Intl`、`URL`、`Temporal` 的 liustack/slowjs，和 C QuickJS、Hermes 用同样的 polyfill：它显示 MUI 和商店页面上的领先有多少来自解释器，多少来自用 Go 写的 `Intl`。bench 页面用不到 `Intl`，所以这一列每个引擎跑的是同样的 JavaScript。
 
-它不是每一项都最快：在 V8 测试套件上，它和 moejs 在纯 Go 引擎里打平，Hermes 和 Node 得分更高。
+它不是每一项都最快：在 V8 测试套件上，Hermes 和 Node 得分更高。
 
 | 引擎 | 纯 Go | V8 套件得分 |
 | :-- | :-: | --: |
@@ -53,7 +53,7 @@ tifa 几个应用的服务端代码渲染一次的 CPU 时间，跑在一个核�
 | go-quickjs | 是 | 1303 |
 | C QuickJS 2026-06-04 | 否，C | 1056 |
 
-得分是 C QuickJS 的 1.49 倍，是 go-quickjs 的 1.18 倍。moejs 高 10 分，比各轮之间的波动还小。go-quickjs 在 RegExp 一项上领先，moejs 在八项里的四项上领先。
+得分是 C QuickJS 的 1.49 倍，是 go-quickjs 的 1.18 倍，是 moejs 的 1.11 倍，但和 moejs 有的轮次分不出高下。go-quickjs 在 RegExp 一项上领先，moejs 在 Richards 和 NavierStokes 两项上领先。
 
 两张表的完整内容、每个引擎跑的是什么，以及怎么重跑，见 [docs/benchmarks.md](docs/benchmarks.md)。
 
