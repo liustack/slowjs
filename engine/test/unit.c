@@ -788,6 +788,60 @@ static void test_class_shape_set_proto(void)
     host_free_runtime(rt);
 }
 
+/* slice of a typed array whose resizable buffer shrinks while slice runs,
+   in the valueOf of start or in the species constructor: it copies what
+   is left past start, and nothing when the buffer shrank to nothing or
+   below start, where the source has no data pointer (NULL). A fixed-length
+   view that the shrink leaves out of bounds throws a TypeError. The
+   results are Node 24's. Under UndefinedBehaviorSanitizer the copy must
+   form no pointer from NULL. */
+static void test_typed_array_slice_shrink(void)
+{
+    static const char src[] =
+        "(function () {\n"
+        "  var out = [], types = [Int8Array, Uint8Array, Int16Array, Float64Array];\n"
+        "  for (var T of types) for (var U of [T, T === Uint8Array ? Int16Array : Uint8Array])\n"
+        "    for (var keep of [0, 2]) {\n"
+        "      var row = [];\n"
+        "      for (var s = 0; s <= 4; s++) {\n"
+        "        var n = T.BYTES_PER_ELEMENT;\n"
+        "        var buf = new ArrayBuffer(4 * n, { maxByteLength: 4 * n });\n"
+        "        var ta = new T(buf);\n"
+        "        ta.set([1, 2, 3, 4]);\n"
+        "        if (U !== T) Object.defineProperty(ta, 'constructor', { value: U });\n"
+        "        var res = ta.slice({ valueOf() { buf.resize(keep * n); return s; } });\n"
+        "        row.push(Array.from(res).join(''));\n"
+        "      }\n"
+        "      out.push(row.join(' '));\n"
+        "    }\n"
+        "  var buf = new ArrayBuffer(4, { maxByteLength: 4 }), ta = new Uint8Array(buf);\n"
+        "  ta.set([1, 2, 3, 4]);\n"
+        "  ta.constructor = { [Symbol.species]: function (n) {\n"
+        "    buf.resize(0); return new Uint8Array(n); } };\n"
+        "  out.push(Array.from(ta.slice(1)).join(''));\n"
+        "  var buf2 = new ArrayBuffer(4, { maxByteLength: 4 }), fixed = new Uint8Array(buf2, 0, 4);\n"
+        "  try {\n"
+        "    fixed.slice({ valueOf() { buf2.resize(0); return 1; } });\n"
+        "    out.push('no throw');\n"
+        "  } catch (e) {\n"
+        "    out.push(e.constructor.name);\n"
+        "  }\n"
+        "  return out.join(',');\n"
+        "})()";
+    static const char want[] =
+        "0000 000 00 0 ,1200 200 00 0 ,0000 000 00 0 ,1200 200 00 0 ,"
+        "0000 000 00 0 ,1200 200 00 0 ,0000 000 00 0 ,1200 200 00 0 ,"
+        "0000 000 00 0 ,1200 200 00 0 ,0000 000 00 0 ,1200 200 00 0 ,"
+        "0000 000 00 0 ,1200 200 00 0 ,0000 000 00 0 ,1200 200 00 0 ,"
+        "000,TypeError";
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+
+    CHECK(eval_is(ctx, src, want), "slice of a shrinking typed array");
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
 /* The iterator of a for in loop is an object with a null prototype: the
    context holds its empty shape once a loop has made it, so a hundred more
    loops make no shape, and an object of Object.create(null) that gets keys
@@ -5535,6 +5589,7 @@ int main(void)
     test_func_shapes_kept();
     test_class_shapes();
     test_class_shape_set_proto();
+    test_typed_array_slice_shrink();
     test_for_in_shape();
     test_object_lit_size();
     test_object_lit_one_block();

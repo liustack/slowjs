@@ -73731,7 +73731,10 @@ static JSValue js_typed_array_slice(JSContext *ctx, JSValueConst this_val,
         p1 = get_typed_array(ctx, arr);
         space = max_int(0, p->u.array.count - start);
         count = min_int(count, space);
-        if (p1 != NULL && p->class_id == p1->class_id) {
+        /* count is 0 when the buffer shrank below start in the valueOf of
+           start or in the species constructor, and a source with no
+           element has no data (NULL): form no pointer from it */
+        if (count > 0 && p1 != NULL && p->class_id == p1->class_id) {
             slice_memcpy(p1->u.array.u.uint8_ptr,
                          p->u.array.u.uint8_ptr + (start << shift),
                          count << shift);
