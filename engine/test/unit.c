@@ -2729,7 +2729,11 @@ static JSValue free_node_new(JSContext *ctx, JSValueConst this_val, int argc,
    then a cycle freed by the collection and one freed by the young
    collection. The orders were recorded on the engine before the first
    object to die was freed outside the loop of free_zero_refcount
-   (docs/changes/objects-and-shapes.md), and it passes this test. */
+   (docs/changes/objects-and-shapes.md), and it passes this test. The young
+   collection frees a cycle of young objects in the order a full one does,
+   the order in which their counts get to 0 in its one pass over the young
+   list, where it freed them in the order they were made before that pass
+   took the place of three (test_young_free_order). */
 static void test_free_order(void)
 {
     static const JSClassDef def = {
@@ -2779,10 +2783,106 @@ static void test_free_order(void)
     free_order[0] = '\0';
     CHECK(eval(ctx, "var yc = node(50); yc.self = [yc, node(51), { b: node(52) }]; yc = null; void 0"), "the young cycle");
     JS_RunYoungGC(rt);
-    CHECK(strcmp(free_order, "50 51 52 ") == 0, "the young cycle: %s", free_order);
+    CHECK(strcmp(free_order, "52 50 51 ") == 0, "the young cycle: %s", free_order);
     CHECK(run_jobs(rt), "jobs");
     JS_FreeContext(ctx);
     host_free_runtime(rt);
+}
+
+/* A young collection frees a cycle of young objects in the order a full
+   collection frees it: the order in which their counts get to 0 in the pass
+   that takes them away (gc_decref, and the pass of JS_RunYoungGC). When the
+   cycle held the last reference to an old object, the orders differ: the full
+   collection frees the old object with the cycle, in that order, and the
+   young one frees it after the cycle (gc_defer), as it did before the
+   young bit. What a program sees of either is the same: the callbacks of a
+   FinalizationRegistry are queued in the order of its registrations whatever
+   the order of the frees, and every WeakRef to the cycle is cleared before
+   any of them runs. Only a finalizer of a class of the host sees the order.
+   Each graph is made twice, in a runtime of its own whose setup (and the old
+   objects of the graph) a full collection made old, and collected once by
+   JS_RunGC and once by JS_RunYoungGC. The order each frees and the callbacks
+   that then run are recorded for every graph, so that a change of either is
+   seen, even one both collections share. */
+static void test_young_free_order(void)
+{
+    static const JSClassDef def = {
+        "FreeNode", .finalizer = free_node_finalizer, .gc_mark = free_node_mark,
+    };
+    static const struct {
+        const char *old, *graph;
+        const char *full, *young; /* young NULL: the order of full */
+        const char *calls; /* the callbacks after either */
+    } graphs[] = {
+        { "", "var cy = node(40); cy.self = cy; cy.k = node(41, { a: node(42) }); cy.l = [cy, node(43)]; cy = null;",
+          "42 41 40 43 ", NULL, "" },
+        { "", "var yc = node(50); yc.self = [yc, node(51), { b: node(52) }]; yc = null;",
+          "52 50 51 ", NULL, "" },
+        { "", "(() => { const a = node(60), b = node(61, a), c = node(62, b); a.c = c;"
+              " fr.register(c, 'c'); fr.register(a, 'a'); fr.register(b, 'b');"
+              " ws.push(new WeakRef(b), new WeakRef(c)); })();",
+          "60 61 62 ", NULL, "c,a,b" },
+        { "", "(() => { let f = () => g, g = () => [f, node(70), h]; const h = node(71, { g });"
+              " fr.register(h, 'h'); fr.register(g, 'g'); ws.push(new WeakRef(f)); })();",
+          "71 ", NULL, "h,g" },
+        { "", "(() => { const m = new Map(), s = new Set(); m.set(node(80), s); s.add(m); s.add(node(81, m));"
+              " fr.register(s, 's'); fr.register(m, 'm'); })();",
+          "80 81 ", NULL, "s,m" },
+        { "var old = node(1); fr.register(old, 'old');",
+          "(() => { const y = node(2, old); y.self = y; fr.register(y, 'y'); old = null; })();",
+          "1 2 ", "2 1 ", "old,y" },
+    };
+    char order[2][1024], calls[2][256];
+    size_t i;
+    int young;
+
+    for (i = 0; i < countof(graphs); i++) {
+        for (young = 0; young <= 1; young++) {
+            JSRuntime *rt = host_new_runtime();
+            JSContext *ctx = JS_NewContext(rt);
+            JSValue global, v;
+            const char *s;
+            char setup[256];
+
+            JS_SetGCThreshold(rt, (size_t)-1);
+            JS_NewClassID(rt, &free_node_class);
+            CHECK(JS_NewClass(rt, free_node_class, &def) == 0, "the class");
+            global = JS_GetGlobalObject(ctx);
+            CHECK(JS_SetPropertyStr(ctx, global, "node",
+                                    JS_NewCFunction(ctx, free_node_new, "node", 2)) >= 0, "node");
+            JS_FreeValue(ctx, global);
+            snprintf(setup, sizeof(setup), "var got = [], fr = new FinalizationRegistry((h) => got.push(h)), ws = []; %s void 0", graphs[i].old);
+            CHECK(eval(ctx, setup), "the setup");
+            CHECK(run_jobs(rt), "the end of the job of the setup");
+            JS_RunGC(rt);
+            free_order[0] = '\0';
+            CHECK(eval(ctx, graphs[i].graph), "graph %zu", i);
+            /* the job that made the WeakRefs ends, and with it their hold */
+            CHECK(run_jobs(rt), "graph %zu: the end of its job", i);
+            CHECK(free_order[0] == '\0', "graph %zu: freed before a collection: %s", i, free_order);
+            if (young)
+                JS_RunYoungGC(rt);
+            else
+                JS_RunGC(rt);
+            snprintf(order[young], sizeof(order[young]), "%s", free_order);
+            CHECK(eval_is(ctx, "String(ws.every((w) => w.deref() === undefined))", "true"),
+                  "graph %zu, young %d: a WeakRef still holds its target after the collection", i, young);
+            CHECK(eval_is(ctx, "String(got.length)", "0"), "graph %zu, young %d: a callback ran in the collection", i, young);
+            CHECK(run_jobs(rt), "graph %zu: jobs", i);
+            v = JS_Eval(ctx, "got.join()", 10, "<calls>", 0);
+            s = JS_ToCString(ctx, v);
+            snprintf(calls[young], sizeof(calls[young]), "%s", s ? s : "?");
+            JS_FreeCString(ctx, s);
+            JS_FreeValue(ctx, v);
+            JS_FreeContext(ctx);
+            host_free_runtime(rt);
+        }
+        CHECK(strcmp(order[0], graphs[i].full) == 0, "graph %zu: the full collection freed %s, not %s", i, order[0], graphs[i].full);
+        CHECK(strcmp(order[1], graphs[i].young ? graphs[i].young : graphs[i].full) == 0, "graph %zu: the young collection freed %s, not %s", i, order[1], graphs[i].young ? graphs[i].young : graphs[i].full);
+        /* the registry keeps the order of its registrations */
+        CHECK(strcmp(calls[0], graphs[i].calls) == 0, "graph %zu: the callbacks after the full collection: %s, not %s", i, calls[0], graphs[i].calls);
+        CHECK(strcmp(calls[1], graphs[i].calls) == 0, "graph %zu: the callbacks after the young collection: %s, not %s", i, calls[1], graphs[i].calls);
+    }
 }
 
 static uint64_t fnv_word(uint64_t h, uint32_t v)
@@ -5523,6 +5623,7 @@ int main(void)
     test_ropes();
     test_free_nesting();
     test_free_order();
+    test_young_free_order();
     test_finalizer_memory_usage();
     test_unicode_tables();
     test_class_strings();

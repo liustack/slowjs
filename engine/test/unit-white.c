@@ -2296,7 +2296,7 @@ static void lists(VM *v, int *old, int *young, const char *when)
     int bad;
 
     white_gc_lists(v->rt, old, young, &bad);
-    CHECK(bad == 0, "%s: a GC object on a list has a count of 0 or less (%d) or its mark set (%d)", when, bad & 1, (bad >> 1) & 1);
+    CHECK(bad == 0, "%s: a GC object on a list has a count of 0 or less (%d), its mark set (%d) or the young bit of the other list (%d)", when, bad & 1, (bad >> 1) & 1, (bad >> 2) & 1);
 }
 
 /* The ids of the shapes in the shape hash table follow their rule

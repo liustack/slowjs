@@ -1310,6 +1310,7 @@ var goasmKeep = []any{
 	map_hash_long_key_poll,
 	map_key_eq,
 	mark_children_specialized_1,
+	mark_children_specialized_2,
 	mark_children_specialized_4,
 	mark_children_specialized_5,
 	memchr,

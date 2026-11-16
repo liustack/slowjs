@@ -361,6 +361,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Young collection, VM.RunYoungGC | v0.27.3 | [young-collection.md](young-collection.md) |
 | A full collection frees after its garbage an object whose last reference a finalizer of a class of the host let go of, as a young collection does, where it left the object listed with a count of 0 and a WeakRef to it freed its block while it was still listed | Unreleased | [young-collection.md](young-collection.md) |
 | A full collection moves the young list to the old one after its weak pass, so an object that a finalizer of a host class makes there is counted like any other, where held by an old object it left a count on its children that kept the runtime from being freed | Unreleased | [young-collection.md](young-collection.md) |
+| Young objects carry a young bit of their own, so the young collection needs no pass to mark them and takes away the counts and finds the candidates in one pass over the young list, where it took three | Unreleased | `JS_RunYoungGC` in [quickjs.c](../../engine/quickjs.c) |
 
 ## Weak collections
 

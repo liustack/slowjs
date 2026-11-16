@@ -336,7 +336,9 @@ typedef struct JSMallocBlockHeader {
         uint16_t free_next; /* FREE_NIL if none */
     } u;
     uint8_t block_size_idx;
-    uint8_t gc_obj_type : 7;
+    uint8_t gc_obj_type : 6;
+    /* a GC object on the young list (JS_RunYoungGC) */
+    uint8_t young : 1;
     uint8_t mark : 1;
     int ref_count;
     __attribute__((aligned(JS_MALLOC_ALIGN))) uint8_t user_data[];
@@ -620,7 +622,12 @@ typedef enum {
     JS_GC_OBJ_TYPE_ASYNC_FUNCTION,
     JS_GC_OBJ_TYPE_JS_CONTEXT,
     JS_GC_OBJ_TYPE_MODULE,
+    JS_GC_OBJ_TYPE_COUNT, /* not a type: how many there are */
 } JSGCObjectTypeEnum;
+
+/* gc_obj_type has 6 bits of the block header, next to the young bit and the
+   mark */
+_Static_assert(JS_GC_OBJ_TYPE_COUNT <= (1 << 6), "every gc_obj_type fits its 6 bits");
 
 /* header for GC objects. GC objects are C data structures with a
    reference count that can reference other GC objects. JS Objects are
@@ -1839,6 +1846,7 @@ static JSAtom js_symbol_to_atom(JSContext *ctx, JSValue val);
 static void add_gc_object(JSRuntime *rt, JSGCObjectHeader *h,
                           JSGCObjectTypeEnum type);
 static void remove_gc_object(JSGCObjectHeader *h);
+static inline void gc_keep(JSGCObjectHeader *p);
 static JSValue js_instantiate_prototype(JSContext *ctx, JSObject *p, JSAtom atom, void *opaque);
 static JSValue js_module_ns_autoinit(JSContext *ctx, JSObject *p, JSAtom atom,
                                  void *opaque);
@@ -1867,6 +1875,7 @@ static void weakref_delete_weakref(JSRuntime *rt, JSWeakRefHeader *wh);
 static void finrec_delete_weakref(JSRuntime *rt, JSWeakRefHeader *wh);
 static void JS_RunGCInternal(JSRuntime *rt, BOOL remove_weak_objects);
 static void young_splice(JSRuntime *rt);
+static void young_splice_clear(JSRuntime *rt);
 static void gc_defer(JSRuntime *rt, JSGCObjectHeader *p);
 static JSValue js_array_from_iterator(JSContext *ctx, uint32_t *plen,
                                       JSValueConst obj, JSValueConst method);
@@ -2488,6 +2497,7 @@ static void *__js_realloc(JSMallocContext *s, void *ptr, size_t size)
         new_b = container_of(new_ptr, JSMallocBlockHeader, user_data);
         /* copy the GC data */
         new_b->gc_obj_type = b->gc_obj_type;
+        new_b->young = b->young;
         new_b->mark = b->mark;
         new_b->ref_count = b->ref_count;
         /* copy the data */
@@ -9807,7 +9817,8 @@ static void free_object(JSRuntime *rt, JSObject *p)
         if (p->weakref_count == 0) {
             js_free_rt(rt, p);
         } else {
-            js_rc(p)->mark = 0; /* reset the mark so that the weakref can be freed */
+            /* reset the mark so that the weakref can be freed */
+            gc_keep(&p->header);
         }
     }
 }
@@ -10065,6 +10076,7 @@ static void add_gc_object(JSRuntime *rt, JSGCObjectHeader *h,
 {
     js_rc(h)->mark = 0;
     js_rc(h)->gc_obj_type = type;
+    js_rc(h)->young = 1;
     list_add_tail(&h->link, &rt->young_obj_list);
 }
 
@@ -10251,6 +10263,20 @@ static void mark_children(JSRuntime *rt, JSGCObjectHeader *gp,
     }
 }
 
+/* An object a collection leaves alive (or keeps for its weak references):
+   the mark is reset for the next collection, and the object is old from now
+   on. Every pass that leaves objects on gc_obj_list goes through it: the
+   scan of a full collection (gc_scan, gc_ephemeron) over every object it
+   keeps and the restore that moves one there (gc_scan_incref_child), the
+   survivors of JS_RunYoungGC and young_splice_clear. A young bit left on an
+   old object would let a young collection take a count from it that it
+   never gives back (white_gc_lists checks the bit). */
+static inline void gc_keep(JSGCObjectHeader *p)
+{
+    js_rc(p)->mark = 0;
+    js_rc(p)->young = 0;
+}
+
 static void gc_decref_child(JSRuntime *rt, JSGCObjectHeader *p)
 {
     assert(js_rc(p)->ref_count > 0);
@@ -10291,7 +10317,7 @@ static void gc_scan_incref_child(JSRuntime *rt, JSGCObjectHeader *p)
            end of gc_obj_list */
         list_del(&p->link);
         list_add_tail(&p->link, &rt->gc_obj_list);
-        js_rc(p)->mark = 0; /* reset the mark for the next GC call */
+        gc_keep(p);
     }
 }
 
@@ -10309,7 +10335,7 @@ static void gc_scan(JSRuntime *rt)
     list_for_each(el, &rt->gc_obj_list) {
         p = list_entry(el, JSGCObjectHeader, link);
         assert(js_rc(p)->ref_count > 0);
-        js_rc(p)->mark = 0; /* reset the mark for the next GC call */
+        gc_keep(p);
         mark_children(rt, p, gc_scan_incref_child);
     }
 
@@ -10370,7 +10396,7 @@ static void gc_free_cycles(JSRuntime *rt)
         if (js_rc(p)->gc_obj_type == JS_GC_OBJ_TYPE_JS_OBJECT &&
             ((JSObject *)p)->weakref_count != 0) {
             /* keep the object because there are weak references to it */
-            js_rc(p)->mark = 0;
+            gc_keep(p);
         } else {
             js_free_rt(rt, p);
         }
@@ -10596,7 +10622,7 @@ static BOOL gc_ephemeron(JSRuntime *rt, BOOL remove_weak_objects)
     s->phase = 2;
     list_for_each(el, &rt->gc_obj_list) {
         p = list_entry(el, JSGCObjectHeader, link);
-        js_rc(p)->mark = 0;
+        gc_keep(p);
         mark_children(rt, p, gc_scan_incref_child);
         if (s->has_symbols)
             gc_ephemeron_atoms(rt, p);
@@ -10718,8 +10744,15 @@ void JS_RunGC(JSRuntime *rt)
    reaches, and the rest are cycles of garbage. Old objects are never
    visited and their counts never change. A cycle through an old object and
    a weak map value, with what it holds, while its map is reachable or old,
-   stay until the next full collection. The mark tells the young objects
-   during the collection. */
+   stay until the next full collection. The young bit of the header tells
+   the young objects: add_gc_object sets it, and an object loses it when it
+   becomes old or is kept for its weak references after its free (gc_keep). So
+   the collection needs no pass to mark them, and one pass over the young list
+   takes away the counts and finds the objects whose count got to 0 (the
+   decref and the split of gc_decref), where it took three. A young bit left
+   on an old object would let a scan move it to the young list with a count
+   its children never gave back: white_gc_lists checks the bit of every
+   object on both lists. */
 
 /* move the objects of 'from' to the end of 'to' */
 static void young_move(struct list_head *from, struct list_head *to)
@@ -10734,21 +10767,42 @@ static void young_move(struct list_head *from, struct list_head *to)
     init_list_head(from);
 }
 
-/* make every young object old */
+/* make every young object old, for a full collection: its scan clears the
+   young bit of every object it keeps (gc_keep), so that a program that never
+   runs a young collection walks its objects no more than before */
 static void young_splice(JSRuntime *rt)
 {
     young_move(&rt->young_obj_list, &rt->gc_obj_list);
 }
 
+/* make every young object old, outside a collection */
+static void young_splice_clear(JSRuntime *rt)
+{
+    struct list_head *el;
+
+    list_for_each(el, &rt->young_obj_list)
+        gc_keep(list_entry(el, JSGCObjectHeader, link));
+    young_move(&rt->young_obj_list, &rt->gc_obj_list);
+}
+
+/* The young bit tells the objects of the collection, and the mark those of
+   them the pass over the young list has visited, as in gc_decref: a visited
+   object whose count gets to 0 goes to tmp_obj_list at once, and one not
+   visited yet goes there when it is visited with a count of 0. */
 static void young_decref_child(JSRuntime *rt, JSGCObjectHeader *p)
 {
-    if (js_rc(p)->mark)
-        js_rc(p)->ref_count--;
+    if (!js_rc(p)->young)
+        return;
+    js_rc(p)->ref_count--;
+    if (js_rc(p)->ref_count == 0 && js_rc(p)->mark) {
+        list_del(&p->link);
+        list_add_tail(&p->link, &rt->tmp_obj_list);
+    }
 }
 
 static void young_scan_incref_child(JSRuntime *rt, JSGCObjectHeader *p)
 {
-    if (!js_rc(p)->mark)
+    if (!js_rc(p)->young)
         return;
     js_rc(p)->ref_count++;
     if (js_rc(p)->ref_count == 1) {
@@ -10760,7 +10814,7 @@ static void young_scan_incref_child(JSRuntime *rt, JSGCObjectHeader *p)
 
 static void young_scan_incref_child2(JSRuntime *rt, JSGCObjectHeader *p)
 {
-    if (js_rc(p)->mark)
+    if (js_rc(p)->young)
         js_rc(p)->ref_count++;
 }
 
@@ -10773,17 +10827,12 @@ void JS_RunYoungGC(JSRuntime *rt)
     if (rt->gc_phase != JS_GC_PHASE_NONE)
         return;
     JS_GC_RUN(1);
-    list_for_each(el, &rt->young_obj_list) {
-        p = list_entry(el, JSGCObjectHeader, link);
-        js_rc(p)->mark = 1;
-    }
-    list_for_each(el, &rt->young_obj_list) {
-        p = list_entry(el, JSGCObjectHeader, link);
-        mark_children(rt, p, young_decref_child);
-    }
     init_list_head(&rt->tmp_obj_list);
     list_for_each_safe(el, el1, &rt->young_obj_list) {
         p = list_entry(el, JSGCObjectHeader, link);
+        assert(js_rc(p)->mark == 0);
+        mark_children(rt, p, young_decref_child);
+        js_rc(p)->mark = 1;
         if (js_rc(p)->ref_count == 0) {
             list_del(&p->link);
             list_add_tail(&p->link, &rt->tmp_obj_list);
@@ -10797,11 +10846,10 @@ void JS_RunYoungGC(JSRuntime *rt)
         p = list_entry(el, JSGCObjectHeader, link);
         mark_children(rt, p, young_scan_incref_child2);
     }
-    list_for_each(el, &rt->young_obj_list) {
-        p = list_entry(el, JSGCObjectHeader, link);
-        js_rc(p)->mark = 0;
-    }
-    young_splice(rt);
+    /* the survivors are old now */
+    list_for_each(el, &rt->young_obj_list)
+        gc_keep(list_entry(el, JSGCObjectHeader, link));
+    young_move(&rt->young_obj_list, &rt->gc_obj_list);
 
     gc_free_cycles(rt);
 
@@ -10915,7 +10963,7 @@ void JS_ComputeMemoryUsage(JSRuntime *rt, JSMemoryUsage *s)
     int i;
     JSMemoryUsage_helper mem = { 0 }, *hp = &mem;
 
-    young_splice(rt);
+    young_splice_clear(rt);
     memset(s, 0, sizeof(*s));
     s->malloc_count = rt->malloc_ctx.heap.blocks + 1; /* the blocks and the runtime */
     s->malloc_size = rt->malloc_ctx.heap.count;
@@ -11297,7 +11345,7 @@ size_t JS_DumpMemoryUsage(char *buf, size_t size, const JSMemoryUsage *s, JSRunt
     JSDumpOut out = { buf, size, 0 };
     char t[24];
     if (rt)
-        young_splice(rt);
+        young_splice_clear(rt);
     dump_printf(&out, "QuickJS memory usage -- " CONFIG_VERSION " version, %d-bit, malloc limit: %"PRId64"\n\n",
             (int)sizeof(void *) * 8, s->malloc_limit);
 #if 1
