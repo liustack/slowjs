@@ -2431,8 +2431,11 @@ static void test_tags_oom(void)
         NULL
     };
 
+    /* run first works with about 32.1 KiB of room (32888 bytes): the sweep
+       goes well past it, so that a few more bytes of register code still
+       leave a room that works */
     sweep_register = register_tags;
-    sweep("startTag", "tags.js", setup, "run()", want, 32768);
+    sweep("startTag", "tags.js", setup, "run()", want, 49152);
     sweep_register = NULL;
 }
 
