@@ -25628,7 +25628,7 @@ TEXT ·JS_FreeValue(SB), $56-32
 	WORD $0xf9000ff6
 	WORD $0xf90013f7
 	BL ·__JS_FreeValueRT(SB)
-	WORD $0x17fffff9
+	WORD $0x14000001
 	RET
 
 TEXT ·js_host_resolve_imported_module(SB), $216-48

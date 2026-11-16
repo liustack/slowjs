@@ -7,6 +7,7 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 ### Changed
 
 - `a + b` of two short one-byte strings, as class names and keys are built, grows the left one in place or copies both without the three calls of the generic concatenation.
+- `if (o)`, `!o` and the loops on an object take its truth in the register loop, with no call out of it.
 
 ## [v0.31.3] - 2026-11-16
 

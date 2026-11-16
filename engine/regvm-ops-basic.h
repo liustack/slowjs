@@ -880,6 +880,21 @@ static no_inline int rv_tobool_slow(JSContext *ctx, JSValue *F, int slot)
     return JS_ToBool(ctx, F[slot]);
 }
 
+/* The truth of an object operand of a branch or of !, in the handler: true
+   but for an object with [[IsHTMLDDA]], as js_to_bool gives it. A temp
+   gives back its reference when it is not the last one, which frees
+   nothing, so no call is made. The last reference of a temp, and any value
+   that is not an object, go to rv_tobool_slow, which frees what it must.
+   Objects are half to two thirds of the truth tests of a page that are not
+   of an int or a bool. Gives 1 with the truth in res, else 0. */
+#define RV_TRUTH_OBJ(v, slot, res)                                      \
+    (JS_VALUE_GET_TAG(v) == JS_TAG_OBJECT &&                            \
+     (!rv_is_temp(F, slot) ||                                           \
+      __js_rc(JS_VALUE_GET_OBJ(v))->ref_count > 1) &&                   \
+     ((res) = !JS_VALUE_GET_OBJ(v)->is_HTMLDDA,                         \
+      rv_is_temp(F, slot) ?                                             \
+      (void)__js_rc(JS_VALUE_GET_OBJ(v))->ref_count-- : (void)0, 1))
+
 /* the length of a string or a rope, or -1 for any other value */
 static inline int rv_str_length(JSValueConst v)
 {
@@ -1575,7 +1590,7 @@ static inline BOOL rv_unwrap_in_loop(JSValueConst f)
         int res;                                                        \
         if ((uint32_t)JS_VALUE_GET_TAG(v) <= JS_TAG_UNDEFINED) {        \
             res = JS_VALUE_GET_INT(v) != 0;                             \
-        } else {                                                        \
+        } else if (!RV_TRUTH_OBJ(v, (int8_t)ip[0], res)) {              \
             RV_SYNC_TOP();                                              \
             res = rv_tobool_slow(ctx, F, (int8_t)ip[0]);                \
             RV_JUMP_SLOW(res == (jt), (int16_t)get_u16(ip + 1), 0);     \
