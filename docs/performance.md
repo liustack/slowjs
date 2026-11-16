@@ -934,6 +934,21 @@ A regexp [looks first for the longest literal every match must hold](changes/reg
 
 On tifa's pages the literal rules out little: the scan runs 0 to 156 times a render. On the native host the regexp functions there cost at most 28K instructions a render (0.009%), and the rest of the rise is in functions that hash on addresses, which move with any change to where memory lands. In the product the gain comes from the profile trained on the new C, which lays out `lre_find` and `lre_exec_backtrack` better with the same calls. A regexp that finds its literal but rules nothing out pays for the scan, up to +0.36% on one of the 13 wider pages (an i18n page) natively and +0.17% in the product. The time was not measured.
 
+#### The plan of a regexp without a literal
+
+v0.31.1 made the plan of every regexp 74 bytes, 38 of them for the literal. Now [only a regexp with a literal carries it](changes/regexp.md#a-literal-every-match-holds), and the plan of one without is 36 bytes again. The long Markdown page compiles 468 regexps a render, 120 of them with a literal. Its regexp bytecode takes 347,466 bytes a render, against 364,012 in v0.31.1 and 346,228 in v0.31.0. Callgrind on linux/amd64, the Go product with each C trained the same way, gives tifa's pages at most 0.06% more engine instructions than v0.31.1, and no regexp function moves. The rise is in caches indexed by address, such as that of the own keys of a shape: with 38 bytes less the literal's put back after every plan, the pages run the instructions of v0.31.1 within 0.05%. The V8 RegExp benchmark keeps its gain.
+
+When the page renders in one VM without a pool, the time and the peak memory follow when the collector runs, and that moves with any change to the bytes allocated. md-0400 alone, 1 warm and 3 timed renders, on a GCP t2d (AMD EPYC 7B13, core 0, nothing else running), the mean of 10 or 12 rounds:
+
+| Build | Regexp bytes a render | Render (p50) | Peak RSS |
+| --- | ---: | ---: | ---: |
+| v0.31.0 | 346,228 | 4.40 s | 311 MB |
+| v0.31.1 | 364,012 | 4.21 s | 310 MB |
+| This change | 347,466 | 4.22 s | 237 MB |
+| v0.31.0, 2 to 24 bytes added to every regexp (another run, where v0.31.0 took 4.50 s) | 347,164 to 357,460 | 4.31 to 4.45 s | 253 to 309 MB |
+
+v0.31.1 is not slower than v0.31.0 here. The counts of md-0400 move with the schedule too: this change runs 1.0% more instructions than v0.31.1, all of them in the collector and in freeing.
+
 ### Arrays that are appended to take room for 8 elements at first
 
 [An array that is appended to takes room for 8 elements at first](changes/objects-and-shapes.md#an-array-that-is-appended-to-takes-room-for-8-elements-at-first). Counted on 2026-11-12 on the native C tree at 641f7dc7 (linux/arm64 callgrind, the timed render only, `host_poll` and `__shadow_remaining` left out): a render makes 1.3K (React) to 20.5K (the shop's products page) arrays, and 0.25K to 8.2K of the allocations are regrows of an array that outgrew its first allocation (React 246, the shop's home 5.1K, products 8.2K, a workbench page 3.6K, MUI's orders page 7.0K, 3.0K of them in the results of `concat`), at about 108 instructions for a first allocation and 160 and 3 for each element copied for a regrow, so growth is 0.8% to 1.2% of a render and its regrows 0.30% to 0.58%. A first allocation of 4 slots took 0.09% (React), 0.10% (home), 0.19% (products), 0.20% (workbench) and 0.36% (MUI orders), and of 8 slots 0.10%, 0.23%, 0.23%, 0.19% and 0.39%. With the URL stand-in (a URL object reused after the first render) 8 slots took 0.14% (home), 0.14% (products), 0.19% (workbench) and 0.39% (MUI orders). Memory after 200 renders stays the same within 0.1%. A room remembered per place and the exact length for the results of `concat` and `map`, `Array(n)` and the own keys are in [What was tried and not done](#what-was-tried-and-not-done).

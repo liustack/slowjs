@@ -88,6 +88,7 @@ int white_regexp_cache(JSRuntime *rt, char *out, size_t cap, size_t *bytes, uint
 int white_lre_split_budget(void);
 int white_lre_chains(const char *re, int flags, void *opaque, char *out, size_t n);
 int white_lre_literal(const char *re, int flags, void *opaque, char *out, size_t n);
+int white_lre_plan_size(const char *re, int flags, void *opaque, int *rest, char *names, size_t n);
 int white_lre_split_same(const char *re, int flags, void *opaque, const uint32_t *units, int n, long *calls);
 JSValue white_compile_failing(JSContext *ctx, const char *js, int fail, int mode, int *nallocs);
 JSValue white_read_failing(JSContext *ctx, const uint8_t *buf, size_t len, int fail, int *nallocs);
@@ -5719,6 +5720,8 @@ static void test_regexp_literal(void)
         { "a(?:b|c)*d", 0, "d key 0 before ?" },
         { "(?:a|b)xy(?:c|d)xyz", 0, "xyz key 2 before 4" },
         { "(?:a|b)xyz(?:c|d)xyz", 0, "xyz key 2 before 1" },
+        /* after a chain of 15 split ops, which the plan holds first */
+        { "(?:a1|b1|c1|d1|e1|f1|g1|h1|i1|j1|k1|l1|m1|n1|o1|p1)xyz", 0, "xyz key 2 before 2" },
         /* lookarounds */
         { "a(?=bc)", 0, "-" },
         { "(?=abc)", 0, "-" },
@@ -5776,6 +5779,44 @@ static void test_regexp_literal(void)
     memcpy(big, ".zq", 3);
     white_lre_literal(big, 0, v.ctx, out, sizeof(out));
     CHECK(!strcmp(out, "zq key 1 before 1"), "zq then 6000 classes: \"%s\"", out);
+    vm_free(&v);
+}
+
+/* The plan after the bytecode of a regexp (lre_plan) is 36 bytes when the
+   regexp has no literal every match holds, as before there were literals,
+   and only one with a literal carries it, 6 bytes and 2 for each unit, after
+   the chains (white_lre_plan_size). The group names follow it. */
+static void test_regexp_plan_size(void)
+{
+    enum { Y = 32 };
+    static const struct {
+        const char *re;
+        int flags, size;
+        const char *names;
+    } cases[] = {
+        { "[a-z]+", 0, 36, "" },
+        { "abc", 0, 36, "" },
+        { ".abc", Y, 36, "" },
+        { "xa|ya", 0, 36, "" },
+        { "[a-z](?<n>[0-9])", 0, 36, "n" },
+        { ".xyz", 0, 36 + 6 + 2 * 3, "" },
+        { "[a-z](?<n>x)yz", 0, 36 + 6 + 2 * 3, "n" },
+        { ".abcdefghijklmnopqrstuvwxyz", 0, 36 + 6 + 2 * 16, "" },
+        /* a chain of 15 split ops, then the literal */
+        { "(?:a1|b1|c1|d1|e1|f1|g1|h1|i1|j1|k1|l1|m1|n1|o1|p1)xyz", 0,
+          36 + 8 + 2 * (257 + 15) + 6 + 2 * 3, "" },
+        { "(?:a1|b1|c1|d1|e1|f1|g1|h1|i1|j1|k1|l1|m1|n1|o1|p1)(?<n>[0-9])", 0,
+          36 + 8 + 2 * (257 + 15), "n" },
+    };
+    VM v = vm_new();
+    char names[16];
+
+    for (size_t i = 0; i < countof(cases); i++) {
+        int rest, size = white_lre_plan_size(cases[i].re, cases[i].flags, v.ctx, &rest, names, sizeof(names));
+        CHECK(size == cases[i].size && (rest == 0) == !cases[i].names[0] && !strcmp(names, cases[i].names),
+              "/%s/ flags %d: plan %d, %d bytes after it, names \"%s\", want plan %d, names \"%s\"",
+              cases[i].re, cases[i].flags, size, rest, names, cases[i].size, cases[i].names);
+    }
     vm_free(&v);
 }
 
@@ -8484,6 +8525,7 @@ int main(int argc, char **argv)
     test_regexp_split_budget();
     test_regexp_chains();
     test_regexp_literal();
+    test_regexp_plan_size();
     test_regexp_split_same();
     test_compile_one_failure(0);
     test_compile_one_failure(1);
