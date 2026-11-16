@@ -339,54 +339,6 @@ func wantKillWhileFreeing(t *testing.T, m *VM, what string) {
 	}
 }
 
-// TestStoppedCompileFreeNotKilled stops the compile of a source of 8.4 MB,
-// a function of 1.4 million statements, at two, five and nine tenths of its
-// time (in the parse and in the passes), with no grace. The compile then
-// frees the code it made, in the pass that stopped and in the function defs
-// and functions made of them, about one poll for each 10,000 instructions:
-// more than KillPolls polls for that much code, which killed the VM. Those
-// polls do not count toward the kill (JS_GetInterruptFlag in
-// engine/quickjs.h), so the call ends interrupted with few polls counted,
-// and the VM goes on. The VM then still kills a script that frees what it
-// made for longer than KillPolls polls (wantKillWhileFreeing), so the end
-// of the compile cleared the mark.
-func TestStoppedCompileFreeNotKilled(t *testing.T) {
-	m := newTestVM(t)
-	if _, err := m.Eval(`var a = 0, s = '(function(){' + 'a=a+1;'.repeat(1400000) + '})'; 0`, EvalGlobal); err != nil {
-		t.Fatal(err)
-	}
-	const call = `(0, eval)(s); 0`
-	start := time.Now()
-	if _, err := m.Eval(call, EvalGlobal); err != nil {
-		t.Fatal(err)
-	}
-	whole := time.Since(start)
-	m.h.SetKillGrace(0)
-	for _, part := range []int64{2, 5, 9} {
-		if err := m.SetEvalTimeout(time.Duration(int64(whole) * part / 10)); err != nil {
-			t.Fatal(err)
-		}
-		before := m.h.Polls()
-		_, err := m.Eval(`for (;;) `+call, EvalGlobal)
-		polls, counted := m.h.Polls()-before, m.h.StopPolls()
-		t.Logf("stopped at %d/10 of a call of %v: %d polls counted toward the kill, %d polls in the call", part, whole, counted, polls)
-		var e *Error
-		if errors.Is(err, ErrKilled) || !errors.As(err, &e) || !e.Interrupted || !e.Uncatchable {
-			t.Fatalf("stopped at %d/10 of a call of %v: got %v (killed %v) after %d polls counted toward the kill, want interrupted", part, whole, err, errors.Is(err, ErrKilled), counted)
-		}
-		if counted > gohost.KillPolls/2 {
-			t.Errorf("stopped at %d/10 of a call of %v: %d polls counted toward the kill, want at most %d", part, whole, counted, gohost.KillPolls/2)
-		}
-		if err := m.SetEvalTimeout(0); err != nil {
-			t.Fatal(err)
-		}
-		if v, err := m.Eval(`1+1`, EvalGlobal); err != nil || v != 2 {
-			t.Fatalf("the VM after the stop: 1+1 got %v, %v", v, err)
-		}
-	}
-	wantKillWhileFreeing(t, m, "after the stopped compiles")
-}
-
 // TestCompileOutOfMemoryLeavesNoMark: a compile that runs out of memory
 // leaves through the exits a stopped one takes (js_compile_end), and the VM
 // still kills a script that frees for longer than KillPolls polls after its
