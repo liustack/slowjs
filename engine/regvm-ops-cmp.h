@@ -98,18 +98,17 @@ static void rv_one(RVPass *s, int pos);
    refs, constants and fields, then a compare and its branch: each
    instruction is read with s->pos at its old place, so it names the line and
    throws as there, and the interrupt is polled at the branch in place of the
-   goto. */
-static BOOL rv_rotate(RVPass *s, int pos, int target)
+   goto. The goto only checks here, the old offset of the branch of the test
+   or 0, and rv_code reads the copy after it (RV_DEFER_ROTATE, rv_rotate), so
+   that rv_one does not call itself. */
+static int rv_rotate_branch(RVPass *s, int pos, int target)
 {
-    int p, n = 0, br, exit, jt;
-#ifdef RV_INJECT
-    int prev = -1;
-#endif
+    int p, n = 0, exit, jt;
     if (s->fold || target >= pos || (s->farj && s->farj[pos]) || !s->leader[target])
-        return FALSE;
+        return 0;
     for (p = target; ; p = rv_next_pos(s, p)) {
         if (p >= pos || (p != target && s->leader[p]) || ++n > 6)
-            return FALSE;
+            return 0;
         switch (s->bc[p]) {
         case OP_get_loc: case OP_get_loc0: case OP_get_loc1: case OP_get_loc2:
         case OP_get_loc3: case OP_get_loc8: case OP_get_loc_check:
@@ -128,14 +127,24 @@ static BOOL rv_rotate(RVPass *s, int pos, int target)
         case OP_strict_eq: case OP_strict_neq:
             break;
         default:
-            return FALSE;
+            return 0;
         }
         break;
     }
     exit = rv_next_branch(s, p, &jt);
     if (exit < 0 || exit != rv_next_pos(s, pos))
-        return FALSE;
-    br = rv_next_pos(s, p);
+        return 0;
+    return rv_next_pos(s, p);
+}
+
+/* the copy of the test at target, up to its branch br (rv_rotate_branch),
+   read after the goto */
+static void rv_rotate(RVPass *s, int target, int br)
+{
+    int p;
+#ifdef RV_INJECT
+    int prev = -1;
+#endif
     rv_block_end(s, s->sp);
     s->rot_br = br;
     s->rot_body = rv_next_pos(s, br);
@@ -158,7 +167,6 @@ static BOOL rv_rotate(RVPass *s, int pos, int target)
         rv_one(s, p);
     }
     s->rot_br = s->rot_body = -1;
-    return TRUE;
 }
 
 /* the register forms of a compare: the bool form (its K form next to it),
