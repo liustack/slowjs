@@ -4,6 +4,10 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 
 ## [Unreleased]
 
+### Changed
+
+- A read of a property by name keeps, at each place in the code, where it last found the property, on the object or on its prototype, and looks there first. On a linux/amd64 machine with an AMD EPYC 7B13, React and workbench pages take about 2% less time, the store pages up to 2.4% less and the V8 suite 2.4% less, for 0.4% to 1.4% more memory in a VM.
+
 ## [v0.31.1] - 2026-11-16
 
 ### Changed
