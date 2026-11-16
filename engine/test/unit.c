@@ -483,9 +483,10 @@ static void test_shape_cache_lifetime(void)
     JS_RunGC(rt);
     CHECK(shapes(rt) - base == n, "a collection changed the ring of 4");
 
-    /* Let each allocation fail in turn while objects grow: the shapes kept
-       before are still there after, so the shapes of ten are found again
-       and none is made. */
+    /* Let each allocation fail in turn while objects grow: a refused request
+       lets the kept shapes go (js_shape_cache_drop), and the ring keeps
+       shapes again after it, so that the shapes of ten, made once more, are
+       found the time after and none is made. */
     CHECK(JS_SetShapeCache(ctx, 2048) == 0, "no ring");
     CHECK(eval(ctx, ten), "the script threw");
     for(slack = 0; slack < 1 << 16 && !ok; slack += 16) {
@@ -497,10 +498,11 @@ static void test_shape_cache_lifetime(void)
             JS_FreeValue(ctx, JS_GetException(ctx));
         JS_FreeValue(ctx, v);
         JS_SetMemoryLimit(rt, (size_t)-1);
+        CHECK(eval(ctx, ten), "the script threw");
         n = shapes(rt);
         CHECK(eval(ctx, ten), "the script threw");
         CHECK(shapes(rt) == n, "the shapes of ten were made again after a "
-              "failed allocation at %zu bytes", slack);
+              "failed allocation at %zu bytes and once more", slack);
     }
     CHECK(ok, "the objects never grew");
     JS_SetShapeCache(ctx, 0);

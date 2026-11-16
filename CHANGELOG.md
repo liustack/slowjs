@@ -4,6 +4,10 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 
 ## [Unreleased]
 
+### Fixed
+
+- The shapes a VM keeps for later objects (`SetShapeCache`, up to about 6 MiB) are let go when an allocation would pass the memory limit, so a script close to its limit no longer runs out of memory because of them.
+
 ## [v0.31.3] - 2026-11-16
 
 ### Changed

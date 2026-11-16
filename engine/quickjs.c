@@ -1708,6 +1708,7 @@ static JSValue js_compile_regexp(JSContext *ctx, JSValueConst pattern,
                                  JSValueConst flags);
 static void js_regexp_cache_off(JSRuntime *rt);
 static void js_shape_cache_off(JSRuntime *rt);
+static BOOL js_shape_cache_drop(JSRuntime *rt);
 static JSValue JS_NewRegexp(JSContext *ctx, JSValue pattern, JSValue bc);
 static void gc_decref(JSRuntime *rt);
 static int JS_NewClass1(JSRuntime *rt, JSClassID class_id,
@@ -2231,18 +2232,20 @@ static BOOL js_scratch_drain(JSMallocContext *s)
     return TRUE;
 }
 
-/* the scratch of the register pass and the front cache back, and whether
-   anything went back */
+/* the scratch of the register pass, the shapes the shape cache keeps and the
+   front cache back, and whether anything went back. The shapes go before the
+   front cache, so that their blocks reach the heap with it. */
 static BOOL js_heap_drain(JSMallocContext *s)
 {
     BOOL any = js_scratch_drain(s);
+    any |= js_shape_cache_drop((JSRuntime *)s); /* JS_NewRuntime: the first field */
     return js_front_drain(s) || any;
 }
 
 /* The heap, and when it fails, once more after the scratch of the register
-   pass and the front cache are given back: they may hold the memory the
-   request needs, or the count the limit would pass. A move the interrupt
-   flag stopped (heap.stopped) is not tried again. */
+   pass, the kept shapes and the front cache are given back: they may hold
+   the memory the request needs, or the count the limit would pass. A move
+   the interrupt flag stopped (heap.stopped) is not tried again. */
 static no_inline void *js_heap_alloc(JSMallocContext *s, size_t size)
 {
     void *p;
@@ -4530,7 +4533,7 @@ static JSAtom __JS_NewAtom(JSRuntime *rt, JSString *str, int atom_type,
 
     if (rt->atom_free_index == 0) {
         /* allow new atom entries */
-        uint32_t new_size, start;
+        uint32_t new_size, start, old_free;
         JSAtomStruct **new_array;
 
         /* alloc new with size progression 3/2:
@@ -4562,13 +4565,17 @@ static JSAtom __JS_NewAtom(JSRuntime *rt, JSString *str, int atom_type,
             rt->atom_count++;
             start = 1;
         }
+        /* the free entries the allocations above made, when a refused
+           request let go of kept shapes and of atoms with them
+           (js_shape_cache_drop), follow the new ones */
+        old_free = rt->atom_free_index;
         rt->atom_size = new_size;
         rt->atom_array = new_array;
         rt->atom_free_index = start;
         for(i = start; i < new_size; i++) {
             uint32_t next;
             if (i == (new_size - 1))
-                next = 0;
+                next = old_free;
             else
                 next = i + 1;
             rt->atom_array[i] = atom_set_free(next);
@@ -7881,9 +7888,9 @@ static JSShape *js_dup_shape(JSShape *sh)
    nothing but that prototype, which its context holds anyway, and the atoms
    of its keys. The cache keeps the last n shapes in a ring: when the ring is
    full, the oldest shape is let go. Kept shapes count against the memory
-   limit, and the cache does not let them go when an allocation fails:
-   add_property reallocates the properties of an object before it takes the
-   shape it found, which may be one only the cache holds. */
+   limit, and a request the heap refuses lets them all go before it is tried
+   again (js_shape_cache_drop), so that with the cache on a script runs out of
+   memory where it would with the ring empty. */
 #define JS_SHAPE_MAX_PROPS 32
 #define JS_SHAPE_CREDIT_MAX 64
 
@@ -7902,6 +7909,40 @@ static void js_shape_cache_off(JSRuntime *rt)
             js_free_shape(rt, off.ring[i]);
     }
     js_free_rt(rt, off.ring);
+}
+
+/* Let go of the shapes the shape cache keeps and leave it on, with its ring
+   empty: a request the heap refused (js_heap_drain) may need their memory, or
+   the count of the limit they take. Return whether one went. It is called
+   from inside any allocation, so it frees nothing a caller may be holding
+   without a reference: a kept shape is held by the ring alone, which
+   add_property, the one place that takes a kept shape and allocates before
+   it has its own reference, does not rely on (it takes its reference
+   first). A kept shape has no parent, and its prototype is the
+   Object.prototype its context holds, so only the shape and the atoms of its
+   keys go. Nothing goes while the collector frees objects (gc_phase), when
+   it walks the lists a shape is on. */
+static BOOL js_shape_cache_drop(JSRuntime *rt)
+{
+    JSShapeCache *sc = &rt->shape_cache;
+    JSShape **ring = sc->ring;
+    int i;
+
+    if (!ring || sc->count == 0 || rt->gc_phase != JS_GC_PHASE_NONE)
+        return FALSE;
+    /* with no ring, js_free_shape0 frees the shapes let go here rather than
+       keeping them again */
+    sc->ring = NULL;
+    for(i = 0; i < sc->n; i++) {
+        if (ring[i]) {
+            js_free_shape(rt, ring[i]);
+            ring[i] = NULL;
+        }
+    }
+    sc->ring = ring;
+    sc->next = 0;
+    sc->count = 0;
+    return TRUE;
 }
 
 /* Set the shape cache of the runtime of ctx to keep the last n shapes of
@@ -14479,18 +14520,24 @@ static JSProperty *add_property(JSContext *ctx,
         /* try to find an existing shape */
         new_sh = find_hashed_shape_prop(ctx->rt, sh, prop, prop_flags);
         if (new_sh) {
-            /* matching shape found: use it */
+            /* matching shape found: use it. Its reference is taken before
+               the property array is resized: new_sh may be held by the
+               shape cache alone, which a refused request lets go of
+               (js_shape_cache_drop). */
+            js_dup_shape(new_sh);
             /*  the property array may need to be resized */
             if (new_sh->prop_size != sh->prop_size) {
                 JSProperty *new_prop;
                 new_prop = js_resize_prop(ctx, p, sh->prop_count,
                                           new_sh->prop_size);
-                if (!new_prop)
+                if (!new_prop) {
+                    js_free_shape(ctx->rt, new_sh);
                     return NULL;
+                }
                 p->prop = new_prop;
             }
             js_shape_found(ctx);
-            p->shape = js_dup_shape(new_sh);
+            p->shape = new_sh;
             js_shape_release(ctx, new_sh, sh);
             return &p->prop[new_sh->prop_count - 1];
         } else if (js_rc(sh)->ref_count != 1 || js_shape_keepable(ctx, sh)) {

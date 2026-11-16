@@ -340,7 +340,6 @@ var goasmKeep = []any{
 	__dbuf_putc,
 	__expo2,
 	__js_poll_interrupts,
-	__js_rc,
 	__math_divzero,
 	__math_invalid,
 	__math_oflow,
