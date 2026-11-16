@@ -10,6 +10,7 @@ import (
 	"errors"
 	"math"
 	"strconv"
+	"strings"
 	"unicode/utf16"
 	"unicode/utf8"
 	"unsafe"
@@ -271,13 +272,24 @@ func concat(lists ...[]option) []option {
 
 // optionLists tells intl.js the options of each constructor, as json: the
 // name of the constructor to the names of its options and a string of their
-// kinds, one byte each.
+// kinds, one byte each. partTypeNames is partTypes as the json of an object
+// with them as keys, in order, which parts() in intl.js parses into
+// partTypes, null until then, at the first formatToParts (see partTypes).
 var optionLists = func() string {
 	type list struct {
 		Names []string `json:"names"`
 		Kinds string   `json:"kinds"`
 	}
-	m := map[string]list{}
+	m := map[string]any{}
+	var names strings.Builder
+	for i, t := range partTypes {
+		if i > 0 {
+			names.WriteByte(',')
+		}
+		names.WriteString(strconv.Quote(t) + ":0")
+	}
+	m["partTypeNames"] = "{" + names.String() + "}"
+	m["partTypes"] = nil
 	for _, c := range ctors {
 		l := list{Names: []string{}}
 		for _, o := range c.options {
@@ -511,6 +523,12 @@ var bridge = []*slowjs.Builtin{
 	}),
 	intlhook.NewBuiltin("formatToParts", 3, func(a slowjs.Args) (slowjs.Value, error) {
 		return numberFormatted(a, true)
+	}),
+	intlhook.NewBuiltin("formatRange", 5, func(a slowjs.Args) (slowjs.Value, error) {
+		return numberRangeFormatted(a, false)
+	}),
+	intlhook.NewBuiltin("formatRangeToParts", 5, func(a slowjs.Args) (slowjs.Value, error) {
+		return numberRangeFormatted(a, true)
 	}),
 	resolveBuiltin(dateTimeFormatCtor),
 	intlhook.NewBuiltin("format", 2, func(a slowjs.Args) (slowjs.Value, error) {
@@ -886,6 +904,40 @@ func numberFormatted(a slowjs.Args, wantParts bool) (slowjs.Value, error) {
 	return formatted(a.VM(), parts, wantParts)
 }
 
+// numberRangeFormatted is formatRange and formatRangeToParts of a
+// NumberFormat: arguments 1 and 3 are the ends, each a number or a numeric
+// string, and arguments 2 and 4 say whether the string is the digits of a
+// BigInt. The parts are their type, value and source in turn.
+func numberRangeFormatted(a slowjs.Args, wantParts bool) (slowjs.Value, error) {
+	door := intlhook.Open(a)
+	f, ok, err := formatterOf[*numberFormat](a)
+	if !ok {
+		return slowjs.UndefinedValue, err
+	}
+
+	start, end := f.rangeEnd(a, &door, 1), f.rangeEnd(a, &door, 3)
+	// PartitionNumberRangePattern refuses NaN once both ends are converted.
+	if start.IsNaN() || end.IsNaN() {
+		return slowjs.Value{}, jsErr(rangeError("Invalid number range: an end is NaN"))
+	}
+	parts, err := f.f.FormatDecimalRangeToParts(start, end)
+	if err != nil {
+		return slowjs.Value{}, jsErr(err)
+	}
+	if !wantParts {
+		var text strings.Builder
+		for _, p := range parts {
+			text.WriteString(p.Value)
+		}
+		return intlhook.Emit(a.VM(), text.String())
+	}
+	list := make([]string, 0, 3*len(parts))
+	for _, p := range parts {
+		list = append(list, string(p.Kind), p.Value, p.Source.String())
+	}
+	return intlhook.EmitStrings(a.VM(), list)
+}
+
 func dateFormatted(a slowjs.Args, wantParts bool) (slowjs.Value, error) {
 	f, ok, err := formatterOf[*dateTimeFormat](a)
 	if !ok {
@@ -908,16 +960,48 @@ func dateFormatted(a slowjs.Args, wantParts bool) (slowjs.Value, error) {
 	return formatted(a.VM(), parts, wantParts)
 }
 
+// partTypes are the types of the parts of NumberFormat and DateTimeFormat,
+// which intl.js gets in optionLists. formatted gives each type as its index
+// here, and parts() takes the type from a list of atoms it makes once: a
+// keyed read a page makes with it, as luxon's typeToPos[type], takes the path
+// of an atom, and Go makes no string for it. A type made in Go was a new
+// string at each call, which each such read hashed and looked up again.
+var partTypes = []string{
+	"literal", "integer", "group", "decimal", "fraction", "minusSign", "plusSign", "percentSign", "currency",
+	"nan", "infinity", "exponentSeparator", "exponentMinusSign", "exponentInteger", "compact", "unit",
+	"approximatelySign", "era", "year", "yearName", "relatedYear", "month", "day", "weekday", "dayPeriod",
+	"hour", "minute", "second", "fractionalSecond", "timeZoneName",
+}
+
+var partTypeIndex = func() map[string]int {
+	m := make(map[string]int, len(partTypes))
+	for i, t := range partTypes {
+		m[t] = i
+	}
+	return m
+}()
+
+// partTypeOf is the index in partTypes of element i of the types and values
+// of parts, in turn, where it is a type partTypes has.
+func partTypeOf(i int, s string) (int, bool) {
+	if i%2 != 0 {
+		return 0, false
+	}
+	k, ok := partTypeIndex[s]
+	return k, ok
+}
+
 // formatted returns parts either as the array of their types and values, in
-// turn, which parts() in intl.js makes the formatToParts result of, or,
-// joined, as the format one.
+// turn, which parts() in intl.js makes the formatToParts result of, each
+// type the index of partTypes or, for a type it does not have, the string,
+// or, joined, as the format one.
 func formatted(vm *slowjs.VM, parts []part, wantParts bool) (slowjs.Value, error) {
 	if wantParts {
 		l := make([]string, 0, 2*len(parts))
 		for _, p := range parts {
 			l = append(l, p.Type, p.Value)
 		}
-		return intlhook.EmitStrings(vm, l)
+		return intlhook.EmitStringsAs(vm, l, partTypeOf)
 	}
 
 	if len(parts) == 1 {

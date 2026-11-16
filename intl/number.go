@@ -8,6 +8,7 @@ import (
 	"errors"
 	"strconv"
 
+	"github.com/liustack/slowjs"
 	gointl "github.com/liustack/slowjs/internal/gointl"
 	"github.com/liustack/slowjs/internal/intlhook"
 )
@@ -225,6 +226,14 @@ func (f *numberFormat) admit(door *intlhook.Door, v any, parts bool) any {
 	default:
 		return v
 	}
+	f.reserve(door, d, parts)
+	return d
+}
+
+// reserve refuses d, a Decimal of a string, when f would write it with
+// more than intlhook.MaxDigits digits, and else checks the room for what
+// Go takes to write them.
+func (f *numberFormat) reserve(door *intlhook.Door, d gointl.Decimal, parts bool) {
 	n := f.f.Output(d)
 	if n > intlhook.MaxDigits {
 		intlhook.RefuseDigits()
@@ -234,6 +243,26 @@ func (f *numberFormat) admit(door *intlhook.Door, v any, parts bool) any {
 	} else {
 		door.Reserve(n * digitBytes)
 	}
+}
+
+// rangeEnd is argument i of a, an end of a range, as the Decimal f writes:
+// a number as the double it is, which is how V8 hands ICU a Number, or a
+// numeric string, the digits of a BigInt when argument i+1 is true. A
+// string is admitted as admit admits one for formatToParts, since a range
+// is always written as parts first. Each end has the cap of a number
+// formatted alone.
+func (f *numberFormat) rangeEnd(a slowjs.Args, door *intlhook.Door, i int) gointl.Decimal {
+	if v, ok := a.Number(i); ok {
+		return gointl.DecimalFromFloat(v)
+	}
+	s, _ := door.Short(i, intlhook.KindNumber)
+	var d gointl.Decimal
+	if isBigInt, _ := a.Bool(i + 1); isBigInt {
+		d = gointl.ParseExactDecimal(s)
+	} else {
+		d = gointl.ParseDecimal(s)
+	}
+	f.reserve(door, d, true)
 	return d
 }
 

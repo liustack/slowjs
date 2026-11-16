@@ -238,6 +238,26 @@
 		"proto": true,
 		"native": true
 	},
+	"Intl.NumberFormat.prototype.formatRange property": "-cw function",
+	"Intl.NumberFormat.prototype.formatRange": {
+		"name": "-c- \"formatRange\"",
+		"length": "-c- 2",
+		"prototype": "absent",
+		"keys": "length name",
+		"constructor": false,
+		"proto": true,
+		"native": true
+	},
+	"Intl.NumberFormat.prototype.formatRangeToParts property": "-cw function",
+	"Intl.NumberFormat.prototype.formatRangeToParts": {
+		"name": "-c- \"formatRangeToParts\"",
+		"length": "-c- 2",
+		"prototype": "absent",
+		"keys": "length name",
+		"constructor": false,
+		"proto": true,
+		"native": true
+	},
 	"Intl.NumberFormat.prototype.resolvedOptions property": "-cw function",
 	"Intl.NumberFormat.prototype.resolvedOptions": {
 		"name": "-c- \"resolvedOptions\"",

@@ -185,6 +185,25 @@ func chromiumResources(files, out map[string][]byte) error {
 			if from := take("patternsShort/currencyFormat"); from != nil {
 				s.CurrencyCompact = from.CurrencyCompact
 			}
+			// getNumberRangeData in ICU's numrange_impl.cpp: the system's
+			// range pattern from the nearest bundle that has one, then the
+			// Latin one, then "{0}–{1}". Chromium's bs has no numbers of its
+			// own and takes root's, where go-intl has CLDR's "{0} – {1}".
+			rangeFrom := take("miscPatterns/range")
+			if rangeFrom == nil && ns != "latn" {
+				if v := choose("", "NumberElements/latn/miscPatterns/range"); v != nil {
+					latn, ok := v.Select("latn", systems)
+					if !ok {
+						fail(fmt.Errorf("no Latin range pattern for %s", tag))
+					}
+					rangeFrom = &latn.System
+				}
+			}
+			if rangeFrom != nil {
+				s.RangePattern = rangeFrom.RangePattern
+			} else {
+				s.RangePattern = "{0}–{1}"
+			}
 			return s
 		}
 		defaultFrom := choose("", "NumberElements/default")

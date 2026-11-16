@@ -15,7 +15,7 @@
 //     database behind the timeZone option.
 //   - Intl.NumberFormat: grouping, fraction and significant digits, rounding
 //     modes, percent, currency, unit, compact and scientific notation, and
-//     numbering systems.
+//     numbering systems, and ranges with formatRange and formatRangeToParts.
 //   - Intl.PluralRules: cardinal and ordinal rules, select and selectRange.
 //   - Intl.Collator, and String.prototype.localeCompare through it: the
 //     collation types, sensitivity, numeric, caseFirst, ignorePunctuation
@@ -69,7 +69,6 @@
 //
 // Dates support all 18 calendars Chromium lists. NumberFormat and PluralRules
 // implement roundingIncrement and roundingPriority through go-intl.
-// NumberFormat.formatRange and formatRangeToParts are not implemented.
 //
 // # Differences from Chromium
 //

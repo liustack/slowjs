@@ -539,6 +539,9 @@ func (r *icuBundleData) resources(tree string, patterned map[string]bool) (paths
 				add("NumberElements", ns, "patternsShort", "decimalFormat")
 				add("NumberElements", ns, "patternsShort", "currencyFormat")
 				add("NumberElements", ns, "patternsLong", "decimalFormat")
+				// The range pattern, which NumberRangeFormatter looks up
+				// through the chain with the Latin one after it.
+				add("NumberElements", ns, "miscPatterns", "range")
 			}
 		}
 	case "curr":

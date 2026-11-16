@@ -15,7 +15,7 @@
 // property descriptors and the arrays it passes on without a prototype.
 
 (function (P, zone, optionLists, state,
-	nfResolve, nfFormat, nfParts, dtfResolve, dtfFormat, dtfParts, prResolve, prSelect, prSelectRange,
+	nfResolve, nfFormat, nfParts, nfRange, nfRangeParts, dtfResolve, dtfFormat, dtfParts, prResolve, prSelect, prSelectRange,
 	optionsOf, canonicalLocales, supportedLocales,
 	colResolve, colCompare, segResolve, segBreaks, rtfResolve, rtfFormat, rtfParts,
 	lfResolve, lfParts, dnResolve, dnOf, dfResolve, dfFormat, dfParts, valuesOf, localeCheck, localeNew, localeInfo, caseLanguage, casePremap, tfResolve, tfFormat, tfParts, tfRange, tfRangeParts) {
@@ -295,10 +295,25 @@
 	// made of elements 2i and 2i+1, already read, and the array is then cut
 	// to half its length. Only own elements are set, so no setter on
 	// Array.prototype runs.
+	//
+	// A type is a string, or its index in lists.partTypes, which the first
+	// such part makes of the keys of lists.partTypeNames: each type is then
+	// the engine's atom of its text, and a page reads a key with it as fast
+	// as with a literal. Literals here would be atoms in every VM that formats
+	// anything, and a string of a page with the same text would then never
+	// become the atom itself, which slows every read the page makes with it.
 	function parts(a) {
 		const n = a.length / 2;
 		for (let i = 0; i < n; i++) {
-			a[i] = {type: a[2 * i], value: a[2 * i + 1]};
+			let t = a[2 * i];
+			if (typeof t === 'number') {
+				let types = lists.partTypes;
+				if (types === null) {
+					types = lists.partTypes = bare(ownKeys(parse(lists.partTypeNames)));
+				}
+				t = types[t];
+			}
+			a[i] = {type: t, value: a[2 * i + 1]};
 		}
 		a.length = n;
 		return a;
@@ -482,6 +497,22 @@
 		return call(i, fn, t === 'string' ? p : +p);
 	}
 
+	// numberRange is formatRange and formatRangeToParts: each end converted as
+	// numberCall converts a value, the start first, with its BigInt flag after
+	// it. The Builtin refuses an end that is NaN once both are converted.
+	function numberRange(i, fn, start, end) {
+		if (start === undefined || end === undefined) {
+			throw new TypeError('start or end is undefined');
+		}
+		const p = isObject(start) ? toPrimitiveNumber(start) : start;
+		const pBig = typeof p === 'bigint';
+		const x = pBig ? String(p) : typeof p === 'string' ? p : +p;
+		const q = isObject(end) ? toPrimitiveNumber(end) : end;
+		const qBig = typeof q === 'bigint';
+		const y = qBig ? String(q) : typeof q === 'string' ? q : +q;
+		return call(i, fn, x, pBig, y, qBig);
+	}
+
 	function isObject(v) {
 		return typeof v === 'object' ? v !== null : typeof v === 'function';
 	}
@@ -530,6 +561,12 @@
 		},
 		formatToParts(value) {
 			return parts(numberCall(internal(this, 'NumberFormat'), nfParts, value));
+		},
+		formatRange(start, end) {
+			return numberRange(internal(this, 'NumberFormat'), nfRange, start, end);
+		},
+		formatRangeToParts(start, end) {
+			return rangeParts(numberRange(internal(this, 'NumberFormat'), nfRangeParts, start, end));
 		},
 		resolvedOptions() {
 			return parse(call(internal(this, 'NumberFormat', NumberFormat), optionsOf));
@@ -1105,9 +1142,19 @@
 		return toString(s);
 	}
 
+	let defaultCollator;
+
 	const string = {
 		localeCompare(that, locales = undefined, options = undefined) {
 			const s = thisString(this, 'localeCompare'), t = toString(that);
+			if (locales === undefined && options === undefined) {
+				// The collator of a sort by name, kept apart from the cache:
+				// no key to build and look up on each compare.
+				if (defaultCollator === undefined) {
+					defaultCollator = collator(undefined, undefined);
+				}
+				return call(defaultCollator, colCompare, s, t);
+			}
 			const c = cached(cacheKey('collator', locales, options), function () {
 				return collator(locales, options);
 			});

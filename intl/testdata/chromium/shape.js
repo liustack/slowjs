@@ -83,7 +83,7 @@ function shape() {
 
 	const ctors = {
 		DateTimeFormat: ['format', 'formatToParts', 'formatRange', 'formatRangeToParts', 'resolvedOptions'],
-		NumberFormat: ['format', 'formatToParts', 'resolvedOptions'],
+		NumberFormat: ['format', 'formatToParts', 'formatRange', 'formatRangeToParts', 'resolvedOptions'],
 		PluralRules: ['select', 'selectRange', 'resolvedOptions'],
 		Collator: ['compare', 'resolvedOptions'],
 		Segmenter: ['segment', 'resolvedOptions'],
