@@ -35,7 +35,7 @@
    - [docs/upgrading.md](docs/upgrading.md): taking commits of upstream QuickJS and new intl data
    - [docs/performance.md](docs/performance.md): render speed of each release, measured in tifa
    - [docs/measuring.md](docs/measuring.md): how to time a change and judge it, the defaults and what they can see
-   - docs/benchmarks.md: the comparison with the other JavaScript engines for Go and three native engines, among interpreters only (three tables: tifa pages, the V8 suite, test262), run again at every minor release, and at a patch release when the owner asks. It leaves out goja, sobek and otto. The files of the last run are kept in `compare/engines/results/`, how to run it is in `compare/engines/README.md`, and its changes are in `compare/engines/CHANGELOG.md`
+   - docs/benchmarks.md: the comparison with the other JavaScript engines for Go and three native engines, among interpreters only (three tables: tifa pages, the V8 suite, test262), run again only when the owner asks. It leaves out goja, sobek and otto. The files of the last run are kept in `compare/engines/results/`, how to run it is in `compare/engines/README.md`, and its changes are in `compare/engines/CHANGELOG.md`
    - [docs/releasing.md](docs/releasing.md): versions, tags, the release job and what follows a release
    - [docs/upstream.md](docs/upstream.md): where the code comes from, how QuickJS commits are taken in, and what changes when moving from modernc.org/quickjs
    - [docs/api.md](docs/api.md): the Go API beyond Eval and Call, with the release of each function
@@ -88,5 +88,5 @@ See [docs/releasing.md](docs/releasing.md).
 - Release patch versions only (v0.26.17, v0.26.18, ...). Do not move to a new minor version for a small problem.
 - A release is a lightweight tag on the merge commit of `main`: that is the version of the module. Pushing it runs the release job, which makes the GitHub release of the tag with the binaries of `slowjs` and nothing else (docs/releasing.md). Check that the job passed.
 - Ask the user before you create a tag, and again before you push one. Never push `main` or a tag on your own.
-- Before a minor release is tagged (or a patch release the owner names), run the comparison with the other engines again on the branch of the release, on its final engine, and update docs/benchmarks.md and the README tables as docs/releasing.md says: a release ships its own numbers. After every release, upgrade tifa to it and measure the release on tifa's pages.
+- The comparison with the other engines runs only when the owner asks for it: it serves how the project is presented, not the work on speed, and no release waits for it. When it runs, it runs on the final engine of a release and updates docs/benchmarks.md and the README tables as docs/releasing.md says. After every release, upgrade tifa to it and measure the release on tifa's pages.
 
