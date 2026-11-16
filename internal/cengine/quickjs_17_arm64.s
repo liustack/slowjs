@@ -20431,7 +20431,7 @@ TEXT ·js_async_module_execution_fulfilled(SB), $200-16
 	WORD $0x924009c8
 	WORD $0xf1001d1f
 	WORD $0x540016e0
-	MOVD $·engine_rodata+124016(SB), R9
+	MOVD $·engine_rodata+124048(SB), R9
 	WORD $0xf8687928
 	WORD $0xf90053e8
 	WORD $0xd37ef5e8

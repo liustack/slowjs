@@ -10936,7 +10936,7 @@ TEXT ·js_uint8array_to_hex(SB), $136-48
 	WORD $0xaa1f03ec
 	WORD $0xd10005ef
 	WORD $0x91004410
-	MOVD $·engine_rodata+123995(SB), R17
+	MOVD $·engine_rodata+124027(SB), R17
 	WORD $0xf94047f4
 	WORD $0x8b0c0609
 	WORD $0x92679a88
@@ -10962,7 +10962,7 @@ TEXT ·js_uint8array_to_hex(SB), $136-48
 	WORD $0xf90007f4
 	BL ·host_poll(SB)
 	WORD $0xa944bff0
-	MOVD $·engine_rodata+123995(SB), R17
+	MOVD $·engine_rodata+124027(SB), R17
 	WORD $0xa945afec
 	WORD $0xf9403fed
 	WORD $0xa946bbe0

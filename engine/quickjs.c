@@ -22751,6 +22751,12 @@ typedef struct JSArrayIteratorData {
     uint32_t idx;
 } JSArrayIteratorData;
 
+/* The copy of the keys of a source reads the interrupt flag every
+   JS_COPY_POLL_KEYS keys: a string of n characters gives n keys, and a
+   source may have millions (docs/changes/uncatchable.md). So does the copy
+   of the elements of a spread and of the arguments of a call. */
+#define JS_COPY_POLL_KEYS 4096
+
 /* Access an Array's internal JSValue array if available */
 static BOOL js_get_fast_array(JSContext *ctx, JSValueConst obj,
                               JSValue **arrpp, uint32_t *countp)
@@ -22791,12 +22797,12 @@ static no_inline JSValue js_spread_iterator(JSContext *ctx, JSValueConst obj,
    with sp[-2] elements and that length, the elements go to its end at once,
    as CreateDataPropertyOrThrow would put them one by one. 1 when done, 0
    when not (nothing changed), -1 on an exception (out of memory, the array
-   as it was). */
+   as it was, or the interrupt, with the elements copied so far). */
 static no_inline int js_append_array(JSContext *ctx, JSValue *sp)
 {
     JSObject *ps, *pt;
     JSValue next;
-    uint32_t i, n, len, pos;
+    uint32_t i, n, len, pos, j, k;
     int ret;
 
     if (JS_VALUE_GET_TAG(sp[-1]) != JS_TAG_OBJECT ||
@@ -22827,12 +22833,23 @@ static no_inline int js_append_array(JSContext *ctx, JSValue *sp)
     if (pos + n > pt->u.array.u1.size &&
         expand_fast_array_append(ctx, pt, pos + n))
         return -1;
-    for (i = 0; i < n; i++)
-        pt->u.array.u.values[pos + i] = JS_DupValue(ctx, ps->u.array.u.values[i]);
-    pt->u.array.count = pos + n;
-    pt->prop[0].u.value = JS_NewInt32(ctx, pos + n);
-    sp[-2] = JS_NewInt32(ctx, pos + n);
-    return 1;
+    /* the flag is read every JS_COPY_POLL_KEYS elements: a read runs no
+       script, so the source stays as it is, and a stop leaves the target
+       with the elements copied so far */
+    ret = 1;
+    for (i = 0; i < n; i += k) {
+        k = min_uint32(n - i, JS_COPY_POLL_KEYS);
+        if (i > 0 && js_poll_interrupts(ctx)) {
+            ret = -1;
+            break;
+        }
+        for (j = i; j < i + k; j++)
+            pt->u.array.u.values[pos + j] = JS_DupValue(ctx, ps->u.array.u.values[j]);
+    }
+    pt->u.array.count = pos + i;
+    pt->prop[0].u.value = JS_NewInt32(ctx, pos + i);
+    sp[-2] = JS_NewInt32(ctx, pos + i);
+    return ret;
 }
 
 /* force_inline: with one caller, LLVM inlined it into JS_CallInternal. The
@@ -22900,8 +22917,12 @@ static force_inline __exception int js_append_enumerate(JSContext *ctx, JSValue 
            the prototypes and might have side effects */
         if (len != count32)
             goto general_case;
-        /* Handle fast arrays explicitly */
+        /* Handle fast arrays explicitly, with the flag read every
+           JS_COPY_POLL_KEYS elements */
         for (i = it->idx; i < count32; i++) {
+            if (unlikely((i & (JS_COPY_POLL_KEYS - 1)) == JS_COPY_POLL_KEYS - 1) &&
+                js_poll_interrupts(ctx))
+                goto exception;
             it->idx = i + 1;
             if (JS_DefinePropertyValueUint32(ctx, sp[-3], pos++,
                                              JS_DupValue(ctx, arrp[i]), JS_PROP_C_W_E) < 0)
@@ -23013,11 +23034,6 @@ static int js_copy_excluded(JSContext *ctx, JSObject *pexcl,
         return 0;
     return js_get_own_property_flags(ctx, NULL, pexcl, atom);
 }
-
-/* The copy of the keys of a source reads the interrupt flag every
-   JS_COPY_POLL_KEYS keys: a string of n characters gives n keys, and a
-   source may have millions (docs/changes/uncatchable.md) */
-#define JS_COPY_POLL_KEYS 4096
 
 /* Copy the own properties of source into target as JS_CopyDataProperties
    does for a spread in an object literal or the rest of a destructuring,
@@ -49613,7 +49629,7 @@ static void free_arg_list(JSContext *ctx, JSValue *tab, uint32_t len)
 static JSValue *build_arg_list(JSContext *ctx, uint32_t *plen,
                                JSValueConst array_arg)
 {
-    uint32_t len, i;
+    uint32_t len, i, j, n;
     int64_t len64;
     JSValue *tab, ret;
     JSObject *p;
@@ -49631,25 +49647,41 @@ static JSValue *build_arg_list(JSContext *ctx, uint32_t *plen,
         return NULL;
     }
     len = len64;
-    /* avoid allocating 0 bytes */
-    tab = js_mallocz(ctx, sizeof(tab[0]) * max_uint32(1, len));
+    /* avoid allocating 0 bytes. Each element is written before the next
+       one, and a failure frees the ones written, so the table needs no
+       clearing: up to 1 MiB of it, which read no flag. */
+    tab = js_malloc(ctx, sizeof(tab[0]) * max_uint32(1, len));
     if (!tab)
         return NULL;
     p = JS_VALUE_GET_OBJ(array_arg);
+    /* the flag is read every JS_COPY_POLL_KEYS elements: up to 65534 of
+       them, then the call frees as many */
     if ((p->class_id == JS_CLASS_ARRAY || p->class_id == JS_CLASS_ARGUMENTS || p->class_id == JS_CLASS_MAPPED_ARGUMENTS) &&
         p->fast_array &&
         len == p->u.array.count) {
-        if (p->class_id == JS_CLASS_MAPPED_ARGUMENTS) {
-            for(i = 0; i < len; i++) {
-                tab[i] = JS_DupValue(ctx, *p->u.array.u.var_refs[i]->pvalue);
+        for (i = 0; i < len; i += n) {
+            n = min_uint32(len - i, JS_COPY_POLL_KEYS);
+            if (i > 0 && js_poll_interrupts(ctx)) {
+                free_arg_list(ctx, tab, i);
+                return NULL;
             }
-        } else {
-            for(i = 0; i < len; i++) {
-                tab[i] = JS_DupValue(ctx, p->u.array.u.values[i]);
+            /* a read of the flag runs no script: the fast array is as it
+               was */
+            if (p->class_id == JS_CLASS_MAPPED_ARGUMENTS) {
+                for (j = i; j < i + n; j++)
+                    tab[j] = JS_DupValue(ctx, *p->u.array.u.var_refs[j]->pvalue);
+            } else {
+                for (j = i; j < i + n; j++)
+                    tab[j] = JS_DupValue(ctx, p->u.array.u.values[j]);
             }
         }
     } else {
         for(i = 0; i < len; i++) {
+            if (unlikely((i & (JS_COPY_POLL_KEYS - 1)) == JS_COPY_POLL_KEYS - 1) &&
+                js_poll_interrupts(ctx)) {
+                free_arg_list(ctx, tab, i);
+                return NULL;
+            }
             ret = JS_GetPropertyUint32(ctx, array_arg, i);
             if (JS_IsException(ret)) {
                 free_arg_list(ctx, tab, i);

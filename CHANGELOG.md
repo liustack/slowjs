@@ -4,6 +4,11 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 
 ## [Unreleased]
 
+### Fixed
+
+- An interrupt or the eval timeout stops a long match wherever it is. A pattern written out many times, a back reference over a long capture and a long `x+` or `x{n,}` did not look at the stop for as long as they ran: about 20 ms for `/^a+/` over a million characters, 40 ms for `\w+` over a million of 16 bits.
+- An interrupt or the eval timeout stops the copy of a long list of arguments (`apply`, a spread into a call or `new`, `arguments`, a rest parameter) and of a spread into an array: a spread of 8 million elements ran about 70 ms without looking at the stop.
+
 ## [v0.31.3] - 2026-11-16
 
 ### Changed

@@ -3347,6 +3347,257 @@ static int lre_chains(REParseState *s)
     return 0;
 }
 
+/* Reads of the interrupt flag in a long run of the matcher.
+
+   lre_exec_backtrack reads the interrupt flag where it jumps back (goto,
+   loop, and a split op or a loop op whose way goes back), when it
+   backtracks and at a split op that pushes nothing, so every loop of it
+   reads the flag. Between two reads it only goes forward in the code, and
+   such a run is as long as the pattern makes it: [ab] or . written out a
+   million times, or 32767 groups in a row, ran up to 100 polls of the host
+   without a read. lre_insert_checks bounds every such run: it puts a goto
+   to the next op, which reads the flag, before each op that a run reaches
+   with more than LRE_CHECK_RUN ticks of the generated engine (a count for
+   each turn of a loop, lre_op_ticks) since the last read. A regexp whose
+   ops take LRE_CHECK_RUN ticks or fewer in all gets none, and its code is
+   the same. The other long loops of an op read the flag themselves (a back
+   reference over a long capture, the undo of many captures). A test build
+   may set it lower, down to 1, to put the gotos in the code of most
+   regexps. */
+#ifndef LRE_CHECK_RUN
+#define LRE_CHECK_RUN 4096
+#endif
+
+/* the ticks of lre_canonicalize for a character from 128 up: a binary
+   search of the table of case conversions */
+#define LRE_FOLD_TICKS 12
+
+static int lre_op_size(const uint8_t *pc);
+
+/* lre_op_ticks gives the most ticks the matcher takes for the op at pc,
+   apart from the loops that read the flag themselves: one for the op, the
+   binary search of a class, the fold of a character that ignores case,
+   each group a save_reset clears, each group a back reference looks at,
+   and the steps of lre_split, which looks up the chains of each split op
+   it steps over. */
+static int lre_op_ticks(const uint8_t *pc)
+{
+    int n, t;
+
+    switch (pc[0]) {
+    case REOP_char_i:
+    case REOP_char32_i:
+        return 1 + LRE_FOLD_TICKS;
+    case REOP_range:
+    case REOP_range_i:
+    case REOP_range32:
+    case REOP_range32_i:
+        n = get_u16(pc + 1);
+        for (t = 2; n > 1; n >>= 1)
+            t++;
+        if (pc[0] == REOP_range_i || pc[0] == REOP_range32_i)
+            t += LRE_FOLD_TICKS;
+        return t;
+    case REOP_save_reset:
+        return 2 + get_u16(pc + 3) - get_u16(pc + 1);
+    case REOP_back_reference:
+    case REOP_back_reference_i:
+    case REOP_backward_back_reference:
+    case REOP_backward_back_reference_i:
+        return 1 + get_u16(pc + 1);
+    case REOP_split_goto_first:
+    case REOP_split_next_first:
+        return 2 + LRE_CHAIN_MAX;
+    default:
+        return 1;
+    }
+}
+
+/* the offset in an op that jumps of the u32 of its jump, which is relative
+   to the end of the op, or 0 for an op that does not jump */
+static int lre_jump_field(int op)
+{
+    switch (op) {
+    case REOP_goto:
+    case REOP_split_goto_first:
+    case REOP_split_next_first:
+    case REOP_lookahead:
+    case REOP_negative_lookahead:
+        return 1;
+    case REOP_loop:
+        return 2;
+    case REOP_loop_split_goto_first:
+    case REOP_loop_split_next_first:
+    case REOP_loop_check_adv_split_goto_first:
+    case REOP_loop_check_adv_split_next_first:
+        return 6;
+    default:
+        return 0;
+    }
+}
+
+/* the number of the n offsets of marks, in order, that are below pos, or
+   not above it when le */
+static uint32_t lre_marks_before(const uint32_t *marks, uint32_t n,
+                                 uint32_t pos, BOOL le)
+{
+    uint32_t lo = 0, hi = n, mid;
+
+    while (lo < hi) {
+        mid = lo + (hi - lo) / 2;
+        if (marks[mid] < pos || (le && marks[mid] == pos))
+            lo = mid + 1;
+        else
+            hi = mid;
+    }
+    return lo;
+}
+
+/* lre_insert_checks puts a goto to the next op before each op of the code
+   (after the header, the code so far ending with match) that a run without
+   a read of the flag reaches with more than LRE_CHECK_RUN ticks (see above),
+   and moves the jumps to match: a jump to such an op goes to its goto.
+
+   A run follows the ways the matcher takes without a read: from an op to
+   the next, except after goto (which reads), match and
+   negative_lookahead_match (which backtracks, and reads), and after a
+   split_goto_first, which goes on at its target and pushes the next op; to
+   the target of a split_goto_first that lies ahead; and from
+   lookahead_match to the op after it, the target of its lookahead. The way
+   a split op or a lookahead pushes is taken when the matcher backtracks,
+   which reads, and a way back reads. So every run goes forward, and one
+   walk in order finds, for each op, the most ticks of a run that reaches
+   it (run). -1 with the error set when it runs out of memory or is
+   interrupted. */
+static int lre_insert_checks(REParseState *s)
+{
+    uint8_t *code = s->byte_code.buf + RE_HEADER_LEN;
+    uint32_t len = s->byte_code.size - RE_HEADER_LEN;
+    uint32_t pos, size, step, t, in, r, w, total, n, k, end, *marks;
+    uint16_t *run;
+    DynBuf mb;
+    const uint8_t *pc;
+    BOOL falls;
+    int field;
+
+    /* no run is longer than all the ops */
+    total = 0;
+    for (pos = 0; pos < len && total <= LRE_CHECK_RUN; pos += lre_op_size(code + pos))
+        total += lre_op_ticks(code + pos);
+    if (total <= LRE_CHECK_RUN)
+        return 0;
+
+    run = lre_realloc(s->opaque, NULL, sizeof(run[0]) * (size_t)len);
+    if (!run)
+        return re_parse_out_of_memory(s);
+    /* in steps of a scan, not of a copy: the table is twice the code, and
+       the compile of a regexp of a few hundred kB of code reads the flag
+       every LRE_SCAN_STEP bytes elsewhere */
+    for (pos = 0; pos < len; pos += k) {
+        k = min_uint32(len - pos, LRE_SCAN_STEP / sizeof(run[0]));
+        memset(run + pos, 0, sizeof(run[0]) * k);
+        LRE_WORK(sizeof(run[0]) * k);
+        if (re_poll_interrupts(s))
+            goto fail_run;
+    }
+    dbuf_init2(&mb, s->opaque, lre_realloc);
+    r = 0;
+    falls = TRUE;
+    step = 0;
+    for (pos = 0; pos < len; pos += size) {
+        pc = code + pos;
+        size = lre_op_size(pc);
+        w = lre_op_ticks(pc);
+        in = run[pos];
+        if (falls && r > in)
+            in = r;
+        if (in > 0 && in + w > LRE_CHECK_RUN) {
+            if (dbuf_put_u32(&mb, pos))
+                goto fail_mem;
+            in = 0;
+        }
+        r = min_uint32(in + w, 0xffff);
+        falls = TRUE;
+        switch (pc[0]) {
+        case REOP_goto:
+        case REOP_match:
+        case REOP_negative_lookahead_match:
+            falls = FALSE;
+            break;
+        case REOP_split_goto_first:
+            falls = FALSE;
+            t = pos + 5 + (int32_t)get_u32(pc + 1);
+            if (t > pos && t < len && run[t] < r)
+                run[t] = r;
+            break;
+        default:
+            break;
+        }
+        if (pos + size - step >= LRE_SCAN_STEP) {
+            LRE_WORK(pos + size - step);
+            step = pos + size;
+            if (re_poll_interrupts(s))
+                goto fail_marks;
+        }
+    }
+    lre_realloc(s->opaque, run, 0);
+    run = NULL;
+    n = mb.size / sizeof(uint32_t);
+    marks = (uint32_t *)mb.buf;
+    if (n == 0) {
+        dbuf_free(&mb);
+        return 0;
+    }
+    /* the jumps, in place: the target of a jump at pos is
+       pos + field + 4 + off, and each mark before an op moves it 5 bytes */
+    step = 0;
+    for (pos = 0; pos < len; pos += size) {
+        pc = code + pos;
+        size = lre_op_size(pc);
+        field = lre_jump_field(pc[0]);
+        if (field) {
+            end = pos + field + 4;
+            t = end + (int32_t)get_u32(pc + field);
+            put_u32(code + pos + field,
+                    t + 5 * lre_marks_before(marks, n, t, FALSE) -
+                    (end + 5 * lre_marks_before(marks, n, pos, TRUE)));
+        }
+        if (pos + size - step >= LRE_SCAN_STEP) {
+            LRE_WORK(pos + size - step);
+            step = pos + size;
+            if (re_poll_interrupts(s))
+                goto fail_marks;
+        }
+    }
+    /* each piece of the code from a mark to the next, from the last one,
+       moves 5 bytes for each mark up to its own, after the goto of its own */
+    if (re_dbuf_claim(&s->byte_code, 5 * (size_t)n, LRE_CODE_MAX)) {
+        re_parse_out_of_memory(s);
+        goto fail_marks;
+    }
+    code = s->byte_code.buf + RE_HEADER_LEN;
+    end = len;
+    for (k = n; k-- > 0;) {
+        if (re_move(s, code + marks[k] + 5 * (k + 1), code + marks[k],
+                    end - marks[k]))
+            goto fail_marks;
+        code[marks[k] + 5 * k] = REOP_goto;
+        put_u32(code + marks[k] + 5 * k + 1, 0);
+        end = marks[k];
+    }
+    s->byte_code.size += 5 * n;
+    dbuf_free(&mb);
+    return 0;
+ fail_mem:
+    re_parse_out_of_memory(s);
+ fail_marks:
+    dbuf_free(&mb);
+ fail_run:
+    if (run)
+        lre_realloc(s->opaque, run, 0);
+    return -1;
+}
+
 static void *lre_bytecode_realloc(void *opaque, void *ptr, size_t size)
 {
     if (size > (INT32_MAX / 2)) {
@@ -3434,6 +3685,9 @@ uint8_t *lre_compile(int *plen, char *error_msg, int error_msg_size,
         re_parse_out_of_memory(s);
         goto error;
     }
+
+    if (lre_insert_checks(s))
+        goto error;
 
     register_count = compute_register_count(s, s->byte_code.buf, s->byte_code.size);
     if (register_count < 0) {
@@ -3617,6 +3871,79 @@ static int lre_poll_timeout(REExecContext *s)
 {
     if (unlikely(poll_flag(s->interrupt_flag)))
         return LRE_RET_TIMEOUT;
+    return 0;
+}
+
+/* The most bytes of a capture a back reference compares, and of elements
+   of the backtracking stack the matcher looks through, undoes or moves,
+   between two reads of the interrupt flag: about a tick of the generated
+   engine each, as LRE_CHECK_RUN. A loop of fewer reads none. A test build
+   may set it lower, to an even number, to take these ways often. */
+#ifndef LRE_EXEC_STEP
+#define LRE_EXEC_STEP 4096
+#endif
+
+/* lre_undo_long undoes the modifications to capture of the stack from sp
+   down to bp, as the matcher does when it backtracks, LRE_EXEC_STEP
+   elements at a time with the flag read between two, and returns the new
+   sp: bp, or NULL when the flag is set. A long run of captures saved with
+   no state pushed between, as (?:(a)){n} saves, is undone here. */
+static no_inline StackElem *lre_undo_long(REExecContext *s, uint8_t **capture,
+                                          StackElem *sp, StackElem *bp)
+{
+    StackElem *step;
+
+    while (sp > bp) {
+        step = sp - bp > LRE_EXEC_STEP ? sp - LRE_EXEC_STEP : bp;
+        while (sp > step) {
+            capture[sp[-2].val] = sp[-1].ptr;
+            sp -= 2;
+        }
+        if (sp > bp && lre_poll_timeout(s))
+            return NULL;
+    }
+    return sp;
+}
+
+/* lre_copy_long moves the elements from sp1 to end down to sp, as
+   lookahead_match keeps the undo of the captures of a lookahead,
+   LRE_EXEC_STEP at a time with the flag read between two, and returns the
+   end of the copy, or NULL when the flag is set. */
+static no_inline StackElem *lre_copy_long(REExecContext *s, StackElem *sp,
+                                          const StackElem *sp1,
+                                          const StackElem *end)
+{
+    const StackElem *step;
+
+    while (sp1 < end) {
+        step = end - sp1 > LRE_EXEC_STEP ? sp1 + LRE_EXEC_STEP : end;
+        while (sp1 < step)
+            *sp++ = *sp1++;
+        if (sp1 < end && lre_poll_timeout(s))
+            return NULL;
+    }
+    return sp;
+}
+
+/* lre_find_saved returns 1 when the stack from bp up to sp holds the undo
+   of capture[idx], as SAVE_CAPTURE_CHECK looks for it, else 0, and -1 when
+   the flag is set: it looks LRE_EXEC_STEP elements at a time, from the
+   top, with the flag read between two. */
+static no_inline int lre_find_saved(REExecContext *s, StackElem *sp,
+                                    StackElem *bp, intptr_t idx)
+{
+    StackElem *step;
+
+    while (sp > bp) {
+        step = sp - bp > LRE_EXEC_STEP ? sp - LRE_EXEC_STEP : bp;
+        while (sp > step) {
+            if (sp[-2].val == idx)
+                return 1;
+            sp -= 2;
+        }
+        if (sp > bp && lre_poll_timeout(s))
+            return -1;
+    }
     return 0;
 }
 
@@ -4005,23 +4332,28 @@ static intptr_t lre_exec_backtrack(REExecContext *s, uint8_t **capture,
         capture[idx] = (value);                         \
     }
 
-    /* avoid saving the previous value if already saved */
-#define SAVE_CAPTURE_CHECK(idx, value)          \
-    {                                           \
-        StackElem *sp1;                         \
-        sp1 = sp;                               \
-        for(;;) {                               \
-            if (sp1 > bp) {                             \
+    /* avoid saving the previous value if already saved. A long run of
+       saves is looked through with reads of the flag (lre_find_saved) */
+#define SAVE_CAPTURE_CHECK(idx, value)                  \
+    {                                                   \
+        StackElem *sp1;                                 \
+        int saved;                                      \
+        if (unlikely(sp - bp > LRE_EXEC_STEP)) {        \
+            saved = lre_find_saved(s, sp, bp, idx);     \
+            if (saved < 0)                              \
+                return LRE_RET_TIMEOUT;                 \
+        } else {                                        \
+            for (sp1 = sp; sp1 > bp; sp1 -= 2) {        \
                 if (sp1[-2].val == idx)                 \
                     break;                              \
-                sp1 -= 2;                               \
-            } else {                                    \
-                CHECK_STACK_SPACE(2);                   \
-                sp[0].val = idx;                        \
-                sp[1].ptr = capture[idx];               \
-                sp += 2;                                \
-                break;                                  \
             }                                           \
+            saved = sp1 > bp;                           \
+        }                                               \
+        if (!saved) {                                   \
+            CHECK_STACK_SPACE(2);                       \
+            sp[0].val = idx;                            \
+            sp[1].ptr = capture[idx];                   \
+            sp += 2;                                    \
         }                                               \
         capture[idx] = (value);                         \
     }
@@ -4049,6 +4381,11 @@ static intptr_t lre_exec_backtrack(REExecContext *s, uint8_t **capture,
                 if (bp == s->stack_buf)
                     return 0;
                 /* undo the modifications to capture[] */
+                if (unlikely(sp - bp > LRE_EXEC_STEP)) {
+                    sp = lre_undo_long(s, capture, sp, bp);
+                    if (!sp)
+                        return LRE_RET_TIMEOUT;
+                }
                 while (sp > bp) {
                     capture[sp[-2].val] = sp[-1].ptr;
                     sp -= 2;
@@ -4070,10 +4407,11 @@ static intptr_t lre_exec_backtrack(REExecContext *s, uint8_t **capture,
                the lookahead and keep the updated captures and
                variables and the corresponding undo info. */
             {
-                StackElem *sp1, *sp_top, *next_sp;
+                StackElem *sp1, *sp_top, *next_sp, *mark;
                 REExecStateEnum type;
 
                 sp_top = sp;
+                mark = sp;
                 for(;;) {
                     sp1 = sp;
                     sp = bp;
@@ -4085,36 +4423,68 @@ static intptr_t lre_exec_backtrack(REExecContext *s, uint8_t **capture,
                     sp -= 3;
                     if (type == RE_EXEC_STATE_LOOKAHEAD)
                         break;
+                    /* the many states of x+ in (?=x+) */
+                    if (unlikely(mark - sp > LRE_EXEC_STEP)) {
+                        if (lre_poll_timeout(s))
+                            return LRE_RET_TIMEOUT;
+                        mark = sp;
+                    }
                 }
                 if (sp != s->stack_buf) {
                     /* keep the undo info if there is a saved state */
                     sp1 = sp;
+                    mark = sp;
                     while (sp1 < sp_top) {
                         next_sp = (void *)sp1[2].ptr;
                         sp1 += 3;
+                        if (unlikely(next_sp - sp1 > LRE_EXEC_STEP)) {
+                            sp = lre_copy_long(s, sp, sp1, next_sp);
+                            if (!sp)
+                                return LRE_RET_TIMEOUT;
+                            sp1 = next_sp;
+                        }
                         while (sp1 < next_sp)
                             *sp++ = *sp1++;
+                        if (unlikely(sp1 - mark > LRE_EXEC_STEP)) {
+                            if (lre_poll_timeout(s))
+                                return LRE_RET_TIMEOUT;
+                            mark = sp1;
+                        }
                     }
                 }
             }
             break;
         case REOP_negative_lookahead_match:
             /* pop all the saved states until reaching start of the negative lookahead */
-            for(;;) {
-                REExecStateEnum type;
-                type = bp[-1].bp.type;
-                /* undo the modifications to capture[] */
-                while (sp > bp) {
-                    capture[sp[-2].val] = sp[-1].ptr;
-                    sp -= 2;
+            {
+                StackElem *mark = sp;
+                for(;;) {
+                    REExecStateEnum type;
+                    type = bp[-1].bp.type;
+                    /* undo the modifications to capture[] */
+                    if (unlikely(sp - bp > LRE_EXEC_STEP)) {
+                        sp = lre_undo_long(s, capture, sp, bp);
+                        if (!sp)
+                            return LRE_RET_TIMEOUT;
+                    }
+                    while (sp > bp) {
+                        capture[sp[-2].val] = sp[-1].ptr;
+                        sp -= 2;
+                    }
+                    pc = sp[-3].ptr;
+                    cptr = sp[-2].ptr;
+                    type = sp[-1].bp.type;
+                    bp = s->stack_buf + sp[-1].bp.val;
+                    sp -= 3;
+                    if (type == RE_EXEC_STATE_NEGATIVE_LOOKAHEAD)
+                        break;
+                    /* the many states of x+ in (?!x+) */
+                    if (unlikely(mark - sp > LRE_EXEC_STEP)) {
+                        if (lre_poll_timeout(s))
+                            return LRE_RET_TIMEOUT;
+                        mark = sp;
+                    }
                 }
-                pc = sp[-3].ptr;
-                cptr = sp[-2].ptr;
-                type = sp[-1].bp.type;
-                bp = s->stack_buf + sp[-1].bp.val;
-                sp -= 3;
-                if (type == RE_EXEC_STATE_NEGATIVE_LOOKAHEAD)
-                    break;
             }
             goto no_match;
         case REOP_char32:
@@ -4158,6 +4528,9 @@ static intptr_t lre_exec_backtrack(REExecContext *s, uint8_t **capture,
                         break;
                     }
                 }
+                /* a way back, as x+ loops: read the flag */
+                if (pc < split && lre_poll_timeout(s))
+                    return LRE_RET_TIMEOUT;
                 CHECK_STACK_SPACE(3);
                 sp[0].ptr = (uint8_t *)pc1;
                 sp[1].ptr = (uint8_t *)cptr;
@@ -4316,6 +4689,9 @@ static intptr_t lre_exec_backtrack(REExecContext *s, uint8_t **capture,
                         } else {
                             pc1 = pc;
                             pc = pc + (int)val;
+                            /* the way back of the loop */
+                            if (lre_poll_timeout(s))
+                                return LRE_RET_TIMEOUT;
                         }
                         CHECK_STACK_SPACE(3);
                         sp[0].ptr = (uint8_t *)pc1;
@@ -4395,34 +4771,54 @@ static intptr_t lre_exec_backtrack(REExecContext *s, uint8_t **capture,
                     cptr1_end = capture[2 * val + 1];
                     /* test the first not empty capture */
                     if (cptr1_start && cptr1_end) {
+                        /* a long capture is compared LRE_EXEC_STEP bytes
+                           at a time, with the flag read between two, or a
+                           16th of that when each character is folded
+                           (LRE_FOLD_TICKS twice) */
+                        const uint8_t *step;
+                        intptr_t k = opcode == REOP_back_reference_i ||
+                            opcode == REOP_backward_back_reference_i ?
+                            (LRE_EXEC_STEP + 15) / 16 : LRE_EXEC_STEP;
                         if (opcode == REOP_back_reference ||
                             opcode == REOP_back_reference_i) {
                             cptr1 = cptr1_start;
                             while (cptr1 < cptr1_end) {
-                                if (cptr >= cbuf_end)
-                                    goto no_match;
-                                GET_CHAR(c1, cptr1, cptr1_end, cbuf_type);
-                                GET_CHAR(c2, cptr, cbuf_end, cbuf_type);
-                                if (opcode == REOP_back_reference_i) {
-                                    c1 = lre_canonicalize(c1, s->is_unicode);
-                                    c2 = lre_canonicalize(c2, s->is_unicode);
+                                step = cptr1_end - cptr1 > k ?
+                                    cptr1 + k : cptr1_end;
+                                while (cptr1 < step) {
+                                    if (cptr >= cbuf_end)
+                                        goto no_match;
+                                    GET_CHAR(c1, cptr1, cptr1_end, cbuf_type);
+                                    GET_CHAR(c2, cptr, cbuf_end, cbuf_type);
+                                    if (opcode == REOP_back_reference_i) {
+                                        c1 = lre_canonicalize(c1, s->is_unicode);
+                                        c2 = lre_canonicalize(c2, s->is_unicode);
+                                    }
+                                    if (c1 != c2)
+                                        goto no_match;
                                 }
-                                if (c1 != c2)
-                                    goto no_match;
+                                if (cptr1 < cptr1_end && lre_poll_timeout(s))
+                                    return LRE_RET_TIMEOUT;
                             }
                         } else {
                             cptr1 = cptr1_end;
                             while (cptr1 > cptr1_start) {
-                                if (cptr == s->cbuf)
-                                    goto no_match;
-                                GET_PREV_CHAR(c1, cptr1, cptr1_start, cbuf_type);
-                                GET_PREV_CHAR(c2, cptr, s->cbuf, cbuf_type);
-                                if (opcode == REOP_backward_back_reference_i) {
-                                    c1 = lre_canonicalize(c1, s->is_unicode);
-                                    c2 = lre_canonicalize(c2, s->is_unicode);
+                                step = cptr1 - cptr1_start > k ?
+                                    cptr1 - k : cptr1_start;
+                                while (cptr1 > step) {
+                                    if (cptr == s->cbuf)
+                                        goto no_match;
+                                    GET_PREV_CHAR(c1, cptr1, cptr1_start, cbuf_type);
+                                    GET_PREV_CHAR(c2, cptr, s->cbuf, cbuf_type);
+                                    if (opcode == REOP_backward_back_reference_i) {
+                                        c1 = lre_canonicalize(c1, s->is_unicode);
+                                        c2 = lre_canonicalize(c2, s->is_unicode);
+                                    }
+                                    if (c1 != c2)
+                                        goto no_match;
                                 }
-                                if (c1 != c2)
-                                    goto no_match;
+                                if (cptr1 > cptr1_start && lre_poll_timeout(s))
+                                    return LRE_RET_TIMEOUT;
                             }
                         }
                         break;

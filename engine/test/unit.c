@@ -3621,10 +3621,14 @@ static void test_regexp_skip_polls(void)
         /* a way of a chain pushed, after which the walk found none of the
            split ops after it could start, and the machine polled (a loop
            of them over the string), and 4098 alternatives, past the steps
-           of one call of lre_split, measured before the chains too */
-        { "(?:a|b|c|d|e|f|g|h|i|j|k|l|m|n|o|p|aZ)+", "a", CHUNK, 0, 1, 17 * CHUNK + 2 },
-        { zs, "a", 4096, 0, 0, 3 * 4096 + 2 },
-        { zs, "z", 4096, 0, 1, 4097 },
+           of one call of lre_split, measured before the chains too. The
+           way back of x+ reads the flag once more at each position, and
+           the 4098 alternatives, about 28,000 ticks, get 6 gotos that read
+           it (lre_insert_checks), each the end of a chain: 6 reads more on
+           a match, and 12 more at each position where none starts */
+        { "(?:a|b|c|d|e|f|g|h|i|j|k|l|m|n|o|p|aZ)+", "a", CHUNK, 0, 1, 18 * CHUNK + 2 },
+        { zs, "a", 4096, 0, 0, 15 * 4096 + 14 },
+        { zs, "z", 4096, 0, 1, 4103 },
         /* the scan for the literal every match holds (lre_literal): it
            reads the flag after each LRE_SKIP_CHUNK units it looks at or
            compares, and not at the end of the string, where the machine
