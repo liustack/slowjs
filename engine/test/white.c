@@ -485,6 +485,16 @@ void white_poll_skip(int on)
     white_poll_skip_flag = on;
 }
 
+/* the count of the work of a compile (js_compile_count) after it was left
+   with left and then counted n units times times */
+int white_compile_count(JSContext *ctx, int left, int n, int times)
+{
+    ctx->rt->compile_left = left;
+    while (times-- > 0)
+        js_compile_count(ctx, n);
+    return ctx->rt->compile_left;
+}
+
 /* NULL when code keeps to the rule of the polls (poll_scan), else what is
    wrong. */
 const char *white_poll_scan(const uint8_t *code, int len)

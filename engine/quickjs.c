@@ -12640,12 +12640,12 @@ static JSValue JS_ThrowTypeErrorInvalidClass(JSContext *ctx, int class_id)
 static void JS_ThrowInterrupted(JSContext *ctx)
 {
     /* A compile that stops then frees the code it made, in the passes that
-       fail and in the frees of the function defs and of the functions made
-       of them: about one poll for each 10,000 instructions of code, more
-       than a kill allows for a source of 8 MB. That work is bounded by what
-       the compile already did, which read the flag as it went, so the host
-       leaves its polls out of the kill (freeing_code) until the compile has
-       returned (js_compile_end). */
+       fail, in the frees of the function defs and of the functions made of
+       them, and in the free of its module: about one poll for each 10,000
+       instructions of code, more than a kill allows for a source of 8 MB.
+       That work is bounded by what the compile already did, which read the
+       flag as it went, so the host leaves its polls out of the kill
+       (freeing_code) until the compile has returned (js_compile_end). */
     if (ctx->rt->compiling)
         ctx->rt->freeing_code = 1;
     /* the flag stops while an uncatchable exception is pending
@@ -12689,9 +12689,13 @@ static inline __exception int js_poll_interrupts(JSContext *ctx)
 #define JS_TOKEN_WORK 16
 #define JS_CODE_WORK 4
 
+/* below 0, the count stops at -1 until the next reading: the counts of the
+   looks between two readings may add up past an int */
 static inline void js_compile_count(JSContext *ctx, int n)
 {
-    ctx->rt->compile_left -= n;
+    JSRuntime *rt = ctx->rt;
+    int left = rt->compile_left;
+    rt->compile_left = left < n ? -1 : left - n;
 }
 
 /* out of line, so that the hot loops keep only the count */
@@ -31253,6 +31257,7 @@ static int js_parse_check_duplicate_parameter(JSParseState *s, JSAtom name)
     /* Check for duplicate parameter names */
     JSFunctionDef *fd = s->cur_func;
     int i;
+    js_compile_count(s->ctx, fd->arg_count + fd->var_count);
     for (i = 0; i < fd->arg_count; i++) {
         if (fd->args[i].var_name == name)
             goto duplicate;
@@ -34993,6 +34998,8 @@ static JSExportEntry *find_export_entry(JSContext *ctx, JSModuleDef *m,
 {
     JSExportEntry *me;
     int i;
+    /* a look for each export the parse adds (js_compile_count) */
+    js_compile_count(ctx, m->export_entries_count);
     for(i = 0; i < m->export_entries_count; i++) {
         me = &m->export_entries[i];
         if (me->export_name == export_name)
@@ -37332,6 +37339,7 @@ static int add_import(JSParseState *s, JSModuleDef *m,
         return js_parse_error(s, "invalid import binding");
 
     if (local_name != JS_ATOM_default) {
+        js_compile_count(ctx, s->cur_func->closure_var_count);
         for (i = 0; i < s->cur_func->closure_var_count; i++) {
             if (s->cur_func->closure_var[i].var_name == local_name)
                 return js_parse_error(s, "duplicate import binding");
@@ -38280,7 +38288,12 @@ static int get_closure_var1(JSContext *ctx, JSFunctionDef *s,
         if (closure_type != JS_CLOSURE_GLOBAL_REF)
             closure_type = JS_CLOSURE_REF;
     }
-    js_compile_count(ctx, s->closure_var_count);
+    /* the closure variables an eval collects (add_eval_variables) are as
+       many as the variables of the functions around it, each looked for at
+       every level: the flag is read here, where a failure leaves the
+       closure variables of s and of its parents whole */
+    if (js_compile_poll(ctx, s->closure_var_count))
+        return -1;
     for(i = 0; i < s->closure_var_count; i++) {
         JSClosureVar *cv = &s->closure_var[i];
         if (cv->var_idx == var_idx && cv->closure_type == closure_type)
@@ -42668,7 +42681,7 @@ static __exception int resolve_labels(JSContext *ctx, JSFunctionDef *s)
              i++, jp++) {
             LabelSlot *ls;
             JumpSlot *jp1;
-            int j, pos, diff, delta;
+            int j, pos, diff, delta, size, op1;
 
             delta = 3;
             switch (op = jp->op) {
@@ -42682,30 +42695,34 @@ static __exception int resolve_labels(JSContext *ctx, JSFunctionDef *s)
                 diff = s->label_slots[jp->label].addr - pos;
                 if (diff >= -128 && diff <= 127 + delta) {
                     //put_u8(bc_out.buf + pos, diff);
-                    jp->size = 1;
-                    if (op == OP_goto16) {
-                        bc_out.buf[pos - 1] = jp->op = OP_goto8;
-                    } else {
-                        bc_out.buf[pos - 1] = jp->op = OP_if_false8 + (op - OP_if_false);
-                    }
+                    size = 1;
+                    if (op == OP_goto16)
+                        op1 = OP_goto8;
+                    else
+                        op1 = OP_if_false8 + (op - OP_if_false);
                     goto shrink;
                 } else
                 if (diff == (int16_t)diff && op == OP_goto) {
                     //put_u16(bc_out.buf + pos, diff);
-                    jp->size = 2;
+                    size = 2;
                     delta = 2;
-                    bc_out.buf[pos - 1] = jp->op = OP_goto16;
+                    op1 = OP_goto16;
                 shrink:
                     /* each shrink moves the code after it and goes over
                        the labels, the jumps after it and the lines: the
                        flag is read after a count of that work, which is
-                       quadratic in the number of jumps. A stop leaves the
-                       code without the targets of its jumps, which the
-                       freeing of its atoms does not read. */
+                       quadratic in the number of jumps. It is read before
+                       the opcode and the size change, as a stop then frees
+                       the code, whose instructions must have the size of
+                       their opcode: the jumps not done keep their long
+                       form, and none has its target yet, which the
+                       freeing of the atoms does not read. */
                     if (js_compile_poll(ctx, s->label_count + s->jump_count - i +
                                         s->line_number_count +
                                         ((bc_out.size - pos) >> 4)))
                         goto fail;
+                    jp->size = size;
+                    bc_out.buf[pos - 1] = jp->op = op1;
                     /* XXX: should reduce complexity, using 2 finger copy scheme */
                     memmove(bc_out.buf + pos + jp->size, bc_out.buf + pos + jp->size + delta,
                             bc_out.size - pos - jp->size - delta);
@@ -43154,8 +43171,13 @@ static int add_global_variables(JSContext *ctx, JSFunctionDef *fd)
         JSModuleDef *m = fd->module;
         JSExportEntry *me;
 
+        /* each export looks for its name among the imports, then among the
+           closure variables: the flag is read before each, where a failure
+           leaves the module whole */
         /* Convert local exports to indirect if the local name was imported */
         for(i = 0; i < m->export_entries_count; i++) {
+            if (js_compile_poll(ctx, m->import_entries_count))
+                return -1;
             me = &m->export_entries[i];
             if (me->export_type == JS_EXPORT_TYPE_LOCAL) {
                 JSImportEntry *mi;
@@ -43179,6 +43201,8 @@ static int add_global_variables(JSContext *ctx, JSFunctionDef *fd)
         
         /* resolve the variable names of the local exports */
         for(i = 0; i < m->export_entries_count; i++) {
+            if (js_compile_poll(ctx, fd->closure_var_count))
+                return -1;
             me = &m->export_entries[i];
             if (me->export_type == JS_EXPORT_TYPE_LOCAL) {
                 idx = find_closure_var(ctx, fd, me->local_name);
@@ -45434,7 +45458,6 @@ static JSValue __JS_EvalInternal(JSContext *ctx, JSValueConst this_obj,
     fail:
         free_token(s, &s->token);
         js_free_function_def(ctx, fd);
-        js_compile_end(ctx->rt, was_compiling);
         goto fail1;
     }
 
@@ -45443,9 +45466,9 @@ static JSValue __JS_EvalInternal(JSContext *ctx, JSValueConst this_obj,
 
     /* create the function object and all the enclosed functions */
     fun_obj = js_create_function(ctx, fd);
-    js_compile_end(ctx->rt, was_compiling);
     if (JS_IsException(fun_obj))
         goto fail1;
+    js_compile_end(ctx->rt, was_compiling);
     /* Could add a flag to avoid resolution if necessary */
     if (m) {
         m->func_obj = fun_obj;
@@ -45463,6 +45486,9 @@ static JSValue __JS_EvalInternal(JSContext *ctx, JSValueConst this_obj,
     /* XXX: should free all the unresolved dependencies */
     if (m)
         JS_FreeValue(ctx, JS_MKPTR(JS_TAG_MODULE, m));
+    /* after the module, whose tables a stopped compile also made: on a
+       path that did not compile, or ended it already, it changes nothing */
+    js_compile_end(ctx->rt, was_compiling);
     return JS_EXCEPTION;
 }
 

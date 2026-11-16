@@ -2343,8 +2343,104 @@ static void test_rv_nesting_limits(void)
     }
 }
 
+/* A compile stopped at a reading of the interrupt flag frees what it made,
+   the code of each pass included, by its opcodes: compile_stops compiles src
+   in a VM of its own once to count its readings, then stops it at each of
+   them. Each stop ends with the error interrupted, or, at a reading of the
+   conversion to the register code, which leaves the function to convert at
+   its call, with the compile done and the flag still set, and the word after
+   the flag is 0 again (the mark of a stopped compile, JS_GetInterruptFlag in
+   engine/quickjs.h). Run under AddressSanitizer, it shows that no stop leaves
+   code that the freeing reads past its opcodes, and the VM, freed at the end,
+   that no stop leaks. */
+static void compile_stops(const char *what, const char *src, int flags)
+{
+    VM v = vm_new();
+    volatile int *flag = JS_GetInterruptFlag(v.rt);
+    long reads, k;
+    JSValue r;
+    char *t;
+    int set;
+
+    reads = host_poll_reads;
+    r = JS_Eval(v.ctx, src, strlen(src), "stops.js", flags | JS_EVAL_FLAG_COMPILE_ONLY);
+    reads = host_poll_reads - reads;
+    CHECK(!JS_IsException(r), "%s does not compile", what);
+    JS_FreeValue(v.ctx, r);
+    for (k = 1; k <= reads && !failures; k++) {
+        host_poll_stop_after(k);
+        r = JS_Eval(v.ctx, src, strlen(src), "stops.js", flags | JS_EVAL_FLAG_COMPILE_ONLY);
+        host_poll_stop_after(0);
+        set = *flag;
+        *flag = 0;
+        if (JS_IsException(r)) {
+            t = exception_text(v.ctx);
+            CHECK(t && strcmp(t, "InternalError: interrupted") == 0, "%s: the stop at reading %ld of %ld: %s", what,
+                  k, reads, t ? t : "no exception");
+            free(t);
+        } else {
+            CHECK(set, "%s: the stop at reading %ld of %ld did not stop the compile", what, k, reads);
+            JS_FreeValue(v.ctx, r);
+        }
+        CHECK(flag[1] == 0, "%s: the stop at reading %ld of %ld left the mark at %d", what, k, reads, flag[1]);
+    }
+    vm_free(&v);
+}
+
+/* Loops whose jumps back resolve_labels makes shorter after the jump out of
+   each is: it did so by changing the opcode, then taking the bytes it no
+   longer needs out, and a jump back keeps a negative offset in them, whose
+   0xff a free in between read as an opcode past the table. Each loop is one
+   statement longer than the one before, so that some of them end where the
+   jump back fits in a byte only after the jump out is short. The 8,192 ifs
+   after them make the work of each shrink more than a step of the count, so
+   that the flag is read at each. Their statements start with no name, which
+   the parse would look past (peek_token), reading the flag each time.
+   Then the closure variables of an eval in five functions around the locals
+   of a sixth, which the compile collects (add_eval_variables), and a module
+   with a table of exports. */
+static void test_compile_stops(void)
+{
+    static char src[1 << 20];
+    size_t n = 0;
+    int i, k;
+
+#define ADD(...) (n += (size_t)snprintf(src + n, sizeof(src) - n, __VA_ARGS__))
+    ADD("(function(){var a = 0, b = 0;");
+    for (k = 40; k <= 80; k++) {
+        ADD("while(!a){");
+        for (i = 0; i < k; i++)
+            ADD("++a;");
+        ADD("}");
+    }
+    for (i = 0; i < 8192; i++)
+        ADD("if(!a)++b;");
+    ADD("})");
+    compile_stops("loops with jumps back", src, JS_EVAL_TYPE_GLOBAL);
+
+    n = 0;
+    ADD("(function(){var x0");
+    for (i = 1; i < 300; i++)
+        ADD(",x%d", i);
+    ADD(";return function(){return function(){return function(){return function(){"
+        "return function(){return eval('x0')}}}}}})");
+    compile_stops("an eval in five functions", src, JS_EVAL_TYPE_GLOBAL);
+
+    n = 0;
+    ADD("var a0");
+    for (i = 1; i < 2000; i++)
+        ADD(",a%d", i);
+    ADD(";export {a0 as e0");
+    for (i = 1; i < 2000; i++)
+        ADD(",a%d as e%d", i, i);
+    ADD("}");
+    compile_stops("a module of 2,000 exports", src, JS_EVAL_TYPE_MODULE);
+#undef ADD
+}
+
 int main(void)
 {
+    test_compile_stops();
     test_for_in_keeps_shape();
     test_plain_objects();
     test_run_gc_threshold();

@@ -475,8 +475,8 @@ func (v *VM) Leave() {
 // asked to stop, and the outermost Enter clears it, when no exception is
 // pending. The engine itself keeps 2 in it while an uncatchable exception is
 // pending. The int32 after it is not 0 from the stop of a compile to its
-// return, while it frees the code it made: Poll reads it and leaves that
-// poll out of StopPolls and the kill. The engine keeps the flag where it is
+// return, while it frees the code and the module it made: Poll reads it and
+// leaves that poll out of StopPolls and the kill. The engine keeps the flag where it is
 // for as long as it lives.
 func (v *VM) SetInterruptFlag(a uintptr) {
 	if a == 0 || a%4 != 0 {
@@ -693,8 +693,8 @@ func Poll(sp uintptr) {
 		return
 	}
 	if v.flag != 0 && *(*int32)(addr(v.flag + 4)) != 0 {
-		// A compile that stopped frees the code it made, which is
-		// bounded by what the compile did (JS_GetInterruptFlag in
+		// A compile that stopped frees the code and the module it made,
+		// which is bounded by what the compile did (JS_GetInterruptFlag in
 		// engine/quickjs.h): the poll is left out of StopPolls and the kill.
 		return
 	}

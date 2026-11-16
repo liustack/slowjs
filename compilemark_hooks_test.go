@@ -10,6 +10,7 @@ package slowjs // import "github.com/liustack/slowjs"
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -39,19 +40,23 @@ func TestCompileMarkCleared(t *testing.T) {
 			t.Fatalf("%s: the compile ended with %v and left the word after the flag at %d", what, err, n)
 		}
 	}
-	for _, c := range []struct{ name, call string }{
-		{"an eval", `(0, eval)(s); 0`},
-		{"a direct eval in an eval", `(0, eval)('eval(s)'); 0`},
+	for _, c := range []struct {
+		name, call string
+		flags      int
+	}{
+		{"an eval", `(0, eval)(s); 0`, EvalGlobal},
+		{"a direct eval in an eval", `(0, eval)('eval(s)'); 0`, EvalGlobal},
+		{"a module of 800 imports", importsModule(800), EvalModule},
 	} {
 		before := h.Polls()
-		if _, err := m.Eval(c.call, EvalGlobal); err != nil {
+		if _, err := m.Eval(c.call, c.flags); err != nil {
 			t.Fatal(err)
 		}
 		span := h.Polls() - before
 		stopped := 0
 		for at := int64(1); at <= span; at++ {
 			h.InterruptAtPoll(h.Polls() + at)
-			_, err := m.Eval(c.call, EvalGlobal)
+			_, err := m.Eval(c.call, c.flags)
 			h.InterruptAtPoll(0)
 			if err != nil {
 				stopped++
@@ -67,8 +72,10 @@ func TestCompileMarkCleared(t *testing.T) {
 	mid := (h.Polls() - before) / 2
 	ends := map[string]int{}
 	for room := uintptr(0); room <= 4<<20; room += 16 << 10 {
-		h.InterruptAtPoll(h.Polls() + mid)
+		// the collection of vmMemory frees what the calls before left, with
+		// polls, so the stop is armed after it
 		m.SetMemoryLimit(uintptr(vmMemory(m).Fmalloc_size) + room)
+		h.InterruptAtPoll(h.Polls() + mid)
 		_, err := m.Eval(`(0, eval)(s); 0`, EvalGlobal)
 		m.SetMemoryLimit(^uintptr(0))
 		h.InterruptAtPoll(0)
@@ -90,9 +97,9 @@ func TestCompileMarkCleared(t *testing.T) {
 	wantKillWhileFreeing(t, m, "after the compiles")
 }
 
-// compileStopPolls is the most polls TestStoppedCompileFreeNotKilled lets
-// count after a stop in a compile: two steps of its readings, as
-// compileStopPolls of internal/cengine.
+// compileStopPolls is the most polls wantStopsNotKilled lets count after a
+// stop in a compile: two steps of its readings, as compileStopPolls of
+// internal/cengine.
 const compileStopPolls = 16
 
 // TestStoppedCompileFreeNotKilled stops the compile of a source of 8.4 MB, a
@@ -111,12 +118,54 @@ const compileStopPolls = 16
 // (wantKillWhileFreeing), so the end of the compile cleared the mark.
 func TestStoppedCompileFreeNotKilled(t *testing.T) {
 	m := newTestVM(t)
-	h := m.h
 	if _, err := m.Eval(`var a = 0, f, g, s = '(function(){' + 'a=a+1;'.repeat(1400000) + '})'; 0`, EvalGlobal); err != nil {
 		t.Fatal(err)
 	}
+	wantStopsNotKilled(t, m, `f = (0, eval)(s); 0`, `g = (0, eval)(s); 0`, EvalGlobal)
+	if _, err := m.Eval(`f = null; 0`, EvalGlobal); err != nil {
+		t.Fatal(err)
+	}
+	wantKillWhileFreeing(t, m, "after the stopped compiles")
+}
+
+// TestStoppedModuleFreeNotKilled is TestStoppedCompileFreeNotKilled for a
+// module of 8,000 imports of 64 attributes each, 5.7 MB: a stop of its
+// compile frees the module with its table of imports and the object of the
+// attributes of each after the code, and those polls do not count toward the
+// kill either. The module the first call made whole stays in the VM.
+func TestStoppedModuleFreeNotKilled(t *testing.T) {
+	m := newTestVM(t)
+	src := importsModule(8000)
+	wantStopsNotKilled(t, m, src, src, EvalModule)
+	wantKillWhileFreeing(t, m, "after the stopped compiles of the module")
+}
+
+// importsModule is a module that imports itself, by the name <eval> that
+// Eval gives it, n times, each with an object of 64 attributes.
+func importsModule(n int) string {
+	var b strings.Builder
+	b.WriteString(`import "<eval>" with {k0: "v"`)
+	for i := 1; i < 64; i++ {
+		fmt.Fprintf(&b, `, k%d: "v"`, i)
+	}
+	b.WriteString("};")
+	return strings.Repeat(b.String(), n)
+}
+
+// wantStopsNotKilled evaluates whole twice, the second time to count the
+// polls of the call, as the first of a module takes longer, then stops
+// stopped, a call that compiles the same source, at the polls two, five and
+// nine tenths into it, with no grace: each stop ends the call interrupted
+// after at most compileStopPolls polls counted toward the kill, and the VM
+// goes on.
+func wantStopsNotKilled(t *testing.T, m *VM, whole, stopped string, flags int) {
+	t.Helper()
+	h := m.h
+	if _, err := m.Eval(whole, flags); err != nil {
+		t.Fatal(err)
+	}
 	before := h.Polls()
-	if _, err := m.Eval(`f = (0, eval)(s); 0`, EvalGlobal); err != nil {
+	if _, err := m.Eval(whole, flags); err != nil {
 		t.Fatal(err)
 	}
 	span := h.Polls() - before
@@ -125,7 +174,7 @@ func TestStoppedCompileFreeNotKilled(t *testing.T) {
 		at := span * part / 10
 		before := h.Polls()
 		h.InterruptAtPoll(before + at)
-		_, err := m.Eval(`g = (0, eval)(s); 0`, EvalGlobal)
+		_, err := m.Eval(stopped, flags)
 		h.InterruptAtPoll(0)
 		polls, counted := h.Polls()-before, h.StopPolls()
 		what := fmt.Sprintf("stopped at poll %d of the %d of the compile", at, span)
@@ -141,8 +190,67 @@ func TestStoppedCompileFreeNotKilled(t *testing.T) {
 			t.Fatalf("the VM after the stop: 1+1 got %v, %v", v, err)
 		}
 	}
-	if _, err := m.Eval(`f = null; 0`, EvalGlobal); err != nil {
+}
+
+// TestModuleCompileStops stops the compile of a module of 1,024 vars, each
+// exported under another name, and 1,024 imports of the module itself, then
+// a loop that runs for ever, at every poll that a call of it without the
+// loop takes (the second call, as the first takes longer): each stop must
+// come within compileStopPolls, with the error interrupted. The parse looks
+// for each export among those before it and for each import among the
+// bindings before it, and the compile looks for each export among the imports
+// and the variables, loops whose work grows as a square: they read no flag,
+// and a stop waited for them.
+func TestModuleCompileStops(t *testing.T) {
+	m := newTestVM(t)
+	h := m.h
+	const n = 1024
+	var b strings.Builder
+	b.WriteString("var a0")
+	for i := 1; i < n; i++ {
+		fmt.Fprintf(&b, ",a%d", i)
+	}
+	b.WriteString(";export {a0 as e0")
+	for i := 1; i < n; i++ {
+		fmt.Fprintf(&b, ",a%d as e%d", i, i)
+	}
+	b.WriteString("};")
+	for i := 0; i < n; i++ {
+		fmt.Fprintf(&b, `import * as b%d from "<eval>";`, i)
+	}
+	b.WriteString("if (globalThis.spin) for (;;) {}")
+	src := b.String()
+	m.SetGCThreshold(^uintptr(0))
+	if _, err := m.Eval(src, EvalModule); err != nil {
 		t.Fatal(err)
 	}
-	wantKillWhileFreeing(t, m, "after the stopped compiles")
+	m.RunGC()
+	before := h.Polls()
+	if _, err := m.Eval(src, EvalModule); err != nil {
+		t.Fatal(err)
+	}
+	span := h.Polls() - before
+	if _, err := m.Eval(`globalThis.spin = true`, EvalGlobal); err != nil {
+		t.Fatal(err)
+	}
+	var worst int64
+	var worstAt string
+	for at := int64(1); at <= span; at++ {
+		m.RunGC()
+		h.InterruptAtPoll(h.Polls() + at)
+		_, err := m.Eval(src, EvalModule)
+		h.InterruptAtPoll(0)
+		what := fmt.Sprintf("the stop at poll %d of %d", at, span)
+		var e *Error
+		if errors.Is(err, ErrKilled) || !errors.As(err, &e) || !e.Interrupted {
+			t.Fatalf("%s: got %v, want the error interrupted", what, err)
+		}
+		if n := h.StopPolls(); n > worst {
+			worst, worstAt = n, what
+		}
+	}
+	t.Logf("one call took %d polls, at most %d saw the request (%s)", span, worst, worstAt)
+	if worst > compileStopPolls {
+		t.Errorf("%s: %d polls saw the request, want at most %d", worstAt, worst, compileStopPolls)
+	}
 }

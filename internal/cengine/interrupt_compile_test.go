@@ -25,11 +25,14 @@ const compileStopPolls = 16
 // top level and in a function (whose code is converted to register code when
 // it runs), the jumps the labels resolve, the names of many locals, an object
 // literal of many keys, the closures of a local that is written, whose paths
-// capture_by_value follows, and two loops whose work grows as a square: the
+// capture_by_value follows, and four loops whose work grows as a square: the
 // jumps resolve_labels makes shorter, each of which moves the code after it,
-// and the vars of an eval, each looked for among the variables of the
-// function around it. The polls of the freeing of the code a stopped compile
-// made are not counted (JS_GetInterruptFlag in engine/quickjs.h).
+// the vars of an eval, each looked for among the variables of the function
+// around it, the variables of the functions around a direct eval, which the
+// compile collects for it and looks for at each level, and the parameters of
+// a function, each looked for among those before it. The polls of the
+// freeing of the code a stopped compile made are not counted
+// (JS_GetInterruptFlag in engine/quickjs.h).
 var compileCases = []struct{ name, setup, source string }{
 	{"an array literal of 24,576 numbers", `var S = '[' + '1,'.repeat(3 << 13)`, `S + n++ + ']'`},
 	{"8,192 statements at the top level", `var a = 0, S = 'a=a+1;'.repeat(1 << 13)`, `S + n++`},
@@ -41,6 +44,8 @@ var compileCases = []struct{ name, setup, source string }{
 	{"2,048 closures of a local it writes, in a function that runs", `var S = '(function(){let x = 0;' + 'x++;(() => x);'.repeat(1 << 11)`, `S + 'return ' + n++ + '})()'`},
 	{"512 jumps the labels shorten", `var a = 0, S = '(function(){' + ('if(a){' + 'a=a+1;'.repeat(8) + '}').repeat(1 << 9)`, `S + n++ + '})'`},
 	{"an eval of 1,024 vars in a function of 1,024 locals", `var L = Array.from({length: 1 << 10}, (_, i) => 'x' + i).join(','), V = 'var ' + Array.from({length: 1 << 10}, (_, i) => 'y' + i).join(','), f = (0, eval)('(function(V){var ' + L + '; eval(V)})')`, `'f(V + ",z' + n++ + '")'`},
+	{"an eval in five functions around 2,048 locals", `var S = '(function(){var ' + Array.from({length: 1 << 11}, (_, i) => 'x' + i).join(',') + ';return function(){return function(){return function(){return function(){return function(){return eval("x0")}}}}}})//'`, `S + n++`},
+	{"a function of 8,192 parameters", `var S = '(function(' + Array.from({length: 1 << 13}, (_, i) => 'p' + i).join(',') + '){})//'`, `S + n++`},
 }
 
 // TestInterruptStopsCompileAtEveryPoll evaluates each source of

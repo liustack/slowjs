@@ -15,6 +15,7 @@
 
      unit-white */
 #include <errno.h>
+#include <limits.h>
 #include <spawn.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -101,6 +102,7 @@ int white_op_count(void);
 void white_days_to_date(int64_t days, int *y, int *m, int *d);
 int white_poll_run(void);
 void white_poll_skip(int on);
+int white_compile_count(JSContext *ctx, int left, int n, int times);
 const char *white_poll_scan(const uint8_t *code, int len);
 int white_poll_insert(JSContext *ctx, const uint8_t *code, int len, uint8_t *out, int cap);
 int white_code_shape(const uint8_t *code, int len, int *shape, int max);
@@ -3398,6 +3400,24 @@ static Code straight(int n)
     op_n(&c, W_PUSH_0, n);
     op_n(&c, W_RETURN_UNDEF, 1);
     return c;
+}
+
+/* The count of the work of a compile stays below 0 once it is there, up to
+   the next reading of the flag (js_compile_count): counts that add up past an
+   int took it around to a large number, and the reading came that much
+   later. */
+static void test_compile_count(void)
+{
+    VM v = vm_new();
+    int left;
+
+    left = white_compile_count(v.ctx, 100, 60, 1);
+    CHECK(left == 40, "100 less 60 is %d", left);
+    left = white_compile_count(v.ctx, 100, INT_MAX, 2);
+    CHECK(left < 0, "100 less twice INT_MAX is %d", left);
+    left = white_compile_count(v.ctx, 100, 1 << 20, 1 << 12);
+    CHECK(left < 0, "100 less 2 to the 32 is %d", left);
+    vm_free(&v);
 }
 
 /* poll_scan, which check_polls runs on all code before it runs, takes a run
@@ -9375,6 +9395,7 @@ int main(int argc, char **argv)
     test_gc_in_free();
     test_error_nest();
     test_function_properties_oom();
+    test_compile_count();
     test_poll_scan();
     test_poll_insert();
     test_poll_compile();
