@@ -331,11 +331,11 @@ func TestRegisterTagsRunsNoScript(t *testing.T) {
 	})
 	t.Run("a getter that never returns", func(t *testing.T) {
 		m := newTestVM(t)
+		evalString(t, m, `Object.defineProperty(Array.prototype, 'push', { configurable: true, get() { for (;;) {} } });
+			Object.defineProperty(Function.prototype, 'call', { configurable: true, get() { for (;;) {} } }); 0`)
 		if err := m.SetEvalTimeout(200 * time.Millisecond); err != nil {
 			t.Fatal(err)
 		}
-		evalString(t, m, `Object.defineProperty(Array.prototype, 'push', { configurable: true, get() { for (;;) {} } });
-			Object.defineProperty(Function.prototype, 'call', { configurable: true, get() { for (;;) {} } }); 0`)
 		done := make(chan error, 2)
 		go func() {
 			err := m.RegisterStartTag("s")

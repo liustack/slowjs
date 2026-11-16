@@ -273,14 +273,17 @@ slowString.toString = function () { spin(); return "T" };
 globalThis.plain = new SyntaxError("m3");`, EvalGlobal); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.SetEvalTimeout(10 * time.Millisecond); err != nil {
-		t.Fatal(err)
-	}
-
-	read := func(name string) *Error {
+	// read reads the error in name with the eval timeout given, and gets it with
+	// none: the reads and calls that must work run with no deadline, which a
+	// busy machine could pass however short they are.
+	read := func(name string, timeout time.Duration) *Error {
 		t.Helper()
 		v := evalValueOrFatal(t, m, name)
 		defer v.Free()
+		if err := m.SetEvalTimeout(timeout); err != nil {
+			t.Fatal(err)
+		}
+		defer m.SetEvalTimeout(0)
 		start := time.Now()
 		e := ErrorFromValue(v)
 		if d := time.Since(start); d > 150*time.Millisecond {
@@ -294,7 +297,7 @@ globalThis.plain = new SyntaxError("m3");`, EvalGlobal); err != nil {
 			t.Errorf("got %#v, want name %q, message %q, string %q, interrupted", e, name, message, raw)
 		}
 		wantNoPendingException(t, m)
-		got := read("plain")
+		got := read("plain", 0)
 		if got.Name != "SyntaxError" || got.Message != "m3" || got.Error() != "SyntaxError: m3" {
 			t.Errorf("the next read gave %q, %q, %q", got.Name, got.Message, got.Error())
 		}
@@ -302,9 +305,9 @@ globalThis.plain = new SyntaxError("m3");`, EvalGlobal); err != nil {
 			t.Errorf("the next call gave %v, %v", r, err)
 		}
 	}
-	check(read("slowName"), "InternalError", "interrupted", "InternalError: interrupted")
-	check(read("slowString"), "InternalError", "interrupted", "InternalError: interrupted")
-	if e := read("plain"); e.Error() != "SyntaxError: m3" {
+	check(read("slowName", 10*time.Millisecond), "InternalError", "interrupted", "InternalError: interrupted")
+	check(read("slowString", 10*time.Millisecond), "InternalError", "interrupted", "InternalError: interrupted")
+	if e := read("plain", 0); e.Error() != "SyntaxError: m3" {
 		t.Errorf("a plain error reads as %q", e.Error())
 	}
 

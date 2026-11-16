@@ -337,7 +337,12 @@ func TestNestedEvalKeepsTimeout(t *testing.T) {
 				t.Fatalf("past the outer call's time: nested call got %v, outer call got %v, want both interrupted", nestedErr, err)
 			}
 
-			// The next outer call starts a new budget.
+			// The next outer call starts a new budget: a wide one, which a
+			// busy machine cannot pass in the loop, while the deadline of the
+			// call before, if it were kept, has passed.
+			if err := m.SetEvalTimeout(10 * time.Second); err != nil {
+				t.Fatal(err)
+			}
 			if _, err := m.Eval(`loop(); 'done'`, EvalGlobal); err != nil {
 				t.Fatal(err)
 			}

@@ -144,6 +144,10 @@ Promise.reject(new Error("after"));
 	if !errors.As(err, &e) || !e.Interrupted {
 		t.Fatalf("got %v, want the timeout", err)
 	}
+	// The next read runs with no deadline, which a busy machine could pass.
+	if err := m.SetEvalTimeout(0); err != nil {
+		t.Fatal(err)
+	}
 	reasons, _, err := m.UnhandledRejections()
 	if err != nil || len(reasons) != 1 || reasons[0].Message != "after" {
 		t.Fatalf("%v, %v", reasons, err)

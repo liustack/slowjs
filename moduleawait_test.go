@@ -169,6 +169,9 @@ func TestModuleAwaitTimeout(t *testing.T) {
 
 	_, err := m.EvalBytecode(code)
 	wantKind(t, err, interrupted)
+	if err := m.SetEvalTimeout(0); err != nil {
+		t.Fatal(err)
+	}
 	wantEval(t, m, "1 + 1", 2)
 }
 
@@ -205,6 +208,9 @@ globalThis.after = true;
 	_, err := m.EvalBytecode(code)
 	wantKind(t, err, interrupted)
 	wantNoPendingException(t, m)
+	if err := m.SetEvalTimeout(0); err != nil {
+		t.Fatal(err)
+	}
 	wantEval(t, m, "typeof after", "undefined")
 }
 

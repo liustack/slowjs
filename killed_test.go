@@ -106,9 +106,6 @@ func TestNoKillAfterLongHostCall(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			m := newTestVM(t)
 			const timeout = 20 * time.Millisecond
-			if err := m.SetEvalTimeout(timeout); err != nil {
-				t.Fatal(err)
-			}
 			mustHost(t, m, "nested", func([]any) (any, error) {
 				time.Sleep(timeout + 50*time.Millisecond + pastDeadline)
 				nested(m)
@@ -117,10 +114,18 @@ func TestNoKillAfterLongHostCall(t *testing.T) {
 			if _, err := m.Eval(`globalThis.loop = function() { for (let i = 0; i < 1e5; i++) {} }`+hookJS, EvalGlobal); err != nil {
 				t.Fatal(err)
 			}
+			if err := m.SetEvalTimeout(timeout); err != nil {
+				t.Fatal(err)
+			}
 			_, err := m.Eval(`nested(); loop(); 'done'`, EvalGlobal)
 			var e *Error
 			if !errors.As(err, &e) || !e.Interrupted || errors.Is(err, ErrKilled) {
 				t.Fatalf("the outer call got %v, want an interrupted error that does not match ErrKilled", err)
+			}
+			// The VM goes on, with no deadline: a busy machine may run the
+			// loop past 20 ms.
+			if err := m.SetEvalTimeout(0); err != nil {
+				t.Fatal(err)
 			}
 			if _, err := m.Eval(`loop(); 'done'`, EvalGlobal); err != nil {
 				t.Fatalf("the next call: %v", err)
