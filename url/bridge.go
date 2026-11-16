@@ -52,10 +52,9 @@ const maxBaseBytes = 256
 // and its parse: a router resolves every link of a page against one base, so
 // most calls parse it no more. Each VM has its own (states), which the
 // Builtins change in the calls of that VM, one at a time, and which goes when
-// the VM closes:
-// at most maxBaseBytes and the URL made of them, under 1 KiB of Go's memory a
-// VM. The parser only reads a base and copies what it takes of it, so a
-// parsed base gives what a new parse of it would.
+// the VM closes: at most maxBaseBytes and the URL made of them. The parser
+// only reads a base and copies what it takes of it, so a parsed base gives
+// what a new parse of it would.
 type keptBase struct {
 	s string
 	u *whatwgurl.URL
@@ -110,9 +109,10 @@ const maxKeptBytes = 1024
 // in place of making the record again from its parts (FromParts), which
 // parses its href once more. Parts and bits equal to these are the parts of
 // that URL, from which FromParts makes a URL that gives them back: the same
-// record. Nothing changes u: set changes a copy. It goes with the VM, at most
-// maxKeptBytes of href and the URL made of it, under 4 KiB of Go's memory a
-// VM.
+// record. Nothing changes u: set changes a copy. A URL holds about the bytes
+// it is made of, however long the input was (whatwgurl's take and Path.Pop),
+// so this is at most maxKeptBytes of href and the URL made of it, under 4 KiB
+// of Go's memory a VM, which goes when the VM closes.
 type keptRecord struct {
 	p whatwgurl.Parts
 	u *whatwgurl.URL

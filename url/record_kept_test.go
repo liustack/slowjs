@@ -8,6 +8,8 @@ package url
 import (
 	"strings"
 	"testing"
+
+	"github.com/liustack/slowjs"
 )
 
 // countFromParts sets fromPartsHook for the test and returns the count of
@@ -59,6 +61,54 @@ func TestSetTakesTheLastRecord(t *testing.T) {
 	} {
 		if got := evalString(t, vm, js); got != want {
 			t.Errorf("%s: %q, want %q", js, got, want)
+		}
+	}
+}
+
+// keptPerVM is the Go heap that each of 100 VMs holds after it ran js, which
+// makes URLs: what the package keeps for it, and what any VM holds.
+func keptPerVM(t *testing.T, js string) int64 {
+	t.Helper()
+	const n = 100
+	vms := make([]*slowjs.VM, 0, n)
+	defer func() {
+		for _, vm := range vms {
+			vm.Close()
+		}
+	}()
+	before := heapAfterGC()
+	for range n {
+		vm, err := slowjs.NewVM()
+		if err != nil {
+			t.Fatal(err)
+		}
+		vms = append(vms, vm)
+		if err := Register(vm); err != nil {
+			t.Fatal(err)
+		}
+		evalString(t, vm, js)
+	}
+	return (int64(heapAfterGC()) - int64(before)) / n
+}
+
+// TestKeptIsBounded checks that what a VM keeps is under 4 KiB however long
+// the inputs that made it were: a short href made from a long path that ".."
+// took back, a short query after a long path in the buffer of the parser, a
+// long base, and setters that made a long path and then a short one. It
+// counts the Go heap each VM holds against VMs that made a short URL.
+func TestKeptIsBounded(t *testing.T) {
+	short := keptPerVM(t, `new URL("/x?q#f", "http://h/").href`)
+	long := `"a".repeat(60000)`
+	for _, js := range []string{
+		`new URL("http://h/" + ` + long + ` + "/..").href`,
+		`new URL("http://h/" + ` + long + ` + "/..?q#f").href`,
+		`new URL("http://h/" + "a".repeat(30000) + "/../x/" + "b".repeat(30000) + "/..?q#f").href`,
+		`new URL("y", "http://h/" + ` + long + ` + "/../").href`,
+		`var u = new URL("http://h/"); u.pathname = "/" + ` + long + `; u.pathname = "/z/" + ` + long + ` + "/.."; u.href`,
+		`var v = new URL("http://h/x"); v.hash = "#" + ` + long + `; v.hash = "#a"; v.search = "?" + "%".repeat(300); v.search = "?b"; v.href`,
+	} {
+		if n := keptPerVM(t, js) - short; n >= 4096 {
+			t.Errorf("%.70s: each VM holds %d bytes more", js, n)
 		}
 	}
 }
