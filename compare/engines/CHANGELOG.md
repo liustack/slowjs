@@ -1,5 +1,11 @@
 # Changes to the engine comparison
 
+## 2026-11-16: the run of v0.31.3
+
+- The bundles and inputs of the pages are made again from tifa 63a2099e (v0.0.10), so the page table of this run is not to be set beside the one of v0.31.2: the shop bundle has i18next 27.1.2 and react-i18next 18.0.1 (were 26.5.3 and 17.1.0), and the inputs are new.
+- Node moved from v24.22.3 to v26.13.1 and Hermes V1 from 260318099.0.0 to 260318099.0.7, the newest of each. go-quickjs v0.38.0, moejs v0.1.1 and C QuickJS 2026-06-04 are still the newest.
+- The run is on server C after its restart on another host of the same type, so its numbers are not comparable with those of the run of v0.31.2. The V8 suite has ten rounds in one session.
+
 ## 2026-11-16: the run of v0.31.2
 
 - The run moved to another machine of the same type (server C, GCP t2d-standard-4), so its numbers are not comparable with those of the run of v0.31.1. moejs is v0.1.1 (`go.mod`, `go.sum`), still with the `FinalizationRegistry` stand-in.

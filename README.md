@@ -33,25 +33,25 @@ CPU time of one render of the server bundles of tifa's apps, on one core, as a m
 | Engine | Pure Go | React bench pages | MUI pages | Shop pages |
 | :-- | :-: | --: | --: | --: |
 | **liustack/slowjs** | yes | **1.00** | **1.00** | **1.00** |
-| liustack/slowjs, on polyfills | yes | 0.96 | 1.71 | 1.54 |
-| moejs | yes | 1.53 | 1.41 | 1.73 |
-| go-quickjs | yes | 2.58 | 3.04 | 3.82 |
-| C QuickJS 2026-06-04 | no, C | 1.93 | 3.39 | 2.20 |
-| Hermes V1 | no, C++ | 1.20 | 1.87 | 1.92 |
-| Node 24 `--jitless` | no, C++ | 0.87 | 1.33 | 0.87 |
+| liustack/slowjs, on polyfills | yes | 1.01 | 1.64 | 1.65 |
+| moejs | yes | 1.42 | 1.50 | 1.83 |
+| go-quickjs | yes | 2.70 | 2.51 | 3.59 |
+| C QuickJS 2026-06-04 | no, C | 1.96 | 3.59 | 2.47 |
+| Hermes V1 | no, C++ | 1.04 | 1.84 | 1.78 |
+| Node 26 `--jitless` | no, C++ | 0.97 | 1.10 | 0.89 |
 
-Measured on v0.31.2 on a GCP t2d-standard-4 (AMD EPYC 7B13), Go 1.27.4. The comparison is among interpreters: go-quickjs runs with its JIT off, as it comes, Hermes runs `hermesc -O` bytecode and Node runs with `--jitless`. Every engine runs as it comes, on its own `Intl` where it has one and on the FormatJS polyfill where it has none (C QuickJS and Hermes). The second row is liustack/slowjs without its built-in `Intl`, `URL` and `Temporal`, on the same polyfills as C QuickJS and Hermes: it shows how much of the lead on the MUI and shop pages comes from the interpreter and how much from `Intl` written in Go. The bench pages need no `Intl`, so that column is the same JavaScript on every engine.
+Measured on v0.31.3 on a GCP t2d-standard-4 (AMD EPYC 7B13), Go 1.27.4. The comparison is among interpreters: go-quickjs runs with its JIT off, as it comes, Hermes runs `hermesc -O` bytecode and Node runs with `--jitless`. Every engine runs as it comes, on its own `Intl` where it has one and on the FormatJS polyfill where it has none (C QuickJS and Hermes). The second row is liustack/slowjs without its built-in `Intl`, `URL` and `Temporal`, on the same polyfills as C QuickJS and Hermes: it shows how much of the lead on the MUI and shop pages comes from the interpreter and how much from `Intl` written in Go. The bench pages need no `Intl`, so that column is the same JavaScript on every engine.
 
 It is not the fastest on everything: on the V8 benchmark suite Hermes and Node score higher.
 
 | Engine | Pure Go | V8 suite score |
 | :-- | :-: | --: |
-| Node 24 `--jitless` | no, C++ | 1875 |
-| Hermes V1 | no, C++ | 1696 |
-| **liustack/slowjs** | yes | **1546** |
-| moejs | yes | 1405 |
-| go-quickjs | yes | 1303 |
-| C QuickJS 2026-06-04 | no, C | 1056 |
+| Node 26 `--jitless` | no, C++ | 2286 |
+| **liustack/slowjs** | yes | **2136** |
+| Hermes V1 | no, C++ | 2124 |
+| moejs | yes | 1870 |
+| go-quickjs | yes | 1708 |
+| C QuickJS 2026-06-04 | no, C | 1188 |
 
 It scores 1.49 times C QuickJS, 1.18 times go-quickjs and 1.11 times moejs, though in some rounds moejs and it cannot be told apart. go-quickjs leads on the RegExp benchmark, moejs on Richards and NavierStokes.
 
