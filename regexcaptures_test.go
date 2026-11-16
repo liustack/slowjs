@@ -138,7 +138,8 @@ func TestRegExpManyCapturesStop(t *testing.T) {
 // captureLoops are scripts that spend their time in the loops over the
 // captures of a match: the result of an exec of 32767 groups, the captures
 // replace reads for "$1" (the named group keeps replace off its fast path,
-// which reads none), the pieces of split, and the result of an exec of the
+// which reads none), the arguments of a function replace and the pieces of
+// split on their paths without exec, and the result of an exec of the
 // script whose length is any number, which replace and split read capture by
 // capture. The regexp of 32767 groups matches "b" in its last alternative:
 // the matcher reads the flag at each alternative it leaves, where a match
@@ -148,6 +149,8 @@ var captureLoops = []struct{ name, setup, loop string }{
 	{"exec", captureMany, `for (;;) re.exec("b")`},
 	{"replace", captureMany, `for (;;) "b".replace(re, "$1")`},
 	{"split", captureMany, `for (;;) s.split(re)`},
+	{"replace with a function", captureManyPlain, `for (;;) "b".replace(re, () => "")`},
+	{"split without names", captureManyPlain, `for (;;) s.split(re)`},
 	{"custom replace", `var re = /a/; re.exec = function () { if (this.done) return null; this.done = true; return {length: 1e9, 0: "a", index: 0} }; 0`,
 		`re.done = false; re[Symbol.replace]("a", "")`},
 	{"custom split", `class R extends RegExp { exec() { if (this.lastIndex != 0) return null; this.lastIndex = 1; return {length: 1e9, 0: "a", index: 0} } }; var re = new R("a"); 0`,
@@ -155,6 +158,10 @@ var captureLoops = []struct{ name, setup, loop string }{
 }
 
 const captureMany = `var re = new RegExp("(?<n>a)|" + "(a)|".repeat(32765) + "(b)"), s = "b".repeat(64); 0`
+
+// captureManyPlain has no named group, which keeps replace with a function
+// on its path without exec (js_regexp_replace_fn).
+const captureManyPlain = `var re = new RegExp("(a)|".repeat(32766) + "(b)"), s = "b".repeat(64); 0`
 
 // The eval timeout and Interrupt stop the loops of captureLoops with the
 // interrupt, not the kill: the loops over the captures read the flag every

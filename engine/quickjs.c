@@ -61469,6 +61469,10 @@ static JSValue js_regexp_replace_fn(JSContext *ctx, JSValueConst rx,
         if (((j / (2 * capture_count)) & 1023) == 1023 && js_poll_interrupts(ctx))
             goto fail;
         for (k = 0; k < capture_count; k++) {
+            /* a regexp has up to 32767 groups: the flag every 1024, as
+               exec reads it */
+            if ((k & 1023) == 1023 && js_poll_interrupts(ctx))
+                goto fail_args;
             if (pos[j + 2 * k] < 0) {
                 args[k] = JS_UNDEFINED;
             } else {
@@ -62446,6 +62450,10 @@ static JSValue js_regexp_split_fast(JSContext *ctx, JSValueConst rx,
             goto done;
         p = e;
         for (i = 1; i < capture_count; i++) {
+            /* a regexp has up to 32767 groups: the flag every 1024, as the
+               generic path reads it */
+            if ((i & 1023) == 0 && js_poll_interrupts(ctx))
+                goto fail;
             sub = JS_UNDEFINED;
             if (capture[2 * i] && capture[2 * i + 1]) {
                 sub = js_sub_string(ctx, str, (capture[2 * i] - buf) >> shift,
