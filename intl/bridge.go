@@ -403,8 +403,9 @@ func (c *ctor) request(a slowjs.Args, door *intlhook.Door) (request, error) {
 // once, in the order of its first time. It is for a Builtin of vm, which a
 // long list stops at the eval timeout or Interrupt (see tagTurns).
 func canonicalLocaleList(vm *slowjs.VM, tags []string) ([]string, error) {
+	// seen grows with the tags gone through, as in goLocales.
 	r := []string{}
-	seen := make(map[string]bool, len(tags))
+	seen := map[string]bool{}
 	t := tagTurns{vm: vm}
 	for _, tag := range tags {
 		t.turn(len(tag))

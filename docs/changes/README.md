@@ -185,6 +185,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A VM keeps its last block for the next call | v0.30.4 | [uncatchable.md](uncatchable.md#a-vm-keeps-its-last-block-for-the-next-call) |
 | The copy of a spread, a rest and Object.assign reads the interrupt flag | v0.30.5 | [uncatchable.md](uncatchable.md#the-copy-of-a-spread-a-rest-and-objectassign-reads-the-interrupt-flag) |
 | A VM with a memory limit keeps its block too | v0.30.6 | [uncatchable.md](uncatchable.md#a-vm-with-a-memory-limit-keeps-its-block-too) |
+| Intl asks Go for no memory sized by a whole list of locales before its first check of the call: the locales it canonicalizes and their seen set grow with the tags gone through | Unreleased | [uncatchable.md](uncatchable.md#intl-reads-the-interrupt-flag-in-loops-over-a-long-list) |
 
 ## Errors and stacks
 

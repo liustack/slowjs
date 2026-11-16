@@ -4,6 +4,10 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 
 ## [Unreleased]
 
+### Fixed
+
+- A call of Intl on a long list of locales no longer has Go clear memory for the whole list before it first checks the eval timeout: 189 MiB for a million tags, which held a timeout of 20 ms for up to 103 ms on an AMD EPYC.
+
 ## [v0.31.2] - 2026-11-16
 
 ### Changed
