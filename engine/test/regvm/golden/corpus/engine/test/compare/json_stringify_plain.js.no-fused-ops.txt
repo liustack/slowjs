@@ -21,6 +21,6 @@ result append "中": 84 omRoom中" omRoom中end"}
 result parsed: {"a":"plain","b":"esc\"aped","c":"uniA","d":"\ud800","e":"café","f":"中"} ["plain","esc\"aped","uniA","\ud800","café","中"]
 result keys: 961 [{"plainText":0,"":1,"say \"hi\"":2,"a\\ ... 14,"abcdefghabcd":16,"中中中中中中中中中中中中":17}]
 result keys again: 961 [{"plainText":0,"":1,"say \"hi\"":2,"a\\ ... 14,"abcdefghabcd":16,"中中中中中中中中中中中中":17}]
-mem-end obj=226 atom=590 shape=168 prop=1070 jsfunc=2 cfunc=137 array=19 fast_array=19 elements=84 binary=0
-mem-gc obj=226 atom=590 shape=168 prop=1070 jsfunc=2 cfunc=137 array=19 fast_array=19 elements=84 binary=0
+mem-end obj=226 atom=591 shape=168 prop=1070 jsfunc=2 cfunc=137 array=19 fast_array=19 elements=84 binary=0
+mem-gc obj=226 atom=591 shape=168 prop=1070 jsfunc=2 cfunc=137 array=19 fast_array=19 elements=84 binary=0
 --- status exit 0
