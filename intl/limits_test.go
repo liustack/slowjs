@@ -173,15 +173,28 @@ func TestLongListTimeout(t *testing.T) {
 			if err := vm.SetEvalTimeout(20 * time.Millisecond); err != nil {
 				t.Fatal(err)
 			}
-			_, err, pan, elapsed := evalGuarded(t, vm, js, time.Minute)
-			if pan != nil {
-				t.Fatalf("panic: %v", pan)
+			// A late stop is tried again, twice, before it counts, as
+			// stopsweep does: a call once ended 1.7 s after a timeout of
+			// 20ms on GitHub's macOS arm64 runner, at a time GitHub said
+			// those runners were short of capacity, and work with no
+			// check would be late every time. The memory
+			// taken before the first check is TestLongListFirstCheck's.
+			var tries []time.Duration
+			for range 3 {
+				_, err, pan, elapsed := evalGuarded(t, vm, js, time.Minute)
+				if pan != nil {
+					t.Fatalf("panic: %v", pan)
+				}
+				wantUncatchable(t, err, true)
+				tries = append(tries, elapsed)
+				if elapsed <= time.Second {
+					break
+				}
 			}
-			wantUncatchable(t, err, true)
-			if elapsed > time.Second {
-				t.Fatalf("a timeout of 20ms ended the call after %v", elapsed)
+			if elapsed := tries[len(tries)-1]; elapsed > time.Second {
+				t.Fatalf("a timeout of 20ms ended the call after %v, in each try", tries)
 			}
-			t.Logf("ended after %v", elapsed)
+			t.Logf("ended after %v", tries)
 		})
 	}
 }
