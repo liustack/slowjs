@@ -2982,6 +2982,126 @@ static void test_finalizer_frees_a_root(void)
 }
 
 
+/* An object that a finalizer makes while a full collection deletes the
+   entries of dead WeakMap keys (gc_remove_weak_objects) goes to the young
+   list. The collection splices the young list after that pass, so gc_decref
+   walks the object like any other: held by an old object of the host, it
+   stays, with counts that add up, and the runtime is freed whole at vm_free
+   (the leak check of these tests). Spliced before the pass, the object stayed
+   on the young list, the scan reached it through its holder, moved it to
+   gc_obj_list and added a count to each of its children, its prototype among
+   them, that gc_decref never took away. Then a child given to it and dropped
+   with it, after a young collection, is freed. The holder (holder()) is an
+   object of the host whose gc_mark reports the object it holds, held() gives
+   that object and drop() lets it go. */
+static struct {
+    JSContext *ctx;
+    JSClassID holder_id, maker_id;
+    JSValue held;
+    int made;
+} made_in_gc;
+
+static void made_in_gc_mark(JSRuntime *rt, JSValueConst val, JS_MarkFunc *mark_func)
+{
+    JS_MarkValue(rt, made_in_gc.held, mark_func);
+}
+
+static void made_in_gc_holder_finalizer(JSRuntime *rt, JSValue val)
+{
+    JS_FreeValueRT(rt, made_in_gc.held);
+    made_in_gc.held = JS_UNDEFINED;
+}
+
+/* a maker, freed with the entry of its WeakMap, gives the holder a new object */
+static void made_in_gc_maker_finalizer(JSRuntime *rt, JSValue val)
+{
+    JSValue x = JS_NewObject(made_in_gc.ctx);
+
+    CHECK(!JS_IsException(x), "no object made in the finalizer");
+    JS_FreeValueRT(rt, made_in_gc.held);
+    made_in_gc.held = x;
+    made_in_gc.made++;
+}
+
+static JSValue made_in_gc_holder(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+    return JS_NewObjectClass(ctx, made_in_gc.holder_id);
+}
+
+static JSValue made_in_gc_maker(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+    return JS_NewObjectClass(ctx, made_in_gc.maker_id);
+}
+
+static JSValue made_in_gc_held(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+    return JS_DupValue(ctx, made_in_gc.held);
+}
+
+static JSValue made_in_gc_drop(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+    JS_FreeValue(ctx, made_in_gc.held);
+    made_in_gc.held = JS_UNDEFINED;
+    return JS_UNDEFINED;
+}
+
+/* other = 1 keeps a second entry, whose key lives, in the weak map: the
+   full collection then takes the path of gc_ephemeron with entries, and
+   with other = 0 the one where the weak pass left none. */
+static void made_in_gc_case(int other)
+{
+    JSClassDef holder = { "MadeInGCHolder", made_in_gc_holder_finalizer, made_in_gc_mark };
+    JSClassDef maker = { "MadeInGCMaker", made_in_gc_maker_finalizer };
+    VM v = vm_new();
+    JSContext *jctx;
+    JSValue g;
+    int old, young;
+
+    memset(&made_in_gc, 0, sizeof(made_in_gc));
+    made_in_gc.ctx = v.ctx;
+    made_in_gc.held = JS_UNDEFINED;
+    JS_SetGCThreshold(v.rt, (size_t)-1);
+    JS_NewClassID(v.rt, &made_in_gc.holder_id);
+    CHECK(JS_NewClass(v.rt, made_in_gc.holder_id, &holder) == 0, "JS_NewClass");
+    JS_NewClassID(v.rt, &made_in_gc.maker_id);
+    CHECK(JS_NewClass(v.rt, made_in_gc.maker_id, &maker) == 0, "JS_NewClass");
+    g = JS_GetGlobalObject(v.ctx);
+    JS_SetPropertyStr(v.ctx, g, "holder", JS_NewCFunction(v.ctx, made_in_gc_holder, "holder", 0));
+    JS_SetPropertyStr(v.ctx, g, "maker", JS_NewCFunction(v.ctx, made_in_gc_maker, "maker", 0));
+    JS_SetPropertyStr(v.ctx, g, "held", JS_NewCFunction(v.ctx, made_in_gc_held, "held", 0));
+    JS_SetPropertyStr(v.ctx, g, "drop", JS_NewCFunction(v.ctx, made_in_gc_drop, "drop", 0));
+    JS_FreeValue(v.ctx, g);
+    CHECK(eval_ok(v.ctx, "var h = holder(), got = [], fr = new FinalizationRegistry((v) => got.push(v)), y = null; void 0"), "the setup");
+    JS_RunGC(v.rt);
+    /* the key dies at once, and its entry waits for the next collection */
+    CHECK(eval_ok(v.ctx, "var wm = new WeakMap(); (function () { wm.set({}, maker()) })(); void 0"), "a weak map");
+    if (other)
+        CHECK(eval_ok(v.ctx, "var keep = {}; wm.set(keep, {}); void 0"), "a second entry");
+    JS_RunGC(v.rt);
+    CHECK(made_in_gc.made == 1, "other %d: the maker made %d objects in the collection", other, made_in_gc.made);
+    lists(&v, &old, &young, "after the full collection whose weak pass made an object");
+    /* the object gets a child only it holds, and its only reference moves from
+       the old holder to a young object the global holds */
+    CHECK(eval_ok(v.ctx, "(function () { const x = held(); x.c = {}; fr.register(x.c, 'c'); y = { x }; drop() })(); void 0"),
+          "the child");
+    JS_RunYoungGC(v.rt);
+    lists(&v, &old, &young, "after the young collection");
+    CHECK(eval_ok(v.ctx, "y = null; void 0"), "the drop");
+    JS_RunGC(v.rt);
+    while (JS_ExecutePendingJob(v.rt, &jctx) > 0)
+        ;
+    CHECK(eval_is(v.ctx, "got.join()", "c"), "other %d: the child of the object made in the collection is still held", other);
+    if (other)
+        CHECK(eval_is(v.ctx, "String(wm.has(keep))", "true"), "other %d: the entry of the live key is gone", other);
+    vm_free(&v);
+}
+
+static void test_object_made_in_the_weak_pass(void)
+{
+    made_in_gc_case(0);
+    made_in_gc_case(1);
+}
+
 /* ---- a collection asked for while objects are freed ----
 
    The host runs code while the engine frees objects: the finalizer of a class
@@ -9454,6 +9574,7 @@ int main(int argc, char **argv)
     test_young_lists();
     test_young_leaves_no_zero_count();
     test_finalizer_frees_a_root();
+    test_object_made_in_the_weak_pass();
     test_gc_in_free();
     test_error_nest();
     test_function_properties_oom();

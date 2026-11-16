@@ -10537,6 +10537,9 @@ static BOOL gc_ephemeron(JSRuntime *rt, BOOL remove_weak_objects)
     if (!remove_weak_objects || list_empty(&rt->weakref_list))
         return FALSE;
     gc_remove_weak_objects(rt);
+    /* after the weak pass, which runs finalizers that can make objects
+       (JS_RunGCInternal) */
+    young_splice(rt);
     list_for_each(el, &rt->weakref_list) {
         wh = list_entry(el, JSWeakRefHeader, link);
         if (wh->weakref_type == JS_WEAKREF_TYPE_MAP) {
@@ -10649,9 +10652,16 @@ static BOOL gc_ephemeron(JSRuntime *rt, BOOL remove_weak_objects)
     return TRUE;
 }
 
+/* The young objects join gc_obj_list after the weak pass (here and in
+   gc_ephemeron), right before gc_decref. The weak pass frees the values of
+   dead keys, and the finalizer of a class of the host can make objects
+   there, which go to the young list. Spliced before it, such an object would
+   stay on the young list, which gc_decref does not walk, and the scan could
+   still reach it through an object that holds it, move it to gc_obj_list and
+   add a count to each of its children that was never taken away: they would
+   never be freed. */
 static void JS_RunGCInternal(JSRuntime *rt, BOOL remove_weak_objects)
 {
-    young_splice(rt);
     if (gc_ephemeron(rt, remove_weak_objects))
         return;
     if (remove_weak_objects) {
@@ -10660,7 +10670,8 @@ static void JS_RunGCInternal(JSRuntime *rt, BOOL remove_weak_objects)
            registry callbacks. */
         gc_remove_weak_objects(rt);
     }
-    
+    young_splice(rt);
+
     /* decrement the reference of the children of each object. mark =
        1 after this pass. */
     gc_decref(rt);

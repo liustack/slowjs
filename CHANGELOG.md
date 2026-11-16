@@ -7,6 +7,7 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 ### Fixed
 
 - A full collection now frees an object whose last reference the finalizer of a host class lets go of while the collection frees its garbage. It used to leave the object listed with a count of 0, and a WeakRef to it then freed its memory while it was still listed.
+- An object that the finalizer of a host class makes while a full collection removes dead weak entries, held by an old object, no longer leaves extra counts on its children, which kept them and the runtime from ever being freed.
 
 ## [v0.31.3] - 2026-11-16
 
