@@ -31,12 +31,14 @@
    object returned replaces the one made, anything else is freed. The pcmap
    entry of NEW owns w, so an exception out of the callee frees the object
    in the caller's unwinding. Ordinary calls and returns are unchanged: the
-   construct is the caller's business, not the frame's.
+   construct is the caller's business, not the frame's. A constructor given
+   more arguments than it has parameters keeps the extra ones below its func
+   as a call does (rv_enter_args, regvm.h), with RV_DST_EXTRA in its dst.
 
    Everything else goes out of the loop as QuickJS's interpreter calls it
    (rv_new_slow, JS_CallConstructorInternal): a constructor without register
-   code, a C constructor, a bound function, a proxy, another realm, more
-   arguments than the constructor has, no room or no depth left. From C
+   code, a C constructor, a bound function, a proxy, another realm, no room
+   or no depth left. From C
    (Reflect.construct, a bound function, super(...) of a proxy or a bound
    parent), JS_CallConstructorInternal runs a constructor with register code
    in JS_RegvmRun with new.target given to its slot (rv_entry_fast,
@@ -230,7 +232,7 @@ static no_inline JSValue *rv_new_frame(JSContext *ctx, JSValue *F, const uint8_t
     JSRuntime *rt = ctx->rt;
     const uint8_t *ip = pc - 2;
     JSValue *W = F + (int8_t)ip[0], *Wc = W + 1, *Fn, fv = W[0], obj, nt;
-    int argc = ip[1], i;
+    int argc = ip[1], i, dst;
     JSObject *p;
     JSFunctionBytecode *cb;
     RVFunc *crf;
@@ -246,30 +248,66 @@ static no_inline JSValue *rv_new_frame(JSContext *ctx, JSValue *F, const uint8_t
     if (cb->rv == RV_UNCONVERTED)
         rv_convert(ctx, cb);
     crf = cb->rv;
-    if (argc > crf->arg_count || cb->realm != ctx ||
-        (uint8_t *)Wc + crf->room_b > (uint8_t *)rt->rv_end ||
+    /* a constructor with no register code (refused, or its conversion ran
+       out of memory: the arg_count of -1 of RV_REFUSED and RV_UNCONVERTED)
+       goes out. With more arguments than parameters the frame starts past
+       them, as the slow entry of a call places it (rv_enter_args) */
+    if (crf->arg_count < 0 || cb->realm != ctx ||
+        (uint8_t *)(Wc + (argc > crf->arg_count ? argc + 1 : 0)) + crf->room_b >
+        (uint8_t *)rt->rv_end ||
         poll_flag(&rt->interrupt_flag) || js_uncatchable_pending(rt) ||
         rt->call_depth >= rt->max_call_depth)
         return RV_NEW_OUT;
     if (!cb->is_derived_class_constructor) {
-        obj = js_create_from_ctor(ctx, W[1], JS_CLASS_OBJECT);
-        if (JS_IsException(obj))
-            goto fail;
-        if (js_poll_interrupts(ctx) || js_uncatchable_pending(rt)) {
-            JS_FreeValue(ctx, obj);
-            goto fail;
+        JSProperty *ppr;
+        JSShapeProperty *prs;
+        /* new.target is the function and its own prototype a plain data
+           property that holds an object: what js_create_from_ctor reads
+           (JS_GetProperty finds an own property first), with no lookup
+           of the generic path. No JavaScript ran, so the interrupt flag
+           read above holds. A prototype made on first read, one that is
+           not an object, and another new.target go the generic way. */
+        if (JS_VALUE_GET_TAG(W[1]) == JS_TAG_OBJECT && JS_VALUE_GET_OBJ(W[1]) == p &&
+            (prs = find_own_property(&ppr, p, JS_ATOM_prototype)) != NULL &&
+            !(prs->flags & JS_PROP_TMASK) &&
+            JS_VALUE_GET_TAG(ppr->u.value) == JS_TAG_OBJECT) {
+            obj = JS_NewObjectProtoClass(ctx, ppr->u.value, JS_CLASS_OBJECT);
+            if (JS_IsException(obj))
+                goto fail;
+        } else {
+            obj = js_create_from_ctor(ctx, W[1], JS_CLASS_OBJECT);
+            if (JS_IsException(obj))
+                goto fail;
+            if (js_poll_interrupts(ctx) || js_uncatchable_pending(rt)) {
+                JS_FreeValue(ctx, obj);
+                goto fail;
+            }
         }
     } else {
         obj = JS_UNDEFINED;
     }
     rt->call_depth++;
     RV_COUNT_RUN(crf);
-    Fn = (JSValue *)((uint8_t *)Wc + crf->fofs_b);
     nt = W[1];
     Wc[0] = fv;
     W[0] = JS_DupValue(ctx, obj);
-    if (argc != crf->arg_count)
+    dst = (int8_t)ip[0] + 1;
+    if (argc > crf->arg_count) {
+        /* func and the declared arguments move up past the extra ones,
+           which stay below func in order, with a reference to func of its
+           own right below them (regvm.h): the layout of rv_enter_args, whose
+           return and unwinding free them (rv_free_extra) */
+        JSValue *Wn = Wc + argc + 1;
+        for (i = 0; i <= crf->arg_count; i++)
+            Wn[i] = Wc[i];
+        Wc[crf->arg_count] = JS_DupValue(ctx, fv);
+        Wc = Wn;
+        dst |= RV_DST_EXTRA;
+    } else if (argc != crf->arg_count) {
         rv_undefined(Wc + 1 + argc, crf->arg_count - argc);
+    }
+    Fn = (JSValue *)((uint8_t *)Wc + crf->fofs_b);
+    RV_PEAK(rt, Fn + crf->fsize);
     *(JSValue *)((uint8_t *)Wc + crf->this_b) = obj;
     rv_undefined(Fn - crf->var_count, crf->var_count);
     if (crf->nt)
@@ -281,7 +319,7 @@ static no_inline JSValue *rv_new_frame(JSContext *ctx, JSValue *F, const uint8_t
     h->retpc = pc;
     h->rf = crf;
     h->k = crf->k;
-    h->dst = (int8_t)ip[0] + 1;
+    h->dst = dst;
     h->argc = argc;
     h->var_refs = p->u.func.var_refs;
     return Fn;

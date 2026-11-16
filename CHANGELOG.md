@@ -16,6 +16,8 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 - A return frees the slots of a frame of more than 8 slots 8 to a turn, where it took one a turn. tifa's pages run 0.6% to 2.7% fewer instructions and React's page 2.9% fewer ([performance.md](docs/performance.md#the-slots-of-a-return-8-to-a-turn)).
 - `localeCompare` and `Intl.Collator.prototype.compare` compare two short strings of Latin letters, digits and punctuation from a table of their characters, with no normal form and no allocation: two ids of 12 characters compare in 206 ns where they took 2.15 µs, with the same answer as before for every pair. `localeCompare` with no locales or options no longer looks its collator up on each call. A page of jotai that sorts with `localeCompare` runs 9.1% fewer instructions.
 - `formatToParts` of `Intl.NumberFormat` and `Intl.DateTimeFormat` gives each type as a string the engine keeps as an atom, so a page that reads a key with it, as luxon does, skips looking the string up again. A page of luxon runs 1.6% fewer instructions.
+- `new` of a constructor given more arguments than it has parameters stays in the register loop, as a call does, and takes no C stack: RayTrace runs 6.6% fewer instructions.
+- `new f()` reads the own `prototype` of `f` without the generic property read when it is a plain object. Boyer runs 2% fewer instructions, RayTrace 1.6% fewer.
 
 ## [v0.31.1] - 2026-11-16
 

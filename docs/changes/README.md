@@ -61,6 +61,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A step of a `for in` loop over an object that still has the shape the loop started from takes its key and branches back in one op of the register loop (FINEXT), without the call of `js_for_in_next` | v0.31.1 | [c-engine.md](c-engine.md#the-next-key-of-a-for-in-loop-is-taken-in-the-register-loop) |
 | A read `o[k]` of the key a `for in` loop just gave, on an object of the shape the loop walks, takes the value from the slot of that key in the shape (GETELE, GETELET), without looking the key up | v0.31.1 | [c-engine.md](c-engine.md#the-read-of-the-key-a-for-in-loop-just-gave) |
 | The return of a frame of more than 8 slots frees them 8 to a turn, with one poll tick a turn, where it took one slot a turn | Unreleased | [c-engine.md](c-engine.md#the-frame-and-the-window-of-a-call) |
+| `new` of a constructor given more arguments than it has parameters runs in the register loop, with the extra arguments below its frame as a call keeps them, and starts no run of `JS_RegvmRun` | Unreleased | [c-engine.md](c-engine.md#the-frame-and-the-window-of-a-call) |
 
 ## The generator
 
@@ -316,6 +317,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | `Array.from` on a constructor passes the mapping function the whole index and sets the whole length | v0.31.1 | [objects-and-shapes.md](objects-and-shapes.md#arrayfrom-on-a-constructor-passes-the-whole-index-and-length) |
 | A define that changes the flags of a property that is there makes the shape the object's own before it changes anything, so a define that runs out of memory leaves the property, the length of an array included. A refused define copies nothing, and shortening an array past index 2^31 - 1 makes no names | v0.31.1 | [objects-and-shapes.md](objects-and-shapes.md#a-define-that-changes-the-flags-of-a-property-fails-before-it-changes-anything) |
 | A shape that an object finds for its next key keeps the shape the object left, so that the objects of a constructor find every shape the objects before them went through | v0.31.1 | [objects-and-shapes.md](objects-and-shapes.md#objects-of-a-constructor-find-the-shapes-the-objects-before-them-went-through) |
+| `new f()` takes the prototype of the object it makes from the own `prototype` of `f` in its shape when that is a plain data property that holds an object, without the generic read, and reads the interrupt flag once, as a call does | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#objects-of-a-constructor-find-the-shapes-the-objects-before-them-went-through) |
 
 ## Memory
 

@@ -1,0 +1,191 @@
+result case 0: 1,b2,3,2,3,x3 1,b2,5,2,3,x3 1,b2,1,,,x3
+result case 1: 1,2,2,2 1,4,2,4
+result case 2: 0  1 4 3 3
+result case 3: 9 true
+result case 4: true 3 4
+result case 5: 1 7 1 1 9
+result case 6: 4,1,1 4,5,3 4,3,3
+result case 7: 4, 4,1|2|3
+result case 8: 43
+result case 9: 129
+result case 10: 4,1 3,e1 h,0
+result case 11: true
+result case 12: 4 3 3 Dd 4 4 Dflt true
+result case 13: 1 2 4,3
+result case 14: 40 43
+result case 15: 495
+result case 16: k=1 k=1 Object.prototype Object.prototype Object.prototype k=2
+result case 17: object k=own true
+result case 18: object true
+result case 19: k=ro k=ro
+result case 20: bound k=2
+result case 21: 4 k=2 prototype
+result case 22: true false 3 true
+result throwing 0: Error: boom a
+result     at Th (<eval>:38:36)
+result     at t0 (<eval>:129:37)
+result     at <anonymous> (<eval>:142:26)
+result     at <eval> (<eval>:152:3)
+result 
+result throwing 1: Error: boom c
+result     at Th (<eval>:38:36)
+result     at t1 (<eval>:130:42)
+result     at <anonymous> (<eval>:142:26)
+result     at <eval> (<eval>:152:3)
+result 
+result throwing 2: TypeError: cannot read property 'f' of undefined
+result     at ThS (<eval>:39:31)
+result     at t2 (<eval>:131:38)
+result     at <anonymous> (<eval>:142:26)
+result     at <eval> (<eval>:152:3)
+result 
+result throwing 3: Error: derived e
+result     at Th2 (<eval>:59:64)
+result     at t3 (<eval>:132:38)
+result     at <anonymous> (<eval>:142:26)
+result     at <eval> (<eval>:152:3)
+result 
+result throwing 4: TypeError: derived class constructor must return an object or undefined
+result     at Bad (<eval>:60:50)
+result     at t4 (<eval>:133:34)
+result     at <anonymous> (<eval>:142:26)
+result     at <eval> (<eval>:152:3)
+result 
+result throwing 5: TypeError: cannot read property 'nope' of undefined
+result     at t5 (<eval>:134:41)
+result     at <anonymous> (<eval>:142:26)
+result     at <eval> (<eval>:152:3)
+result 
+result throwing 6: TypeError: cannot read property 'nope' of undefined
+result     at t6 (<eval>:135:113)
+result     at <anonymous> (<eval>:142:26)
+result     at <eval> (<eval>:152:3)
+result 
+result case 0: 1,b2,3,2,3,x3 1,b2,5,2,3,x3 1,b2,1,,,x3
+result case 1: 1,2,2,2 1,4,2,4
+result case 2: 0  1 4 3 3
+result case 3: 9 true
+result case 4: true 3 4
+result case 5: 1 7 1 1 9
+result case 6: 4,1,1 4,5,3 4,3,3
+result case 7: 4, 4,1|2|3
+result case 8: 43
+result case 9: 129
+result case 10: 4,1 3,e1 h,0
+result case 11: true
+result case 12: 4 3 3 Dd 4 4 Dflt true
+result case 13: 1 2 4,3
+result case 14: 40 43
+result case 15: 495
+result case 16: k=1 k=1 Object.prototype Object.prototype Object.prototype k=2
+result case 17: k=own k=own true
+result case 18: object true
+result case 19: k=ro k=ro
+result case 20: bound k=2
+result case 21: 4 k=2 prototype
+result case 22: true false 3 true
+result throwing 0: Error: boom a
+result     at Th (<eval>:38:36)
+result     at t0 (<eval>:129:37)
+result     at <anonymous> (<eval>:142:26)
+result     at <eval> (<eval>:152:3)
+result 
+result throwing 1: Error: boom c
+result     at Th (<eval>:38:36)
+result     at t1 (<eval>:130:42)
+result     at <anonymous> (<eval>:142:26)
+result     at <eval> (<eval>:152:3)
+result 
+result throwing 2: TypeError: cannot read property 'f' of undefined
+result     at ThS (<eval>:39:31)
+result     at t2 (<eval>:131:38)
+result     at <anonymous> (<eval>:142:26)
+result     at <eval> (<eval>:152:3)
+result 
+result throwing 3: Error: derived e
+result     at Th2 (<eval>:59:64)
+result     at t3 (<eval>:132:38)
+result     at <anonymous> (<eval>:142:26)
+result     at <eval> (<eval>:152:3)
+result 
+result throwing 4: TypeError: derived class constructor must return an object or undefined
+result     at Bad (<eval>:60:50)
+result     at t4 (<eval>:133:34)
+result     at <anonymous> (<eval>:142:26)
+result     at <eval> (<eval>:152:3)
+result 
+result throwing 5: TypeError: cannot read property 'nope' of undefined
+result     at t5 (<eval>:134:41)
+result     at <anonymous> (<eval>:142:26)
+result     at <eval> (<eval>:152:3)
+result 
+result throwing 6: TypeError: cannot read property 'nope' of undefined
+result     at t6 (<eval>:135:113)
+result     at <anonymous> (<eval>:142:26)
+result     at <eval> (<eval>:152:3)
+result 
+result case 0: 1,b2,3,2,3,x3 1,b2,5,2,3,x3 1,b2,1,,,x3
+result case 1: 1,2,2,2 1,4,2,4
+result case 2: 0  1 4 3 3
+result case 3: 9 true
+result case 4: true 3 4
+result case 5: 1 7 1 1 9
+result case 6: 4,1,1 4,5,3 4,3,3
+result case 7: 4, 4,1|2|3
+result case 8: 43
+result case 9: 129
+result case 10: 4,1 3,e1 h,0
+result case 11: true
+result case 12: 4 3 3 Dd 4 4 Dflt true
+result case 13: 1 2 4,3
+result case 14: 40 43
+result case 15: 495
+result case 16: k=1 k=1 Object.prototype Object.prototype Object.prototype k=2
+result case 17: k=own k=own true
+result case 18: object true
+result case 19: k=ro k=ro
+result case 20: bound k=2
+result case 21: 4 k=2 prototype
+result case 22: true false 3 true
+result throwing 0: Error: boom a
+result     at Th (<eval>:38:36)
+result     at t0 (<eval>:129:37)
+result     at <anonymous> (<eval>:142:26)
+result     at <eval> (<eval>:152:3)
+result 
+result throwing 1: Error: boom c
+result     at Th (<eval>:38:36)
+result     at t1 (<eval>:130:42)
+result     at <anonymous> (<eval>:142:26)
+result     at <eval> (<eval>:152:3)
+result 
+result throwing 2: TypeError: cannot read property 'f' of undefined
+result     at ThS (<eval>:39:31)
+result     at t2 (<eval>:131:38)
+result     at <anonymous> (<eval>:142:26)
+result     at <eval> (<eval>:152:3)
+result 
+result throwing 3: Error: derived e
+result     at Th2 (<eval>:59:64)
+result     at t3 (<eval>:132:38)
+result     at <anonymous> (<eval>:142:26)
+result     at <eval> (<eval>:152:3)
+result 
+result throwing 4: TypeError: derived class constructor must return an object or undefined
+result     at Bad (<eval>:60:50)
+result     at t4 (<eval>:133:34)
+result     at <anonymous> (<eval>:142:26)
+result     at <eval> (<eval>:152:3)
+result 
+result throwing 5: TypeError: cannot read property 'nope' of undefined
+result     at t5 (<eval>:134:41)
+result     at <anonymous> (<eval>:142:26)
+result     at <eval> (<eval>:152:3)
+result 
+result throwing 6: TypeError: cannot read property 'nope' of undefined
+result     at t6 (<eval>:135:113)
+result     at <anonymous> (<eval>:142:26)
+result     at <eval> (<eval>:152:3)
+mem-end obj=238 atom=603 shape=154 prop=1056 jsfunc=25 cfunc=132 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=195 atom=545 shape=130 prop=969 jsfunc=0 cfunc=132 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

@@ -2113,6 +2113,80 @@ static void test_c_call_hop_checks(void)
     }
 }
 
+/* new in the register loop (engine/regvm-ops-ctor.h): a constructor given
+   more arguments than it has parameters runs in the loop of the function
+   that calls new, as a call with extra arguments does, and starts no run of
+   JS_RegvmRun of its own (JS_RegvmStat 2 counts those runs). */
+static void test_rv_new_in_loop(void)
+{
+    VM v = vm_new();
+    JSValue f, arg, r;
+    int32_t got;
+    int runs;
+
+    CHECK(eval_ok(v.ctx,
+                  "function K(a) { this.a = a; this.n = arguments.length; this.x = arguments[2]; }\n"
+                  "class D extends K { constructor(a) { super(a, 1, 2, 3); } }\n"
+                  "function extra(n) { var s = 0; for (var i = 0; i < n; i++)"
+                  " s += new K(i, 1, 2).n + new K(i, 1, i).x + new D(i, 5).n; return s; }"),
+          "the scripts of new");
+    f = global_prop(v.ctx, "extra");
+    for (int k = 0; k < 2; k++) {
+        arg = JS_NewInt32(v.ctx, k ? 100 : 2);
+        runs = JS_RegvmStat(v.ctx, 2);
+        r = JS_Call(v.ctx, f, JS_UNDEFINED, 1, (JSValueConst *)&arg);
+        runs = JS_RegvmStat(v.ctx, 2) - runs;
+        CHECK(JS_ToInt32(v.ctx, &got, r) == 0 && got == (k ? 7 * 100 + 4950 : 15),
+              "extra(%d) gave %d", k ? 100 : 2, got);
+        JS_FreeValue(v.ctx, r);
+        /* the first call converts K and D in runs of their own */
+        if (k)
+            CHECK(runs == 1, "extra(100) made %d runs of the register loop, want 1", runs);
+    }
+    JS_FreeValue(v.ctx, f);
+
+    /* a new whose function holds its prototype as a plain data property
+       reads the interrupt flag once, as a call does: no JavaScript runs
+       between the call's read and the object made. One whose prototype is
+       not an object, or is made at the first read, reads it again after,
+       as QuickJS's interpreter does after the getter of a prototype. */
+    CHECK(eval_ok(v.ctx,
+                  "function P(a) { this.a = a; }\n"
+                  "function Q(a) { this.a = a; } Q.prototype = 1;\n"
+                  "function c(a) { return a; }\n"
+                  "function news(n) { var s = 0; for (var i = 0; i < n; i++) s += new P(i).a; return s; }\n"
+                  "function prims(n) { var s = 0; for (var i = 0; i < n; i++) s += new Q(i).a; return s; }\n"
+                  "function extras(n) { var s = 0; for (var i = 0; i < n; i++) s += new P(i, i).a; return s; }\n"
+                  "function calls(n) { var s = 0; for (var i = 0; i < n; i++) s += c(i); return s; }\n"
+                  "news(2); prims(2); extras(2); calls(2);"),
+          "the scripts of the reads");
+    {
+        /* the reads of 100 more turns of the loop of each function, and
+           how many more than those of calls they must be */
+        static const struct { const char *fn; int more; } cases[] = {
+            { "calls", 0 }, { "news", 0 }, { "extras", 0 }, { "prims", 100 },
+        };
+        long calls = 0;
+        for (size_t i = 0; i < countof(cases); i++) {
+            JSValue g = global_prop(v.ctx, cases[i].fn);
+            long reads[2];
+            BOOL ok;
+            for (int k = 0; k < 2; k++) {
+                arg = JS_NewInt32(v.ctx, k ? 200 : 100);
+                reads[k] = hop_reads(v.ctx, g, JS_UNDEFINED, 1, (JSValueConst *)&arg, &ok);
+                CHECK(ok, "%s threw", cases[i].fn);
+            }
+            JS_FreeValue(v.ctx, g);
+            if (!i)
+                calls = reads[1] - reads[0];
+            CHECK(reads[1] - reads[0] == calls + cases[i].more,
+                  "100 more turns of %s read the flag %ld more times, those of calls %ld, want %ld more",
+                  cases[i].fn, reads[1] - reads[0], calls, calls + cases[i].more);
+        }
+    }
+    vm_free(&v);
+}
+
 /* The parameters and locals of a function, with this, the function and
    new.target, fit RV_FAR_MAX (32768, engine/regvm-func.h): 32765 of them
    together compile and run, one more fails to compile with the parser's
@@ -2298,6 +2372,7 @@ int main(void)
     test_call_frames_measured();
     test_c_call_recursions();
     test_c_call_hop_checks();
+    test_rv_new_in_loop();
     test_rv_frame_limits();
     test_rv_nesting_limits();
     if (failures) {
