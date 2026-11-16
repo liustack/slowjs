@@ -142,3 +142,73 @@ func TestInterruptStopsRegExpFlags(t *testing.T) {
 		})
 	}
 }
+
+// scanOffsetCases are the scans of the source that read the flag where their
+// pointer meets a multiple of JS_ROPE_STEP (js_poll_cross and js_poll_at of
+// engine/quickjs.c) and are followed by work that counts its own steps. The
+// last reading of such a scan can fall nearly a step before its end,
+// depending on the address of the source, and the work after it reads only
+// after a step of its own: the scan must end with a reading. Each case is the
+// setup and the source of one call, made from P, a padding of the length
+// the test sets, and n, a number that changes at each call (the regexp cache
+// and the atoms keep nothing between two calls).
+var scanOffsetCases = []struct{ name, setup, source string }{
+	// js_parse_regexp, then the hash of the body and the flags in the compile
+	// (js_regexp_cache_hash): 11 polls on one darwin/arm64 machine of CI with
+	// 16 Mi flags, 13 here before the reading at its end
+	{"a regexp literal with 1 Mi flags", `var F = 'g'.repeat(1 << 20)`, `'/' + P + n++ + '/' + F`},
+}
+
+// TestInterruptStopsScanAtEveryOffset evaluates the source of each case of
+// scanOffsetCases, with P padded by 0 to 60 KiB in steps of 4 KiB to put the
+// end of the scan at every place of a step, and stops it at every poll of
+// the call: each stop must come within regexpStopPolls.
+func TestInterruptStopsScanAtEveryOffset(t *testing.T) {
+	needPolls(t)
+	const caught = `try { (0, eval)(%s) } catch (e) { if (!(e instanceof SyntaxError)) throw e }`
+	for _, c := range scanOffsetCases {
+		t.Run(c.name, func(t *testing.T) {
+			v := newVM(t, Options{Seed: 1})
+			defer closeVM(t, v)
+			h := v.Host()
+			if _, err := v.Eval(c.setup+`; var P, n = 0; 0`, "setup.js"); err != nil {
+				t.Fatal(err)
+			}
+			v.SetGCThreshold(^uintptr(0))
+			call := fmt.Sprintf(caught, c.source)
+			var worst int64
+			var worstAt string
+			for pad := 0; pad < 1<<16; pad += 1 << 12 {
+				if _, err := v.Eval(fmt.Sprintf(`P = 'a'.repeat(%d); 0`, pad), "pad.js"); err != nil {
+					t.Fatal(err)
+				}
+				v.RunGC()
+				before := h.Polls()
+				if _, err := v.Eval(call+`; 0`, "call.js"); err != nil {
+					t.Fatal(err)
+				}
+				span := h.Polls() - before
+				for at := int64(1); at <= span; at++ {
+					v.RunGC()
+					h.InterruptAtPoll(h.Polls() + at)
+					// the loop reads the flag after a call that ended with
+					// a SyntaxError without reading it
+					_, err := v.Eval(`for (;;) `+call, "call.js")
+					h.InterruptAtPoll(0)
+					what := fmt.Sprintf("a padding of %d bytes, the stop at poll %d of %d", pad, at, span)
+					var je *JSError
+					if !errors.As(err, &je) || je.Message != "InternalError: interrupted" || !je.Uncatchable {
+						t.Fatalf("%s: Eval gave %v, want the error interrupted", what, err)
+					}
+					if n := h.StopPolls(); n > worst {
+						worst, worstAt = n, what
+					}
+				}
+			}
+			t.Logf("at most %d polls saw the request (%s)", worst, worstAt)
+			if worst > regexpStopPolls {
+				t.Errorf("%s: %d polls saw the request, want at most %d", worstAt, worst, regexpStopPolls)
+			}
+		})
+	}
+}

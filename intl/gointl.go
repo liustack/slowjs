@@ -68,9 +68,10 @@ func goLocales(vm *slowjs.VM, tags []string) (r []gointl.Locale, units []int, er
 		return nil, nil, err
 	}
 
-	r = make([]gointl.Locale, 0, len(tags))
-	units = make([]int, 0, len(tags))
-	seen := make(map[string]bool, len(tags))
+	// r, units and seen grow with the tags gone through: sized by the whole
+	// list, they took Go 189 MiB for 1Mi tags, which it cleared before the
+	// first check (TestLongListFirstCheck).
+	seen := map[string]bool{}
 	t := tagTurns{vm: vm}
 	for _, tag := range tags {
 		t.turn(len(tag))

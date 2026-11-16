@@ -1,0 +1,23 @@
+result /\s+/g -843618832 -843618832 -1709642562 -1709642562
+result /\s/ -843618832 -843618832 -502267904 -502267904
+result /\S/ -502267904 -502267904 -1893164528 -1893164528
+result /\S|a/ -502267904 -502267904 -1893164528 -1893164528
+result /\s?;\s?/ 1822029840 1822029840 -1811621237 -1811621237
+result /\s*x/ -797806675 -797806675 -1079479428 -1079479428
+result /(?:^|\s+)x(?:\s+|$)/ -1196172209 -1196172209 -401174437 -401174437
+result /(?<=a)\s/ 502267904 502267904 1684958679 1684958679
+result /\s/i -843618832 -843618832 -502267904 -502267904
+result /\S/i -502267904 -502267904 -1893164528 -1893164528
+result /\s+$/ 502267904 502267904 -408965806 -408965806
+result /\s/u -843618832 -843618832 -502267904 -502267904
+result /\S+/gu -1303964862 -1303964862 -1893164528 -1893164528
+result ["a","b"," c","d\t\n\u000b\f\r \u00a0\u1680\u2000\u2005\u200a\u2028\u2029\u202f\u205f\u3000\ufeffe","f","g"]
+result ["a",";b;","c",";","d","e;","f",";g"]
+result ["a"," ",";b;"," ",""," ","c"]
+result "a_;b;_c_;_d_e;_f_;g"
+result ["a",";b;","c",";","d","e;","f",";g"]
+result "xa ;b;  c\t;\u00a0d\t\n\u000b\f\r \u00a0\u1680\u2000\u2005\u200a\u2028\u2029\u202f\u205f\u3000\ufeffe; f\u3000;gx"
+result [true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true]
+mem-end obj=226 atom=568 shape=122 prop=1017 jsfunc=2 cfunc=141 array=9 fast_array=9 elements=46 binary=0
+mem-gc obj=226 atom=568 shape=122 prop=1017 jsfunc=2 cfunc=141 array=9 fast_array=9 elements=46 binary=0
+--- status exit 0

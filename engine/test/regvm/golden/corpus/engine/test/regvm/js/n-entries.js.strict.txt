@@ -14,6 +14,6 @@ result cross 90 back 7!
 result realm false true
 result TypeError false
 result job j
-mem-end obj=387 atom=550 shape=246 prop=1921 jsfunc=0 cfunc=262 array=2 fast_array=2 elements=0 binary=0
-mem-gc obj=205 atom=550 shape=130 prop=992 jsfunc=0 cfunc=141 array=1 fast_array=1 elements=0 binary=0
+mem-end obj=386 atom=550 shape=246 prop=1919 jsfunc=0 cfunc=261 array=2 fast_array=2 elements=0 binary=0
+mem-gc obj=204 atom=550 shape=130 prop=990 jsfunc=0 cfunc=140 array=1 fast_array=1 elements=0 binary=0
 --- status exit 0

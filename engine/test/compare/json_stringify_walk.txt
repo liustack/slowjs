@@ -1,0 +1,61 @@
+flat: {"a":1,"b":"two","c":true,"d":null,"e":false,"f":1.5,"g":-7}
+nested: {"a":{"b":{"c":[1,2,{"d":[]}]}},"e":{}}
+empty: {}
+empty array: []
+numbers: [0,0,1e+21,1e-7,123456789012,-1.25,null,null,null,2147483648,-2147483648,0.30000000000000004]
+left out: {"d":1}
+null in arrays: [null,null,null,1,null]
+holes: [1,null,3]
+length past the elements: [1,2,null,null]
+array with a hole and a getter on the prototype: [0,"from proto",2] | proto get 1
+array with extra keys: [1,2]
+index keys first: {"1":"one","2":"two","4294967294":"last index","b":1,"a":3,"4294967295":"big","01":"zero one"}
+the empty key and odd keys: {"":1,"a\"b":2,"c\\d":3,"e\nf":4,"\u0001":5,"é":6,"中":7,"\ud800":8,"\udc00x":9,"😀":10}
+strings: ["","a\"b","\\","\n\r\t\b\f","\u0000\u001f","é","中文","\ud800","x\udfff","😀","aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]
+ropes: 42019 {"s":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"]}
+non enumerable: {"a":1,"c":3}
+getter: {"a":1,"b":2,"c":3} | get b
+non enumerable getter: {"a":1}
+getter deletes a later key: {"a":1,"c":3} | get a
+getter adds a key: {"a":1,"b":2} | get a
+toJSON deletes a later key: {"a":"A","c":3} | toJSON a
+toJSON changes a later value: {"a":"A","b":2,"c":"changed"} | toJSON a
+toJSON makes a later key not enumerable: {"a":"A","b":2,"c":3}
+toJSON adds a key to an outer object: {"x":{"y":"Y","v":1},"u":{"t":3}} | inner toJSON
+toJSON deep down deletes a key of every level: {"a":{"b":{"c":"C"}},"g":4}
+toJSON deep in an array changes the array: [1,[2,"T",3],null,null]
+toJSON pushes onto the array: ["T",2]
+toJSON on the prototype: ["P1",{"n":2}] | proto toJSON 1
+toJSON added to Object.prototype by a toJSON: ["first","everywhere","everywhere"]
+toJSON added to Array.prototype by a getter: {"a":1,"b":"arr","c":{"d":"arr"}}
+toJSON not callable: {"a":{"toJSON":5,"b":1}}
+toJSON getter: {"a":"got"} | get toJSON
+dates: {"d":"1970-01-01T00:00:00.000Z","e":["1970-01-02T00:00:00.000Z"]}
+class instances: [{"x":1,"y":[2]},{"p":{"x":1,"y":[2]}}]
+null prototype: {"a":1,"b":{}}
+boxed: {"s":"str","n":4,"b":false,"arr":["x",5]}
+boxed with valueOf: [9,"b"] | valueOf, toString
+raw JSON: {"r":123,"q":["x"]}
+proxy object: {"p":{"a":1,"b":2}} | trap get toJSON, trap ownKeys, trap get a, trap get b
+proxy array: [[1,2]]
+proxy on the prototype: {"a":{}} | proto trap toJSON
+map and set: {"m":{},"s":{},"w":{}}
+typed arrays: {"u":{"0":1,"1":2},"f":{"0":0.5}}
+regexp and error: {"r":{},"e":{}}
+arguments: {"0":1,"1":"two"}
+bigint: TypeError
+bigint in an array: TypeError
+bigint with toJSON: {"a":"3n","b":["4n"]}
+symbol keys only: {}
+frozen and sealed: {"f":{"a":1},"s":[1,2]}
+cycle: TypeError
+cycle through an array: TypeError
+cycle made by toJSON: TypeError
+the same object twice: {"a":{"x":1},"b":[{"x":1},{"x":1}]}
+functions with keys: {"g":[null]}
+a deleted key: {"a":1,"c":3}
+a key added after a delete: {"b":2,"a":"again"}
+many keys: 1085 {"k0":{"i":0},"k1":1,"k2":2,"k3":{"i":3},"k4":4,"k5":5,"k6":...94,"k95":95,"k96":{"i":96},"k97":97,"k98":98,"k99":{"i":99}}
+a long key: 451 {"kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk...\"q\"q\"q\"q\"q\"q\"q\"q\"q\"q\"q\"q\"q\"q\"q\"q\"q\"q\"":2}
+deep: 4001 [{"a":[{"a":[{"a":[{"a":[{"a":[{"a":[{"a":[{"a":[{"a":[{"a":...}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]
+nesting: true,true,RangeError

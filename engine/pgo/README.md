@@ -39,26 +39,27 @@ When the C changes, the check can fail. Then write or change a loop for the path
 
 ## The pages
 
-The training renders real pages of two apps of [tifa](https://github.com/liustack/tifa), on the native test host (`engine/test/render.c`, `tifa=1`: it defines the four functions tifa gives each VM, as tifa does). Each page list is rendered twice and the counters are set to zero when the second pass starts, so the profile holds warm renders only: no load of the bundle and no first render.
+The training renders real pages of two apps of [tifa](https://github.com/liustack/tifa), on the native test host (`engine/test/render.c`, `tifa=1`: it defines the four functions tifa gives each VM, as tifa does, with the preludes `pages/fakeintl.js` and `pages/fakeurl.js`). Each page list is rendered twice and the counters are set to zero when the second pass starts, so the profile holds warm renders only: no load of the bundle and no first render.
 
 | Path | What | Size |
 | --- | --- | --- |
 | `pages/shop/shop.js` | The server bundle of tifa's `examples/shop`, built as an ES module and turned into a script by `compare/engines/cmd/modulescript`. React, tifa's runtime and the packages the app uses | 1.6 MB |
 | `pages/shop/in/*.json` | The input of 20 pages of the shop: 6 of the workbench (`wb-studio`, `wb-order-studio`, `wb-stats-studio` and the same of `weekend`) and 14 of the store in en-US and zh-CN (home, products, product, journal, post, cart, checkout). The training renders the 3 of `studio` and the 7 in en-US, all of them are timed (`internal/measure/pages`) | 0.35 MB |
-| `pages/mui/mui.js` | The server bundle of tifa's `test/apps/mui`, made the same way. React, MUI and emotion | 0.76 MB |
+| `pages/mui/mui.js` | The server bundle of tifa's `test/apps/mui`, made the same way. React, MUI and emotion | 0.74 MB |
 | `pages/mui/in/*.json` | The input of 3 pages of that app: `home`, which the training renders, `orders` and `order` | 24 KB |
 | `pages/fakeintl.js` | A small `Intl` the native host needs to load the bundles, because the C engine has none (it comes from the Go packages `intl` and `temporal`). It formats numbers with `toFixed`, dates as ISO dates and plurals as one or other, so the HTML differs from tifa's real pages in those places, and the work done inside Intl is not in the profile |
+| `pages/fakeurl.js` | A small `URL` and `URLSearchParams` for the native host, which has none (they come from the Go package `url`, and the bundles no longer carry core-js's). It parses an absolute URL and resolves a path against a base, which is all the pages ask of it, and the work done inside `URL` is not in the profile |
 | `pages/THIRD_PARTY_NOTICES.md` | The packages inside the two bundles with their versions, licenses and license texts |
 
 An input is the JSON text tifa hands to `startRender` for a page: `buildId`, `language`, `alternates`, `url`, `data`, `preload`, `session` and the rest, with the texts of the loaders put into the result as `json`, and no `nonce`.
 
 ### Make them again
 
-The bundles and inputs came from tifa at commit `07b6ce0f7e052558d47b8ff649623bebd047ae04`, with the packages of each app's `pnpm-lock.yaml`, Go 1.27.2, Node 24.13.0 and pnpm 10.33.0. The files here are the reference: the training reads them and the SHA-256 below names them. The steps below are how they were made. Both bundles were built again with the packages of the lockfiles, taken from an existing install, and gave the same bytes. A fresh `pnpm install --frozen-lockfile` has not been run.
+The bundles and inputs came from tifa at commit `63a2099e0e3ad2457350ce5b142fd945ab0bd03e` (v0.0.10), built on linux/amd64 with Go 1.27.4, Node 24.13.0 and pnpm 10.33.0 after a fresh `pnpm install --frozen-lockfile`, so with the packages of each app's `pnpm-lock.yaml`: React and React DOM 19.3.1 in both, react-i18next 18.0.1 and i18next 27.1.2 in the shop, MUI 9.5.0 and emotion 11.14.0 in the MUI app (every package and version is in `pages/THIRD_PARTY_NOTICES.md`). The files here are the reference: the training reads them and the SHA-256 below names them. The steps below are how they were made.
 
 ```sh
 # 1. a clean copy of tifa at the commit, with the packages installed
-git clone https://github.com/liustack/tifa && cd tifa && git checkout 07b6ce0f7e052558d47b8ff649623bebd047ae04
+git clone https://github.com/liustack/tifa && cd tifa && git checkout 63a2099e0e3ad2457350ce5b142fd945ab0bd03e
 (cd examples/shop && pnpm install --frozen-lockfile)
 (cd test/apps/mui && pnpm install --frozen-lockfile)
 
@@ -73,7 +74,7 @@ git clone https://github.com/liustack/tifa && cd tifa && git checkout 07b6ce0f7e
 (cd /path/to/slowjs/compare/engines && go run ./cmd/notices /path/to/tifa ../../engine/pgo/pages)
 ```
 
-The SHA-256 of `shop.js` is `0d2f9542f12c68959572a2dc3e8a0775a01244cfcc0f59778413e6911d3ea6a3` and that of `mui.js` is `3c8d8c50d448f80b67e92f89228043c5b8cf7cae7f0268254c593e56f5dbcd1c`. The notices tool stops when a bundle is not the one in `pages/`.
+The SHA-256 of `shop.js` is `656886554a87dae25a2ced650fe8fbf47b83b8eefaecb0d8ff1a8c327576c3a9` and that of `mui.js` is `881a59600aca99c1f5ac00775cf150a807d054bc893fff419461e7be85f5a586`. The notices tool stops when a bundle is not the one in `pages/`.
 
 To record the inputs, put this file in tifa's `internal/ssr/` as `zz_dump.go` and add `dumpInput(input, in.Texts)` after the input is encoded in `internal/ssr/pool.go` (`renderInVM`, right after the `encode input` error check):
 
@@ -118,4 +119,6 @@ func dumpInput(input []byte, texts []string) {
 }
 ```
 
-Rebuild each app, start it with `--ssr-memo-size 0` (so each request renders) and, for the shop, `SHOP_OPEN=1` (lets the workbench in without signing in), with `TIFA_DUMP_INPUT` set to an empty folder, and ask for each page once with no cookies. The shop's pages are `/projects/studio`, `/projects/studio/orders/SH-1042`, `/projects/studio/stats` and `/store`, `/store/products`, `/store/products/pour-over-kettle`, `/store/journal`, `/store/journal/stock-sync-api`, `/store/cart`, `/store/checkout`. MUI's home page is `/`. Each file in the folder is named after the URL: rename it to the name in `pages/<app>/in/`.
+Rebuild each app, start it with `--ssr-memo-size 0` (so each request renders) and, for the shop, `SHOP_OPEN=1` (lets the workbench in without signing in), with `TIFA_DUMP_INPUT` set to an empty folder, and ask for each page once with no cookies. The shop's pages are `/projects/studio`, `/projects/studio/orders/SH-1042`, `/projects/studio/stats`, the same three of `/projects/weekend` (order `WK-0201`), and `/store`, `/store/products`, `/store/products/pour-over-kettle`, `/store/journal`, `/store/journal/stock-sync-api`, `/store/cart`, `/store/checkout` and the same seven under `/zh-CN`. MUI's pages are `/`, `/orders` and `/orders/ORD-1240`. Each file in the folder is named after the URL: rename it to the name in `pages/<app>/in/`.
+
+Then check the HTML: `go test -run '^$' -bench Pages -benchtime 1x -kind KIND -warm 0 -timed 1 -hash` in `internal/measure/pages` prints the SHA-256 of each page, and tifa's own `ssr.Compile`, `ssr.Load` and `ssr.RenderVM`, given the ES module bundle and the same inputs in one VM in the same order, must give the same. The page tifa's server sends can differ from both in a few bytes where tifa fills the slots of a page with a nonce (the inputs have none).

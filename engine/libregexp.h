@@ -40,8 +40,9 @@
 #define LRE_RET_MEMORY_ERROR (-1)
 #define LRE_RET_TIMEOUT      (-2)
 
-/* trailer length after the group name including the trailing '\0' */
-#define LRE_GROUP_NAME_TRAILER_LEN 2 
+/* trailer length after the group name including the trailing '\0': the
+   '\0', then the scope of the name (u32, see is_duplicate_group_name) */
+#define LRE_GROUP_NAME_TRAILER_LEN 5
 
 uint8_t *lre_compile(int *plen, char *error_msg, int error_msg_size,
                      const char *buf, size_t buf_len, int re_flags,
@@ -53,6 +54,10 @@ const char *lre_get_groupnames(const uint8_t *bc_buf);
 int lre_exec(uint8_t **capture,
              const uint8_t *bc_buf, const uint8_t *cbuf, int cindex, int clen,
              int cbuf_type, void *opaque);
+/* lre_exec that never starts a match at clen, with cindex < clen */
+int lre_exec_inside(uint8_t **capture,
+                    const uint8_t *bc_buf, const uint8_t *cbuf, int cindex, int clen,
+                    int cbuf_type, void *opaque);
 
 int lre_parse_escape(const uint8_t **pp, int allow_utf16);
 /* lre_parse_escape that reads *flag (poll_flag) every LRE_SCAN_STEP digits of

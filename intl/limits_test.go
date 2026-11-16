@@ -7,6 +7,7 @@ package intl // import "github.com/liustack/slowjs/intl"
 
 import (
 	"errors"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -172,15 +173,89 @@ func TestLongListTimeout(t *testing.T) {
 			if err := vm.SetEvalTimeout(20 * time.Millisecond); err != nil {
 				t.Fatal(err)
 			}
-			_, err, pan, elapsed := evalGuarded(t, vm, js, time.Minute)
-			if pan != nil {
-				t.Fatalf("panic: %v", pan)
+			// A late stop is tried again, twice, before it counts, as
+			// stopsweep does: a call once ended 1.7 s after a timeout of
+			// 20ms on GitHub's macOS arm64 runner, at a time GitHub said
+			// those runners were short of capacity, and work with no
+			// check would be late every time. The memory
+			// taken before the first check is TestLongListFirstCheck's.
+			var tries []time.Duration
+			for range 3 {
+				_, err, pan, elapsed := evalGuarded(t, vm, js, time.Minute)
+				if pan != nil {
+					t.Fatalf("panic: %v", pan)
+				}
+				wantUncatchable(t, err, true)
+				tries = append(tries, elapsed)
+				if elapsed <= time.Second {
+					break
+				}
 			}
-			wantUncatchable(t, err, true)
-			if elapsed > time.Second {
-				t.Fatalf("a timeout of 20ms ended the call after %v", elapsed)
+			if elapsed := tries[len(tries)-1]; elapsed > time.Second {
+				t.Fatalf("a timeout of 20ms ended the call after %v, in each try", tries)
 			}
-			t.Logf("ended after %v", elapsed)
+			t.Logf("ended after %v", tries)
+		})
+	}
+}
+
+// The work on a list asks Go for no memory sized by the whole list before
+// its first check of the call: what it holds grows with the tags it has got
+// through. The slices and the map goLocales made for every tag of a list of
+// 1Mi came to 189 MiB, which Go cleared and the OS handed over before the
+// first check: 30 to 103 ms on an AMD EPYC 7B13 and 4 to 27 ms on an Apple
+// M4, against a timeout of 20 ms (TestLongListTimeout). Here the call is to
+// stop before the work starts, so each runs to its first check, and a list
+// of 1Mi tags may take no more Go memory there than one of 8Ki.
+func TestLongListFirstCheck(t *testing.T) {
+	tagsOf := func(n int) []string {
+		tags := make([]string, n)
+		for i := range tags {
+			tags[i] = "zxx-x-" + strconv.FormatInt(int64(i), 36)
+		}
+		return tags
+	}
+	short, long := tagsOf(8<<10), tagsOf(1<<20)
+	for name, fn := range map[string]func(vm *slowjs.VM, tags []string) error{
+		"getCanonicalLocales": func(vm *slowjs.VM, tags []string) error {
+			_, err := canonicalLocaleList(vm, tags)
+			return err
+		},
+		"resolve": func(vm *slowjs.VM, tags []string) error {
+			_, err := goResolve(vm, gointl.ServiceNumberFormat, tags)
+			return err
+		},
+		"supported": func(vm *slowjs.VM, tags []string) error {
+			_, err := goSupported(vm, gointl.ServiceNumberFormat, tags)
+			return err
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			vm := newVM(t)
+			var tags []string
+			b := intlhook.NewBuiltin("work", 0, func(a slowjs.Args) (slowjs.Value, error) {
+				a.VM().Interrupt()
+				return slowjs.UndefinedValue, fn(a.VM(), tags)
+			})
+			f, err := vm.NewBuiltinFunction(b)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer f.Free()
+			allocated := func(l []string) uint64 {
+				tags = l
+				var before, after runtime.MemStats
+				runtime.ReadMemStats(&before)
+				_, err := vm.Call("f => f()", f)
+				runtime.ReadMemStats(&after)
+				wantUncatchable(t, err, true)
+				return after.TotalAlloc - before.TotalAlloc
+			}
+			allocated(short)
+			few, many := allocated(short), allocated(long)
+			if many > few+1<<20 {
+				t.Errorf("Go allocated %d bytes up to the first check for 1Mi tags, %d for 8Ki", many, few)
+			}
 		})
 	}
 }

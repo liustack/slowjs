@@ -511,6 +511,8 @@ struct JSRuntime {
     JSShape **shape_hash;
     /* the id the next shape of the shape hash table gets (js_shape_new_id) */
     uint32_t shape_id_next;
+    /* the ids ran out once and were given again (js_shape_renumber) */
+    uint8_t shape_renumbered;
     /* the async context of promise jobs, an object or any other value for
        none (see JS_SetAsyncContext) */
     JSValue async_context;
@@ -748,6 +750,10 @@ struct JSContext {
     struct list_head link;
 
     uint16_t binary_object_count;
+    /* rt->shape_renumbered, where the register loop reads it: a read of
+       a name no longer takes the slot it keeps for a key of the prototype,
+       whose id of a shape may now name other keys (engine/regvm-ops-basic.h) */
+    uint8_t rv_renumbered;
     int binary_object_size;
     
     JSShape *array_shape;   /* initial shape for Array objects */
@@ -840,7 +846,9 @@ struct JSString {
     uint8_t is_wide_char : 1; /* 0 = 8 bits, 1 = 16 bits characters */
     /* for JS_ATOM_TYPE_SYMBOL: hash = weakref_count, atom_type = 3,
        for JS_ATOM_TYPE_PRIVATE: hash = JS_ATOM_HASH_PRIVATE, atom_type = 3
-       XXX: could change encoding to have one more bit in hash */
+       XXX: could change encoding to have one more bit in hash.
+       A string that is no atom: 1 when it keeps a key (key_atom), else 0,
+       see js_string_atom_or_key */
     uint32_t hash : 30;
     uint8_t atom_type : 2; /* != 0 if atom, JS_ATOM_TYPE_x */
     uint32_t hash_next; /* atom_index for JS_ATOM_TYPE_SYMBOL */
@@ -3466,7 +3474,7 @@ static JSString *js_alloc_string_rt(JSRuntime *rt, int max_len, int is_wide_char
     str->is_wide_char = is_wide_char;
     str->len = max_len;
     str->atom_type = 0;
-    str->hash = 0;          /* optional but costless */
+    str->hash = 0;          /* see js_string_atom_or_key */
     str->hash_next = 0;     /* optional */
     str->key_atom = JS_ATOM_NULL;
 #ifdef DUMP_LEAKS
@@ -3488,12 +3496,48 @@ static force_inline JSString *js_alloc_string(JSContext *ctx, int max_len, int i
     return p;
 }
 
-/* same as JS_FreeValueRT() but faster */
-static inline void js_free_string(JSRuntime *rt, JSString *str)
+/* Give back the atom that p, a string that is no atom, keeps as its key
+   (js_string_to_atom). */
+static no_inline void js_string_drop_key(JSRuntime *rt, JSString *p)
+{
+    JSAtom atom = p->key_atom;
+
+    p->key_atom = JS_ATOM_NULL;
+    JS_FreeAtomRT(rt, atom);
+}
+
+/* Nonzero when p is an atom, or a string that is no atom and keeps an atom
+   as its key: js_string_to_atom gives such a string the hash 1, and every
+   other string that is no atom has the hash 0. Both fields are one 32-bit
+   word, so this is the one test that p->atom_type alone was. */
+static force_inline BOOL js_string_atom_or_key(const JSString *p)
+{
+    /* written as two tests, which LLVM makes one compare of the word; an or
+       of the two fields it does not */
+    return p->hash != 0 || p->atom_type != 0;
+}
+
+/* Free p, a string that is no atom and keeps a key, whose ref_count reached
+   zero. */
+static no_inline void js_free_string_keyed(JSRuntime *rt, JSString *p)
+{
+    js_string_drop_key(rt, p);
+#ifdef DUMP_LEAKS
+    list_del(&p->link);
+#endif
+    js_free_rt(rt, p);
+}
+
+/* same as JS_FreeValueRT() but faster. Forced inline, as LLVM inlined it
+   before the test of a kept key. */
+static force_inline void js_free_string(JSRuntime *rt, JSString *str)
 {
     if (--js_rc(str)->ref_count <= 0) {
-        if (str->atom_type) {
-            JS_FreeAtomStruct(rt, str);
+        if (js_string_atom_or_key(str)) {
+            if (str->atom_type)
+                JS_FreeAtomStruct(rt, str);
+            else
+                js_free_string_keyed(rt, str);
         } else {
 #ifdef DUMP_LEAKS
             list_del(&str->link);
@@ -3883,6 +3927,7 @@ JSContext *JS_NewContextRaw(JSRuntime *rt)
         return NULL;
     }
     ctx->rt = rt;
+    ctx->rv_renumbered = rt->shape_renumbered;
     list_add_tail(&ctx->link, &rt->context_list);
     for(i = 0; i < rt->class_count; i++)
         ctx->class_proto[i] = JS_NULL;
@@ -4534,6 +4579,11 @@ static JSAtom __JS_NewAtom(JSRuntime *rt, JSString *str, int atom_type,
         if (str->atom_type == 0) {
             p = str;
             p->atom_type = atom_type;
+            /* the string atom str kept as its key (js_string_to_atom), when
+               it becomes a symbol: it would have found that atom above if
+               it were to be a string atom */
+            if (unlikely(p->key_atom != JS_ATOM_NULL))
+                js_string_drop_key(rt, p);
         } else {
             p = js_malloc_rt(rt, sizeof(JSString) +
                              (str->len << str->is_wide_char) +
@@ -6841,7 +6891,8 @@ static no_inline JSValue JS_ConcatString1(JSContext *ctx,
 /* Append op2 to p1 in the room at the end of its block. p1 must have no
    holder but the 'owners' references its caller knows of (1, or 2 for
    JS_ConcatStringAppend), and must not be an atom: the atom table holds the
-   same JSString without counting a reference. */
+   same JSString without counting a reference. Nor may it keep an atom as its
+   key (js_string_to_atom), which names its characters as they are. */
 static force_inline BOOL js_concat_string_in_place(JSContext *ctx, JSString *p1,
                                                    JSValueConst op2, int owners)
 {
@@ -6851,7 +6902,7 @@ static force_inline BOOL js_concat_string_in_place(JSContext *ctx, JSString *p1,
 
         if (p2->len == 0)
             return TRUE;
-        if (js_rc(p1)->ref_count != owners || p1->atom_type)
+        if (js_rc(p1)->ref_count != owners || js_string_atom_or_key(p1))
             return FALSE;
         size1 = js_malloc_usable_size(ctx, p1);
         if (p1->is_wide_char) {
@@ -7672,8 +7723,15 @@ static void js_shape_hash_unlink(JSRuntime *rt, JSShape *sh)
 static no_inline uint32_t js_shape_renumber(JSRuntime *rt)
 {
     JSShape *sh;
+    struct list_head *el;
     uint32_t id = 1;
     int i;
+
+    rt->shape_renumbered = TRUE;
+    list_for_each(el, &rt->context_list) {
+        JSContext *ctx = list_entry(el, JSContext, link);
+        ctx->rv_renumbered = TRUE;
+    }
 
     for(i = 0; i < rt->shape_hash_size; i++) {
         for(sh = rt->shape_hash[i]; sh != NULL; sh = sh->shape_hash_next) {
@@ -8044,9 +8102,19 @@ static void js_shape_drop_parent(JSRuntime *rt, JSShape *sh)
    in the block of p is not used again. */
 #define JS_OBJ_INLINE_PROPS(p) ((JSProperty *)((uint8_t *)(p) + offsetof(JSObject, u)))
 
+/* The properties of a function object made by js_new_function_object sit
+   right after the object, with the same rules. The block of an object of
+   any class but JS_CLASS_OBJECT is at least sizeof(JSObject), so this
+   address lies inside it or at its end, and no block of its own starts at
+   the end of another: every block has its header, with its count, before
+   it (JS_BLOCK_REF_COUNT_OFFSET). The block of an ordinary object may end
+   before it, so the test leaves ordinary objects out. */
+#define JS_FUNC_INLINE_PROPS(p) ((JSProperty *)((JSObject *)(p) + 1))
+
 static inline BOOL js_props_inline(const JSObject *p)
 {
-    return p->prop == JS_OBJ_INLINE_PROPS(p);
+    return p->prop == JS_OBJ_INLINE_PROPS(p) ||
+        (p->prop == JS_FUNC_INLINE_PROPS(p) && p->class_id != JS_CLASS_OBJECT);
 }
 
 /* Return an array of new_size properties for p that starts with the first
@@ -9455,6 +9523,22 @@ static void js_array_finalizer(JSRuntime *rt, JSValue val)
     js_free_rt(rt, p->u.array.u.values);
 }
 
+/* The elements of the array p, inlined into mark_children in the passes of
+   a full collection, as js_bytecode_function_mark_in is. */
+static force_inline void js_array_mark_in(JSRuntime *rt, JSObject *p,
+                                          JS_MarkFunc *mark_func)
+{
+    int i;
+
+    for(i = 0; i < p->u.array.count; i++) {
+        JS_MarkValue(rt, p->u.array.u.values[i], mark_func);
+    }
+}
+
+/* Its own loop, as on main, not a call of js_array_mark_in: the young
+   collection calls it, and the trained profile then still fits it (as
+   a call of js_array_mark_in it had none, and React's page ran about
+   15K more instructions a render). */
 static void js_array_mark(JSRuntime *rt, JSValueConst val,
                           JS_MarkFunc *mark_func)
 {
@@ -9548,30 +9632,36 @@ static void js_bytecode_function_finalizer(JSRuntime *rt, JSValue val)
 #endif
                     JS_FreeValueRT(rt, cells[i].value);
                 }
-                for(i = 0; i < b->closure_var_count; i++) {
-                    if (!js_is_value_cell(var_refs[i], cells, n))
-                        free_var_ref(rt, var_refs[i]);
+                /* when every closure variable is a cell, they were all freed */
+                if (n != b->closure_var_count) {
+                    for(i = 0; i < b->closure_var_count; i++) {
+                        if (!js_is_value_cell(var_refs[i], cells, n))
+                            free_var_ref(rt, var_refs[i]);
+                    }
                 }
             }
-            js_free_rt(rt, var_refs);
+            /* var_refs is in the block of p (js_new_function_object) */
         }
         JS_FreeValueRT(rt, JS_MKPTR(JS_TAG_FUNCTION_BYTECODE, b));
     }
 }
 
-static void js_bytecode_function_mark(JSRuntime *rt, JSValueConst val,
-                                      JS_MarkFunc *mark_func)
+/* The children of the closure p. mark_children inlines it in the passes of
+   a full collection, so that each copy of mark_children that LLVM makes for
+   one mark_func calls that function directly, or inlines it, rather than
+   through the class table and a pointer: the cycle collector marks every
+   closure in each of its passes, and pages that keep rows of closures have
+   many. */
+static force_inline void js_bytecode_function_mark_in(JSRuntime *rt, JSObject *p,
+                                                      JS_MarkFunc *mark_func)
 {
-    JSObject *p = JS_VALUE_GET_OBJ(val);
     JSVarRef **var_refs = p->u.func.var_refs;
     JSFunctionBytecode *b = p->u.func.function_bytecode;
     JSValueCell *cells;
     int i, n;
 
-    if (p->u.func.home_object) {
-        JS_MarkValue(rt, JS_MKPTR(JS_TAG_OBJECT, p->u.func.home_object),
-                     mark_func);
-    }
+    if (p->u.func.home_object)
+        mark_func(rt, &p->u.func.home_object->header);
     if (b) {
         if (var_refs) {
             n = b->by_value_count;
@@ -9583,16 +9673,25 @@ static void js_bytecode_function_mark(JSRuntime *rt, JSValueConst val,
                     mark_func(rt, &cells[i].real->header);
 #endif
             }
-            for(i = 0; i < b->closure_var_count; i++) {
-                JSVarRef *var_ref = var_refs[i];
-                if (var_ref && !js_is_value_cell(var_ref, cells, n))
-                    mark_func(rt, &var_ref->header);
+            /* when every closure variable is a cell, they were all marked */
+            if (n != b->closure_var_count) {
+                for(i = 0; i < b->closure_var_count; i++) {
+                    JSVarRef *var_ref = var_refs[i];
+                    if (var_ref && !js_is_value_cell(var_ref, cells, n))
+                        mark_func(rt, &var_ref->header);
+                }
             }
         }
         /* must mark the function bytecode because template objects may be
            part of a cycle */
-        JS_MarkValue(rt, JS_MKPTR(JS_TAG_FUNCTION_BYTECODE, b), mark_func);
+        mark_func(rt, &b->header);
     }
+}
+
+static void js_bytecode_function_mark(JSRuntime *rt, JSValueConst val,
+                                      JS_MarkFunc *mark_func)
+{
+    js_bytecode_function_mark_in(rt, JS_VALUE_GET_OBJ(val), mark_func);
 }
 
 static void js_bound_function_free(JSRuntime *rt, JSBoundFunction *bf)
@@ -9789,11 +9888,15 @@ static void free_zero_refcount_first(JSRuntime *rt, JSObject *p)
 }
 
 
-/* Free a string whose ref_count reached zero. */
-static void js_free_string_rt(JSRuntime *rt, JSString *p)
+/* Free a string whose ref_count reached zero. Forced inline, as LLVM
+   inlined it before the test of a kept key. */
+static force_inline void js_free_string_rt(JSRuntime *rt, JSString *p)
 {
-    if (p->atom_type) {
-        JS_FreeAtomStruct(rt, p);
+    if (js_string_atom_or_key(p)) {
+        if (p->atom_type)
+            JS_FreeAtomStruct(rt, p);
+        else
+            js_free_string_keyed(rt, p);
     } else {
 #ifdef DUMP_LEAKS
         list_del(&p->link);
@@ -9987,6 +10090,10 @@ void JS_MarkValue(JSRuntime *rt, JSValueConst val, JS_MarkFunc *mark_func)
     }
 }
 
+static void gc_decref_child(JSRuntime *rt, JSGCObjectHeader *p);
+static void gc_scan_incref_child(JSRuntime *rt, JSGCObjectHeader *p);
+static void gc_scan_incref_child2(JSRuntime *rt, JSGCObjectHeader *p);
+
 static void mark_children(JSRuntime *rt, JSGCObjectHeader *gp,
                           JS_MarkFunc *mark_func)
 {
@@ -10027,7 +10134,19 @@ static void mark_children(JSRuntime *rt, JSGCObjectHeader *gp,
             if (p->class_id != JS_CLASS_OBJECT) {
                 JSClassGCMark *gc_mark;
                 gc_mark = rt->class_array[p->class_id].gc_mark;
-                if (gc_mark)
+                /* closures and arrays inline, in the passes of a full
+                   collection only: mark_func is a constant in each copy
+                   LLVM makes, so the copies of the young collection stay
+                   as small as they were. A larger frame there costs at
+                   every object it visits, and it visits few closures. */
+                BOOL full = mark_func == gc_decref_child ||
+                    mark_func == gc_scan_incref_child ||
+                    mark_func == gc_scan_incref_child2;
+                if (full && gc_mark == js_bytecode_function_mark)
+                    js_bytecode_function_mark_in(rt, p, mark_func);
+                else if (full && gc_mark == js_array_mark)
+                    js_array_mark_in(rt, p, mark_func);
+                else if (gc_mark)
                     gc_mark(rt, JS_MKPTR(JS_TAG_OBJECT, p), mark_func);
             }
         }
@@ -10924,7 +11043,7 @@ void JS_ComputeMemoryUsage(JSRuntime *rt, JSMemoryUsage *s)
                 JSVarRef **var_refs = p->u.func.var_refs;
                 /* home_object: object will be accounted for in list scan */
                 if (var_refs) {
-                    s->memory_used_count++;
+                    /* in the block of p, not a block of its own */
                     s->js_func_size += b->closure_var_count * sizeof(*var_refs) +
                         b->by_value_count * sizeof(JSValueCell);
                     for (i = 0; i < b->closure_var_count; i++) {
@@ -13976,6 +14095,41 @@ static JSAtom js_symbol_to_atom(JSContext *ctx, JSValue val)
     return js_get_atom_index(ctx->rt, p);
 }
 
+/* JS_ValueToAtom of the string p that is not its own atom as a key. A string
+   that is no atom, whose characters are those of a string atom that is its
+   own key (not empty, not starting with a digit), keeps that atom in its
+   key_atom, with a reference of its own, the first time it is made a key:
+   __JS_NewAtom finds the atom and does not make p the atom, so without it
+   every later read by p would hash p and search the table again, which a
+   key that comes from data (a string of JSON.parse, of a Go function, of a
+   join) pays at each read. With it, the next JS_ValueToAtom of p takes the
+   atom in one read here, and the reads of the register loop take it as they
+   take the atom of a string that is one (rv_getel_atom). The reference is
+   given back when p is freed (js_free_string, js_free_string_rt) or made an
+   atom of another type (__JS_NewAtom), and p is not appended to in place
+   while it holds one (js_concat_string_in_place): the characters of p never
+   change while key_atom names their atom. p also gets the hash 1, which no
+   other string that is no atom has (js_string_atom_or_key), so that the
+   free and the append in place test for an atom or a kept key in the one
+   test they made for an atom. */
+static no_inline JSAtom js_string_to_atom(JSContext *ctx, JSString *p)
+{
+    JSRuntime *rt = ctx->rt;
+    JSAtom atom;
+
+    if (p->key_atom != JS_ATOM_NULL)
+        return JS_DupAtom(ctx, p->key_atom);
+    /* JS_ToPropertyKey of a string: a reference that JS_NewAtomStr takes */
+    js_rc(p)->ref_count++;
+    atom = JS_NewAtomStr(ctx, p);
+    if (atom != JS_ATOM_NULL && !__JS_AtomIsTaggedInt(atom) &&
+        p->atom_type == 0 && rt->atom_array[atom]->key_atom == atom) {
+        p->key_atom = JS_DupAtom(ctx, atom);
+        p->hash = 1;
+    }
+    return atom;
+}
+
 /* return JS_ATOM_NULL in case of exception */
 JSAtom JS_ValueToAtom(JSContext *ctx, JSValueConst val)
 {
@@ -13994,6 +14148,7 @@ JSAtom JS_ValueToAtom(JSContext *ctx, JSValueConst val)
         if (p->atom_type == JS_ATOM_TYPE_STRING && p->len != 0 &&
             !is_digit(string_get(p, 0)))
             return JS_DupAtom(ctx, js_get_atom_index(ctx->rt, p));
+        return js_string_to_atom(ctx, p);
     }
     if (tag == JS_TAG_INT &&
         (uint32_t)JS_VALUE_GET_INT(val) <= JS_ATOM_MAX_INT) {
@@ -16160,9 +16315,47 @@ static BOOL js_object_has_name(JSContext *ctx, JSValueConst obj)
     return (p->len != 0);
 }
 
+/* set_name after the closure of a function with no name of its own
+   (`{ a: () => x }`, `const f = function () {}`): the closure has its name
+   already, the empty string, with these flags. Defining it again with the
+   same flags only changes the value, which is done here in place, as
+   JS_DefineProperty would do it, without its general path (about 215
+   instructions a closure). A function object of the engine has no exotic
+   handler. 1 when the name is set, 0 when the general path must run, -1 on
+   an exception. JS_DefineObjectName and its copy rv_define_object_name
+   (engine/regvm-ops-window.h) both start with it. */
+static force_inline int js_object_name_in_place(JSContext *ctx,
+                                                JSValueConst obj,
+                                                JSAtom name, int flags)
+{
+    JSObject *p;
+    JSProperty *pr;
+    JSShapeProperty *prs;
+    JSValue str;
+
+    if (name == JS_ATOM_NULL || !JS_IsObject(obj))
+        return 0;
+    p = JS_VALUE_GET_OBJ(obj);
+    prs = find_own_property(&pr, p, JS_ATOM_name);
+    if (!prs || prs->flags != flags || p->is_exotic ||
+        JS_VALUE_GET_TAG(pr->u.value) != JS_TAG_STRING ||
+        JS_VALUE_GET_STRING(pr->u.value)->len != 0)
+        return 0;
+    str = JS_AtomToString(ctx, name);
+    if (JS_IsException(str))
+        return -1;
+    /* the empty string is an atom: freeing it runs no code */
+    JS_FreeValue(ctx, pr->u.value);
+    pr->u.value = str;
+    return 1;
+}
+
 static int JS_DefineObjectName(JSContext *ctx, JSValueConst obj,
                                JSAtom name, int flags)
 {
+    int r = js_object_name_in_place(ctx, obj, name, flags);
+    if (r != 0)
+        return r < 0 ? -1 : 0;
     if (name != JS_ATOM_NULL
     &&  JS_IsObject(obj)
     &&  !js_object_has_name(ctx, obj)
@@ -23353,11 +23546,13 @@ static JSValue js_closure2(JSContext *ctx, JSValue func_obj,
                            BOOL is_eval, JSModuleDef *m)
 {
     JSObject *p;
-    JSVarRef **var_refs = NULL;
+    JSVarRef **var_refs;
     JSValueCell *c = NULL;
     int i = 0;
 
     p = JS_VALUE_GET_OBJ(func_obj);
+    /* the room js_new_function_object left for the closure variables */
+    var_refs = p->u.func.var_refs;
     p->u.func.function_bytecode = b;
     p->u.func.home_object = NULL;
     p->u.func.var_refs = NULL;
@@ -23365,12 +23560,9 @@ static JSValue js_closure2(JSContext *ctx, JSValue func_obj,
         /* the cells of the closure variables marked by_value after the
            var_refs. Not zeroed: the loop below writes every entry and
            every cell, and fail_refs those it does not reach. The function
-           gets the block only then, as a collection can run in the loop
-           (an error made, a global variable defined) and would read it. */
-        var_refs = js_malloc(ctx, sizeof(var_refs[0]) * b->closure_var_count +
-                             sizeof(JSValueCell) * b->by_value_count);
-        if (!var_refs)
-            goto fail;
+           gets them only then, as a collection can run in the loop (an
+           error made, a global variable defined) and would read them. */
+        assert(var_refs);
         c = js_value_cells(b, var_refs);
         if (is_eval) {
             /* first pass to check the global variable definitions */
@@ -23449,7 +23641,6 @@ static JSValue js_closure2(JSContext *ctx, JSValue func_obj,
 #endif
     }
     p->u.func.var_refs = var_refs;
- fail:
     /* bfunc is freed when func_obj is freed */
     JS_FreeValue(ctx, func_obj);
     return JS_EXCEPTION;
@@ -23482,6 +23673,75 @@ static const uint16_t func_kind_to_class_id[] = {
     [JS_FUNC_ASYNC] = JS_CLASS_ASYNC_FUNCTION,
     [JS_FUNC_ASYNC_GENERATOR] = JS_CLASS_ASYNC_GENERATOR_FUNCTION,
 };
+
+/* A function object of class class_id for the bytecode b, of the shape sh,
+   which it takes, before js_closure2: one block holds the object, its
+   properties (as many as sh->prop_size, not set, see JS_FUNC_INLINE_PROPS)
+   and the closure variables of b (var_refs and the cells after them, see
+   js_value_cells), which js_closure2 fills. A closure is then one
+   allocation and one free, not three. The fields of u.func are those of no
+   function yet: the finalizer and the mark do nothing with them, and
+   var_refs is the room for js_closure2. Returns JS_EXCEPTION when there is
+   no memory, with sh freed, as JS_NewObjectFromShape. */
+static force_inline JSValue js_new_function_object(JSContext *ctx, JSShape *sh,
+                                                   JSClassID class_id,
+                                                   JSFunctionBytecode *b)
+{
+    JSObject *p;
+    size_t size;
+
+    size = sizeof(JSObject) + sizeof(JSProperty) * (size_t)sh->prop_size;
+    if (b->closure_var_count)
+        size += sizeof(JSVarRef *) * (size_t)b->closure_var_count +
+            sizeof(JSValueCell) * (size_t)b->by_value_count;
+    js_trigger_gc(ctx->rt, sizeof(JSObject));
+    p = js_malloc(ctx, size);
+    if (unlikely(!p)) {
+        js_free_shape(ctx->rt, sh);
+        return JS_EXCEPTION;
+    }
+    p->class_id = class_id;
+    p->is_std_array_prototype = 0;
+    p->extensible = TRUE;
+    p->free_mark = 0;
+    p->is_exotic = 0;
+    p->fast_array = 0;
+    p->is_constructor = 0;
+    p->has_immutable_prototype = 0;
+    p->tmp_mark = 0;
+    p->is_HTMLDDA = 0;
+    p->rv_fast = 0;
+    p->weakref_count = 0;
+    p->shape = sh;
+    p->prop = JS_FUNC_INLINE_PROPS(p);
+    p->u.func.function_bytecode = NULL;
+    p->u.func.var_refs = b->closure_var_count ?
+        (JSVarRef **)(p->prop + sh->prop_size) : NULL;
+    p->u.func.home_object = NULL;
+    js_rc(p)->ref_count = 1;
+    add_gc_object(ctx->rt, &p->header, JS_GC_OBJ_TYPE_JS_OBJECT);
+    return JS_MKPTR(JS_TAG_OBJECT, p);
+}
+
+/* js_new_function_object with the prototype proto_val, whose shape is
+   found as JS_NewObjectProtoClass finds it */
+static JSValue js_new_function_proto(JSContext *ctx, JSValueConst proto_val,
+                                     JSClassID class_id, JSFunctionBytecode *b)
+{
+    JSShape *sh;
+    JSObject *proto;
+
+    proto = get_proto_obj(proto_val);
+    sh = find_hashed_shape_proto(ctx->rt, proto);
+    if (likely(sh)) {
+        sh = js_dup_shape(sh);
+    } else {
+        sh = js_new_proto_shape(ctx, proto, class_id);
+        if (!sh)
+            return JS_EXCEPTION;
+    }
+    return js_new_function_object(ctx, sh, class_id, b);
+}
 
 /* The slot of func_shapes for a function of kind func_kind: 0 for a
    function, 1 for an async function, -1 for a generator (its prototype is an
@@ -23530,19 +23790,20 @@ static JSValue js_closure_object(JSContext *ctx, JSFunctionBytecode *b, BOOL *ma
                                        JS_PROP_WRITABLE | JS_PROP_AUTOINIT) :
                 NULL;
     }
-    if (!sh) {
+    if (sh) {
+        *made = TRUE;
+        sh = js_dup_shape(sh);
+    } else if (sh0) {
         /* as JS_NewObjectClass */
-        if (sh0) {
-            sh0 = js_dup_shape(sh0);
-        } else {
-            sh0 = js_new_proto_shape(ctx, proto, class_id);
-            if (!sh0)
-                return JS_EXCEPTION;
-        }
-        return JS_NewObjectFromShape(ctx, sh0, class_id, NULL);
+        sh = js_dup_shape(sh0);
+    } else {
+        sh = js_new_proto_shape(ctx, proto, class_id);
+        if (!sh)
+            return JS_EXCEPTION;
     }
-    obj = JS_NewObjectFromShape(ctx, js_dup_shape(sh), class_id, NULL);
-    if (JS_IsException(obj))
+    /* one call, which is inlined */
+    obj = js_new_function_object(ctx, sh, class_id, b);
+    if (!*made || JS_IsException(obj))
         return obj;
     p = JS_VALUE_GET_OBJ(obj);
     js_shape_found(ctx);
@@ -23554,7 +23815,6 @@ static JSValue js_closure_object(JSContext *ctx, JSFunctionBytecode *b, BOOL *ma
         p->prop[2].u.init.realm_and_id = (uintptr_t)JS_DupContext(ctx) | JS_AUTOINIT_ID_PROTOTYPE;
         p->prop[2].u.init.opaque = NULL;
     }
-    *made = TRUE;
     return obj;
 }
 
@@ -23664,8 +23924,8 @@ static int js_op_define_class(JSContext *ctx, JSValue *sp,
 
     b = JS_VALUE_GET_PTR(bfunc);
     assert(b->func_kind == JS_FUNC_NORMAL);
-    ctor = JS_NewObjectProtoClass(ctx, parent_class,
-                                  JS_CLASS_BYTECODE_FUNCTION);
+    ctor = js_new_function_proto(ctx, parent_class,
+                                 JS_CLASS_BYTECODE_FUNCTION, b);
     if (JS_IsException(ctor))
         goto fail;
     ctor = js_closure2(ctx, ctor, b, cur_var_refs, sf, FALSE, NULL);
@@ -26632,6 +26892,12 @@ static __exception int js_parse_regexp(JSParseState *s)
             goto fail;
         p = p_next;
     }
+    /* the readings of the scan fall where p meets a multiple of
+       JS_ROPE_STEP, so the last one can be nearly a step before the end,
+       and the compile hashes the body and the flags from a step of its own
+       (js_regexp_cache_hash): a long literal ends with a reading */
+    if (p - s->buf_ptr >= JS_ROPE_STEP && js_poll_interrupts(s->ctx))
+        goto fail;
 
     body_str = string_buffer_end(b);
     flags_str = string_buffer_end(b2);
@@ -35486,13 +35752,13 @@ static int js_create_module_bytecode_function(JSContext *ctx, JSModuleDef *m)
     JSValue func_obj, bfunc;
 
     bfunc = m->func_obj;
-    func_obj = JS_NewObjectProtoClass(ctx, ctx->function_proto,
-                                      JS_CLASS_BYTECODE_FUNCTION);
+    b = JS_VALUE_GET_PTR(bfunc);
+    func_obj = js_new_function_proto(ctx, ctx->function_proto,
+                                     JS_CLASS_BYTECODE_FUNCTION, b);
 
     if (JS_IsException(func_obj))
         return -1;
     m->func_obj = func_obj;
-    b = JS_VALUE_GET_PTR(bfunc);
     func_obj = js_closure2(ctx, func_obj, b, NULL, NULL, TRUE, m);
     if (JS_IsException(func_obj)) {
         m->func_obj = JS_UNDEFINED; /* XXX: keep it ? */
@@ -45071,7 +45337,7 @@ typedef enum BCTagEnum {
     BC_TAG_OBJECT_REFERENCE,
 } BCTagEnum;
 
-#define BC_VERSION 14
+#define BC_VERSION 15
 
 typedef struct BCWriterState {
     JSContext *ctx;
@@ -60695,6 +60961,42 @@ static force_inline int js_regexp_set_lastIndex(JSContext *ctx, JSValueConst thi
     return 0;
 }
 
+/* js_regexp_set_lastIndex for the failure path of a fast path, with an
+   exception pending: it writes only a lastIndex that holds an int and can be
+   written, which calls nothing, and leaves any other as it is. this_val must
+   be of JS_CLASS_REGEXP.
+
+   lastIndex when a replace or a match fails (an exception, the host's stop,
+   no memory) is what the generic path leaves at the same stage, and the
+   fast paths (js_regexp_replace, js_regexp_replace_fn, js_regexp_match_fast)
+   keep to it. The generic path first finds the matches by calls of exec,
+   then builds the result:
+   - while it finds them, lastIndex is where the last call of exec that
+     wrote it left it: 0 set first with g, then the end of each match (exec
+     writes it before it makes the strings of the match), stepped over an
+     empty one with g. A failure there leaves that value, which a fast path
+     keeps in a local as it searches and writes with this function when it
+     fails.
+   - once they are found, the engine does not write lastIndex again: it is
+     0 with g (the last call of exec found none), the end of the match with
+     y alone, as it was otherwise, and then whatever the function of a
+     replace writes. A failure while the result is built leaves it so. A
+     fast path does at this stage some work the generic path did while it
+     found the matches (the strings of a match handed to the function, the
+     matched text of a replacement), and a failure there is one of this
+     stage too: the search is over, and the function may have run.
+   split never reads or writes the lastIndex of the regexp: the
+   specification searches with a splitter, another object. */
+static void js_regexp_reset_lastIndex(JSContext *ctx, JSValueConst this_val,
+                                      int last_index)
+{
+    JSObject *p = JS_VALUE_GET_OBJ(this_val);
+
+    if (JS_VALUE_GET_TAG(p->prop[0].u.value) == JS_TAG_INT &&
+        (get_shape_prop(p->shape)->flags & JS_PROP_WRITABLE))
+        p->prop[0].u.value = JS_NewInt32(ctx, last_index);
+}
+
 static JSValue js_regexp_exec(JSContext *ctx, JSValueConst this_val,
                               int argc, JSValueConst *argv)
 {
@@ -60704,7 +61006,7 @@ static JSValue js_regexp_exec(JSContext *ctx, JSValueConst this_val,
     JSValue indices, indices_groups;
     uint8_t *re_bytecode;
     uint8_t **capture, *str_buf;
-    int rc, capture_count, shift, i, re_flags, alloc_count;
+    int rc, capture_count, shift, i, i_end, re_flags, alloc_count;
     int64_t last_index;
     const char *group_name_ptr;
     JSObject *p_obj;
@@ -60806,7 +61108,12 @@ static JSValue js_regexp_exec(JSContext *ctx, JSValueConst this_val,
         if (expand_fast_array(ctx, p_obj, capture_count))
             goto fail;
         
-        for(i = 0; i < capture_count; i++) {
+        i = 0;
+    next_captures:
+        /* a regexp has up to 32767 groups: read the flag every 1024, with
+           no test in the loop for the regexps of fewer */
+        i_end = min_int(capture_count, i + 1024);
+        for(; i < i_end; i++) {
             uint8_t **match = &capture[2 * i];
             int start = -1;
             int end = -1;
@@ -60887,6 +61194,11 @@ static JSValue js_regexp_exec(JSContext *ctx, JSValueConst this_val,
             }
             p_obj->u.array.u.values[p_obj->u.array.count++] = val;
         }
+        if (i < capture_count) {
+            if (js_poll_interrupts(ctx))
+                goto fail;
+            goto next_captures;
+        }
 
         if (!JS_IsUndefined(indices)) {
             t = indices_groups, indices_groups = JS_UNDEFINED;
@@ -60949,7 +61261,9 @@ static JSValue js_regexp_replace(JSContext *ctx, JSValueConst this_val, JSValueC
     re_flags = lre_get_flags(re_bytecode);
 
     if (re_flags & LRE_FLAG_GLOBAL) {
-        if (js_regexp_set_lastIndex(ctx, this_val, 0))
+        /* the generic path reads the flag as it calls the flags getter,
+           before it sets lastIndex to 0 */
+        if (js_poll_interrupts(ctx) || js_regexp_set_lastIndex(ctx, this_val, 0))
             goto fail;
     }
     if ((re_flags & (LRE_FLAG_GLOBAL | LRE_FLAG_STICKY)) == 0) {
@@ -60962,7 +61276,7 @@ static JSValue js_regexp_replace(JSContext *ctx, JSValueConst this_val, JSValueC
     if (alloc_count > 0) {
         capture = js_malloc(ctx, sizeof(capture[0]) * alloc_count);
         if (!capture)
-            goto fail;
+            goto fail_search;
     }
     capture_count = lre_get_capture_count(re_bytecode);
     fullUnicode = ((re_flags & (LRE_FLAG_UNICODE | LRE_FLAG_UNICODE_SETS)) != 0);
@@ -60973,7 +61287,7 @@ static JSValue js_regexp_replace(JSContext *ctx, JSValueConst this_val, JSValueC
         /* a global replace of a long string makes a match for every few
            characters, none of which reads the flag by itself */
         if (js_poll_interrupts(ctx))
-            goto fail;
+            goto fail_search;
         if (last_index > str->len) {
             ret = 0;
         } else {
@@ -60992,13 +61306,22 @@ static JSValue js_regexp_replace(JSContext *ctx, JSValueConst this_val, JSValueC
                 } else {
                     JS_ThrowOutOfMemory(ctx);
                 }
-                goto fail;
+                goto fail_search;
             }
             break;
         }
         start = (capture[0] - str_buf) >> shift;
         end = (capture[1] - str_buf) >> shift;
+        /* exec has set lastIndex to the end of the match (with g or y) */
         last_index = end;
+        if ((re_flags & (LRE_FLAG_GLOBAL | LRE_FLAG_STICKY)) == LRE_FLAG_STICKY) {
+            if (js_regexp_set_lastIndex(ctx, this_val, end) < 0)
+                goto fail;
+        }
+        /* the result is built as the matches are found: a failure in it is
+           one of the generic path after its search (see
+           js_regexp_reset_lastIndex), and leaves lastIndex as the search
+           leaves it, 0 with g, the end of the match with y alone */
         if (next_src_pos < start) {
             if (string_buffer_concat(b, str, next_src_pos, start))
                 goto fail;
@@ -61011,13 +61334,8 @@ static JSValue js_regexp_replace(JSContext *ctx, JSValueConst this_val, JSValueC
             }
         }
         next_src_pos = end;
-        if (!(re_flags & LRE_FLAG_GLOBAL)) {
-            if (re_flags & LRE_FLAG_STICKY) {
-                if (js_regexp_set_lastIndex(ctx, this_val, end) < 0)
-                    goto fail;
-            }
+        if (!(re_flags & LRE_FLAG_GLOBAL))
             break;
-        }
         if (end == start) {
             end = string_advance_index(str, end, fullUnicode);
         }
@@ -61028,10 +61346,290 @@ static JSValue js_regexp_replace(JSContext *ctx, JSValueConst this_val, JSValueC
     JS_FreeValue(ctx, str_val);
     js_free(ctx, capture);
     return string_buffer_end(b);
+fail_search:
+    /* the call of exec that failed leaves lastIndex where the last call
+       left it: 0 set above, then the end of each match, stepped over an
+       empty one */
+    if (re_flags & LRE_FLAG_GLOBAL)
+        js_regexp_reset_lastIndex(ctx, this_val, last_index);
 fail:
     JS_FreeValue(ctx, str_val);
     js_free(ctx, capture);
     string_buffer_free(b);
+    return JS_EXCEPTION;
+}
+
+static BOOL js_is_standard_regexp(JSContext *ctx, JSValueConst obj);
+
+/* append val at *plen to A, a new array that no script has seen */
+static int js_regexp_array_push(JSContext *ctx, JSValueConst A, uint32_t *plen,
+                                JSValue val)
+{
+    uint32_t len = (*plen)++;
+
+    if (likely(len < INT32_MAX))
+        return add_fast_array_element(ctx, JS_VALUE_GET_OBJ(A), val, JS_PROP_THROW);
+    return JS_DefinePropertyValueInt64(ctx, A, len, val, JS_PROP_C_W_E | JS_PROP_THROW);
+}
+
+/* RegExp.prototype[Symbol.replace] of the string str_val with the function
+   rep, by a regexp rx that js_is_standard_regexp accepts, or JS_UNDEFINED
+   when rx has named groups (the generic path makes their object). The
+   specification first runs exec until it gives null (once when rx is not
+   global) and keeps every result, then calls rep for each. No script runs in
+   the first part, and its results cannot be seen: so it is done here with
+   lre_exec, as exec would do it (from lastIndex with g or y, from 0
+   otherwise, an empty match of a global rx stepped over one character, or
+   one code point with u or v), keeping only where each match and capture
+   starts and ends, and leaving lastIndex where the calls of exec leave it,
+   also when the first part fails (interrupted, out of memory).
+   Then rep gets for each match what the generic path gives it: the match,
+   the captures (undefined for one that did not take part), the position and
+   the string. The interrupt flag is read before each lre_exec, and every
+   1024 matches in the second part, as the generic path reads it. */
+static JSValue js_regexp_replace_fn(JSContext *ctx, JSValueConst rx,
+                                    JSValueConst str_val, JSValueConst rep)
+{
+    JSString *str = JS_VALUE_GET_STRING(str_val);
+    uint8_t *bc = JS_VALUE_GET_OBJ(rx)->u.regexp.bytecode->u.str8;
+    uint8_t **capture = NULL, *buf = str->u.str8;
+    int re_flags = lre_get_flags(bc), shift = str->is_wide_char;
+    int capture_count = lre_get_capture_count(bc), alloc_count = lre_get_alloc_count(bc);
+    BOOL global = (re_flags & LRE_FLAG_GLOBAL) != 0;
+    BOOL unicode = (re_flags & (LRE_FLAG_UNICODE | LRE_FLAG_UNICODE_SETS)) != 0;
+    int32_t *pos = NULL; /* 2 * capture_count per match: start and end, -1 */
+    size_t n_pos = 0, size_pos = 0, j;
+    int64_t last_index;
+    int rc, i, k, next_src_pos, start, end;
+    StringBuffer b_s, *b = &b_s;
+    JSValue *args = NULL, rep_str;
+
+    if (lre_get_groupnames(bc))
+        return JS_UNDEFINED;
+    string_buffer_init(ctx, b, 0);
+    last_index = 0;
+    if (global) {
+        /* the generic path reads the flag as it calls the flags getter,
+           before it sets lastIndex to 0 */
+        if (js_poll_interrupts(ctx) || js_regexp_set_lastIndex(ctx, rx, 0) < 0)
+            goto fail;
+    } else if (re_flags & LRE_FLAG_STICKY) {
+        if (js_regexp_get_lastIndex(ctx, &last_index, rx))
+            goto fail;
+    }
+    if (alloc_count > 0) {
+        capture = js_malloc(ctx, sizeof(capture[0]) * alloc_count);
+        if (!capture)
+            goto fail_search;
+    }
+    for (;;) {
+        if (js_poll_interrupts(ctx))
+            goto fail_search;
+        if (last_index > str->len) {
+            rc = 2;
+        } else {
+            rc = lre_exec(capture, bc, buf, last_index, str->len, shift, ctx);
+        }
+        if (rc != 1) {
+            if (rc < 0) {
+                if (rc == LRE_RET_TIMEOUT)
+                    JS_ThrowInterrupted(ctx);
+                else
+                    JS_ThrowOutOfMemory(ctx);
+                goto fail_search;
+            }
+            if (rc == 2 || (re_flags & (LRE_FLAG_GLOBAL | LRE_FLAG_STICKY))) {
+                if (js_regexp_set_lastIndex(ctx, rx, 0) < 0)
+                    goto fail;
+            }
+            break;
+        }
+        /* exec has set lastIndex to the end of the match (with g or y) */
+        end = (capture[1] - buf) >> shift;
+        if (global) {
+            last_index = end;
+        } else if (re_flags & LRE_FLAG_STICKY) {
+            if (js_regexp_set_lastIndex(ctx, rx, end) < 0)
+                goto fail;
+        }
+        if (n_pos + 2 * capture_count > size_pos) {
+            size_t new_size = size_pos + size_pos / 2 + 64 * capture_count;
+            int32_t *new_pos = js_realloc(ctx, pos, new_size * sizeof(pos[0]));
+            if (!new_pos)
+                goto fail_search;
+            pos = new_pos;
+            size_pos = new_size;
+        }
+        for (i = 0; i < 2 * capture_count; i += 2) {
+            if (capture[i] && capture[i + 1]) {
+                pos[n_pos + i] = (capture[i] - buf) >> shift;
+                pos[n_pos + i + 1] = (capture[i + 1] - buf) >> shift;
+            } else {
+                pos[n_pos + i] = pos[n_pos + i + 1] = -1;
+            }
+        }
+        start = pos[n_pos];
+        n_pos += 2 * capture_count;
+        if (!global)
+            break;
+        if (end == start)
+            last_index = string_advance_index(str, end, unicode);
+    }
+    js_free(ctx, capture);
+    capture = NULL;
+
+    /* the search is over: from here a failure leaves lastIndex as it is
+       (see js_regexp_reset_lastIndex), also one in the strings of a match,
+       which the generic path made in its search */
+    args = js_malloc(ctx, sizeof(args[0]) * (capture_count + 2));
+    if (!args)
+        goto fail;
+    next_src_pos = 0;
+    for (j = 0; j < n_pos; j += 2 * capture_count) {
+        if (((j / (2 * capture_count)) & 1023) == 1023 && js_poll_interrupts(ctx))
+            goto fail;
+        for (k = 0; k < capture_count; k++) {
+            /* a regexp has up to 32767 groups: the flag every 1024, as
+               exec reads it */
+            if ((k & 1023) == 1023 && js_poll_interrupts(ctx))
+                goto fail_args;
+            if (pos[j + 2 * k] < 0) {
+                args[k] = JS_UNDEFINED;
+            } else {
+                args[k] = js_sub_string(ctx, str, pos[j + 2 * k], pos[j + 2 * k + 1]);
+                if (JS_IsException(args[k]))
+                    goto fail_args;
+            }
+        }
+        start = pos[j];
+        args[capture_count] = JS_NewInt32(ctx, start);
+        args[capture_count + 1] = JS_DupValue(ctx, str_val);
+        /* as js_function_apply calls it on the generic path: no level for
+           an entry of the host */
+        rep_str = JS_ToStringFree(ctx, js_call_fwd(ctx, rep, JS_UNDEFINED,
+                                                   capture_count + 2, (JSValueConst *)args));
+        for (k = 0; k < capture_count + 2; k++)
+            JS_FreeValue(ctx, args[k]);
+        if (JS_IsException(rep_str))
+            goto fail;
+        if (start >= next_src_pos) {
+            if (string_buffer_concat(b, str, next_src_pos, start)) {
+                JS_FreeValue(ctx, rep_str);
+                goto fail;
+            }
+            if (string_buffer_concat_value_free(b, rep_str))
+                goto fail;
+            next_src_pos = pos[j + 1];
+        } else {
+            JS_FreeValue(ctx, rep_str);
+        }
+    }
+    if (string_buffer_concat(b, str, next_src_pos, str->len))
+        goto fail;
+    js_free(ctx, args);
+    js_free(ctx, pos);
+    return string_buffer_end(b);
+fail_search:
+    /* the call of exec that failed, or what failed after it, leaves
+       lastIndex where the last call left it: 0 set above, then the end of
+       each match, stepped over an empty one */
+    if (global)
+        js_regexp_reset_lastIndex(ctx, rx, last_index);
+    goto fail;
+fail_args:
+    while (--k >= 0)
+        JS_FreeValue(ctx, args[k]);
+fail:
+    js_free(ctx, args);
+    js_free(ctx, pos);
+    js_free(ctx, capture);
+    string_buffer_free(b);
+    return JS_EXCEPTION;
+}
+
+/* RegExp.prototype[Symbol.match] of the string str_val by a regexp rx that
+   js_is_standard_regexp accepts. Not global, it is the call of exec. Global,
+   the specification runs exec from lastIndex 0 until it gives null and
+   collects the matches: no script runs in that loop and its results cannot
+   be seen, so it is done here with lre_exec, as exec does it, an empty match
+   stepped over one character, or one code point with u or v, and lastIndex
+   left at 0 as the last call of exec leaves it, or where the calls before it
+   left it when the loop fails (interrupted, out of memory). The interrupt
+   flag is read before each lre_exec. */
+static JSValue js_regexp_match_fast(JSContext *ctx, JSValueConst rx,
+                                    JSValueConst str_val)
+{
+    JSString *str = JS_VALUE_GET_STRING(str_val);
+    uint8_t *bc = JS_VALUE_GET_OBJ(rx)->u.regexp.bytecode->u.str8;
+    uint8_t **capture = NULL, *buf = str->u.str8;
+    int re_flags = lre_get_flags(bc), shift = str->is_wide_char;
+    int alloc_count = lre_get_alloc_count(bc);
+    BOOL unicode = (re_flags & (LRE_FLAG_UNICODE | LRE_FLAG_UNICODE_SETS)) != 0;
+    int64_t last_index = 0;
+    int rc, start, end;
+    uint32_t n = 0;
+    JSValue A, sub;
+
+    /* the generic path reads the flag as it calls the flags getter, before
+       it calls exec or sets lastIndex to 0 */
+    if (js_poll_interrupts(ctx))
+        return JS_EXCEPTION;
+    if (!(re_flags & LRE_FLAG_GLOBAL))
+        return js_regexp_exec(ctx, rx, 1, &str_val);
+    if (js_regexp_set_lastIndex(ctx, rx, 0) < 0)
+        return JS_EXCEPTION;
+    A = JS_NewArray(ctx);
+    if (JS_IsException(A))
+        return A;
+    if (alloc_count > 0) {
+        capture = js_malloc(ctx, sizeof(capture[0]) * alloc_count);
+        if (!capture)
+            goto fail;
+    }
+    for (;;) {
+        if (js_poll_interrupts(ctx))
+            goto fail;
+        if (last_index > str->len) {
+            rc = 0;
+        } else {
+            rc = lre_exec(capture, bc, buf, last_index, str->len, shift, ctx);
+        }
+        if (rc != 1) {
+            if (rc < 0) {
+                if (rc == LRE_RET_TIMEOUT)
+                    JS_ThrowInterrupted(ctx);
+                else
+                    JS_ThrowOutOfMemory(ctx);
+                goto fail;
+            }
+            break;
+        }
+        start = (capture[0] - buf) >> shift;
+        end = (capture[1] - buf) >> shift;
+        last_index = end;
+        sub = js_sub_string(ctx, str, start, end);
+        if (JS_IsException(sub) || js_regexp_array_push(ctx, A, &n, sub) < 0)
+            goto fail;
+        if (end == start)
+            last_index = string_advance_index(str, end, unicode);
+    }
+    js_free(ctx, capture);
+    if (js_regexp_set_lastIndex(ctx, rx, 0) < 0) {
+        JS_FreeValue(ctx, A);
+        return JS_EXCEPTION;
+    }
+    if (n == 0) {
+        JS_FreeValue(ctx, A);
+        return JS_NULL;
+    }
+    return A;
+fail:
+    /* the call of exec that failed, or what failed after it, leaves
+       lastIndex where the last call left it: 0 set above, then the end of
+       each match, stepped over an empty one */
+    js_regexp_reset_lastIndex(ctx, rx, last_index);
+    js_free(ctx, capture);
+    JS_FreeValue(ctx, A);
     return JS_EXCEPTION;
 }
 
@@ -61089,6 +61687,13 @@ static JSValue js_regexp_Symbol_match(JSContext *ctx, JSValueConst this_val,
     S = JS_ToString(ctx, argv[0]);
     if (JS_IsException(S))
         goto exception;
+    /* while an uncatchable exception is pending (left by a toString of S),
+       the generic path fails at its first call */
+    if (!js_uncatchable_pending(ctx->rt) && js_is_standard_regexp(ctx, rx)) {
+        A = js_regexp_match_fast(ctx, rx, S);
+        JS_FreeValue(ctx, S);
+        return A;
+    }
 
     flags = JS_GetProperty(ctx, rx, JS_ATOM_flags);
     if (JS_IsException(flags))
@@ -61367,80 +61972,105 @@ static int value_buffer_append(ValueBuffer *b, JSValue val)
     return 0;
 }
 
-/* find in 'p' or its prototypes */
-static JSShapeProperty *find_property_regexp(JSProperty **ppr,
-                                             JSObject *p, JSAtom atom)
-{
-    JSShapeProperty *prs;
+/* The places of the properties of RegExp.prototype that RegExp.prototype
+   [Symbol.replace], [Symbol.match] and [Symbol.split] read: JS_AddIntrinsicRegExp
+   adds them in the order of js_regexp_proto_funcs, then constructor. A script
+   that deletes one and adds it again moves it, and the checks below then find
+   another atom at its place and say no. */
+#define JS_REGEXP_PROTO_FLAGS 0
+#define JS_REGEXP_PROTO_GLOBAL 2 /* the 8 flags, in the order of js_regexp_flag_getters */
+#define JS_REGEXP_PROTO_EXEC 10
+#define JS_REGEXP_PROTO_MATCH 15
+#define JS_REGEXP_PROTO_CONSTRUCTOR 19
 
-    for(;;) {
-        prs = find_own_property(ppr, p, atom);
-        if (prs)
-            return prs;
-        p = p->shape->proto;
-        if (!p)
-            return NULL;
-        if (p->is_exotic)
-            return NULL;
-    }
+static const struct {
+    uint16_t atom, mask;
+} js_regexp_flag_getters[8] = {
+    { JS_ATOM_global, LRE_FLAG_GLOBAL },
+    { JS_ATOM_ignoreCase, LRE_FLAG_IGNORECASE },
+    { JS_ATOM_multiline, LRE_FLAG_MULTILINE },
+    { JS_ATOM_dotAll, LRE_FLAG_DOTALL },
+    { JS_ATOM_unicode, LRE_FLAG_UNICODE },
+    { JS_ATOM_unicodeSets, LRE_FLAG_UNICODE_SETS },
+    { JS_ATOM_sticky, LRE_FLAG_STICKY },
+    { JS_ATOM_hasIndices, LRE_FLAG_INDICES },
+};
+
+/* TRUE when f is the C function func with magic made for the realm ctx: a
+   built-in of ctx that the script cannot make again, only move. */
+static BOOL js_regexp_own_cfunc(JSContext *ctx, JSObject *f, void *func, int magic)
+{
+    return f && f->class_id == JS_CLASS_C_FUNCTION &&
+        f->u.cfunc.c_function.generic == func && f->u.cfunc.magic == magic &&
+        f->u.cfunc.realm == ctx;
 }
 
-static BOOL check_regexp_getter(JSContext *ctx,
-                                JSObject *p, JSAtom atom,
-                                JSCFunction *func, int magic)
+/* TRUE when the property at place i of the prototype proto is the getter
+   func with magic of the realm ctx, under the name atom */
+static BOOL js_regexp_proto_getter(JSContext *ctx, JSObject *proto, int i,
+                                   JSAtom atom, void *func, int magic)
 {
-    JSProperty *pr;
-    JSShapeProperty *prs;
+    JSShapeProperty *prs = &get_shape_prop(proto->shape)[i];
 
-    prs = find_property_regexp(&pr, p, atom);
-    if (!prs)
-        return FALSE;
-    if ((prs->flags & JS_PROP_TMASK) != JS_PROP_GETSET)
-        return FALSE;
-    if (!pr->u.getset.getter)
-        return FALSE;
-    return JS_IsCFunction(ctx, JS_MKPTR(JS_TAG_OBJECT, pr->u.getset.getter),
-                          func, magic);
+    return prs->atom == atom && (prs->flags & JS_PROP_TMASK) == JS_PROP_GETSET &&
+        js_regexp_own_cfunc(ctx, proto->prop[i].u.getset.getter, func, magic);
 }
 
+/* TRUE when obj is a regexp of the realm ctx whose replace, match and split
+   can run without the steps of the specification that a script could see:
+   an object of ctx->regexp_shape (its prototype is RegExp.prototype of ctx,
+   its one own property is lastIndex, writable, as the constructor made it),
+   lastIndex a number (ToLength calls nothing), and the flags getter, the 8
+   flag getters and exec of RegExp.prototype the built-ins of ctx. Then reading
+   flags calls no script and gives the flags of the bytecode, and exec is
+   js_regexp_exec. A script that changes one of them, on RegExp.prototype or
+   on the object, makes this FALSE until it puts the built-in back. exec may
+   not have been made yet (JS_PROP_AUTOINIT): it is then the entry of
+   js_regexp_proto_funcs, made for ctx. */
 static BOOL js_is_standard_regexp(JSContext *ctx, JSValueConst obj)
 {
-    JSObject *p;
-    JSProperty *pr;
+    JSObject *p, *proto;
     JSShapeProperty *prs;
+    JSProperty *pr;
+    const JSCFunctionListEntry *e;
     JSCFunctionType ft;
-    
+    int i;
+
     if (JS_VALUE_GET_TAG(obj) != JS_TAG_OBJECT)
         return FALSE;
     p = JS_VALUE_GET_OBJ(obj);
-    if (p->class_id != JS_CLASS_REGEXP)
+    if (p->class_id != JS_CLASS_REGEXP || p->shape != ctx->regexp_shape ||
+        !JS_IsNumber(p->prop[0].u.value))
         return FALSE;
-    /* check that the lastIndex is a number (no side effect while getting it) */
-    prs = find_own_property(&pr, p, JS_ATOM_lastIndex);
-    if (!prs)
+    proto = p->shape->proto;
+    if (proto->shape->prop_count <= JS_REGEXP_PROTO_EXEC)
         return FALSE;
-    if (!JS_IsNumber(pr->u.value))
-        return FALSE;
-
-    /* check the 'exec' method. */
-    prs = find_property_regexp(&pr, p, JS_ATOM_exec);
-    if (!prs)
-        return FALSE;
-    if ((prs->flags & JS_PROP_TMASK) != JS_PROP_NORMAL)
-        return FALSE;
-    if (!JS_IsCFunction(ctx, pr->u.value, js_regexp_exec, 0))
-        return FALSE;
-    /* check the flag getters */
     ft.getter = js_regexp_get_flags;
-    if (!check_regexp_getter(ctx, p, JS_ATOM_flags, ft.generic, 0))
+    if (!js_regexp_proto_getter(ctx, proto, JS_REGEXP_PROTO_FLAGS, JS_ATOM_flags, ft.generic, 0))
         return FALSE;
     ft.getter_magic = js_regexp_get_flag;
-    if (!check_regexp_getter(ctx, p, JS_ATOM_global, ft.generic, LRE_FLAG_GLOBAL))
+    for (i = 0; i < countof(js_regexp_flag_getters); i++) {
+        if (!js_regexp_proto_getter(ctx, proto, JS_REGEXP_PROTO_GLOBAL + i,
+                                    js_regexp_flag_getters[i].atom, ft.generic,
+                                    js_regexp_flag_getters[i].mask))
+            return FALSE;
+    }
+    prs = &get_shape_prop(proto->shape)[JS_REGEXP_PROTO_EXEC];
+    pr = &proto->prop[JS_REGEXP_PROTO_EXEC];
+    if (prs->atom != JS_ATOM_exec)
         return FALSE;
-    if (!check_regexp_getter(ctx, p, JS_ATOM_unicode, ft.generic, LRE_FLAG_UNICODE))
+    switch (prs->flags & JS_PROP_TMASK) {
+    case JS_PROP_NORMAL:
+        return JS_VALUE_GET_TAG(pr->u.value) == JS_TAG_OBJECT &&
+            js_regexp_own_cfunc(ctx, JS_VALUE_GET_OBJ(pr->u.value), js_regexp_exec, 0);
+    case JS_PROP_AUTOINIT:
+        e = pr->u.init.opaque;
+        return js_autoinit_get_realm(pr) == ctx &&
+            js_autoinit_get_id(pr) == JS_AUTOINIT_ID_PROP &&
+            e->def_type == JS_DEF_CFUNC && e->u.func.cfunc.generic == js_regexp_exec;
+    default:
         return FALSE;
-    /* XXX: need to check all accessors, need a faster way.  */
-    return TRUE;
+    }
 }
 
 static JSValue js_regexp_Symbol_replace(JSContext *ctx, JSValueConst this_val,
@@ -61482,9 +62112,14 @@ static JSValue js_regexp_Symbol_replace(JSContext *ctx, JSValueConst this_val,
             goto exception;
     }
 
-    if (!functionalReplace && js_is_standard_regexp(ctx, rx)) {
+    /* while an uncatchable exception is pending (left by a toString of str
+       or rep), the generic path fails at its first call */
+    if (!js_uncatchable_pending(ctx->rt) && js_is_standard_regexp(ctx, rx)) {
         /* use faster version for simple cases */
-        res = js_regexp_replace(ctx, rx, str, rep_val);
+        if (functionalReplace)
+            res = js_regexp_replace_fn(ctx, rx, str, rep);
+        else
+            res = js_regexp_replace(ctx, rx, str, rep_val);
         if (!JS_IsUndefined(res))
             goto done;
     }
@@ -61566,6 +62201,9 @@ static JSValue js_regexp_Symbol_replace(JSContext *ctx, JSValueConst this_val,
             goto exception;
         for(n = 1; n < nCaptures; n++) {
             JSValue capN;
+            /* the length of a result of a custom exec is any number */
+            if ((n & 1023) == 0 && js_poll_interrupts(ctx))
+                goto exception;
             capN = JS_GetPropertyInt64(ctx, result, n);
             if (JS_IsException(capN))
                 goto exception;
@@ -61706,6 +62344,169 @@ exception:
     return JS_EXCEPTION;
 }
 
+/* TRUE when RegExp.prototype[Symbol.split] can split by rx without the
+   splitter the specification makes: rx is a regexp that nothing changed
+   (js_is_standard_regexp), so reading its flags calls no script and gives the
+   flags of its bytecode, and the splitter would be made with no script run
+   either. SpeciesConstructor reads constructor, here the RegExp of ctx, and
+   its Symbol.species, the getter of ctx, and the constructor reads
+   Symbol.match of RegExp.prototype for IsRegExp, a data property. The
+   splitter is then a regexp of the same pattern and flags plus y, of ctx
+   (js_regexp_split_fast). */
+static BOOL js_regexp_split_is_standard(JSContext *ctx, JSValueConst rx)
+{
+    JSObject *proto, *ctor;
+    JSShapeProperty *prs;
+    JSProperty *pr;
+    JSValueConst c;
+    JSCFunctionType ft;
+
+    if (!js_is_standard_regexp(ctx, rx))
+        return FALSE;
+    proto = JS_VALUE_GET_OBJ(rx)->shape->proto;
+    if (proto->shape->prop_count <= JS_REGEXP_PROTO_CONSTRUCTOR)
+        return FALSE;
+    prs = get_shape_prop(proto->shape);
+    if (prs[JS_REGEXP_PROTO_MATCH].atom != JS_ATOM_Symbol_match ||
+        (prs[JS_REGEXP_PROTO_MATCH].flags & JS_PROP_TMASK) == JS_PROP_GETSET)
+        return FALSE;
+    c = proto->prop[JS_REGEXP_PROTO_CONSTRUCTOR].u.value;
+    if (prs[JS_REGEXP_PROTO_CONSTRUCTOR].atom != JS_ATOM_constructor ||
+        (prs[JS_REGEXP_PROTO_CONSTRUCTOR].flags & JS_PROP_TMASK) != JS_PROP_NORMAL ||
+        JS_VALUE_GET_TAG(c) != JS_TAG_OBJECT ||
+        JS_VALUE_GET_OBJ(c) != JS_VALUE_GET_OBJ(ctx->regexp_ctor))
+        return FALSE;
+    ctor = JS_VALUE_GET_OBJ(c);
+    prs = find_own_property(&pr, ctor, JS_ATOM_Symbol_species);
+    ft.getter = js_get_this;
+    return prs && (prs->flags & JS_PROP_TMASK) == JS_PROP_GETSET &&
+        js_regexp_own_cfunc(ctx, pr->u.getset.getter, ft.generic, 0);
+}
+
+/* RegExp.prototype[Symbol.split] of the string str_val by a regexp rx that
+   js_regexp_split_is_standard accepts, with the limit lim. The specification
+   makes a sticky copy of rx and runs it at each position q from the end p of
+   the last piece: after a miss, or a match that ends at p, it steps q over one
+   character (one code point with u or v), and a match at q that ends at e > p
+   cuts the string at q. No script runs in the loop, and the copy, its
+   lastIndex and the arrays of its results cannot be seen, so they are left
+   out: rx itself, unless it is sticky, is run from q by lre_exec, which tries
+   the positions from q in the same order and with the same steps (its loop
+   reads a code point with u or v, as AdvanceStringIndex steps over one, and a
+   position it skips is one where no match can start), runs the same bytecode
+   at each with the captures cleared, and gives the first that matches, with
+   the match the copy finds there. A lookbehind reads the string before the
+   position in both. So one call finds the q at which the loop of the
+   specification next cuts or meets a match that ends at p. The
+   specification never tries a match at size (it tries q < size), and
+   lre_exec_inside does not either: a match there could run long or run
+   out of memory before it fails. A sticky rx is run at each q, as the copy
+   is.
+   lre_exec moves a q in the middle of a surrogate pair back with u or v, but
+   q is never there: it starts at 0, steps over code points and goes to the
+   ends of matches, which read whole code points. The interrupt flag is read
+   first, as the call of the species getter reads it, then before each
+   lre_exec, as the call of exec read it, and lre_exec reads it in a long
+   scan. */
+static JSValue js_regexp_split_fast(JSContext *ctx, JSValueConst rx,
+                                    JSValueConst str_val, uint32_t lim)
+{
+    JSString *str = JS_VALUE_GET_STRING(str_val);
+    uint8_t *bc = JS_VALUE_GET_OBJ(rx)->u.regexp.bytecode->u.str8;
+    uint8_t **capture = NULL, *buf = str->u.str8;
+    int re_flags = lre_get_flags(bc), shift = str->is_wide_char;
+    int capture_count = lre_get_capture_count(bc), alloc_count = lre_get_alloc_count(bc);
+    BOOL sticky = (re_flags & LRE_FLAG_STICKY) != 0;
+    BOOL unicode = (re_flags & (LRE_FLAG_UNICODE | LRE_FLAG_UNICODE_SETS)) != 0;
+    uint32_t size = str->len, p = 0, q = 0, start, e, lengthA = 0;
+    int rc, i;
+    JSValue A, sub;
+
+    /* the generic path reads the flag as it calls the species getter,
+       before it looks at the limit or the string */
+    if (js_poll_interrupts(ctx))
+        return JS_EXCEPTION;
+    A = JS_NewArray(ctx);
+    if (JS_IsException(A) || lim == 0)
+        return A;
+    if (alloc_count > 0) {
+        capture = js_malloc(ctx, sizeof(capture[0]) * alloc_count);
+        if (!capture)
+            goto fail;
+    }
+    if (size == 0) {
+        rc = lre_exec(capture, bc, buf, 0, 0, shift, ctx);
+        if (rc < 0)
+            goto fail_exec;
+        if (rc == 1)
+            goto done;
+        goto add_tail;
+    }
+    while (q < size) {
+        if (js_poll_interrupts(ctx))
+            goto fail;
+        /* a match starts before size: the specification tries q < size */
+        rc = lre_exec_inside(capture, bc, buf, q, size, shift, ctx);
+        if (rc < 0)
+            goto fail_exec;
+        if (rc == 0) {
+            if (!sticky)
+                break;
+            q = string_advance_index(str, q, unicode);
+            continue;
+        }
+        start = (capture[0] - buf) >> shift;
+        e = (capture[1] - buf) >> shift;
+        if (e == p) {
+            /* an empty match at p: start is q and p */
+            q = string_advance_index(str, q, unicode);
+            continue;
+        }
+        sub = js_sub_string(ctx, str, p, start);
+        if (JS_IsException(sub) ||
+            js_regexp_array_push(ctx, A, &lengthA, sub) < 0)
+            goto fail;
+        if (lengthA == lim)
+            goto done;
+        p = e;
+        for (i = 1; i < capture_count; i++) {
+            /* a regexp has up to 32767 groups: the flag every 1024, as the
+               generic path reads it */
+            if ((i & 1023) == 0 && js_poll_interrupts(ctx))
+                goto fail;
+            sub = JS_UNDEFINED;
+            if (capture[2 * i] && capture[2 * i + 1]) {
+                sub = js_sub_string(ctx, str, (capture[2 * i] - buf) >> shift,
+                                    (capture[2 * i + 1] - buf) >> shift);
+                if (JS_IsException(sub))
+                    goto fail;
+            }
+            if (js_regexp_array_push(ctx, A, &lengthA, sub) < 0)
+                goto fail;
+            if (lengthA == lim)
+                goto done;
+        }
+        q = p;
+    }
+add_tail:
+    sub = js_sub_string(ctx, str, p, size);
+    if (JS_IsException(sub) ||
+        js_regexp_array_push(ctx, A, &lengthA, sub) < 0)
+        goto fail;
+done:
+    js_free(ctx, capture);
+    return A;
+fail_exec:
+    if (rc == LRE_RET_TIMEOUT)
+        JS_ThrowInterrupted(ctx);
+    else
+        JS_ThrowOutOfMemory(ctx);
+fail:
+    js_free(ctx, capture);
+    JS_FreeValue(ctx, A);
+    return JS_EXCEPTION;
+}
+
 static JSValue js_regexp_Symbol_split(JSContext *ctx, JSValueConst this_val,
                                        int argc, JSValueConst *argv)
 {
@@ -61729,6 +62530,18 @@ static JSValue js_regexp_Symbol_split(JSContext *ctx, JSValueConst this_val,
     str = JS_ToString(ctx, argv[0]);
     if (JS_IsException(str))
         goto exception;
+    /* a regexp that nothing changed, and a limit whose conversion calls
+       nothing: the steps up to the conversion of the limit call no script
+       either. While an uncatchable exception is pending (left by a toString
+       of str), the generic path fails at its first call. */
+    if ((JS_IsUndefined(argv[1]) || JS_IsNumber(argv[1])) &&
+        !js_uncatchable_pending(ctx->rt) && js_regexp_split_is_standard(ctx, rx)) {
+        lim = 0xffffffff;
+        if (!JS_IsUndefined(argv[1]) && JS_ToUint32(ctx, &lim, argv[1]) < 0)
+            goto exception;
+        A = js_regexp_split_fast(ctx, rx, str, lim);
+        goto done;
+    }
     ctor = JS_SpeciesConstructor(ctx, rx, ctx->regexp_ctor);
     if (JS_IsException(ctor))
         goto exception;
@@ -61801,6 +62614,9 @@ static JSValue js_regexp_Symbol_split(JSContext *ctx, JSValueConst this_val,
                 if (js_get_length64(ctx, &numberOfCaptures, z))
                     goto exception;
                 for(i = 1; i < numberOfCaptures; i++) {
+                    /* the length of a result of a custom exec is any number */
+                    if ((i & 1023) == 0 && js_poll_interrupts(ctx))
+                        goto exception;
                     sub = JS_GetPropertyInt64(ctx, z, i);
                     if (JS_IsException(sub))
                         goto exception;
@@ -62706,13 +63522,42 @@ static JSValue js_json_rawJSON(JSContext *ctx, JSValueConst this_val,
 }
 
 
+/* An object or an array that json_walk_object or json_walk_array writes,
+   while they read its keys and values straight from the object. */
+typedef struct JSONFrame {
+    struct JSONFrame *up; /* the frame of the object or array around it */
+    JSObject *p;
+    int i; /* the place in the shape, or the index, of the value written now */
+    int n; /* the count of the shape's properties, or the length */
+    BOOL is_array;
+    /* code may have run: what is left is read as the general path reads it,
+       the keys of an object from keys, the keys it had after i before any
+       code ran, as the general path lists them at the start */
+    BOOL ran;
+    JSAtom *keys;
+    int nkeys;
+} JSONFrame;
+
+/* the objects open at once that the stack holds without an allocation */
+#define JSON_STACK_INLINE 32
+
 typedef struct JSONStringifyContext {
     JSValueConst replacer_func;
-    JSValue stack;
     JSValue property_list;
     JSValue gap;
     JSValue empty;
     StringBuffer *b;
+    /* the objects and arrays open now, the outermost first, for the check of
+       a cycle: each is held by the caller that writes it */
+    JSObject **stack;
+    int stack_len, stack_size;
+    JSObject *stack_inline[JSON_STACK_INLINE];
+    /* no replacer function, no property list and no gap: plain objects and
+       arrays take json_walk_object and json_walk_array */
+    BOOL plain;
+    JSONFrame *frames; /* the innermost walk, or NULL */
+    /* a prototype whose chain has no toJSON, or NULL: true until code runs */
+    JSObject *proto_ok;
 } JSONStringifyContext;
 
 /* Put the run of characters of p from *pi that JSON.stringify keeps as
@@ -62846,12 +63691,93 @@ static int JS_ToQuotedStringFree(JSContext *ctx, StringBuffer *b, JSValue val) {
     return ret;
 }
 
+/* Whether the shape property prs is a key JSON.stringify lists for an
+   object: present, enumerable and a string (EnumerableOwnProperties). */
+static inline BOOL json_key_listed(JSRuntime *rt, const JSShapeProperty *prs)
+{
+    JSAtom atom = prs->atom;
+
+    if (atom == JS_ATOM_NULL || !(prs->flags & JS_PROP_ENUMERABLE))
+        return FALSE;
+    return __JS_AtomIsTaggedInt(atom) ||
+        rt->atom_array[atom]->atom_type == JS_ATOM_TYPE_STRING;
+}
+
+/* Call before anything that may run code of the script: a toJSON method, a
+   getter, a proxy trap, the replacer, a toString or valueOf. The walks of
+   json_walk_object and json_walk_array that are open read their object
+   straight until then, which is right only while no code runs, since code
+   may add, delete or change any property. So each that has not yet keeps
+   the keys it has left now, as the general path listed them at its start:
+   nothing has changed them since, as no code ran. Returns -1 when that runs
+   out of memory. */
+static int json_may_run(JSContext *ctx, JSONStringifyContext *jsc)
+{
+    JSONFrame *f;
+
+    jsc->proto_ok = NULL;
+    for (f = jsc->frames; f && !f->ran; f = f->up) {
+        if (!f->is_array) {
+            JSShapeProperty *prs = get_shape_prop(f->p->shape);
+            int i, n = 0;
+
+            for (i = f->i + 1; i < f->n; i++)
+                n += json_key_listed(ctx->rt, &prs[i]);
+            if (n) {
+                f->keys = js_malloc(ctx, sizeof(f->keys[0]) * n);
+                if (!f->keys)
+                    return -1;
+                for (i = f->i + 1; i < f->n; i++) {
+                    if (json_key_listed(ctx->rt, &prs[i]))
+                        f->keys[f->nkeys++] = JS_DupAtom(ctx, prs[i].atom);
+                }
+            }
+        }
+        f->ran = TRUE;
+    }
+    return 0;
+}
+
+/* Open the object p, or throw the TypeError of a cycle when it is open
+   already. */
+static int json_stack_push(JSContext *ctx, JSONStringifyContext *jsc, JSObject *p)
+{
+    int i;
+
+    for (i = 0; i < jsc->stack_len; i++) {
+        if (jsc->stack[i] == p) {
+            JS_ThrowTypeError(ctx, "circular reference");
+            return -1;
+        }
+    }
+    if (unlikely(jsc->stack_len >= jsc->stack_size)) {
+        int size = jsc->stack_size * 2;
+        JSObject **stack;
+
+        if (jsc->stack == jsc->stack_inline) {
+            stack = js_malloc(ctx, sizeof(stack[0]) * size);
+            if (stack)
+                memcpy(stack, jsc->stack, sizeof(stack[0]) * jsc->stack_len);
+        } else {
+            stack = js_realloc(ctx, jsc->stack, sizeof(stack[0]) * size);
+        }
+        if (!stack)
+            return -1;
+        jsc->stack = stack;
+        jsc->stack_size = size;
+    }
+    jsc->stack[jsc->stack_len++] = p;
+    return 0;
+}
+
 static JSValue js_json_check(JSContext *ctx, JSONStringifyContext *jsc,
                              JSValueConst holder, JSValue val, JSValueConst key)
 {
     JSValue v;
     JSValueConst args[2];
 
+    if (json_may_run(ctx, jsc))
+        goto exception;
     /* check for object.toJSON method */
     /* ECMA specifies this is done only for Object and BigInt */
     if (JS_IsObject(val) || JS_IsBigInt(ctx, val)) {
@@ -62907,6 +63833,404 @@ exception:
 static int js_json_to_str(JSContext *ctx, JSONStringifyContext *jsc,
                           JSValueConst holder, JSValue val,
                           JSValueConst indent);
+
+/* The walks: JSON.stringify of an ordinary object or a fast array with no
+   replacer function, no property list and no gap, the common call, write it
+   from its shape and its values without the general path's array of keys,
+   a read of each key by its string, the lookup of toJSON on every value and
+   the quote of each key a character at a time. They write what the general
+   path writes and run the same code of the script in the same order: they
+   leave to it every value that may run code or that they do not know
+   (json_put_property, json_put_element), and before such code runs every
+   open walk switches to the general path for the rest of its object
+   (json_may_run). A value still reads the interrupt flag and takes its
+   level (json_leaf_enter), an object or array the same checks as before
+   (js_json_to_str), and a cycle throws the same TypeError
+   (json_stack_push). JS_JSON_WALK() set to 0 leaves them out and
+   JS_JSON_WALKED() counts each object and array they write, for the test
+   that compares the two paths (white.c). */
+#ifndef JS_JSON_WALK
+#define JS_JSON_WALK() 1
+#endif
+#ifndef JS_JSON_WALKED
+#define JS_JSON_WALKED() ((void)0)
+#endif
+
+/* a key of at most this many characters of 8 bits is checked for
+   characters to escape and copied in one piece */
+#define JSON_KEY_SHORT 128
+
+/* The checks js_json_to_str makes before each value, for a value a walk
+   writes itself: the interrupt flag, and a level of the internal depth, so
+   that the deepest data that fits is the same as on the general path. */
+static force_inline int json_leaf_enter(JSContext *ctx)
+{
+    if (js_poll_interrupts(ctx) || js_json_enter(ctx))
+        return -1;
+    js_internal_leave(ctx->rt);
+    return 0;
+}
+
+/* Whether a read of toJSON on the object o finds nothing and runs no code:
+   o and its prototypes have no own property of that name and are not
+   exotic (a fast array is, but its own properties for a name that is no
+   index are those of its shape). A prototype found so is kept in
+   jsc->proto_ok, so the next object of the same prototype checks only its
+   own shape. json_may_run forgets it: until code runs no property of any
+   object can change, and the walk holds each object it passes. */
+static BOOL json_no_tojson(JSONStringifyContext *jsc, JSObject *o)
+{
+    JSObject *q;
+
+    for (q = o; q; q = q->shape->proto) {
+        if (q == jsc->proto_ok)
+            return TRUE;
+        if (q->is_exotic && !goasm_field_goes_on(q, JS_ATOM_toJSON))
+            return FALSE;
+        if (find_own_property1(q, JS_ATOM_toJSON))
+            return FALSE;
+    }
+    jsc->proto_ok = o->shape->proto;
+    return TRUE;
+}
+
+/* a number as js_primitive_to_string writes it, null when it is not finite */
+static no_inline int json_put_float64(StringBuffer *b, double d)
+{
+    JSDTOATempMem dtoa_mem;
+    char buf[32];
+    int len;
+
+    if (!isfinite(d))
+        return string_buffer_write8(b, (const uint8_t *)"null", 4);
+    len = js_dtoa(buf, d, 10, 0, JS_DTOA_FORMAT_FREE, &dtoa_mem);
+    return string_buffer_write8(b, (const uint8_t *)buf, len);
+}
+
+/* Write the key ks of an object, quoted, and the colon after it, after a
+   comma when comma is set. A short key of 8 bits with no character to
+   escape, the common one, goes in one copy and counts the work
+   JS_ToQuotedString counts for it. */
+static int json_put_key(JSContext *ctx, StringBuffer *b, JSString *ks, BOOL comma)
+{
+    if (!ks->is_wide_char && ks->len <= JSON_KEY_SHORT) {
+        const uint8_t *s = ks->u.str8;
+        int i, n = ks->len, need;
+
+        for (i = 0; i < n; i++) {
+            uint32_t c = s[i];
+            if (c < 0x20 || c == '\"' || c == '\\')
+                goto slow;
+        }
+        need = n + 3 + comma;
+        if (b->len + need > b->size &&
+            string_buffer_realloc(b, b->len + need, 0))
+            return -1;
+        if (!b->is_wide_char) {
+            uint8_t *d = b->str->u.str8 + b->len;
+            if (comma)
+                *d++ = ',';
+            *d++ = '\"';
+            memcpy(d, s, n);
+            d += n;
+            d[0] = '\"';
+            d[1] = ':';
+        } else {
+            uint16_t *d = b->str->u.str16 + b->len;
+            if (comma)
+                *d++ = ',';
+            *d++ = '\"';
+            for (i = 0; i < n; i++)
+                d[i] = s[i];
+            d[n] = '\"';
+            d[n + 1] = ':';
+            JS_WORK(n);
+        }
+        JS_WORK(n);
+        b->len += need;
+        return 0;
+    }
+ slow:
+    if (comma && string_buffer_putc8(b, ','))
+        return -1;
+    if (JS_ToQuotedString(ctx, b, JS_MKPTR(JS_TAG_STRING, ks)))
+        return -1;
+    return string_buffer_putc8(b, ':');
+}
+
+/* The value v of the key atom of the object holder, as js_json_to_str1
+   writes a property: through js_json_check, which runs json_may_run.
+   Takes v. */
+static int json_put_property(JSContext *ctx, JSONStringifyContext *jsc,
+                             JSValueConst holder, JSAtom atom, JSValue v,
+                             BOOL *has_content)
+{
+    JSValue prop;
+    int ret = -1;
+
+    prop = JS_AtomToString(ctx, atom);
+    v = js_json_check(ctx, jsc, holder, v, prop);
+    if (JS_IsException(v))
+        goto done;
+    if (!JS_IsUndefined(v)) {
+        if ((*has_content && string_buffer_putc8(jsc->b, ',')) ||
+            JS_ToQuotedString(ctx, jsc->b, prop) ||
+            string_buffer_putc8(jsc->b, ':')) {
+            JS_FreeValue(ctx, v);
+            goto done;
+        }
+        if (js_json_to_str(ctx, jsc, holder, v, jsc->empty))
+            goto done;
+        *has_content = TRUE;
+    }
+    ret = 0;
+ done:
+    JS_FreeValue(ctx, prop);
+    return ret;
+}
+
+/* The element i of the array holder, read already into v, as js_json_to_str1
+   writes it after its comma. Takes v. */
+static int json_put_element(JSContext *ctx, JSONStringifyContext *jsc,
+                            JSValueConst holder, int64_t i, JSValue v)
+{
+    JSValue prop;
+
+    prop = JS_ToStringFree(ctx, JS_NewInt64(ctx, i));
+    if (JS_IsException(prop)) {
+        JS_FreeValue(ctx, v);
+        return -1;
+    }
+    v = js_json_check(ctx, jsc, holder, v, prop);
+    JS_FreeValue(ctx, prop);
+    if (JS_IsException(v))
+        return -1;
+    if (JS_IsUndefined(v))
+        v = JS_NULL;
+    return js_json_to_str(ctx, jsc, holder, v, jsc->empty);
+}
+
+/* Write the value v of a walk, which v does not give: 0 when it was
+   written, 1 when it is left out (undefined, a function, a symbol: a key
+   of an object is then not written, an element of an array is null), 2
+   when it goes to the general path, -1 on an exception. key is the key of
+   an object, written first, or NULL for an element of an array. */
+static force_inline int json_put_value(JSContext *ctx, JSONStringifyContext *jsc,
+                                       JSValueConst holder, JSValueConst v,
+                                       JSString *key, BOOL comma)
+{
+    StringBuffer *b = jsc->b;
+    uint32_t tag = JS_VALUE_GET_TAG(v);
+
+    switch (tag) {
+    case JS_TAG_OBJECT:
+        {
+            JSObject *o = JS_VALUE_GET_OBJ(v);
+            if (o->class_id == JS_CLASS_BACKTRACE || !json_no_tojson(jsc, o))
+                return 2;
+            if (JS_IsFunction(ctx, v))
+                return 1;
+            if (key && json_put_key(ctx, b, key, comma))
+                return -1;
+            return js_json_to_str(ctx, jsc, holder, JS_DupValue(ctx, v),
+                                  jsc->empty);
+        }
+    case JS_TAG_UNDEFINED:
+    case JS_TAG_SYMBOL:
+        return 1;
+    case JS_TAG_STRING:
+    case JS_TAG_STRING_ROPE:
+    case JS_TAG_INT:
+    case JS_TAG_FLOAT64:
+    case JS_TAG_BOOL:
+    case JS_TAG_NULL:
+        break;
+    default:
+        /* a BigInt, whose toJSON is looked up on its prototype */
+        return 2;
+    }
+    if (json_leaf_enter(ctx))
+        return -1;
+    if (key && json_put_key(ctx, b, key, comma))
+        return -1;
+    switch (tag) {
+    case JS_TAG_INT:
+        {
+            char buf[16];
+            int len = i32toa(buf, JS_VALUE_GET_INT(v));
+            return string_buffer_write8(b, (const uint8_t *)buf, len);
+        }
+    case JS_TAG_FLOAT64:
+        return json_put_float64(b, JS_VALUE_GET_FLOAT64(v));
+    case JS_TAG_BOOL:
+        if (JS_VALUE_GET_BOOL(v))
+            return string_buffer_write8(b, (const uint8_t *)"true", 4);
+        return string_buffer_write8(b, (const uint8_t *)"false", 5);
+    case JS_TAG_NULL:
+        return string_buffer_write8(b, (const uint8_t *)"null", 4);
+    default:
+        return JS_ToQuotedString(ctx, b, v);
+    }
+}
+
+/* Write the ordinary object p (val) from its shape: 0 when written, -1 on
+   an exception, 1 when p has a key the walk does not take (an array index,
+   which the general path puts first, or an enumerable accessor), with
+   nothing done. */
+static int json_walk_object(JSContext *ctx, JSONStringifyContext *jsc,
+                            JSValueConst val, JSObject *p)
+{
+    JSRuntime *rt = ctx->rt;
+    JSShape *sh = p->shape;
+    JSShapeProperty *prs = get_shape_prop(sh);
+    JSONFrame f;
+    BOOL has_content = FALSE;
+    int i, ret;
+
+    if (!JS_JSON_WALK())
+        return 1;
+    for (i = 0; i < sh->prop_count; i++) {
+        JSAtom atom = prs[i].atom;
+        JSString *ks;
+        uint32_t idx;
+
+        if (!json_key_listed(rt, &prs[i]))
+            continue;
+        if (__JS_AtomIsTaggedInt(atom) ||
+            (prs[i].flags & JS_PROP_TMASK) != JS_PROP_NORMAL)
+            return 1;
+        /* a string atom that is an array index: key_atom is 0 for those,
+           and for "" and the other strings that start with a digit */
+        ks = rt->atom_array[atom];
+        if (ks->key_atom == JS_ATOM_NULL && is_num_string(&idx, ks) &&
+            idx != 0xffffffff)
+            return 1;
+    }
+    JS_JSON_WALKED();
+    if (json_stack_push(ctx, jsc, p))
+        return -1;
+    if (string_buffer_putc8(jsc->b, '{'))
+        return -1;
+    f.up = jsc->frames;
+    f.p = p;
+    f.i = -1;
+    f.n = sh->prop_count;
+    f.is_array = FALSE;
+    f.ran = FALSE;
+    f.keys = NULL;
+    f.nkeys = 0;
+    jsc->frames = &f;
+    for (i = 0; i < f.n; i++) {
+        /* no code ran: p has the shape sh still */
+        if (!json_key_listed(rt, &prs[i]))
+            continue;
+        f.i = i;
+        ret = json_put_value(ctx, jsc, val, p->prop[i].u.value,
+                             rt->atom_array[prs[i].atom], has_content);
+        if (ret == 0) {
+            has_content = TRUE;
+        } else if (ret == 2) {
+            /* read again as the general path reads it */
+            JSValue v = JS_GetProperty(ctx, val, prs[i].atom);
+            if (JS_IsException(v) ||
+                json_put_property(ctx, jsc, val, prs[i].atom, v, &has_content))
+                goto fail;
+        } else if (ret < 0) {
+            goto fail;
+        }
+        if (f.ran)
+            break;
+    }
+    /* code ran: the keys left, read as the general path reads them */
+    for (i = 0; i < f.nkeys; i++) {
+        JSValue v = JS_GetProperty(ctx, val, f.keys[i]);
+        if (JS_IsException(v) ||
+            json_put_property(ctx, jsc, val, f.keys[i], v, &has_content))
+            goto fail;
+    }
+    ret = 0;
+    if (string_buffer_putc8(jsc->b, '}'))
+        ret = -1;
+    jsc->stack_len--;
+ done:
+    jsc->frames = f.up;
+    for (i = 0; i < f.nkeys; i++)
+        JS_FreeAtom(ctx, f.keys[i]);
+    js_free(ctx, f.keys);
+    return ret;
+ fail:
+    ret = -1;
+    goto done;
+}
+
+/* Write the Array p (val) from its elements: 0 when written, -1 on an
+   exception, 1 when it is not a fast array whose count is its length, with
+   nothing done. Its length is read once, as the general path reads it. */
+static int json_walk_array(JSContext *ctx, JSONStringifyContext *jsc,
+                           JSValueConst val, JSObject *p)
+{
+    JSONFrame f;
+    JSValue v;
+    uint32_t len, i;
+    int ret;
+
+    if (!JS_JSON_WALK() || !p->fast_array ||
+        JS_VALUE_GET_TAG(p->prop[0].u.value) != JS_TAG_INT)
+        return 1;
+    len = JS_VALUE_GET_INT(p->prop[0].u.value);
+    if (len != p->u.array.count)
+        return 1;
+    JS_JSON_WALKED();
+    if (json_stack_push(ctx, jsc, p))
+        return -1;
+    if (string_buffer_putc8(jsc->b, '['))
+        return -1;
+    f.up = jsc->frames;
+    f.p = p;
+    f.i = -1;
+    f.n = len;
+    f.is_array = TRUE;
+    f.ran = FALSE;
+    f.keys = NULL;
+    f.nkeys = 0;
+    jsc->frames = &f;
+    for (i = 0; i < len; i++) {
+        if (i > 0 && string_buffer_putc8(jsc->b, ','))
+            goto fail;
+        f.i = i;
+        if (!f.ran) {
+            /* no code ran: the elements are those of the start */
+            ret = json_put_value(ctx, jsc, val, p->u.array.u.values[i], NULL, FALSE);
+            if (ret == 1) {
+                if (json_leaf_enter(ctx) ||
+                    string_buffer_write8(jsc->b, (const uint8_t *)"null", 4))
+                    goto fail;
+                continue;
+            }
+            if (ret != 2) {
+                if (ret < 0)
+                    goto fail;
+                continue;
+            }
+            v = JS_DupValue(ctx, p->u.array.u.values[i]);
+        } else {
+            v = JS_GetPropertyInt64(ctx, val, i);
+            if (JS_IsException(v))
+                goto fail;
+        }
+        if (json_put_element(ctx, jsc, val, i, v))
+            goto fail;
+    }
+    if (string_buffer_putc8(jsc->b, ']'))
+        goto fail;
+    jsc->stack_len--;
+    jsc->frames = f.up;
+    return 0;
+ fail:
+    jsc->frames = f.up;
+    return -1;
+}
+
 static int js_json_to_str1(JSContext *ctx, JSONStringifyContext *jsc,
                           JSValueConst holder, JSValue val,
                           JSValueConst indent)
@@ -62926,6 +64250,18 @@ static int js_json_to_str1(JSContext *ctx, JSONStringifyContext *jsc,
     if (JS_IsObject(val)) {
         p = JS_VALUE_GET_OBJ(val);
         cl = p->class_id;
+        if (jsc->plain && (cl == JS_CLASS_OBJECT || cl == JS_CLASS_ARRAY)) {
+            if (cl == JS_CLASS_OBJECT)
+                ret = json_walk_object(ctx, jsc, val, p);
+            else
+                ret = json_walk_array(ctx, jsc, val, p);
+            if (ret <= 0) {
+                JS_FreeValue(ctx, val);
+                return ret;
+            }
+        }
+        if (json_may_run(ctx, jsc))
+            goto exception;
         if (cl == JS_CLASS_STRING) {
             val = JS_ToStringFree(ctx, val);
             if (JS_IsException(val))
@@ -62949,13 +64285,8 @@ static int js_json_to_str1(JSContext *ctx, JSONStringifyContext *jsc,
             val = val1;
             goto concat_value;
         }
-        v = js_array_includes(ctx, jsc->stack, 1, (JSValueConst *)&val);
-        if (JS_IsException(v))
+        if (json_stack_push(ctx, jsc, p))
             goto exception;
-        if (JS_ToBoolFree(ctx, v)) {
-            JS_ThrowTypeError(ctx, "circular reference");
-            goto exception;
-        }
         indent1 = JS_ConcatString(ctx, JS_DupValue(ctx, indent), JS_DupValue(ctx, jsc->gap));
         if (JS_IsException(indent1))
             goto exception;
@@ -62970,9 +64301,6 @@ static int js_json_to_str1(JSContext *ctx, JSONStringifyContext *jsc,
             sep = JS_DupValue(ctx, jsc->empty);
             sep1 = JS_DupValue(ctx, jsc->empty);
         }
-        v = js_array_push(ctx, jsc->stack, 1, (JSValueConst *)&val, 0);
-        if (check_exception_free(ctx, v))
-            goto exception;
         ret = JS_IsArray(ctx, val);
         if (ret < 0)
             goto exception;
@@ -63051,8 +64379,7 @@ static int js_json_to_str1(JSContext *ctx, JSONStringifyContext *jsc,
             }
             string_buffer_putc8(jsc->b, '}');
         }
-        if (check_exception_free(ctx, js_array_pop(ctx, jsc->stack, 0, NULL, 0)))
-            goto exception;
+        jsc->stack_len--;
         JS_FreeValue(ctx, val);
         JS_FreeValue(ctx, tab);
         JS_FreeValue(ctx, sep);
@@ -63122,18 +64449,20 @@ JSValue JS_JSONStringify(JSContext *ctx, JSValueConst obj,
     int64_t i, j, n;
 
     jsc->replacer_func = JS_UNDEFINED;
-    jsc->stack = JS_UNDEFINED;
     jsc->property_list = JS_UNDEFINED;
     jsc->gap = JS_UNDEFINED;
     jsc->b = &b_s;
+    jsc->stack = jsc->stack_inline;
+    jsc->stack_len = 0;
+    jsc->stack_size = JSON_STACK_INLINE;
+    jsc->plain = FALSE;
+    jsc->frames = NULL;
+    jsc->proto_ok = NULL;
     jsc->empty = JS_AtomToString(ctx, JS_ATOM_empty_string);
     ret = JS_UNDEFINED;
     wrapper = JS_UNDEFINED;
 
     string_buffer_init(ctx, jsc->b, 0);
-    jsc->stack = JS_NewArray(ctx);
-    if (JS_IsException(jsc->stack))
-        goto exception;
     if (JS_IsFunction(ctx, replacer)) {
         jsc->replacer_func = replacer;
     } else {
@@ -63219,6 +64548,8 @@ JSValue JS_JSONStringify(JSContext *ctx, JSValueConst obj,
     JS_FreeValue(ctx, space);
     if (JS_IsException(jsc->gap))
         goto exception;
+    jsc->plain = JS_IsUndefined(jsc->replacer_func) &&
+        JS_IsUndefined(jsc->property_list) && JS_IsEmptyString(jsc->gap);
     wrapper = JS_NewObject(ctx);
     if (JS_IsException(wrapper))
         goto exception;
@@ -63249,7 +64580,8 @@ done:
     JS_FreeValue(ctx, jsc->empty);
     JS_FreeValue(ctx, jsc->gap);
     JS_FreeValue(ctx, jsc->property_list);
-    JS_FreeValue(ctx, jsc->stack);
+    if (jsc->stack != jsc->stack_inline)
+        js_free(ctx, jsc->stack);
     return ret;
 }
 

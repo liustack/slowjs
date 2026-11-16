@@ -29,6 +29,11 @@ typedef struct RVEnt {
 #define RV_LEAD_CATCH 8 /* the target of a catch, which only an exception reaches */
 #define RV_LEAD_OTHER 16 /* the target of a jump that is not a catch */
 
+/* what rv_one leaves to rv_code to read after the instruction (rv_deferred),
+   so that no function the pass calls from rv_one calls rv_one again */
+#define RV_DEFER_CHAIN 1  /* rv_chain_store: the slot and keep */
+#define RV_DEFER_ROTATE 2 /* rv_rotate: the target of the goto and the branch */
+
 /* the entries of a folded Array of the stack (engine/regvm-fold.h): 32,
    then RV_FOLD_RMIN when that does not fit, or fewer in the test build
    that folds every function it can. RV_FOLD_LMAX levels of Arrays of
@@ -109,6 +114,10 @@ typedef struct RVPass {
     int ipos, iprev;    /* QuickJS's dispatch of it, the one before */
 #endif
     int skip_to;        /* the old instructions before it were read with the last one */
+    int rot_br, rot_body; /* the branch of a loop test read again at its goto, and the body it
+                           jumps back to (rv_rotate, regvm-ops-cmp.h), -1 for none */
+    int defer, defer_a, defer_b; /* RV_DEFER_ of what the instruction just read
+                           leaves to rv_code, and its operands (rv_deferred) */
     BOOL wide;          /* slots below F past -128: rv_wide_one reads first, and
                            the frame has a scratch slot past its stack */
     BOOL vr_heap;       /* the var_refs of the closure state are on the heap
@@ -784,6 +793,13 @@ static void rv_jump_throws_p(RVPass *s, const RVMask *mask, int q, BOOL own)
         target = q + 1 + (int32_t)get_u32(p + 1);
         next = q + 5;
     }
+    if (q == s->rot_br) {
+        /* the branch read again at the end of its loop (rv_rotate): it
+           jumps where the old one does not */
+        int32_t t = target;
+        target = next;
+        next = t;
+    }
     rv_pcmap_put_p(s, end - 1 - own, target - 1, mask);
     rv_pcmap_put_p(s, end - own, next - 1, mask);
     if (own)
@@ -1177,6 +1193,27 @@ static void rv_one(RVPass *s, int pos)
     (void)i;
 }
 
+/* what the instruction at pos left to read after it (s->defer): rv_code
+   calls it after rv_one, and it calls rv_one for the instructions it reads,
+   none of which leaves anything */
+static void rv_deferred(RVPass *s, int pos)
+{
+    int what = s->defer;
+    s->defer = 0;
+    switch (what) {
+    case RV_DEFER_CHAIN:
+        rv_chain_store(s, pos, s->defer_a, s->defer_b);
+        break;
+    case RV_DEFER_ROTATE:
+        rv_rotate(s, s->defer_a, s->defer_b);
+        break;
+    default:
+        abort();
+    }
+    if (s->defer)
+        abort();
+}
+
 /* whether newpc has the old offset pos: a leader that is reached, which a
    whole round of rv_code gave its new offset. Nothing else of newpc is
    written in the round (it holds the work list of rv_depths). */
@@ -1303,6 +1340,8 @@ static int rv_code(RVPass *s)
             rv_fold_before(s, pos);
         if (!s->failed)
             rv_one(s, pos);
+        if (s->defer && !s->failed)
+            rv_deferred(s, pos);
         if (s->failed) {
             rt->rv_stat[3] = s->bc[pos];
             rt->rv_stat[4] = pos;
@@ -1501,6 +1540,8 @@ static void rv_round_init(RVPass *s)
     s->last_dst = -1;
     s->skip_to = 0;
     s->drop_at = -1;
+    s->rot_br = s->rot_body = -1;
+    s->defer = 0;
     s->fi_n = 0;
     s->failed = FALSE;
     s->args = FALSE;

@@ -1,0 +1,4 @@
+result v|1,v;3|,,3;1|1|1;s|s;1,2|1,2;[9]|[[9]];2|0,2,2;32|0,2,8,22;w|got;p|p;set f=w,set 0=p;TypeError|old;TypeError|old;TypeError|old;none|6;uncaught TypeError;TypeError|old;3;true,true,true;v|1,v;3|,,3;1|1|1;s|s;1,2|1,2;[9]|[[9]];2|0,2,2;32|0,2,8,22;w|got;p|p;set f=w,set 0=p;TypeError|old;TypeError|old;TypeError|old;none|6;uncaught TypeError;TypeError|old;3;true,true,true;v|1,v;3|,,3;1|1|1;s|s;1,2|1,2;[9]|[[9]];2|0,2,2;32|0,2,8,22;w|got;p|p;set f=w,set 0=p;TypeError|old;TypeError|old;TypeError|old;none|6;uncaught TypeError;TypeError|old;3;true,true,true
+mem-end obj=191 atom=547 shape=126 prop=952 jsfunc=0 cfunc=128 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=191 atom=547 shape=126 prop=952 jsfunc=0 cfunc=128 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

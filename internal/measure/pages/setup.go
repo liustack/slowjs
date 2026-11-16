@@ -19,6 +19,7 @@ package pages
 
 import (
 	"fmt"
+	"path/filepath"
 	"time"
 
 	"github.com/liustack/slowjs"
@@ -34,13 +35,13 @@ type Mode string
 const (
 	// Tifa is a VM set up as tifa's internal/ssr sets up each VM of its pool (Load and RenderVM of
 	// renderer.go, the collections of pool.go): the memory limit, a call depth of 10000, the eval
-	// timeout, tifa.Register, the bundle loaded as shared bytecode, and a render as RenderVM
-	// makes it.
+	// timeout, tifa.Register, the bundle loaded as shared bytecode, a render as RenderVM makes it,
+	// and after each collection outside a render the jobs it queued (runFinalizers).
 	Tifa Mode = "tifa"
 	// StandIn is the program that measured the pages of v0.31.1 and before, as it was: a VM with
 	// the memory limit and no other, __tifa_murmur2__ and the four functions of the engine but not
-	// the random bytes and the async context, a stand-in Intl in place of intl, temporal and url
-	// (the preludes hostjs.js and engine/pgo/pages/fakeintl.js), the bundle evaluated as source,
+	// the random bytes and the async context, a stand-in Intl and URL in place of intl, temporal and url
+	// (the preludes of StandInPreludes), the bundle evaluated as source,
 	// the collections of tifa's pool without giving memory back, and a render that calls
 	// startRender by name. Its numbers compare with those of that program.
 	StandIn Mode = "standin"
@@ -108,13 +109,13 @@ func (s Setup) Describe(limit uintptr, timeout time.Duration) string {
 		if s.Bare {
 			what = "url, intl and temporal as tifa registers them, no tifa hook"
 		}
-		return fmt.Sprintf("mode %s: %s, %s, call depth %d, eval timeout %v, the bundle as shared bytecode, a render as tifa's RenderVM, tifa's collections with memory given back after a full one", s.Name(), what, lim, stackDepth, timeout)
+		return fmt.Sprintf("mode %s: %s, %s, call depth %d, eval timeout %v, the bundle as shared bytecode, a render as tifa's RenderVM, tifa's collections with memory given back after a full one, and the jobs a collection queued run after it", s.Name(), what, lim, stackDepth, timeout)
 	default:
 		what := "__tifa_murmur2__ and the four functions of the engine"
 		if s.Bare {
 			what = "no tifa hook"
 		}
-		return fmt.Sprintf("mode %s: %s, a stand-in Intl and no url or temporal, %s, the engine's call depth and no eval timeout, the bundle as source, startRender called by name, tifa's collections without giving memory back", s.Name(), what, lim)
+		return fmt.Sprintf("mode %s: %s, a stand-in Intl and URL and no temporal, %s, the engine's call depth and no eval timeout, the bundle as source, startRender called by name, tifa's collections without giving memory back", s.Name(), what, lim)
 	}
 }
 
@@ -162,4 +163,16 @@ func (s Setup) NewVM(limit uintptr, timeout time.Duration) (vm *slowjs.VM, err e
 		return vm, nil
 	}
 	return nil, fmt.Errorf("pages: no mode %q (tifa or standin)", s.Mode)
+}
+
+// StandInPreludes are the preludes of the stand-in mode in the checkout repo: the host stand-ins
+// of hostjs.js, the Intl of engine/pgo/pages/fakeintl.js and the URL of
+// engine/pgo/pages/fakeurl.js. The program the mode reproduces had no URL prelude: the bundles
+// it measured carried core-js's URL, and those of tifa 63a2099e and later ask the host for one.
+func StandInPreludes(repo string) []string {
+	return []string{
+		filepath.Join(repo, "internal", "measure", "pages", "hostjs.js"),
+		filepath.Join(repo, "engine", "pgo", "pages", "fakeintl.js"),
+		filepath.Join(repo, "engine", "pgo", "pages", "fakeurl.js"),
+	}
 }

@@ -16,6 +16,6 @@ result finally 31 912
 result finally 32 912
 result try 48  90
 result for-of 16 1 32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:2 32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:2
-mem-end obj=193 atom=552 shape=126 prop=953 jsfunc=0 cfunc=131 array=1 fast_array=1 elements=0 binary=0
-mem-gc obj=193 atom=552 shape=126 prop=953 jsfunc=0 cfunc=131 array=1 fast_array=1 elements=0 binary=0
+mem-end obj=192 atom=552 shape=126 prop=951 jsfunc=0 cfunc=130 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=192 atom=552 shape=126 prop=951 jsfunc=0 cfunc=130 array=1 fast_array=1 elements=0 binary=0
 --- status exit 0

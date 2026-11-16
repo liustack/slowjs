@@ -84,6 +84,15 @@ static unsigned long white_shape_hits;
 #define JS_SHAPE_ID_CHECK 1
 #define JS_SHAPE_ID_HIT() (white_shape_hits++)
 
+/* JS_JSON_WALK() is 0 while white_json_walk_off is set: JSON.stringify then
+   writes every object and array on its general path, for the test that
+   compares the two. JS_JSON_WALKED counts the objects and arrays the walks
+   wrote. */
+static int white_json_walk_off;
+static unsigned long white_json_walked;
+#define JS_JSON_WALK() (!white_json_walk_off)
+#define JS_JSON_WALKED() (white_json_walked++)
+
 /* JS_GC_RUN counts the collections that run, full (0) and young (1). */
 static unsigned long white_gc_runs[2];
 #define JS_GC_RUN(young) (white_gc_runs[young]++)
@@ -939,6 +948,19 @@ int white_regexp_cache(JSRuntime *rt, char *out, size_t cap, size_t *bytes,
     return count;
 }
 
+/* ---- regexps that nothing changed ---- */
+
+/* 1 when the value of the global name of ctx is a regexp whose replace and
+   match take the fast paths (js_is_standard_regexp), else 0 */
+int white_regexp_standard(JSContext *ctx, const char *name)
+{
+    JSValue v = JS_GetPropertyStr(ctx, ctx->global_obj, name);
+    int r = js_is_standard_regexp(ctx, v);
+
+    JS_FreeValue(ctx, v);
+    return r;
+}
+
 /* ---- one request to the heap that fails ---- */
 
 /* Compile js (not run) in ctx with request number fail failing, 0 for none, and
@@ -1650,6 +1672,39 @@ const uint8_t *white_regvm_code(JSValueConst f, int *code_len)
         return NULL;
     *code_len = rf->code_len;
     return rf->code;
+}
+
+/* the reads of a name of the function f, converted (GETF, GETFL and GETFT,
+   found by their pcmap entries, which end the 15 bytes of the
+   instruction): the slot each site keeps (engine/regvm-ops-basic.h), in
+   the order of the code, into slots (up to max), 0xffffffff for none, and
+   the id of a shape it keeps with it into ids, 0 for none. Returns the
+   sites, or -1 when f has no register code. */
+int white_regvm_getf_slots(JSValueConst f, uint32_t *slots, uint32_t *ids, int max)
+{
+    const RVFunc *rf;
+    int i, n = 0;
+
+    if (JS_VALUE_GET_TAG(f) != JS_TAG_OBJECT ||
+        !js_class_has_bytecode(JS_VALUE_GET_OBJ(f)->class_id))
+        return -1;
+    rf = JS_VALUE_GET_OBJ(f)->u.func.function_bytecode->rv;
+    if (rf == RV_UNCONVERTED || rf == RV_REFUSED || rf->arg_count < 0)
+        return -1;
+    for (i = 0; i < rf->pcmap_count; i++) {
+        const uint8_t *c;
+        if (rf->pcmap[i].end < 15 || (i > 0 && rf->pcmap[i - 1].end == rf->pcmap[i].end))
+            continue;
+        c = rf->code + rf->pcmap[i].end - 15;
+        if (c[0] != RV_GETF && c[0] != RV_GETFL && c[0] != RV_GETFT)
+            continue;
+        if (n < max) {
+            slots[n] = get_u32(c + 7);
+            ids[n] = get_u32(c + 11);
+        }
+        n++;
+    }
+    return n;
 }
 
 /* the for in loops of the function f, converted, found by their pcmap
@@ -2647,4 +2702,20 @@ int64_t white_array_room(JSValueConst a)
     JSObject *p = JS_VALUE_GET_OBJ(a);
 
     return p->fast_array ? p->u.array.u1.size : -1;
+}
+
+/* ---- the walks of JSON.stringify ---- */
+
+/* on 0 leaves the walks out (JS_JSON_WALK), 1 takes them again */
+void white_json_walk(int on)
+{
+    white_json_walk_off = !on;
+}
+
+/* the objects and arrays the walks wrote since the last call */
+unsigned long white_json_walks(void)
+{
+    unsigned long n = white_json_walked;
+    white_json_walked = 0;
+    return n;
 }

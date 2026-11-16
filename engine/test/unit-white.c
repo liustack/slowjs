@@ -68,6 +68,8 @@ int white_json_quote_run(struct StringBuffer *b, JSValueConst s, int *pi);
 uintptr_t white_json_run_limit(uintptr_t p, uintptr_t end);
 const uint8_t *white_json_plain_run(const uint8_t *p, const uint8_t *end);
 int white_json_count_high_bytes(const uint8_t *p, int n);
+void white_json_walk(int on);
+unsigned long white_json_walks(void);
 int white_atom_refs(JSContext *ctx, const char *s);
 int white_ref_count(JSValueConst v);
 int white_emit_tables(JSContext *ctx, int size[3], int count[3]);
@@ -85,10 +87,12 @@ int white_function_set_properties(JSContext *ctx, JSValueConst f, JSAtom name, i
 int white_own_keys(JSContext *ctx, JSValueConst obj, int flags, int got, char *out, size_t cap);
 int white_function_debug(JSValueConst script, int i, const uint8_t **source, size_t *source_len, const uint8_t **pc2line, int *shared);
 int white_regexp_cache(JSRuntime *rt, char *out, size_t cap, size_t *bytes, uint32_t *buckets);
+int white_regexp_standard(JSContext *ctx, const char *name);
 int white_lre_split_budget(void);
 int white_lre_chains(const char *re, int flags, void *opaque, char *out, size_t n);
 int white_lre_literal(const char *re, int flags, void *opaque, char *out, size_t n);
 int white_lre_plan_size(const char *re, int flags, void *opaque, int *rest, char *names, size_t n);
+int white_lre_plan(const char *re, int flags, void *opaque, char *out, size_t n);
 int white_lre_split_same(const char *re, int flags, void *opaque, const uint32_t *units, int n, long *calls);
 JSValue white_compile_failing(JSContext *ctx, const char *js, int fail, int mode, int *nallocs);
 JSValue white_read_failing(JSContext *ctx, const uint8_t *buf, size_t len, int fail, int *nallocs);
@@ -148,6 +152,7 @@ int white_crafted_code(JSContext *ctx, JSValueConst f, int kind, int undo);
 int white_regvm_read_check(JSContext *ctx, JSValueConst f);
 int white_regvm_dst_sites(JSValueConst f, int *dst, int *win);
 int white_regvm_forin_sites(JSValueConst f, int n[4]);
+int white_regvm_getf_slots(JSValueConst f, uint32_t *slots, uint32_t *ids, int max);
 int white_regvm_stack(JSContext *ctx, long out[7]);
 int white_set_code(JSContext *ctx, JSValueConst f, const uint8_t *code, int len, int stack_size, int undo);
 uint32_t white_array_fake_count(JSContext *ctx, JSValueConst a, uint32_t count);
@@ -815,6 +820,137 @@ static void test_shared_shape_oom(void)
    each call either throws the out of memory error or returns the whole
    string with no error pending, and leaves as many objects and strings as
    there were before it. */
+/* The walks of JSON.stringify against its general path. First which objects
+   and arrays the walks take. Then values made at random from a seed:
+   nested objects and arrays of numbers, strings with escapes and lone
+   surrogates, keys that are indexes or need escapes, values left out,
+   getters, toJSON methods (own, on a prototype, added to Object.prototype
+   and Array.prototype while the stringify runs), Dates, boxed primitives,
+   proxies, BigInts, holes, cycles, and code that deletes, adds and changes
+   keys and elements of the objects being written. Each value is made and
+   written twice from its seed, with the walks and without them: the result
+   or the error and what the code of the value saw, in its order, must be the
+   same. The code draws from the same generator, so a read made in another
+   order changes what follows. */
+static void test_json_walk(void)
+{
+    static const char setup[] =
+        "var L = []\n"
+        "function rng(seed) { var s = seed >>> 0; return function () { s = (s + 0x6D2B79F5) >>> 0; var t = s;\n"
+        "  t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296 } }\n"
+        "var KEYS = ['a', 'b', 'id', 'name', '', '0', '1', '17', '01', '4294967294', '4294967295', 'k\"q', 'k\\\\b', 'k\\n',\n"
+        "  '\\u00e9', '\\u4e2d', '\\ud800', 'toJSON', 'length', 'x'.repeat(130), 'y\"'.repeat(70)]\n"
+        "var STRS = ['', 'plain', 'a\"b', '\\\\', '\\n\\t', '\\u0001', '\\u00e9t\\u00e9', '\\u4e2d\\u6587', '\\ud83d\\ude00', '\\ud800x', 'x\\udc00', 'y'.repeat(70)]\n"
+        "var NUMS = [0, -0, 1, -1, 42, 2147483647, -2147483648, 2147483648, 1.5, -0.1, 1e21, 1e-7, NaN, Infinity, -Infinity, 5e-324]\n"
+        "function gen(seed) {\n"
+        "  var r = rng(seed), all = []\n"
+        "  function pick(a) { return a[Math.floor(r() * a.length)] }\n"
+        "  function prim() { var x = r()\n"
+        "    if (x < 0.3) return pick(NUMS)\n"
+        "    if (x < 0.6) return pick(STRS)\n"
+        "    if (x < 0.7) return r() < 0.5\n"
+        "    if (x < 0.8) return null\n"
+        "    if (x < 0.86) return undefined\n"
+        "    if (x < 0.9) return function () {}\n"
+        "    if (x < 0.94) return Symbol('s')\n"
+        "    if (x < 0.99) return pick(STRS) + pick(STRS) + 'x'.repeat(20)\n"
+        "    return 'z'.repeat(9000) + pick(STRS) }\n"
+        "  function mutate() { var o = pick(all), x = r(); if (!o) return\n"
+        "    if (x < 0.25) delete o[pick(KEYS)]\n"
+        "    else if (x < 0.45) o[pick(KEYS)] = prim()\n"
+        "    else if (x < 0.55) o[pick(KEYS)] = pick(all)\n"
+        "    else if (x < 0.65) { if (Array.isArray(o)) o.length = Math.floor(r() * 4); else Object.defineProperty(o, pick(KEYS), { enumerable: false }) }\n"
+        "    else if (x < 0.72) Object.prototype.toJSON = function (k) { L.push('O.toJSON ' + k); return 'O' }\n"
+        "    else if (x < 0.78) Array.prototype.toJSON = function (k) { L.push('A.toJSON ' + k); return 'A' }\n"
+        "    else if (x < 0.85) { if (Array.isArray(o)) o.push(prim()); else Object.defineProperty(o, pick(KEYS), { get: function () { L.push('late getter'); return 1 }, enumerable: true, configurable: true }) }\n"
+        "  }\n"
+        "  function odd(d) { var x = r(), k = 'g' + Math.floor(r() * 3), o\n"
+        "    if (x < 0.15) { o = {}; o.a = val(d + 1); Object.defineProperty(o, k, { get: function () { L.push('get ' + k); if (r() < 0.5) mutate(); return prim() }, enumerable: r() < 0.8, configurable: true }); o.z = val(d + 1); all.push(o); return o }\n"
+        "    if (x < 0.3) { o = { v: val(d + 1), toJSON: function (key) { L.push('toJSON ' + key); if (r() < 0.6) mutate(); return r() < 0.5 ? this.v : prim() } }; all.push(o); return o }\n"
+        "    if (x < 0.38) { o = Object.create({ toJSON: function (key) { L.push('proto toJSON ' + key); return { w: prim() } } }); o.q = 1; return o }\n"
+        "    if (x < 0.44) return new Date(Math.floor(r() * 1e12))\n"
+        "    if (x < 0.5) return pick([new Number(r() * 10), new String(pick(STRS)), new Boolean(r() < 0.5), Object(Symbol('b'))])\n"
+        "    if (x < 0.58) { o = obj(d); return new Proxy(o, { get: function (t, p, rc) { L.push('trap ' + String(p)); return Reflect.get(t, p, rc) } }) }\n"
+        "    if (x < 0.63) return r() < 0.5 ? 12345678901234567890n : 3n\n"
+        "    if (x < 0.7) { var a = [1, 2, 3]; delete a[1]; return a }\n"
+        "    if (x < 0.76) return all.length ? pick(all) : 1\n"
+        "    if (x < 0.82) return new Uint8Array([1, 2])\n"
+        "    if (x < 0.88) { o = Object.create(null); o.n = val(d + 1); return o }\n"
+        "    return { get [k]() { L.push('getter ' + k); return val(d + 1) }, b: 2 } }\n"
+        "  function obj(d) { var o = r() < 0.1 ? new (class C {})() : {}, n = Math.floor(r() * 6)\n"
+        "    for (var i = 0; i < n; i++) o[pick(KEYS)] = val(d + 1)\n"
+        "    if (r() < 0.1) delete o[pick(KEYS)]\n"
+        "    if (r() < 0.08) Object.defineProperty(o, 'ne', { value: val(d + 1), enumerable: false })\n"
+        "    if (r() < 0.05) o[Symbol('k')] = 1\n"
+        "    all.push(o); return o }\n"
+        "  function arr(d) { var n = Math.floor(r() * 6), a = []\n"
+        "    for (var i = 0; i < n; i++) a.push(val(d + 1))\n"
+        "    if (r() < 0.05) a.length += 2\n"
+        "    if (r() < 0.05) a.extra = 1\n"
+        "    all.push(a); return a }\n"
+        "  function val(d) { var x = r()\n"
+        "    if (d > 3 || x < 0.35) return prim()\n"
+        "    if (x < 0.62) return obj(d)\n"
+        "    if (x < 0.85) return arr(d)\n"
+        "    return odd(d) }\n"
+        "  var root = val(0)\n"
+        "  if (r() < 0.05 && all.length) { var c = pick(all); c[0] = root }\n"
+        "  return root }\n"
+        "function run(seed) { L.length = 0; var res\n"
+        "  try { res = JSON.stringify(gen(seed)) } catch (e) { res = e.name + ': ' + e.message }\n"
+        "  delete Object.prototype.toJSON; delete Array.prototype.toJSON\n"
+        "  return String(res) + ' | ' + L.join() }\n";
+    enum { SEEDS = 3000, SEEDS_VM = 100 };
+    VM v = vm_new();
+    unsigned long walks = 0;
+    int seed, same = 0;
+
+    CHECK(eval_ok(v.ctx, setup), "the setup threw");
+    white_json_walks();
+    CHECK(eval_is(v.ctx, "JSON.stringify({ a: 1, b: [1, 2, { c: 'x' }], d: { e: null } })",
+                  "{\"a\":1,\"b\":[1,2,{\"c\":\"x\"}],\"d\":{\"e\":null}}"), "a tree");
+    CHECK(white_json_walks() == 4, "the walks wrote the object, the array and the two inside");
+    CHECK(eval_is(v.ctx, "JSON.stringify({ a: [1] }, (k, x) => x) + JSON.stringify({ a: [1] }, ['a']) + JSON.stringify({ a: [1] }, null, 1)",
+                  "{\"a\":[1]}{\"a\":[1]}{\n \"a\": [\n  1\n ]\n}"), "a replacer, a list, a gap");
+    CHECK(white_json_walks() == 0, "the walks take no call with a replacer, a property list or a gap");
+    CHECK(eval_is(v.ctx, "JSON.stringify({ get a() { return 1 }, b: { c: 1 } })", "{\"a\":1,\"b\":{\"c\":1}}"), "a getter");
+    CHECK(white_json_walks() == 1, "an object with an enumerable getter goes to the general path, its value does not");
+    CHECK(eval_is(v.ctx, "JSON.stringify([{ toJSON() { return { x: [1] } } }, new Proxy({}, {}), { 2: 1 }, Object.assign([1, , 3])])",
+                  "[{\"x\":[1]},{},{\"2\":1},[1,null,3]]"), "toJSON, a proxy, an index key, a hole");
+    CHECK(white_json_walks() == 3, "the outer array and what toJSON gives");
+    for (seed = 0; seed < SEEDS; seed++) {
+        char src[64], *a, *b;
+
+        /* a VM for each SEEDS_VM seeds, which the host's timeout counts
+           from its start */
+        if (seed % SEEDS_VM == SEEDS_VM - 1) {
+            vm_free(&v);
+            v = vm_new();
+            CHECK(eval_ok(v.ctx, setup), "the setup threw");
+        }
+        snprintf(src, sizeof(src), "run(%d)", seed);
+        white_json_walk(1);
+        a = eval_text(v.ctx, src);
+        if (!a)
+            a = exception_text(v.ctx);
+        walks += white_json_walks();
+        white_json_walk(0);
+        b = eval_text(v.ctx, src);
+        if (!b)
+            b = exception_text(v.ctx);
+        CHECK(white_json_walks() == 0, "seed %d: a walk without the walks", seed);
+        white_json_walk(1);
+        CHECK(!a || !strstr(a, "interrupted"), "seed %d: the host's timeout stopped it", seed);
+        CHECK(a && b && !strcmp(a, b), "seed %d: with the walks %.300s\nwithout %.300s", seed, a ? a : "(threw)", b ? b : "(threw)");
+        same += a && b && !strcmp(a, b) && strstr(a, " | ") != NULL;
+        free(a);
+        free(b);
+    }
+    CHECK(walks > 5000, "only %lu walks", walks);
+    printf("json walk: %d seeds the same, %lu walks\n", same, walks);
+    vm_free(&v);
+}
+
 static void test_json_stringify_list_oom(void)
 {
     static const char setup[] =
@@ -2294,6 +2430,87 @@ static void test_key_atom(void)
     JS_FreeAtom(v.ctx, b);
     JS_FreeValue(v.ctx, s);
     key_atoms_ok(&v, "atoms freed and made again");
+
+    /* a string that is no atom, whose characters are an atom that exists,
+       keeps that atom as its key, with a reference of its own, from the
+       first time it is made a key, and gives it back when it is freed. A
+       string whose atom is no key (an index, a string that starts with a
+       digit) keeps none */
+    a = JS_NewAtom(v.ctx, "wkaKept");
+    {
+        int refs = white_atom_refs(v.ctx, "wkaKept");
+
+        s = JS_NewString(v.ctx, "wkaKept");
+        b = JS_ValueToAtom(v.ctx, s);
+        CHECK(b == a && white_key_atom(s) == a, "the kept atom: %u, key_atom %u, atom %u", b,
+              white_key_atom(s), a);
+        CHECK(white_atom_refs(v.ctx, "wkaKept") == refs + 2, "the atom kept: %d references, want %d",
+              white_atom_refs(v.ctx, "wkaKept"), refs + 2);
+        c = JS_ValueToAtom(v.ctx, s);
+        CHECK(c == a && white_atom_refs(v.ctx, "wkaKept") == refs + 3, "made a key again: %u, %d references",
+              c, white_atom_refs(v.ctx, "wkaKept"));
+        JS_FreeAtom(v.ctx, c);
+        JS_FreeAtom(v.ctx, b);
+        JS_FreeValue(v.ctx, s);
+        CHECK(white_atom_refs(v.ctx, "wkaKept") == refs, "the string freed: %d references, want %d",
+              white_atom_refs(v.ctx, "wkaKept"), refs);
+    }
+    JS_FreeAtom(v.ctx, a);
+    /* made a registered symbol, which takes the string itself as its
+       atom, the string gives back the atom it kept */
+    a = JS_NewAtom(v.ctx, "wkaSym");
+    {
+        int refs = white_atom_refs(v.ctx, "wkaSym");
+        JSValue g = JS_GetGlobalObject(v.ctx), sy = JS_GetPropertyStr(v.ctx, g, "Symbol");
+        JSValue sfor = JS_GetPropertyStr(v.ctx, sy, "for"), r;
+
+        s = JS_NewString(v.ctx, "wkaSym");
+        JS_FreeAtom(v.ctx, JS_ValueToAtom(v.ctx, s));
+        CHECK(white_key_atom(s) == a && white_atom_refs(v.ctx, "wkaSym") == refs + 1,
+              "the string keeps the atom: key_atom %u, %d references", white_key_atom(s),
+              white_atom_refs(v.ctx, "wkaSym"));
+        r = JS_Call(v.ctx, sfor, sy, 1, &s);
+        CHECK(JS_IsSymbol(r) && white_key_atom(s) == JS_ATOM_NULL, "Symbol.for: key_atom %u",
+              white_key_atom(s));
+        CHECK(white_atom_refs(v.ctx, "wkaSym") == refs, "the symbol made: %d references, want %d",
+              white_atom_refs(v.ctx, "wkaSym"), refs);
+        JS_FreeValue(v.ctx, r);
+        JS_FreeValue(v.ctx, s);
+        JS_FreeValue(v.ctx, sfor);
+        JS_FreeValue(v.ctx, sy);
+        JS_FreeValue(v.ctx, g);
+    }
+    JS_FreeAtom(v.ctx, a);
+    a = JS_NewAtom(v.ctx, "07");
+    s = JS_NewString(v.ctx, "07");
+    b = JS_ValueToAtom(v.ctx, s);
+    CHECK(b == a && white_key_atom(s) == JS_ATOM_NULL, "\"07\": atom %u, key_atom %u", b, white_key_atom(s));
+    JS_FreeAtom(v.ctx, b);
+    JS_FreeAtom(v.ctx, a);
+    JS_FreeValue(v.ctx, s);
+    /* in a script: the string a join makes reads its key from the second
+       read on without a search. Appended to, it is copied, though it has
+       room at its end (the second append made it with some): in place it
+       would keep the atom of its old characters. Made a registered symbol,
+       it is read by its key as before (the string is the atom of the symbol now) */
+    CHECK(eval_ok(v.ctx,
+        "var T = { wkaMonth: 1, wkaMonthx: 2 }, k = ['wka', 'Month'].join(''), r = 0;\n"
+        "for (let i = 0; i < 100; i++) r += T[k];\n"
+        "var m = (function () { let m = 'wk'; m += 'a'; m += 'Month'; r += T[m];\n"
+        "  m += 'x'; r += T[m]; return m })();\n"
+        "var g = ['wka', 'Month'].join(''); r += T[g]; var sym = Symbol.for(g); r += T[g];\n"
+        "r += T[k] + T[m] + T[g]\n"), "the script threw");
+    CHECK(eval_is(v.ctx, "r + ' ' + m + ' ' + String(sym.description)", "109 wkaMonthx wkaMonth"),
+          "reads by kept atoms");
+    {
+        JSValue k = JS_Eval(v.ctx, "k", 1, "<k>", 0);
+        JSAtom month = JS_NewAtom(v.ctx, "wkaMonth");
+
+        CHECK(white_key_atom(k) == month, "the joined key: key_atom %u, atom %u", white_key_atom(k), month);
+        JS_FreeAtom(v.ctx, month);
+        JS_FreeValue(v.ctx, k);
+    }
+    key_atoms_ok(&v, "strings that keep atoms");
 
     /* thousands of atoms made, read by key, freed and made again, through
        the growth of the hash table of atoms and the reuse of numbers */
@@ -5893,6 +6110,84 @@ static void test_regexp_cache_memory(void)
     vm_free(&w);
 }
 
+/* ---- regexps that nothing changed ---- */
+
+/* js_is_standard_regexp says yes for a regexp of the realm as the constructor
+   made it, with exec of RegExp.prototype not made yet and made, and no after
+   each change a script can make to what replace and match read: the getter of
+   flags or of each of the 8 flags, exec, the getter or exec of another realm,
+   the getter of another flag, lastIndex, the prototype of the regexp, a
+   property of its own. Once the built-in is put back at its place, yes again.
+   A property deleted and added again sits at another place, and the answer
+   stays no. */
+static void test_regexp_standard(void)
+{
+    static const char *const flags[] = {
+        "flags", "global", "ignoreCase", "multiline", "dotAll", "unicode", "unicodeSets", "sticky", "hasIndices",
+    };
+    static const struct { const char *change, *undo; } changes[] = {
+        { "P.exec = function (s) { return d.exec.value.call(this, s) }", "P.exec = d.exec.value" },
+        { "Object.defineProperty(P, 'exec', { get: function () { return d.exec.value } })", "Object.defineProperty(P, 'exec', d.exec)" },
+        { "P.exec = exec2", "P.exec = d.exec.value" },
+        { "Object.defineProperty(P, 'sticky', { get: sticky2 })", "Object.defineProperty(P, 'sticky', d.sticky)" },
+        { "Object.defineProperty(P, 'sticky', d.global)", "Object.defineProperty(P, 'sticky', d.sticky)" },
+        { "Object.defineProperty(P, 'global', { value: true })", "Object.defineProperty(P, 'global', d.global)" },
+        { "re.lastIndex = { valueOf() { return 0 } }", "re.lastIndex = 0" },
+        { "re.lastIndex = '1'", "re.lastIndex = 1.5" },
+        { "re.lastIndex = undefined", "re.lastIndex = -1" },
+    };
+    static const char *const others[] = {
+        "Object.setPrototypeOf(/a/, Object.create(RegExp.prototype))", "Object.assign(/a/, { x: 1 })",
+        "Object.defineProperty(/a/, 'lastIndex', { writable: false })", "Object.freeze(/a/g)",
+        "Object.defineProperty(Object.create(RegExp.prototype), 'lastIndex', { value: 0, writable: true })",
+        "new (class extends RegExp {})('a')", "re2", "new Proxy(/a/, {})", "({})",
+    };
+    VM v = vm_new();
+    JSContext *c2 = JS_NewContext(v.rt);
+    JSValue g = JS_GetGlobalObject(v.ctx);
+    char src[256];
+    size_t i;
+
+    CHECK(c2 != NULL, "no second context");
+    eval_ok(v.ctx, "var P = RegExp.prototype, re = /a/g, re0 = new RegExp('a', 'dgimsuy'); 0");
+    CHECK(white_regexp_standard(v.ctx, "re") == 1, "a regexp before exec is made");
+    CHECK(white_regexp_standard(v.ctx, "re0") == 1, "a regexp of every flag before exec is made");
+    eval_ok(v.ctx, "var d = {}; for (var k of ['exec', 'flags', 'global', 'ignoreCase', 'multiline', 'dotAll', 'unicode',"
+            " 'unicodeSets', 'sticky', 'hasIndices']) d[k] = Object.getOwnPropertyDescriptor(P, k); 0");
+    CHECK(white_regexp_standard(v.ctx, "re") == 1, "a regexp once exec is made");
+    JS_SetPropertyStr(v.ctx, g, "exec2", JS_Eval(c2, "RegExp.prototype.exec", strlen("RegExp.prototype.exec"), "<c2>", JS_EVAL_TYPE_GLOBAL));
+    JS_SetPropertyStr(v.ctx, g, "sticky2", JS_Eval(c2, "Object.getOwnPropertyDescriptor(RegExp.prototype, 'sticky').get",
+                                                    strlen("Object.getOwnPropertyDescriptor(RegExp.prototype, 'sticky').get"), "<c2>", JS_EVAL_TYPE_GLOBAL));
+    JS_SetPropertyStr(v.ctx, g, "re2", JS_Eval(c2, "/a/g", strlen("/a/g"), "<c2>", JS_EVAL_TYPE_GLOBAL));
+    for (i = 0; i < countof(flags); i++) {
+        snprintf(src, sizeof(src), "Object.defineProperty(P, '%s', { get: function () { return d.%s.get.call(this) } }); 0",
+                 flags[i], flags[i]);
+        eval_ok(v.ctx, src);
+        CHECK(white_regexp_standard(v.ctx, "re") == 0, "the getter of %s replaced", flags[i]);
+        snprintf(src, sizeof(src), "Object.defineProperty(P, '%s', d.%s); 0", flags[i], flags[i]);
+        eval_ok(v.ctx, src);
+        CHECK(white_regexp_standard(v.ctx, "re") == 1, "the getter of %s put back", flags[i]);
+    }
+    for (i = 0; i < countof(changes); i++) {
+        snprintf(src, sizeof(src), "%s; 0", changes[i].change);
+        eval_ok(v.ctx, src);
+        CHECK(white_regexp_standard(v.ctx, "re") == 0, "after %s", changes[i].change);
+        snprintf(src, sizeof(src), "%s; 0", changes[i].undo);
+        eval_ok(v.ctx, src);
+        CHECK(white_regexp_standard(v.ctx, "re") == 1, "after %s", changes[i].undo);
+    }
+    for (i = 0; i < countof(others); i++) {
+        snprintf(src, sizeof(src), "var o = %s; 0", others[i]);
+        eval_ok(v.ctx, src);
+        CHECK(white_regexp_standard(v.ctx, "o") == 0, "%s", others[i]);
+    }
+    eval_ok(v.ctx, "delete P.exec; P.exec = d.exec.value; 0");
+    CHECK(white_regexp_standard(v.ctx, "re") == 0, "exec deleted and added again");
+    JS_FreeValue(v.ctx, g);
+    JS_FreeContext(c2);
+    vm_free(&v);
+}
+
 /* ---- the split ops of the regexp machine ---- */
 
 /* lre_split steps over at most LRE_SPLIT_BUDGET split ops in one call, and
@@ -6114,6 +6409,46 @@ static void test_regexp_plan_size(void)
         CHECK(size == cases[i].size && (rest == 0) == !cases[i].names[0] && !strcmp(names, cases[i].names),
               "/%s/ flags %d: plan %d, %d bytes after it, names \"%s\", want plan %d, names \"%s\"",
               cases[i].re, cases[i].flags, size, rest, names, cases[i].size, cases[i].names);
+    }
+    vm_free(&v);
+}
+
+/* The units a match can start with (lre_first_set), as the plan of lre_skip
+   keeps them (white_lre_plan): \s and \S start a match at the units the
+   machine takes for them (lre_is_space: 9 to 13, 32 and 160 below 256, and
+   units from 256 up), alone, after an optional part, in alternatives and
+   after a lookbehind, with i, and not with u or y, which keep the loop. A
+   class, alternatives of characters and a dot are as before. */
+static void test_regexp_first_set(void)
+{
+    enum { I = 2, U = 16, Y = 32 };
+    static const struct {
+        const char *re;
+        int flags;
+        const char *want;
+    } cases[] = {
+        { "\\s+", 0, "set high 9-13 32 160" },
+        { "\\s", I, "set high 9-13 32 160" },
+        { "\\S", 0, "set high 0-8 14-31 33-159 161-255" },
+        { "\\S|a", 0, "set high 0-8 14-31 33-159 161-255" },
+        /* the regexp of a split of the V8 RegExp benchmark */
+        { "\\s?;\\s?", 0, "set high 9-13 32 59 160" },
+        { "\\s*x", 0, "set high 9-13 32 120 160" },
+        { "(?:^|\\s+)x(?:\\s+|$)", 0, "set high 9-13 32 120 160" },
+        { "(?<=a)\\s", 0, "set high 9-13 32 160" },
+        { "\\s", U, "loop" },
+        { "\\s", Y, "loop" },
+        { "[ab]", 0, "range 97-98" },
+        { "a|b", 0, "set 97-98" },
+        { ".x", 0, "loop" },
+    };
+    VM v = vm_new();
+    char out[256];
+
+    for (size_t i = 0; i < countof(cases); i++) {
+        int n = white_lre_plan(cases[i].re, cases[i].flags, v.ctx, out, sizeof(out));
+        CHECK(n >= 0 && !strcmp(out, cases[i].want), "/%s/ flags %d: \"%s\", want \"%s\"",
+              cases[i].re, cases[i].flags, out, cases[i].want);
     }
     vm_free(&v);
 }
@@ -7720,6 +8055,190 @@ static void test_regvm_call_copies(void)
     }
 }
 
+/* the number of the register op named name */
+static int regvm_op(const char *name)
+{
+    int i;
+    for (i = 0; i < 256; i++) {
+        const char *n = JS_RegvmOpName(i);
+        if (n && !strcmp(n, name))
+            return i;
+    }
+    return -1;
+}
+
+/* globalThis.f = function (a, b) { 'use strict'; body }, called once with
+   (1, 2): its register code, or NULL */
+static const uint8_t *regvm_code_of_body(VM *v, const char *body, JSValue *f, int *len)
+{
+    char src[512];
+    JSValue g;
+    snprintf(src, sizeof(src), "function h() { return { x: 1, y: 2, a: { x: 3 } }; }"
+             " globalThis.f = function (a, b) { 'use strict'; %s }; 0", body);
+    if (!eval_ok(v->ctx, src))
+        return NULL;
+    g = JS_GetGlobalObject(v->ctx);
+    *f = JS_GetPropertyStr(v->ctx, g, "f");
+    JS_FreeValue(v->ctx, g);
+    if (!eval_ok(v->ctx, "f(1, 2); 0"))
+        return NULL;
+    return white_regvm_code(*f, len);
+}
+
+/* dup of a temp then get_field (a destructuring): GETF reads the temp, with
+   no MOV of it into the temp above and no GETFT that frees the copy
+   (rv_dup_get_field of engine/regvm-ops-basic.h) */
+static void test_regvm_dup_get_field(void)
+{
+    static const struct { const char *what, *src; int getfl; } cases[] = {
+        { "renamed fields of a call", "var { x: p, y: q } = h(); return p + q;", 2 },
+        { "an assignment pattern", "var p, q; ({ x: p, y: q } = h()); return p + q;", 2 },
+        { "a nested pattern", "var { a: { x: p }, y: q } = h(); return p + q;", 2 },
+    };
+    int k, i, len, mov = regvm_op("MOV"), getft = regvm_op("GETFT"), getfl = regvm_op("GETFL");
+    int copies, n, m;
+    uint32_t slots[8], ids[8];
+    const uint8_t *code;
+    VM v;
+    JSValue f;
+
+    CHECK(mov >= 0 && getft >= 0 && getfl >= 0, "the names of MOV, GETFT and GETFL");
+    for (k = 0; k < (int)countof(cases); k++) {
+        v = vm_new();
+        f = JS_UNDEFINED;
+        code = regvm_code_of_body(&v, cases[k].src, &f, &len);
+        CHECK(code != NULL, "%s: f has no register code", cases[k].what);
+        copies = n = 0;
+        for (i = 0; code && i < len; i++) {
+            if (code[i] == mov && i + 5 < len && code[i + 3] == getft && code[i + 5] == code[i + 1])
+                copies++;
+            if (code[i] == getfl)
+                n++;
+        }
+        CHECK(copies == 0, "%s: %d MOV then GETFT of the copy", cases[k].what, copies);
+        CHECK(n >= cases[k].getfl, "%s: %d GETFL, want %d", cases[k].what, n, cases[k].getfl);
+        /* the GETF of a destructured temp carries the slot and the id of a
+           read of a name as the others do: after a second call each read
+           keeps the slot of the own field it found */
+        CHECK(eval_ok(v.ctx, "f(1, 2); 0"), "%s: the second call failed", cases[k].what);
+        m = white_regvm_getf_slots(f, slots, ids, 8);
+        CHECK(m >= cases[k].getfl, "%s: %d reads of a name, want %d", cases[k].what, m, cases[k].getfl);
+        for (i = 0; i < m && i < 8; i++)
+            CHECK(slots[i] != 0xffffffffu, "%s: read %d of %d keeps no slot", cases[k].what, i, m);
+        JS_FreeValue(v.ctx, f);
+        vm_free(&v);
+    }
+}
+
+/* ++k or --k of a local read lazily below it (x[k] = x[++k]): the read below
+   is copied before the INC, which then writes k itself, INC k k, with no
+   SETL after it (rv_incdec_store of engine/regvm-ops-arith.h) */
+static void test_regvm_incdec_store(void)
+{
+    static const struct { const char *what, *src, *op; } cases[] = {
+        { "x[k] = x[++k]", "var x = [1, 2, 3], k = a - 1; x[k] = x[++k]; return x[0] + k;", "INC" },
+        { "x[k] = x[--k]", "var x = [1, 2, 3], k = a + 1; x[k] = x[--k]; return x[0] + k;", "DEC" },
+        { "k + ++k", "var k = a; var s = k + ++k; return s + k;", "INC" },
+    };
+    int k, i, len, op, self;
+    const uint8_t *code;
+    VM v;
+    JSValue f;
+
+    for (k = 0; k < (int)countof(cases); k++) {
+        op = regvm_op(cases[k].op);
+        CHECK(op >= 0, "the name of %s", cases[k].op);
+        v = vm_new();
+        f = JS_UNDEFINED;
+        code = regvm_code_of_body(&v, cases[k].src, &f, &len);
+        CHECK(code != NULL, "%s: f has no register code", cases[k].what);
+        self = 0;
+        for (i = 0; code && i + 2 < len; i++) {
+            if (code[i] == op && code[i + 1] == code[i + 2] && (int8_t)code[i + 1] < 0)
+                self++;
+        }
+        CHECK(self >= 1, "%s: no %s of the local into itself", cases[k].what, cases[k].op);
+        JS_FreeValue(v.ctx, f);
+        vm_free(&v);
+    }
+}
+
+/* l = x[k] = v and l = o.f = v into a local l: the value goes into l first
+   and the put reads l, so no MOVT, SWAP or MOV of the value is left
+   (rv_chain_store of engine/regvm-ops-basic.h). Where a closure reads l or
+   a catch is around, the copies stay, in the order of QuickJS. */
+static void test_regvm_chain_store(void)
+{
+    static const struct { const char *what, *src; int moves; } cases[] = {
+        { "l = x[k] = v", "var x = [0, 0], l; l = x[a] = b * 2; return l + x[1];", 0 },
+        { "l = o.f = v", "var o = {}, l; l = o.f = b * 2; return l + o.f;", 0 },
+        { "(l = x[k] = v) kept", "var x = [0, 0], l; var r = (l = x[a] = b * 2); return r + l;", 0 },
+        { "a closure reads l", "var x = [0, 0], l, g = function () { return l; }; l = x[a] = b * 2; return g();", 1 },
+        { "a catch around", "var x = [0, 0], l; try { l = x[a] = b * 2; } catch (e) { return l; } return l;", 1 },
+    };
+    int k, i, len, moves, op[3];
+    const uint8_t *code;
+    VM v;
+    JSValue f;
+
+    op[0] = regvm_op("MOV");
+    op[1] = regvm_op("MOVT");
+    op[2] = regvm_op("SWAP");
+    CHECK(op[0] >= 0 && op[1] >= 0 && op[2] >= 0, "the names of MOV, MOVT and SWAP");
+    for (k = 0; k < (int)countof(cases); k++) {
+        v = vm_new();
+        f = JS_UNDEFINED;
+        code = regvm_code_of_body(&v, cases[k].src, &f, &len);
+        CHECK(code != NULL, "%s: f has no register code", cases[k].what);
+        moves = 0;
+        for (i = 0; code && i + 2 < len; i++) {
+            if ((code[i] == op[1] || code[i] == op[2]) && (int8_t)code[i + 1] >= 0 && (int8_t)code[i + 2] >= 0)
+                moves++;
+        }
+        if (cases[k].moves)
+            CHECK(moves > 0, "%s: no MOVT or SWAP of temps, the old order wants them", cases[k].what);
+        else
+            CHECK(moves == 0, "%s: %d MOVT or SWAP of temps", cases[k].what, moves);
+        JS_FreeValue(v.ctx, f);
+        vm_free(&v);
+    }
+}
+
+/* the test of a loop read again at its goto (rv_rotate of
+   engine/regvm-ops-cmp.h): no GOTO is left in a loop whose test reads
+   locals, var refs, constants and fields, and one is left when the test
+   calls */
+static void test_regvm_loop_rotate(void)
+{
+    static const struct { const char *what, *src; int gotos; } cases[] = {
+        { "i < a", "var s = 0, i; for (i = 0; i < a; i++) s += i; return s;", 0 },
+        { "i <= a", "var s = 0; for (var i = 1; i <= a; i++) s += i; return s;", 0 },
+        { "while (i !== x.length)", "var x = [1, 2], i = 0, s = 0; while (i !== x.length) s += x[i++]; return s;", 0 },
+        { "a test that calls", "var s = 0, i; for (i = 0; i < Math.min(a, 3); i++) s += i; return s;", 1 },
+    };
+    int k, i, len, n, op = regvm_op("GOTO");
+    const uint8_t *code;
+    VM v;
+    JSValue f;
+
+    CHECK(op >= 0, "the name of GOTO");
+    for (k = 0; k < (int)countof(cases); k++) {
+        v = vm_new();
+        f = JS_UNDEFINED;
+        code = regvm_code_of_body(&v, cases[k].src, &f, &len);
+        CHECK(code != NULL, "%s: f has no register code", cases[k].what);
+        n = 0;
+        for (i = 0; code && i < len; i++)
+            n += code[i] == op;
+        if (cases[k].gotos)
+            CHECK(n > 0, "%s: no GOTO, the loop is not rotated here", cases[k].what);
+        else
+            CHECK(n == 0, "%s: %d GOTO", cases[k].what, n);
+        JS_FreeValue(v.ctx, f);
+        vm_free(&v);
+    }
+}
+
 static void test_regvm_ret_value(void)
 {
     static const char src[] = "(function () { return [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]; })";
@@ -7861,6 +8380,77 @@ static void test_regvm_forin(void)
     forin_case(&v, "cap", "1[object Object]4abc", 1, 0, 0, 1);
     CHECK(eval_is(v.ctx, "genr(src)", "1,[object Object],4"), "gen: the values differ");
     forin_case(&v, "gen", "[object Generator]", 1, 0, 1, 0);
+    vm_free(&v);
+}
+
+/* the slot the one read of a name of the function name keeps after src ran
+   (engine/regvm-ops-basic.h), 0xffffffff for none, and whether it keeps
+   the id of a shape with it (proto) */
+static void getf_slot_case(VM *v, const char *name, const char *src, const char *want, uint32_t slot,
+                           int proto)
+{
+    JSValue g = JS_GetGlobalObject(v->ctx), f = JS_GetPropertyStr(v->ctx, g, name);
+    uint32_t s[2] = { 0, 0 }, id[2] = { 0, 0 };
+    int n;
+
+    CHECK(eval_is(v->ctx, src, want), "%s: %s does not give %s", name, src, want);
+    n = white_regvm_getf_slots(f, s, id, 2);
+    CHECK(n == 1, "%s: %d reads of a name, want 1", name, n);
+    CHECK(n != 1 || s[0] == slot, "%s after %s: the site keeps slot %u, want %u", name, src, s[0], slot);
+    CHECK(n != 1 || (id[0] != 0) == proto, "%s after %s: the site keeps the id %u", name, src, id[0]);
+    JS_FreeValue(v->ctx, f);
+    JS_FreeValue(v->ctx, g);
+}
+
+/* The slot a read of a name keeps (GETF, GETFL, GETFT and the read of a
+   method): the slot of the data property it last found, own or of the
+   prototype with the id of the shape of the object, none before the first
+   run, not changed by an accessor, a key no object has or a primitive with
+   no such key. The key "stack" is never kept. */
+static void test_regvm_getf_slot(void)
+{
+    VM v = vm_new();
+
+    CHECK(eval_ok(v.ctx,
+        "globalThis.f = function (o) { return o.b; };"
+        "globalThis.fl = function (o) { var x; x = o.b; return x; };"
+        "globalThis.ft = function (o) { return [o][0].b; };"
+        "globalThis.fm = function (o) { return o.b(); };"
+        "globalThis.fs = function (o) { return typeof o.stack; }; 0"), "the setup threw");
+    getf_slot_case(&v, "f", "f(1)", "undefined", 0xffffffffu, 0);
+    getf_slot_case(&v, "f", "f({ a: 1, b: 2 })", "2", 1, 0);
+    getf_slot_case(&v, "f", "f({ b: 3 })", "3", 0, 0);
+    getf_slot_case(&v, "f", "f(Object.create({ b: 4 }))", "4", 0, 1);
+    getf_slot_case(&v, "f", "f({ a: 1, get b() { return 5; } })", "5", 0, 1);
+    getf_slot_case(&v, "f", "f({ x: 1 })", "undefined", 0, 1);
+    getf_slot_case(&v, "f", "f({ x: 1, y: 2, z: 3, b: 6 })", "6", 3, 0);
+    getf_slot_case(&v, "f", "var d = { a: 1, b: 2, c: 3 }; delete d.a; f(d)", "2", 1, 0);
+    getf_slot_case(&v, "fl", "fl({ a: 1, b: 7 })", "7", 1, 0);
+    getf_slot_case(&v, "ft", "ft({ a: 1, b: 8 })", "8", 1, 0);
+    getf_slot_case(&v, "fm", "fm({ a: 1, b() { return 9; } })", "9", 1, 0);
+    getf_slot_case(&v, "fm", "class K { b() { return 10; } }; fm(new K())", "10", 1, 1);
+    getf_slot_case(&v, "fs", "fs(new Error('e'))", "string", 0xffffffffu, 0);
+    getf_slot_case(&v, "fs", "fs({ stack: 1 })", "number", 0xffffffffu, 0);
+    vm_free(&v);
+
+    /* the ids run out and are given again: an id a site keeps may now name
+       a shape with the key of its own or another prototype, so no read
+       takes the slot of a prototype any more, and none keeps one */
+    v = vm_new();
+    CHECK(eval_ok(v.ctx,
+        "globalThis.fm = function (o) { return o.b(); };"
+        "class K { b() { return 1; } }; globalThis.K = K; fm(new K()); fm(new K()); 0"), "the setup threw");
+    getf_slot_case(&v, "fm", "fm(new K())", "1", 1, 1);
+    white_shape_id_set(v.rt, white_shape_id_max() - 8);
+    CHECK(eval_ok(v.ctx, "var objs = []; for (var i = 0; i < 64; i++) { var o = {}; o['r' + i] = i; objs.push(o); } 0"),
+          "the shapes threw");
+    CHECK(white_shape_id_next(v.rt) < white_shape_id_max() - 8, "the ids did not run out (next %u)",
+          white_shape_id_next(v.rt));
+    /* every id from 1 up again, the old one of K's objects among them */
+    CHECK(eval_ok(v.ctx, "var many = []; for (var i = 0; i < 4096; i++) { var o = { b: function () { return 2; } };"
+                         " o['s' + i] = i; many.push(o); } 0"), "the shapes threw");
+    getf_slot_case(&v, "fm", "fm(new K()) + fm(many[7]) + fm(new K()) + fm(many[4095])", "6", 0, 0);
+    getf_slot_case(&v, "fm", "class L { b() { return 3; } }; fm(new L()) + fm(new K())", "4", 0, 0);
     vm_free(&v);
 }
 
@@ -8755,6 +9345,7 @@ int main(int argc, char **argv)
     test_json_stringify_oom();
     test_shared_shape_oom();
     test_json_stringify_list_oom();
+    test_json_walk();
     test_backtrace_attribute_checks();
     test_backtrace_class();
     test_backtrace_needs_data_property();
@@ -8823,10 +9414,12 @@ int main(int argc, char **argv)
     test_shared_debug_read();
     test_regexp_cache_keeps();
     test_regexp_cache_memory();
+    test_regexp_standard();
     test_regexp_split_budget();
     test_regexp_chains();
     test_regexp_literal();
     test_regexp_plan_size();
+    test_regexp_first_set();
     test_regexp_split_same();
     test_compile_one_failure(0);
     test_compile_one_failure(1);
@@ -8843,9 +9436,14 @@ int main(int argc, char **argv)
     test_regvm_bad_ret();
     test_regvm_ret_value();
     test_regvm_call_copies();
+    test_regvm_dup_get_field();
+    test_regvm_incdec_store();
+    test_regvm_chain_store();
+    test_regvm_loop_rotate();
     test_regvm_dst();
     test_regvm_dst_alloc();
     test_regvm_forin();
+    test_regvm_getf_slot();
     test_spread_alloc();
     test_spread_refs();
     test_days_to_date();
