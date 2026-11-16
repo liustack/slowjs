@@ -29,6 +29,6 @@ result Reflect.construct(Pair, [i], Other): ["car","cdr"] true
 result Mix: ["m","n"] ["m","n","extra"] ["m","n"] ["m","n"] ["m","n"] ["m","n"] ["m","n"] ["m","n","o"] ["m","n"] truetrue
 result Many: 43:7,k0,k1:k39,01,Symbol(s) 43:7,k0,k1:k39,01,Symbol(s) 43:7,k0,k1:k39,01,Symbol(s) 43:7,k0,k1:k39,01,Symbol(s) 6:7,k0,k1:k2,01,Symbol(s) 34:7,k0,k1:k30,01,Symbol(s) 35:7,k0,k1:k31,01,Symbol(s) 36:7,k0,k1:k32,01,Symbol(s) 43:7,k0,k1:k39,01,Symbol(s) 43:7,k0,k1:k39,01,Symbol(s)
 result J: [{"b":0,"a":1},{"b":1,"a":2},{"b":2,"a":3},{"b":3,"a":4},{"b":4,"a":5}] b,a,inherited
-mem-end obj=258 atom=602 shape=168 prop=1125 jsfunc=29 cfunc=144 array=3 fast_array=3 elements=37 binary=0
-mem-gc obj=256 atom=602 shape=167 prop=1121 jsfunc=29 cfunc=144 array=3 fast_array=3 elements=37 binary=0
+mem-end obj=258 atom=602 shape=166 prop=1125 jsfunc=29 cfunc=144 array=3 fast_array=3 elements=37 binary=0
+mem-gc obj=256 atom=602 shape=165 prop=1121 jsfunc=29 cfunc=144 array=3 fast_array=3 elements=37 binary=0
 --- status exit 0

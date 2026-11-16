@@ -346,6 +346,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | `new f()` takes the prototype of the object it makes from the own `prototype` of `f` in its shape when that is a plain data property that holds an object, without the generic read, and reads the interrupt flag once, as a call does | v0.31.2 | [objects-and-shapes.md](objects-and-shapes.md#objects-of-a-constructor-find-the-shapes-the-objects-before-them-went-through) |
 | A closure is one block: the function object, its properties and its closure variables, where it took three | Unreleased | `js_new_function_object` in [quickjs.c](../../engine/quickjs.c) |
 | `set_name` gives a closure with no name of its own the name in place, without the generic define | Unreleased | `js_object_name_in_place` in [quickjs.c](../../engine/quickjs.c) |
+| `Object.getOwnPropertyDescriptor`, Reflect's and `Object.getOwnPropertyDescriptors` make each descriptor at its final shape, which the context keeps for the data form and for the accessor form, and fill its four values, with no define of each key | Unreleased | `js_new_desc_object` in [quickjs.c](../../engine/quickjs.c) |
 
 ## Memory
 

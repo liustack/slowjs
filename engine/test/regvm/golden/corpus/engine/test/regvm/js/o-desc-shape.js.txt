@@ -64,6 +64,6 @@ result kept: 2000
 result realm: true
 result realm here: true
 result all match
-mem-end obj=381 atom=546 shape=256 prop=1913 jsfunc=0 cfunc=257 array=2 fast_array=2 elements=0 binary=0
-mem-gc obj=198 atom=546 shape=140 prop=982 jsfunc=0 cfunc=135 array=1 fast_array=1 elements=0 binary=0
+mem-end obj=381 atom=546 shape=251 prop=1913 jsfunc=0 cfunc=257 array=2 fast_array=2 elements=0 binary=0
+mem-gc obj=198 atom=546 shape=134 prop=982 jsfunc=0 cfunc=135 array=1 fast_array=1 elements=0 binary=0
 --- status exit 0
