@@ -183,6 +183,8 @@ int white_kept_shapes(JSRuntime *rt);
 void *white_kept_shape(JSRuntime *rt, size_t *size);
 int white_take_slots(JSRuntime *rt, size_t size, void **out, int cap);
 size_t white_found_resize(JSContext *ctx, JSValueConst obj, const char *key);
+int white_being_freed(JSValueConst obj);
+void white_gc_failing(JSRuntime *rt, int young, int fail, int *nallocs, int *early);
 
 /* ---- texts of every kind of character ---- */
 
@@ -3367,6 +3369,175 @@ static void test_object_made_in_the_weak_pass(void)
 {
     made_in_gc_case(0);
     made_in_gc_case(1);
+}
+
+/* A finalizer of a class of the host that runs javascript while a collection
+   frees its garbage never gets an object of that garbage from a WeakRef:
+   the collection clears every weak reference to its garbage before it frees
+   any of it, as the spec clears the targets at once. Before, a WeakRef was
+   cleared only after the free, and deref returned a target whose count was
+   not 0, which the garbage gives itself: the kept set and the global then
+   held an object that the collection went on to free. Two such objects run
+   wr.deref(), one made before the target and one after, so that one of them
+   is freed before it whatever the order of the free. */
+static struct {
+    JSContext *ctx;
+    JSClassID class_id;
+    int calls, errors, got, freed;
+} deref_in_gc;
+
+static void deref_in_gc_finalizer(JSRuntime *rt, JSValue val)
+{
+    JSContext *ctx = deref_in_gc.ctx;
+    JSValue r = JS_Eval(ctx, "saved = wr.deref()", 18, "<finalizer>", JS_EVAL_TYPE_GLOBAL);
+
+    deref_in_gc.calls++;
+    if (JS_IsException(r)) {
+        deref_in_gc.errors++;
+        JS_FreeValue(ctx, JS_GetException(ctx));
+    } else if (JS_IsObject(r)) {
+        deref_in_gc.got++;
+        if (white_being_freed(r))
+            deref_in_gc.freed++;
+    }
+    JS_FreeValue(ctx, r);
+}
+
+static JSValue deref_in_gc_new(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+    return JS_NewObjectClass(ctx, deref_in_gc.class_id);
+}
+
+static const struct {
+    const char *what, *body;
+    int young_frees, registered;
+} deref_in_gc_cases[] = {
+    { "a cycle", "k.self = k;", 1, 0 },
+    { "a cycle in a registry", "k.self = k; fr.register(k, 'k');", 1, 1 },
+    /* a young collection keeps it, held by its record, until the next full one */
+    { "the key of an old weak map whose value holds it", "wm.set(k, {k});", 0, 0 },
+};
+
+static void deref_in_gc_case(int i, int young)
+{
+    JSClassDef def = { "DerefInGC", deref_in_gc_finalizer };
+    VM v = vm_new();
+    JSContext *jctx;
+    JSValue g;
+    char src[256], *t;
+    int freed;
+
+    memset(&deref_in_gc, 0, sizeof(deref_in_gc));
+    deref_in_gc.ctx = v.ctx;
+    JS_SetGCThreshold(v.rt, (size_t)-1);
+    JS_NewClassID(v.rt, &deref_in_gc.class_id);
+    CHECK(JS_NewClass(v.rt, deref_in_gc.class_id, &def) == 0, "JS_NewClass");
+    g = JS_GetGlobalObject(v.ctx);
+    JS_SetPropertyStr(v.ctx, g, "derefInGC", JS_NewCFunction(v.ctx, deref_in_gc_new, "derefInGC", 0));
+    JS_FreeValue(v.ctx, g);
+    CHECK(eval_ok(v.ctx, "var wr, saved, got = [], fr = new FinalizationRegistry((v) => got.push(v)), wm = new WeakMap(); void 0"), "the setup");
+    JS_RunGC(v.rt);
+    snprintf(src, sizeof(src), "(() => { const f = derefInGC(); f.self = f; const k = {x: 1}; %s"
+             " wr = new WeakRef(k); const f2 = derefInGC(); f2.self = f2 })(); void 0", deref_in_gc_cases[i].body);
+    CHECK(eval_ok(v.ctx, src), "%s: the objects", deref_in_gc_cases[i].what);
+    /* the job ends, and with it the hold of the target of the new WeakRef */
+    JS_ClearKeptObjects(v.rt);
+    if (young)
+        JS_RunYoungGC(v.rt);
+    else
+        JS_RunGC(v.rt);
+    CHECK(deref_in_gc.calls == 2 && deref_in_gc.errors == 0, "%s, young %d: %d finalizers ran, %d threw",
+          deref_in_gc_cases[i].what, young, deref_in_gc.calls, deref_in_gc.errors);
+    CHECK(deref_in_gc.freed == 0, "%s, young %d: a finalizer got the target from the WeakRef %d times while the collection freed it",
+          deref_in_gc_cases[i].what, young, deref_in_gc.freed);
+    if (deref_in_gc.freed)
+        return; /* the global and the kept set hold a freed object */
+    JS_ClearKeptObjects(v.rt);
+    t = eval_text(v.ctx, "String(wr.deref())");
+    CHECK(t != NULL, "%s, young %d: wr.deref() threw", deref_in_gc_cases[i].what, young);
+    freed = t && strcmp(t, "undefined") == 0;
+    free(t);
+    if (young)
+        CHECK(freed == deref_in_gc_cases[i].young_frees, "%s, young %d: the collection freed the target: %d",
+              deref_in_gc_cases[i].what, young, freed);
+    if (!young)
+        CHECK(freed, "%s: the full collection kept the target", deref_in_gc_cases[i].what);
+    if (freed)
+        CHECK(deref_in_gc.got == 0 && eval_is(v.ctx, "String(saved)", "undefined"),
+              "%s, young %d: a finalizer got the freed target %d times", deref_in_gc_cases[i].what, young, deref_in_gc.got);
+    else
+        CHECK(eval_is(v.ctx, "String(saved.x)", "1"), "%s, young %d: the kept target lost its property",
+              deref_in_gc_cases[i].what, young);
+    CHECK(eval_ok(v.ctx, "saved = undefined; void 0"), "the drop");
+    /* a deref above keeps its target to the end of the job */
+    JS_ClearKeptObjects(v.rt);
+    JS_RunGC(v.rt);
+    while (JS_ExecutePendingJob(v.rt, &jctx) > 0)
+        ;
+    CHECK(eval_is(v.ctx, "String(wr.deref())", "undefined"), "%s, young %d: the next full collection kept the target",
+          deref_in_gc_cases[i].what, young);
+    if (deref_in_gc_cases[i].registered)
+        CHECK(eval_is(v.ctx, "got.join()", "k"), "%s, young %d: the callback of the registry", deref_in_gc_cases[i].what, young);
+    vm_free(&v);
+}
+
+static void test_deref_in_gc(void)
+{
+    int i;
+
+    for (i = 0; i < (int)(sizeof(deref_in_gc_cases) / sizeof(deref_in_gc_cases[0])); i++) {
+        deref_in_gc_case(i, 1);
+        deref_in_gc_case(i, 0);
+    }
+}
+
+/* A collection makes the job of a FinalizationRegistry after it has freed its
+   garbage, so the memory of a target is free by then: a runtime at its limit
+   (the run with no failing call) gets the callback of a target that held a
+   lot. Each of the allocations of the collection fails in turn as well:
+   the garbage is freed whatever fails, and the callback is
+   lost only when its own job is the call that fails, as a collection cannot
+   throw. */
+static void test_registry_job_after_free(void)
+{
+    VM v;
+    JSContext *jctx;
+    size_t base;
+    int young, fail, nallocs, early, total, lost;
+    char *t;
+
+    for (young = 1; young >= 0; young--) {
+        total = 1;
+        lost = 0;
+        for (fail = 0; fail <= total; fail++) {
+            v = vm_new();
+            JS_SetGCThreshold(v.rt, (size_t)-1);
+            CHECK(eval_ok(v.ctx, "var calls = [], fr = new FinalizationRegistry((h) => calls.push(h)); void 0"), "the setup");
+            JS_RunGC(v.rt);
+            base = JS_GetMemorySize(v.rt);
+            CHECK(eval_ok(v.ctx, "(() => { const t = { p: 'x'.repeat(1 << 21) }; t.self = t; fr.register(t, 'big') })(); void 0"),
+                  "the target");
+            if (fail == 0)
+                JS_SetMemoryLimit(v.rt, JS_GetMemorySize(v.rt));
+            white_gc_failing(v.rt, young, fail, &nallocs, &early);
+            unlimit(&v);
+            if (fail == 0)
+                total = nallocs;
+            CHECK(early == 0, "young %d, call %d failing: %d allocations before the garbage was freed", young, fail, early);
+            CHECK(JS_GetMemorySize(v.rt) < base + (1 << 20), "young %d, call %d failing: the target was not freed", young, fail);
+            while (JS_ExecutePendingJob(v.rt, &jctx) > 0)
+                ;
+            t = eval_text(v.ctx, "calls.join()");
+            CHECK(t != NULL, "calls");
+            if (fail == 0)
+                CHECK(t && strcmp(t, "big") == 0, "young %d: the callbacks are %s", young, t ? t : "?");
+            else if (t && strcmp(t, "big") != 0)
+                lost++;
+            free(t);
+            vm_free(&v);
+        }
+        CHECK(total >= 1 && lost <= 1, "young %d: %d allocations, the callback lost %d times", young, total, lost);
+    }
 }
 
 /* ---- a collection asked for while objects are freed ----
@@ -9949,6 +10120,8 @@ int main(int argc, char **argv)
     test_young_leaves_no_zero_count();
     test_finalizer_frees_a_root();
     test_object_made_in_the_weak_pass();
+    test_deref_in_gc();
+    test_registry_job_after_free();
     test_gc_in_free();
     test_error_nest();
     test_function_properties_oom();

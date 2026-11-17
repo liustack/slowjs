@@ -6,6 +6,14 @@ frees what only garbage held, weak-map-key: ok
 frees what only garbage held, weak-ref: ok
 frees what only garbage held, registry: ok
 frees what only garbage held, old-cycle: ok
+a registry only garbage holds, young: ok
+a registry only garbage holds, full: ok
+registry callbacks, old value of a dead key, young: ok
+registry callbacks, old value of a dead key, full: ok
+registry callbacks, old registry, value of a dead key, young: ok
+registry callbacks, old registry, value of a dead key, full: ok
+registry callbacks, young registry, value of a dead key, young: ok
+registry callbacks, young registry, value of a dead key, full: ok
 young collection and ephemerons, no-back-reference: ok
 young collection and ephemerons, back-reference: ok
 young collection and ephemerons, key-cycle: ok

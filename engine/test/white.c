@@ -54,12 +54,18 @@ static int white_drain_next;
 #define JS_HEAP_FAILS(s, size) \
     (white_drain_next ? (white_drain_next = 0, js_heap_drain(s), 0) : white_alloc_fails())
 
+/* white_alloc_early counts the calls made while a collection has garbage it
+   has not freed yet (white_gc_failing, white_gc_garbage) */
+static long white_alloc_early;
+static int white_gc_garbage(JSRuntime *rt);
 static int white_call_fails(JSRuntime *rt, void *ptr, size_t size)
 {
     if (!white_alloc_calls || size == 0)
         return 0;
     if (ptr && size <= js_malloc_usable_size_rt(rt, ptr))
         return 0;
+    if (white_gc_garbage(rt))
+        white_alloc_early++;
     white_alloc_count++;
     return white_alloc_count == white_alloc_fail_at;
 }
@@ -2866,4 +2872,38 @@ size_t white_found_resize(JSContext *ctx, JSValueConst obj, const char *key)
     if (!js_props_inline(p) && size <= js_malloc_usable_size(ctx, p->prop))
         return 0;
     return size;
+}
+
+/* white_being_freed says whether the object obj is garbage that a collection
+   is freeing: its mark is set, or free_object has run on it. */
+int white_being_freed(JSValueConst obj)
+{
+    JSObject *p = JS_VALUE_GET_OBJ(obj);
+
+    return js_rc(p)->mark || p->free_mark;
+}
+
+/* A young collection (young 1) or a full one (young 0) with call number fail
+   of js_malloc_rt and js_realloc_rt failing (0 for none), the others working.
+   *nallocs is how many calls it made, and *early how many of them it made
+   before it freed its garbage. */
+void white_gc_failing(JSRuntime *rt, int young, int fail, int *nallocs, int *early)
+{
+    white_alloc_calls = 1;
+    white_alloc_count = 0;
+    white_alloc_early = 0;
+    white_alloc_fail_at = fail;
+    if (young)
+        JS_RunYoungGC(rt);
+    else
+        JS_RunGC(rt);
+    *nallocs = white_alloc_count;
+    *early = white_alloc_early;
+    white_alloc_fail_at = 0;
+    white_alloc_calls = 0;
+}
+
+static int white_gc_garbage(JSRuntime *rt)
+{
+    return !list_empty(&rt->tmp_obj_list);
 }

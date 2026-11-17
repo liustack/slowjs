@@ -32,7 +32,7 @@ const SLACK = 16 * 1024
 
 // What the cases of this file leave in the globals goes before the next one.
 function clean() {
-	for (const k of ["R", "setHidden", "getHidden", "rnd", "round", "reach", "garbage", "wm", "wr", "fr", "calls", "old", "held", "kept", "make"])
+	for (const k of ["R", "setHidden", "getHidden", "rnd", "round", "reach", "garbage", "wm", "wr", "fr", "calls", "old", "held", "kept", "make", "a", "r"])
 		delete globalThis[k]
 	gc()
 }
@@ -247,6 +247,56 @@ function leavesNoZeroCount() {
 	}
 }
 
+// A registry that only garbage holds goes with it and queues no callback for
+// the garbage it observed, whether the collection is young (the registry is
+// old, freed after the garbage) or full: the jobs are queued after the free,
+// for the registries still there.
+async function registryOfGarbage() {
+	for (const young of [true, false]) {
+		youngVM(`globalThis.calls = []; globalThis.fr = new FinalizationRegistry(x => calls.push(x)); void 0`)
+		ev(`(() => { const t = {}; t.self = t; t.fr = fr; fr.register(t, 1) })(); fr = null; void 0`)
+		if (young)
+			youngGC()
+		else
+			gc()
+		await tick()
+		line("a registry only garbage holds, " + (young ? "young" : "full"), ev(`calls.length === 0`), "callbacks: " + ev(`calls.join()`))
+	}
+}
+
+// The callbacks of a registry, after two young collections and a full one
+// (or three full ones), with the jobs run after each: what the first and the
+// last collection leave in calls. A weak map record of a dead key lets its
+// value go in the weak pass after the free, so an old value (a) waits for the
+// next young collection, while a full collection deletes the record before
+// its free. A registry that is such a value is garbage once the record goes,
+// and goes without its callbacks.
+async function registryCallbacks() {
+	for (const c of [
+		{ name: "old value of a dead key", setup: `globalThis.wm = new WeakMap(); globalThis.a = {}; fr.register(a, "a");`,
+			body: `const k = {}; k.self = k; wm.set(k, a); a = null; const b = {}; b.self = b; fr.register(b, "b");`, young: "b then b,a", full: "a,b then a,b" },
+		{ name: "old registry, value of a dead key", setup: `globalThis.wm = new WeakMap(); globalThis.r = new FinalizationRegistry(x => calls.push(x));`,
+			body: `const k = {}; k.self = k; wm.set(k, r); const t = {}; t.self = t; r.register(t, "t"); r = null;`, young: "t then t", full: " then " },
+		{ name: "young registry, value of a dead key", setup: `globalThis.wm = new WeakMap();`,
+			body: `const r = new FinalizationRegistry(x => calls.push(x)); const k = {}; k.self = k; wm.set(k, r); const t = {}; t.self = t; r.register(t, "t");`, young: "t then t", full: " then " },
+	]) {
+		for (const young of [true, false]) {
+			youngVM(`globalThis.calls = []; globalThis.fr = new FinalizationRegistry(x => calls.push(x)); ` + c.setup + ` void 0`)
+			ev(`(() => { ` + c.body + ` })(); void 0`)
+			const collect = young ? youngGC : gc
+			collect()
+			await tick()
+			const first = ev(`calls.join()`)
+			collect()
+			await tick()
+			gc()
+			await tick()
+			const got = first + " then " + ev(`calls.join()`), want = young ? c.young : c.full
+			line("registry callbacks, " + c.name + ", " + (young ? "young" : "full"), got === want, "got " + got + ", want " + want)
+		}
+	}
+}
+
 // A young closure drops the last reference to an old, attached variable
 // reference. Unlike ordinary objects, it frees it while it removes cycles,
 // dropping the last reference of the suspended async frame in that phase too.
@@ -268,6 +318,8 @@ async function main() {
 	keepsReachable()
 	freesCycles()
 	await freesWhatOnlyGarbageHeld()
+	await registryOfGarbage()
+	await registryCallbacks()
 	youngEphemeron()
 	leavesNoZeroCount()
 	suspendedAsyncFrame()

@@ -903,7 +903,7 @@ TEXT ·js_proxy_get_own_property(SB), $168-48
 	WORD $0x54ffd0c1
 	WORD $0xf94057e8
 	WORD $0xf9400915
-	WORD $0xf955aea8
+	WORD $0xf955b2a8
 	WORD $0xeb16011f
 	WORD $0x54ffd020
 	WORD $0x9103c154
@@ -1333,7 +1333,7 @@ TEXT ·js_proxy_get_own_property_names(SB), $216-48
 	WORD $0xeb09011f
 	WORD $0x54ffd7c1
 	WORD $0xf9400955
-	WORD $0xf955aea8
+	WORD $0xf955b2a8
 	WORD $0xeb16011f
 	WORD $0x54ffd740
 	WORD $0x91028174
@@ -1993,7 +1993,7 @@ TEXT ·js_proxy_delete_property(SB), $152-40
 	WORD $0x54ffea01
 	WORD $0xf9404fe8
 	WORD $0xf9400915
-	WORD $0xf955aea8
+	WORD $0xf955b2a8
 	WORD $0xeb16011f
 	WORD $0x54ffe960
 	WORD $0x9102c154
@@ -2388,7 +2388,7 @@ TEXT ·js_proxy_has(SB), $152-40
 	WORD $0x54ffebc1
 	WORD $0xf9404fe8
 	WORD $0xf9400915
-	WORD $0xf955aea8
+	WORD $0xf955b2a8
 	WORD $0xeb16011f
 	WORD $0x54ffeb20
 	WORD $0x9102c154
@@ -2669,7 +2669,7 @@ TEXT ·js_proxy_set_prototype(SB), $136-48
 	WORD $0xeb09011f
 	WORD $0x54ffeb41
 	WORD $0xf9400955
-	WORD $0xf955aea8
+	WORD $0xf955b2a8
 	WORD $0xeb16011f
 	WORD $0x54ffeac0
 	WORD $0x91020174
@@ -2933,7 +2933,7 @@ TEXT ·js_proxy_is_extensible(SB), $120-32
 	WORD $0xeb09011f
 	WORD $0x54ffee01
 	WORD $0xf9400955
-	WORD $0xf955aea8
+	WORD $0xf955b2a8
 	WORD $0xeb16011f
 	WORD $0x54ffed80
 	WORD $0xf94033e8
@@ -3166,7 +3166,7 @@ TEXT ·js_proxy_prevent_extensions(SB), $120-32
 	WORD $0x54ffef81
 	WORD $0xf9403fe8
 	WORD $0xf9400915
-	WORD $0xf955aea8
+	WORD $0xf955b2a8
 	WORD $0xeb16011f
 	WORD $0x54ffeee0
 	WORD $0xf94033e8
@@ -26607,7 +26607,7 @@ TEXT ·JS_RegExpExec(SB), $136-48
 	MOVD $·engine_rodata+12752(SB), R9
 	WORD $0xeb09011f
 	WORD $0x54000181
-	WORD $0xf955aea8
+	WORD $0xf955b2a8
 	WORD $0xeb16011f
 	WORD $0x54000160
 	WORD $0xf9403fe8

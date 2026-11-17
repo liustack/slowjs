@@ -528,6 +528,9 @@ struct JSRuntime {
     JSOwnKeyEntry own_key_cache[JS_OWN_KEY_CACHE_SIZE];
     void *user_opaque;
     struct JSGCEphemeron *ephemeron;
+    /* the weak pass of gc_clear_weak, which counts the garbage of the
+       collection as dead (gc_weak_live) */
+    BOOL weak_garbage;
     /* the GC objects made since the last collection (see JS_RunYoungGC) */
     struct list_head young_obj_list;
     /* the objects outside the garbage whose count got to 0 while a
@@ -10283,6 +10286,52 @@ static void gc_remove_weak_objects(JSRuntime *rt)
     free_zero_refcount(rt);
 }
 
+/* Before a collection frees its garbage (gc_free_cycles), clear the WeakRefs
+   whose target is garbage, all at once, as the spec clears them. The free
+   runs the finalizers of the host, which can run javascript, and until it is
+   freed the garbage holds counts on itself, so js_weakref_is_live calls it
+   live: a WeakRef cleared only after the free gave such a finalizer an
+   object that the collection went on to free (test_deref_in_gc in
+   engine/test/unit-white.c). The garbage is the objects of tmp_obj_list, the
+   only GC objects with their mark set then whose count is not 0 (gc_keep
+   clears it on the rest, and the objects of gc_dead_list have a count of 0):
+   weakref_delete_weakref counts them as dead while weak_garbage is set
+   (gc_weak_live). The pass runs in the phase of the free, so it frees
+   nothing and runs no finalizer. A WeakRef is the only weak reference a
+   finalizer can follow to the garbage: a weak map record needs its key, and a
+   registry gives no way to its targets. So the records and the registries
+   wait for the weak pass after the free, as before: a record of a dead key
+   lets its value go then, and the jobs of the registries are made then, in
+   the order of the registrations, whatever the order of the frees
+   (test_young_free_order in engine/test/unit.c). With no object of the
+   garbage that is a target, there is nothing to clear. A full collection
+   while the runtime is freed (remove_weak_objects FALSE) does not call it:
+   no javascript runs then. */
+static void gc_clear_weak(JSRuntime *rt)
+{
+    struct list_head *el;
+    JSGCObjectHeader *p;
+    JSWeakRefHeader *wh;
+
+    list_for_each(el, &rt->tmp_obj_list) {
+        p = list_entry(el, JSGCObjectHeader, link);
+        if (js_rc(p)->gc_obj_type == JS_GC_OBJ_TYPE_JS_OBJECT &&
+            ((JSObject *)p)->weakref_count != 0)
+            break;
+    }
+    if (el == &rt->tmp_obj_list)
+        return;
+    rt->weak_garbage = TRUE;
+    rt->gc_phase = JS_GC_PHASE_REMOVE_CYCLES;
+    list_for_each(el, &rt->weakref_list) {
+        wh = list_entry(el, JSWeakRefHeader, link);
+        if (wh->weakref_type == JS_WEAKREF_TYPE_WEAKREF)
+            weakref_delete_weakref(rt, wh);
+    }
+    rt->gc_phase = JS_GC_PHASE_NONE;
+    rt->weak_garbage = FALSE;
+}
+
 static void add_gc_object(JSRuntime *rt, JSGCObjectHeader *h,
                           JSGCObjectTypeEnum type)
 {
@@ -10788,6 +10837,7 @@ static BOOL gc_ephemeron(JSRuntime *rt, BOOL remove_weak_objects)
     if (!count) {
         gc_decref(rt);
         gc_scan(rt);
+        gc_clear_weak(rt);
         gc_free_cycles(rt);
         gc_remove_weak_objects(rt);
         return TRUE;
@@ -10882,6 +10932,7 @@ static BOOL gc_ephemeron(JSRuntime *rt, BOOL remove_weak_objects)
         if ((obj->class_id == JS_CLASS_WEAKMAP || obj->class_id == JS_CLASS_WEAKSET) && obj->u.map_state)
             gc_ephemeron_prune(rt, obj->u.map_state);
     }
+    gc_clear_weak(rt);
     gc_free_cycles(rt);
     rt->ephemeron = NULL;
     js_free_rt(rt, s->keys);
@@ -10918,6 +10969,8 @@ static void JS_RunGCInternal(JSRuntime *rt, BOOL remove_weak_objects)
     gc_scan(rt);
 
     /* free the GC objects in a cycle */
+    if (remove_weak_objects)
+        gc_clear_weak(rt);
     gc_free_cycles(rt);
 }
 
@@ -11063,6 +11116,7 @@ void JS_RunYoungGC(JSRuntime *rt)
         gc_keep(list_entry(el, JSGCObjectHeader, link));
     young_move(&rt->young_obj_list, &rt->gc_obj_list);
 
+    gc_clear_weak(rt);
     gc_free_cycles(rt);
 
     gc_remove_weak_objects(rt);
@@ -66555,6 +66609,17 @@ static BOOL js_weakref_is_live(JSValueConst val)
     return (js_rc(p)->ref_count != 0);
 }
 
+/* Whether weakref_delete_weakref keeps the target of a WeakRef: its count is
+   not 0, but in the pass of gc_clear_weak it is not an object of the garbage,
+   which is the GC objects with their mark set then. */
+static BOOL gc_weak_live(JSRuntime *rt, JSValueConst val)
+{
+    if (!js_weakref_is_live(val))
+        return FALSE;
+    return !(rt->weak_garbage && JS_VALUE_GET_TAG(val) == JS_TAG_OBJECT &&
+             js_rc(JS_VALUE_GET_PTR(val))->mark);
+}
+
 /* 'val' can be JS_UNDEFINED */
 static void js_weakref_free(JSRuntime *rt, JSValue val)
 {
@@ -76646,7 +76711,7 @@ static void weakref_delete_weakref(JSRuntime *rt, JSWeakRefHeader *wh)
 {
     JSWeakRefData *wrd = container_of(wh, JSWeakRefData, weakref_header);
 
-    if (!js_weakref_is_live(wrd->target)) {
+    if (!gc_weak_live(rt, wrd->target)) {
         js_weakref_free(rt, wrd->target);
         wrd->target = JS_UNDEFINED;
     }
