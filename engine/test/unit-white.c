@@ -158,6 +158,7 @@ int white_regvm_putf_sites(JSValueConst f, uint32_t *s, int max);
 uint32_t white_shape_step_epoch(JSRuntime *rt);
 void white_shape_step_epoch_set(JSRuntime *rt, uint32_t e);
 int white_regvm_call_record(JSValueConst f);
+int white_func_class_objects(JSContext *ctx);
 int white_regvm_stack(JSContext *ctx, long out[7]);
 int white_set_code(JSContext *ctx, JSValueConst f, const uint8_t *code, int len, int stack_size, int undo);
 uint32_t white_array_fake_count(JSContext *ctx, JSValueConst a, uint32_t count);
@@ -8787,12 +8788,13 @@ static int call_record_of(JSContext *ctx, const char *name)
    bytecode was converted first, and a closure made after has it at once.
    Every call gives what it gave before: with fewer and more arguments than
    parameters, to a function that reads its arguments, and to a function
-   of another realm, which the call op leaves to JS_CallInternal. */
+   of another realm, which the call op leaves to JS_CallInternal, so that
+   it runs in its own realm. */
 static void test_regvm_call_record(void)
 {
     VM v = vm_new();
     JSContext *ctx2;
-    JSValue g, g2, f2;
+    JSValue g, g2, f2, arr2;
 
     CHECK(eval_ok(v.ctx,
         "function mk(k) { return function (x, y) { return x + k; }; }"
@@ -8814,20 +8816,34 @@ static void test_regvm_call_record(void)
     CHECK(eval_is(v.ctx, "call3(d) + call1(e, 1) + call1(d)", "5"), "the calls of d and e");
     CHECK(call_record_of(v.ctx, "e") == 0, "e after its call: %d", call_record_of(v.ctx, "e"));
 
-    /* a function of another realm */
+    /* a function of another realm runs in its realm: the array it makes
+       has the Array.prototype of that realm, not of the caller's */
     ctx2 = JS_NewContext(v.rt);
     CHECK(ctx2 != NULL, "no second context");
-    CHECK(eval_ok(ctx2, "globalThis.f2 = function (x) { return x * 2; }; 0"), "the second realm threw");
+    CHECK(eval_ok(ctx2, "globalThis.f2 = function (x) { return [x * 2]; }; 0"), "the second realm threw");
     g2 = JS_GetGlobalObject(ctx2);
     f2 = JS_GetPropertyStr(ctx2, g2, "f2");
     g = JS_GetGlobalObject(v.ctx);
     JS_SetPropertyStr(v.ctx, g, "f2", f2);
-    CHECK(eval_is(v.ctx, "call1(f2, 21) + call1(f2, 1)", "44"), "the calls of f2");
+    arr2 = JS_GetPropertyStr(ctx2, g2, "Array");
+    JS_SetPropertyStr(v.ctx, g, "proto2", JS_GetPropertyStr(ctx2, arr2, "prototype"));
+    JS_FreeValue(ctx2, arr2);
+    CHECK(eval_is(v.ctx,
+        "var r = [call1(f2, 21), call1(f2, 1)];"
+        "r[0][0] + r[1][0] + ':' + (Object.getPrototypeOf(r[0]) === proto2) +"
+        "(Object.getPrototypeOf(r[1]) === proto2) + (r[0] instanceof Array)",
+        "44:truetruefalse"), "the calls of f2");
     CHECK(call_record_of(v.ctx, "f2") == 0, "f2 after its calls: %d", call_record_of(v.ctx, "f2"));
-    CHECK(eval_ok(v.ctx, "delete globalThis.f2; 0"), "the delete threw");
+    CHECK(eval_ok(v.ctx, "delete globalThis.f2; delete globalThis.proto2; 0"), "the delete threw");
     JS_FreeValue(v.ctx, g);
     JS_FreeValue(ctx2, g2);
     JS_FreeContext(ctx2);
+
+    /* a function object an embedder makes with JS_NewObjectProtoClass has
+       the block of one js_new_function_object makes (under AddressSanitizer
+       its free writes nothing past it) */
+    CHECK(white_func_class_objects(v.ctx) == 0, "the objects of JS_NewObjectProtoClass: %d",
+          white_func_class_objects(v.ctx));
     vm_free(&v);
 }
 

@@ -178,6 +178,10 @@ typedef struct RVFunc {
     uint8_t code[0];
 } RVFunc;
 
+/* what a call and a return read is the 48 bytes right before the code */
+_Static_assert(sizeof(void *) != 8 || offsetof(RVFunc, code) - offsetof(RVFunc, realm) == 48,
+               "the run a call reads is the 48 bytes before the code");
+
 /* b->rv of a function not yet converted and of one the pass refused: an
    arg_count of -1 sends every call of it out of the register loop to
    JS_CallInternal, which converts an RV_UNCONVERTED one. */

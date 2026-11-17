@@ -1492,21 +1492,43 @@ struct JSObject {
     } u;
 };
 
-/* The block of a function object of the classes of JS_FUNC_BLOCK_CLASSES,
-   which only js_new_function_object makes: the object, then rv, then its
-   properties and closure variables. rv is function_bytecode->rv as
-   js_closure2 found it, for the call ops of the register loop, which then
-   read neither function_bytecode nor its record: RV_UNCONVERTED while the
-   bytecode is not converted, and then until a call op finds the record of
-   the bytecode and copies it here (engine/regvm-ops-basic.h). It holds
-   nothing: the record lives as long as function_bytecode. It is not in u,
-   where it would make every object of another class 8 bytes larger. */
+/* The block of an object of the classes of JS_FUNC_BLOCK_CLASSES, the
+   functions of bytecode: the object, then rv, then, for one
+   js_new_function_object makes, its properties and closure variables.
+   JS_NewObjectFromShape makes the same block for these classes, which an
+   embedder may ask JS_NewObjectProtoClass for, with rv NULL.
+   rv is function_bytecode->rv as js_closure2 found it, for the call ops of
+   the register loop, which then read neither function_bytecode nor its
+   record: RV_UNCONVERTED while the bytecode is not converted, and then
+   until a call op finds the record of the bytecode and copies it here
+   (engine/regvm-ops-basic.h). It holds nothing: the record lives as long
+   as function_bytecode. It is not in u, where it would make every object
+   of another class 8 bytes larger. */
 typedef struct JSFuncObject {
     JSObject obj;
     struct RVFunc *rv;
 } JSFuncObject;
 
 #define js_func_rv(p) (((JSFuncObject *)(p))->rv)
+
+#define JS_FUNC_BLOCK_CLASSES ((1ULL << JS_CLASS_BYTECODE_FUNCTION) |       \
+                               (1ULL << JS_CLASS_GENERATOR_FUNCTION) |      \
+                               (1ULL << JS_CLASS_ASYNC_FUNCTION) |          \
+                               (1ULL << JS_CLASS_ASYNC_GENERATOR_FUNCTION))
+_Static_assert(JS_CLASS_ASYNC_GENERATOR_FUNCTION < 64 &&
+               JS_CLASS_ASYNC_FUNCTION < 64 &&
+               JS_CLASS_GENERATOR_FUNCTION < 64 &&
+               JS_CLASS_BYTECODE_FUNCTION < 64,
+               "JS_FUNC_BLOCK_CLASSES is a mask of 64 bits");
+/* a JSObject is one line of cache, and rv the first word after it */
+_Static_assert(sizeof(void *) != 8 || sizeof(JSObject) == 64, "a JSObject of 64 bytes");
+_Static_assert(offsetof(JSFuncObject, rv) == sizeof(JSObject), "rv right after the JSObject");
+
+/* whether an object of class_id has the block of a JSFuncObject */
+static inline BOOL js_class_func_block(JSClassID class_id)
+{
+    return class_id < 64 && ((JS_FUNC_BLOCK_CLASSES >> class_id) & 1);
+}
 
 typedef struct JSMapRecord {
     int ref_count; /* used during enumeration to avoid freeing the record */
@@ -8319,27 +8341,16 @@ static void js_shape_drop_parent(JSRuntime *rt, JSShape *sh)
 #define JS_OBJ_INLINE_PROPS(p) ((JSProperty *)((uint8_t *)(p) + offsetof(JSObject, u)))
 
 /* The properties of a function object made by js_new_function_object sit
-   right after its JSFuncObject, with the same rules. Only the classes
-   js_new_function_object makes have a block of sizeof(JSFuncObject) or
-   more: the block of an object of another class may end before this
-   address, and a block of its own may start there (past the header of the
-   next block), so the test leaves every other class out. */
+   right after its JSFuncObject, with the same rules. Only the classes of
+   js_class_func_block have a block of sizeof(JSFuncObject) or more: the
+   block of an object of another class may end before this address, and a
+   block of its own may start there (past the header of the next block),
+   so the test leaves every other class out. */
 #define JS_FUNC_INLINE_PROPS(p) ((JSProperty *)((JSFuncObject *)(p) + 1))
-#define JS_FUNC_BLOCK_CLASSES ((1ULL << JS_CLASS_BYTECODE_FUNCTION) |       \
-                               (1ULL << JS_CLASS_GENERATOR_FUNCTION) |      \
-                               (1ULL << JS_CLASS_ASYNC_FUNCTION) |          \
-                               (1ULL << JS_CLASS_ASYNC_GENERATOR_FUNCTION))
-_Static_assert(JS_CLASS_ASYNC_GENERATOR_FUNCTION < 64 &&
-               JS_CLASS_ASYNC_FUNCTION < 64 &&
-               JS_CLASS_GENERATOR_FUNCTION < 64 &&
-               JS_CLASS_BYTECODE_FUNCTION < 64,
-               "JS_FUNC_BLOCK_CLASSES is a mask of 64 bits");
-
 static inline BOOL js_props_inline(const JSObject *p)
 {
     return p->prop == JS_OBJ_INLINE_PROPS(p) ||
-        (p->prop == JS_FUNC_INLINE_PROPS(p) && p->class_id < 64 &&
-         ((JS_FUNC_BLOCK_CLASSES >> p->class_id) & 1));
+        (p->prop == JS_FUNC_INLINE_PROPS(p) && js_class_func_block(p->class_id));
 }
 
 /* Return an array of new_size properties for p that starts with the first
@@ -8672,7 +8683,8 @@ static JSValue JS_NewObjectFromShape(JSContext *ctx, JSShape *sh, JSClassID clas
     int i;
     
     js_trigger_gc(ctx->rt, sizeof(JSObject));
-    p = js_malloc(ctx, class_id == JS_CLASS_OBJECT ? offsetof(JSObject, u) : sizeof(JSObject));
+    p = js_malloc(ctx, class_id == JS_CLASS_OBJECT ? offsetof(JSObject, u) :
+                  js_class_func_block(class_id) ? sizeof(JSFuncObject) : sizeof(JSObject));
     if (unlikely(!p))
         goto fail;
     p->class_id = class_id;
@@ -8690,6 +8702,13 @@ static JSValue JS_NewObjectFromShape(JSContext *ctx, JSShape *sh, JSClassID clas
     p->weakref_count = 0;
     if (class_id != JS_CLASS_OBJECT) /* the block of an ordinary object ends before u */
         p->u.opaque = NULL;
+    if (js_class_func_block(class_id)) {
+        /* no function yet, as js_new_function_object leaves it: the
+           finalizer and the mark do nothing with it */
+        p->u.func.var_refs = NULL;
+        p->u.func.home_object = NULL;
+        js_func_rv(p) = NULL;
+    }
     p->shape = sh;
     p->prop = js_malloc(ctx, sizeof(JSProperty) * sh->prop_size);
     if (unlikely(!p->prop)) {
@@ -10027,7 +10046,7 @@ static void free_object(JSRuntime *rt, JSObject *p)
         p->u.func.var_refs = NULL;
         p->u.func.home_object = NULL;
     }
-    if (p->class_id < 64 && ((JS_FUNC_BLOCK_CLASSES >> p->class_id) & 1))
+    if (js_class_func_block(p->class_id))
         js_func_rv(p) = NULL;
     p->class_id = 0;
 
@@ -11258,7 +11277,7 @@ void JS_ComputeMemoryUsage(JSRuntime *rt, JSMemoryUsage *s)
             s->shape_size += get_shape_size(hash_size, sh->prop_size);
         }
 
-        if (p->class_id < 64 && ((JS_FUNC_BLOCK_CLASSES >> p->class_id) & 1))
+        if (js_class_func_block(p->class_id))
             s->obj_size += sizeof(JSFuncObject) - sizeof(JSObject); /* rv */
         switch(p->class_id) {
         case JS_CLASS_OBJECT:

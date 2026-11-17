@@ -1708,6 +1708,42 @@ int white_regvm_call_record(JSValueConst f)
     return mine == RV_UNCONVERTED ? 2 : -1;
 }
 
+/* an object of each class of JS_FUNC_BLOCK_CLASSES made by the generic
+   JS_NewObjectProtoClass, as an embedder may, then marked by a collection
+   and freed: 0 when every one has a block that holds a JSFuncObject, rv
+   NULL and its properties in a block of their own, else 10 times what
+   failed (1 the block, 2 rv, 3 the properties, 4 no object) plus the index
+   of the class */
+int white_func_class_objects(JSContext *ctx)
+{
+    static const JSClassID classes[4] = {
+        JS_CLASS_BYTECODE_FUNCTION, JS_CLASS_GENERATOR_FUNCTION,
+        JS_CLASS_ASYNC_FUNCTION, JS_CLASS_ASYNC_GENERATOR_FUNCTION,
+    };
+    int i, r;
+
+    for (i = 0; i < 4; i++) {
+        JSValue v = JS_NewObjectProtoClass(ctx, JS_NULL, classes[i]);
+        JSObject *p;
+
+        if (JS_IsException(v))
+            return 40 + i;
+        p = JS_VALUE_GET_OBJ(v);
+        r = 0;
+        if (js_malloc_usable_size(ctx, p) < sizeof(JSFuncObject))
+            r = 1;
+        else if (js_func_rv(p) != NULL)
+            r = 2;
+        else if (js_props_inline(p))
+            r = 3;
+        JS_RunGC(JS_GetRuntime(ctx)); /* marks it */
+        JS_FreeValue(ctx, v);
+        if (r)
+            return r * 10 + i;
+    }
+    return 0;
+}
+
 /* the reads of a name of the function f, converted (GETF, GETFL and GETFT,
    found by their pcmap entries, which end the 15 bytes of the
    instruction): the slot each site keeps (engine/regvm-ops-basic.h), in
