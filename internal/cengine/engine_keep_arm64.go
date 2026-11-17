@@ -1131,7 +1131,6 @@ var goasmKeep = []any{
 	js_set_isDisjointFrom,
 	js_set_isSubsetOf,
 	js_set_isSupersetOf,
-	js_set_module_evaluated,
 	js_set_symmetricDifference,
 	js_set_union,
 	js_shape_cache_off,

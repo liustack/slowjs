@@ -36714,16 +36714,15 @@ static JSValue js_dynamic_import(JSContext *ctx, JSValueConst specifier, JSValue
     goto done;
 }
 
+static void js_module_settle(JSContext *ctx, JSModuleDef *m, BOOL is_reject,
+                             JSValueConst value);
+
 static void js_set_module_evaluated(JSContext *ctx, JSModuleDef *m)
 {
     m->status = JS_MODULE_STATUS_EVALUATED;
     if (!JS_IsUndefined(m->promise)) {
-        JSValue value, ret_val;
         assert(m->cycle_root == m);
-        value = JS_UNDEFINED;
-        ret_val = js_call(ctx, m->resolving_funcs[0], JS_UNDEFINED,
-                          1, (JSValueConst *)&value);
-        JS_FreeValue(ctx, ret_val);
+        js_module_settle(ctx, m, FALSE, JS_UNDEFINED);
     }
 }
 
@@ -36835,11 +36834,8 @@ static JSValue js_async_module_execution_rejected1(JSContext *ctx, JSValueConst 
     module->async_evaluation = FALSE;
 
     if (!JS_IsUndefined(module->promise)) {
-        JSValue ret_val;
         assert(module->cycle_root == module);
-        ret_val = js_call(ctx, module->resolving_funcs[1], JS_UNDEFINED,
-                          1, &error);
-        JS_FreeValue(ctx, ret_val);
+        js_module_settle(ctx, module, TRUE, error);
     }
 
     for(i = 0; i < module->async_parent_modules_count; i++) {
@@ -37132,7 +37128,7 @@ static int js_inner_module_evaluation(JSContext *ctx, JSModuleDef *m,
 static JSValue js_evaluate_module(JSContext *ctx, JSModuleDef *m)
 {
     JSModuleDef *m1, *stack_top;
-    JSValue ret_val, result;
+    JSValue result;
 
 #ifdef DUMP_MODULE_EXEC
     js_dump_module(ctx, __func__, m);
@@ -37145,24 +37141,8 @@ static JSValue js_evaluate_module(JSContext *ctx, JSModuleDef *m)
         m = m->cycle_root;
     }
     /* a promise may be created only on the cycle_root of a cycle */
-    if (!JS_IsUndefined(m->promise)) {
-        /* an evaluation that ended while an uncatchable exception was
-           pending recorded its result in m, and could not settle the
-           promise, as every call fails then: it settles now */
-        if (m->status == JS_MODULE_STATUS_EVALUATED &&
-            JS_PromiseState(ctx, m->promise) == JS_PROMISE_PENDING) {
-            if (m->eval_has_exception) {
-                ret_val = js_call(ctx, m->resolving_funcs[1], JS_UNDEFINED,
-                                  1, (JSValueConst *)&m->eval_exception);
-            } else {
-                JSValue value = JS_UNDEFINED;
-                ret_val = js_call(ctx, m->resolving_funcs[0], JS_UNDEFINED,
-                                  1, (JSValueConst *)&value);
-            }
-            JS_FreeValue(ctx, ret_val);
-        }
+    if (!JS_IsUndefined(m->promise))
         return JS_DupValue(ctx, m->promise);
-    }
     m->promise = JS_NewPromiseCapability(ctx, m->resolving_funcs);
     if (JS_IsException(m->promise)) {
         /* no promise: the next import makes one, where it took the
@@ -37185,9 +37165,7 @@ static JSValue js_evaluate_module(JSContext *ctx, JSModuleDef *m)
         JS_FreeValue(ctx, result);
         assert(m->status == JS_MODULE_STATUS_EVALUATED);
         assert(m->eval_has_exception);
-        ret_val = js_call(ctx, m->resolving_funcs[1], JS_UNDEFINED,
-                          1, (JSValueConst *)&m->eval_exception);
-        JS_FreeValue(ctx, ret_val);
+        js_module_settle(ctx, m, TRUE, m->eval_exception);
     } else {
 #ifdef DUMP_MODULE_EXEC
         js_dump_module(ctx, "  done", m);
@@ -37196,12 +37174,8 @@ static JSValue js_evaluate_module(JSContext *ctx, JSModuleDef *m)
                m->status == JS_MODULE_STATUS_EVALUATED);
         assert(!m->eval_has_exception);
         if (!m->async_evaluation) {
-            JSValue value;
             assert(m->status == JS_MODULE_STATUS_EVALUATED);
-            value = JS_UNDEFINED;
-            ret_val = js_call(ctx, m->resolving_funcs[0], JS_UNDEFINED,
-                              1, (JSValueConst *)&value);
-            JS_FreeValue(ctx, ret_val);
+            js_module_settle(ctx, m, FALSE, JS_UNDEFINED);
         }
         assert(stack_top == NULL);
     }
@@ -68864,6 +68838,27 @@ static void reject_promise(JSContext *ctx, JSValueConst promise,
                            JSValueConst value)
 {
     fulfill_or_reject_promise(ctx, promise, value, TRUE);
+}
+
+/* The promise of m, the root of its cycle, settles with no call of its
+   resolving function, which fails while an uncatchable exception is
+   pending: a stop in the job that ended a module left its promise pending
+   for good, the module evaluated. The function is the engine's own, and
+   the call did no more than this: fulfilled with undefined, or rejected
+   with value. A promise settled already stays as it is. */
+static void js_module_settle(JSContext *ctx, JSModuleDef *m, BOOL is_reject,
+                             JSValueConst value)
+{
+    JSPromiseFunctionData *fd;
+
+    if (JS_VALUE_GET_TAG(m->resolving_funcs[is_reject]) != JS_TAG_OBJECT)
+        return;
+    fd = JS_VALUE_GET_OBJ(m->resolving_funcs[is_reject])->u.promise_function_data;
+    if (!fd || fd->presolved->already_resolved)
+        return;
+    fd->presolved->already_resolved = TRUE;
+    fulfill_or_reject_promise(ctx, fd->promise, is_reject ? value : JS_UNDEFINED,
+                              is_reject);
 }
 
 /* An uncatchable exception (an interrupt, running out of memory, a panic of

@@ -2851,7 +2851,10 @@ static void test_module_fail_collect(void)
    and a module with a top-level await stayed evaluating for good, as the
    failure of the modules runs where the host takes the error
    (js_fail_async_modules). Each case is stopped at each reading of the flag
-   in its jobs, and only the return value decides what the host does. */
+   in its jobs, and only the return value decides what the host does. The
+   promise of the module is then rejected, also after a stop in the job
+   that ended it, which refused the call of its resolving function
+   (js_module_settle). */
 static void test_job_stop_returns(void)
 {
     static const struct {
@@ -2902,6 +2905,10 @@ static void test_job_stop_returns(void)
             if (swallowed) {
                 *JS_GetInterruptFlag(v.rt) = 0;
                 JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+            }
+            if (cases[i].module && failed) {
+                CHECK(JS_PromiseState(v.ctx, p) == JS_PROMISE_REJECTED, "module, stop at %ld: in state %d",
+                      k, JS_PromiseState(v.ctx, p));
             }
             JS_FreeValue(v.ctx, p);
             drain_jobs(&v);
