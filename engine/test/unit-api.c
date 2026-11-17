@@ -2786,6 +2786,63 @@ static void test_module_await_species(void)
     vm_free(&v);
 }
 
+/* gc_tracker runs the collector, as a host's tracker of rejections may. */
+static int gc_tracker_calls;
+
+static void gc_tracker(JSContext *ctx, JSValueConst promise, JSValueConst reason,
+                       JS_BOOL is_handled, void *opaque)
+{
+    (void)promise;
+    (void)reason;
+    (void)is_handled;
+    (void)opaque;
+    gc_tracker_calls++;
+    JS_RunGC(JS_GetRuntime(ctx));
+}
+
+/* The modules a stop fails (js_fail_async_modules) are those of every
+   context of the runtime. Context b waits in b.js on a promise nothing
+   settles, its eval's promise and the host's reference to b freed, so that
+   b, its module and its promise are a cycle only the collector frees,
+   which does not run on its own. A stop of context a fails b.js with it:
+   its rejection called the host's tracker while the walk of the modules
+   was on b.js, with no reference to b, its module or its promise, and a
+   tracker that ran the collector freed them all under it. The tracker is
+   not told of these rejections, and the walk calls nothing. */
+static void test_module_fail_collect(void)
+{
+    static const char wait[] = "await new Promise(() => {});";
+    static const char spin[] = "for (;;) {}";
+    JSRuntime *rt = host_new_runtime();
+    JSContext *a = JS_NewContext(rt), *b = JS_NewContext(rt);
+    long leaked = host_leaked_runtimes();
+    JSValue r, e;
+    const char *s;
+
+    JS_SetGCThreshold(rt, (size_t)-1);
+    JS_SetHostPromiseRejectionTracker(rt, gc_tracker, NULL);
+    gc_tracker_calls = 0;
+    r = JS_Eval(b, wait, strlen(wait), "b.js", JS_EVAL_TYPE_MODULE);
+    CHECK(!JS_IsException(r), "the eval of b.js threw");
+    JS_FreeValue(b, r);
+    JS_FreeContext(b);
+    host_poll_stop_after(1);
+    r = JS_Eval(a, spin, strlen(spin), "<spin>", JS_EVAL_TYPE_GLOBAL);
+    host_poll_stop_after(0);
+    CHECK(JS_IsException(r), "the loop of a ran to its end");
+    *JS_GetInterruptFlag(rt) = 0;
+    e = JS_GetException(a);
+    s = JS_ToCString(a, e);
+    CHECK(s && strcmp(s, "InternalError: interrupted") == 0, "a ended with %s", s ? s : "?");
+    JS_FreeCString(a, s);
+    JS_FreeValue(a, e);
+    CHECK(gc_tracker_calls == 0, "the tracker was called %d times", gc_tracker_calls);
+    JS_RunGC(rt);
+    JS_FreeContext(a);
+    host_free_runtime(rt);
+    CHECK(host_leaked_runtimes() == leaked, "blocks left in the runtime");
+}
+
 int main(void)
 {
     test_compile_stops();
@@ -2794,6 +2851,7 @@ int main(void)
     test_link_retry();
     test_module_await_stops();
     test_module_await_species();
+    test_module_fail_collect();
     test_for_in_keeps_shape();
     test_plain_objects();
     test_run_gc_threshold();

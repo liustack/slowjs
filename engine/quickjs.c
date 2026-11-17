@@ -1250,6 +1250,10 @@ struct JSModuleDef {
     JSModuleDef *resolve_prev;
     /* the module marked func_created before it, the same way */
     JSModuleDef *func_prev;
+    /* the next module whose promise js_fail_async_modules rejects, and its
+       context, each with a reference, while it runs */
+    JSModuleDef *fail_next;
+    JSContext *fail_ctx;
     /* temp use during js_module_link() & js_module_evaluate() */
     int dfs_index, dfs_ancestor_index;
     JSModuleDef *stack_prev;
@@ -68863,24 +68867,33 @@ static void reject_promise(JSContext *ctx, JSValueConst promise,
    and the module and those that wait for it stayed evaluating for good, an
    import of them never settling. So every module still in its asynchronous
    evaluation is recorded as failed with error, as its handler would, and
-   the promise of each that is the root of a cycle is rejected with it,
-   with no call: the interrupt may still be set. With no memory for the
-   jobs of its reactions, those are lost, as for any promise, and the
-   error is dropped: the host has one already. A module that is not
-   evaluating, or that ended, is left as it is. Runs once for each such end
-   of a call, over the modules of the runtime. */
+   the promise of each that is the root of a cycle is rejected with it. A
+   module that is not evaluating, or that ended, is left as it is. Runs once
+   for each such end of a call, over the modules of the runtime.
+
+   The walk of the contexts and their modules only sets states, with no call
+   and no free, so that nothing changes the lists under it, and takes a
+   reference to each root and its context. The rejections come after it,
+   with no call of javascript (the interrupt may still be set): freeing the
+   reactions of a promise can free values, modules and contexts, which the
+   references keep from those still to reject. The tracker of rejections is
+   not told (is_handled): the host has the error already, from the call it
+   ends, and a tracker would run host code, and could run the collector, in
+   the middle of the host's take of it. With no memory for the jobs of its
+   reactions, those are lost, as for any promise, and the error is dropped:
+   the host has one already. */
 static no_inline void js_fail_async_modules(JSRuntime *rt, JSValueConst error)
 {
     struct list_head *el, *el1;
+    JSModuleDef *m, *roots = NULL, **tail = &roots;
 
     list_for_each(el, &rt->context_list) {
         JSContext *ctx = list_entry(el, JSContext, link);
 
         list_for_each(el1, &ctx->loaded_modules) {
-            JSModuleDef *m = list_entry(el1, JSModuleDef, link);
-            JSObject *p;
             JSPromiseFunctionData *fd;
 
+            m = list_entry(el1, JSModuleDef, link);
             if (m->status != JS_MODULE_STATUS_EVALUATING_ASYNC)
                 continue;
             assert(!m->eval_has_exception);
@@ -68890,15 +68903,37 @@ static no_inline void js_fail_async_modules(JSRuntime *rt, JSValueConst error)
             m->async_evaluation = FALSE;
             if (JS_VALUE_GET_TAG(m->resolving_funcs[1]) != JS_TAG_OBJECT)
                 continue;
-            p = JS_VALUE_GET_OBJ(m->resolving_funcs[1]);
-            fd = p->u.promise_function_data;
+            fd = JS_VALUE_GET_OBJ(m->resolving_funcs[1])->u.promise_function_data;
             if (!fd || fd->presolved->already_resolved)
                 continue;
             fd->presolved->already_resolved = TRUE;
-            reject_promise(ctx, fd->promise, error);
-            if (!JS_IsUninitialized(rt->current_exception))
-                JS_FreeValue(ctx, js_take_exception(rt));
+            JS_DupValue(ctx, JS_MKPTR(JS_TAG_MODULE, m));
+            m->fail_ctx = JS_DupContext(ctx);
+            m->fail_next = NULL;
+            *tail = m;
+            tail = &m->fail_next;
         }
+    }
+    while (roots) {
+        JSContext *ctx;
+        JSPromiseData *s;
+        JSValue promise;
+
+        m = roots;
+        roots = m->fail_next;
+        ctx = m->fail_ctx;
+        m->fail_next = NULL;
+        m->fail_ctx = NULL;
+        promise = JS_DupValue(ctx, JS_VALUE_GET_OBJ(m->resolving_funcs[1])->u.promise_function_data->promise);
+        s = JS_GetOpaque(promise, JS_CLASS_PROMISE);
+        if (s)
+            s->is_handled = TRUE;
+        reject_promise(ctx, promise, error);
+        if (!JS_IsUninitialized(rt->current_exception))
+            JS_FreeValue(ctx, js_take_exception(rt));
+        JS_FreeValue(ctx, promise);
+        JS_FreeValue(ctx, JS_MKPTR(JS_TAG_MODULE, m));
+        JS_FreeContext(ctx);
     }
 }
 
