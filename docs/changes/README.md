@@ -201,6 +201,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | The copy of the arguments of a call and of a spread into an array reads the interrupt flag every 4,096 elements: apply, a spread into a call, `new` or an array, `arguments`, a rest parameter and the extra arguments of a call into the register loop | v0.31.4 | `build_arg_list`, `js_append_array` and `js_append_enumerate` in [quickjs.c](../../engine/quickjs.c), `rv_build_arguments`, `rv_build_mapped_arguments` and `rv_build_rest` in [regvm-ops-args.h](../../engine/regvm-ops-args.h), `rv_entry_extra` in [regvm-run.h](../../engine/regvm-run.h) |
 | The scan of a regexp literal reads the interrupt flag at its end, so a stop does not wait for the hash of a long literal | v0.31.3 | `js_parse_regexp` in [quickjs.c](../../engine/quickjs.c) |
 | Intl asks Go for no memory sized by a whole list of locales before its first check of the call: the locales it canonicalizes and their seen set grow with the tags gone through | v0.31.3 | [uncatchable.md](uncatchable.md#intl-reads-the-interrupt-flag-in-loops-over-a-long-list) |
+| The growth of a fast array that moves its block reads the interrupt flag before each MiB it copies, as the resize of an `ArrayBuffer` does, and a stop leaves the array as it was: the result of a `split` of 2M parts, or an array pushed to that many elements, was copied in one go, and a stop asked then waited for it, more polls than a timeout allows | Unreleased | `js_realloc_stop` in [quickjs.c](../../engine/quickjs.c) |
 
 ## Errors and stacks
 

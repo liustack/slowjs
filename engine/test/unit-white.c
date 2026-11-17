@@ -183,6 +183,7 @@ int white_kept_shapes(JSRuntime *rt);
 void *white_kept_shape(JSRuntime *rt, size_t *size);
 int white_take_slots(JSRuntime *rt, size_t size, void **out, int cap);
 size_t white_found_resize(JSContext *ctx, JSValueConst obj, const char *key);
+int white_array_grow(JSContext *ctx, JSValueConst arr, uint32_t new_len);
 
 /* ---- texts of every kind of character ---- */
 
@@ -9618,6 +9619,51 @@ static void test_define_existing_oom(void)
     vm_free(&v);
 }
 
+/* The growth of the block of a fast array that moves reads the interrupt
+   flag before each MiB it copies, and a stop throws the interrupt and
+   leaves the array as it was. The block of 4M elements (64 MiB) was copied
+   in one go with no read: a stop asked while split filled its result of 2M
+   elements waited for the copy, 11 to 14 polls of the generated engine. The
+   host is told it cannot remap, so the block moves on every system. */
+#define GROW_LEN 4194304
+static void test_array_grow_stops(void)
+{
+    static const char src[] = "var a = []; for (let i = 0; i < 4194304; i++) a.push(i); a";
+    VM v = vm_new();
+    JSValue a, e;
+    long reads;
+    int ret;
+
+    JS_SetHostRemap(v.rt, 0);
+    a = JS_Eval(v.ctx, src, strlen(src), "<grow>", JS_EVAL_TYPE_GLOBAL);
+    CHECK(!JS_IsException(a), "the array threw");
+    host_poll_reads = 0;
+    ret = white_array_grow(v.ctx, a, 2 * GROW_LEN);
+    reads = host_poll_reads;
+    CHECK(ret == 0, "the growth failed");
+    CHECK(reads >= (long)(GROW_LEN * sizeof(JSValue) >> 20) - 1,
+          "the copy of %d elements read the flag %ld times", GROW_LEN, reads);
+    JS_FreeValue(v.ctx, a);
+
+    a = JS_Eval(v.ctx, src, strlen(src), "<grow>", JS_EVAL_TYPE_GLOBAL);
+    CHECK(!JS_IsException(a), "the array threw");
+    host_poll_reads = 0;
+    host_poll_stop_after(2);
+    ret = white_array_grow(v.ctx, a, 2 * GROW_LEN);
+    host_poll_stop_after(0);
+    CHECK(ret < 0, "a stop in the copy did not end the growth");
+    *JS_GetInterruptFlag(v.rt) = 0;
+    if (ret < 0) {
+        e = JS_GetException(v.ctx);
+        JS_FreeValue(v.ctx, e);
+    }
+    JS_FreeValue(v.ctx, a);
+    CHECK(eval_is(v.ctx, "a.length + ',' + a[0] + ',' + a[4194303] + ',' + (a.push(7), a[4194304])",
+                  "4194304,0,4194303,7"), "the array after the stop");
+    vm_free(&v);
+}
+
+
 int main(int argc, char **argv)
 {
     /* one case of test_gc_in_free, in a process of its own */
@@ -9698,6 +9744,7 @@ int main(int argc, char **argv)
     test_poll_compile();
     test_poll_ret();
     test_poll_checked_read();
+    test_array_grow_stops();
     test_object_lit_read();
     test_tail_c_calls();
     test_fused_ops();

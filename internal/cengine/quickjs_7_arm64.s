@@ -22704,7 +22704,7 @@ TEXT ·JS_ThrowTypeErrorInvalidClass(SB), $88-24
 	WORD $0x14000001
 	RET
 
-TEXT ·js_array_buffer_realloc(SB), $88-32
+TEXT ·js_realloc_stop(SB), $88-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21

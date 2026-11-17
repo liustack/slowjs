@@ -4,6 +4,10 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 
 ## [Unreleased]
 
+### Fixed
+
+- A timeout or interrupt while an array grows to tens of MB, the result of a `split` into millions of parts or a long loop of pushes, stops at the next MB the engine copies, where it waited for the whole copy.
+
 ## [v0.31.4] - 2026-11-17
 
 ### Added

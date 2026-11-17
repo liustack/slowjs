@@ -2913,6 +2913,39 @@ void *js_realloc2(JSContext *ctx, void *ptr, size_t size, size_t *pslack)
     return ret;
 }
 
+/* js_realloc2 of a block that may be large and move, for the callers that
+   handle a failed resize like one that ran out of memory: the growth of a
+   fast array, and the resize and the transfer of an ArrayBuffer. The heap
+   copies a block that moves a MiB at a time, with a read of the interrupt
+   flag before each step (heap_copy), and a stop throws the interrupt and
+   leaves the block as it was. Other callers of js_realloc are not all made
+   for a failure that a run with memory to spare can give, so the heap reads
+   the flag for these alone (see docs/allocator.md). */
+static void *js_realloc_stop(JSContext *ctx, void *ptr, size_t size,
+                             size_t *pslack)
+{
+    JSRuntime *rt = ctx->rt;
+    JSHeap *h = &rt->malloc_ctx.heap;
+    void *p;
+
+    h->stopped = 0;
+    h->stop = &rt->interrupt_flag;
+    p = js_realloc_rt(rt, ptr, size);
+    h->stop = NULL;
+    if (unlikely(!p)) {
+        /* the flag stays set once read, so this throws the interrupt */
+        if (h->stopped && js_poll_interrupts(ctx))
+            return NULL;
+        JS_ThrowOutOfMemory(ctx);
+        return NULL;
+    }
+    if (pslack) {
+        size_t new_size = js_malloc_usable_size_rt(rt, p);
+        *pslack = (new_size > size) ? new_size - size : 0;
+    }
+    return p;
+}
+
 size_t js_malloc_usable_size(JSContext *ctx, const void *ptr)
 {
     return js_malloc_usable_size_rt(ctx->rt, ptr);
@@ -15130,7 +15163,10 @@ static int expand_fast_array(JSContext *ctx, JSObject *p, uint32_t new_len)
     /* size * 3 / 2, which overflows 32 bits past 2^32 / 3: with the room at
        most 2^31 - 1 this does not */
     new_size = max_uint32(new_len, size + size / 2);
-    new_array_prop = js_realloc2(ctx, p->u.array.u.values, sizeof(JSValue) * new_size, &slack);
+    /* a block that moves reads the interrupt flag as it is copied: the
+       result of a split or of a loop of pushes grows to tens of MiB */
+    new_array_prop = js_realloc_stop(ctx, p->u.array.u.values,
+                                     sizeof(JSValue) * new_size, &slack);
     if (!new_array_prop)
         return -1;
     room = (size_t)new_size + slack / sizeof(*new_array_prop);
@@ -72475,32 +72511,6 @@ static JSValue js_array_buffer_get_resizable(JSContext *ctx,
     return JS_NewBool(ctx, array_buffer_is_resizable(abuf));
 }
 
-/* js_realloc of the block of an ArrayBuffer that resize or transfer changes:
-   the heap copies a block that moves a MiB at a time, with a read of the
-   interrupt flag before each step (heap_copy), and a stop throws the
-   interrupt and leaves the block as it was. Only these two let the heap read
-   the flag. Both handle a failed resize, while other callers of js_realloc
-   are not all made for a failure that a run with memory to spare can give
-   (see docs/changes/uncatchable.md). */
-static void *js_array_buffer_realloc(JSContext *ctx, void *ptr, size_t size)
-{
-    JSRuntime *rt = ctx->rt;
-    JSHeap *h = &rt->malloc_ctx.heap;
-    void *p;
-
-    h->stopped = 0;
-    h->stop = &rt->interrupt_flag;
-    p = js_realloc_rt(rt, ptr, size);
-    h->stop = NULL;
-    if (unlikely(!p)) {
-        /* the flag stays set once read, so this throws the interrupt */
-        if (h->stopped && js_poll_interrupts(ctx))
-            return NULL;
-        JS_ThrowOutOfMemory(ctx);
-    }
-    return p;
-}
-
 /* memset(p, 0, n) of the bytes a buffer gains, JS_COPY_STEP bytes at a time
    with the interrupt flag read before each step when there is more than one,
    as the heap copies a block that moves. -1 with "interrupted" thrown, and
@@ -72692,7 +72702,7 @@ static JSValue js_array_buffer_transfer(JSContext *ctx,
                 res = js_array_buffer_constructor2(ctx, JS_UNDEFINED, 0, pmax_len, JS_CLASS_ARRAY_BUFFER);
                 if (JS_IsException(res))
                     return res;
-                new_bs = js_array_buffer_realloc(ctx, abuf->data, new_len);
+                new_bs = js_realloc_stop(ctx, abuf->data, new_len, NULL);
                 if (!new_bs) {
                     JS_FreeValue(ctx, res);
                     return JS_EXCEPTION;
@@ -72769,7 +72779,7 @@ static JSValue js_array_buffer_resize(JSContext *ctx, JSValueConst this_val,
     } else {
         if (len > abuf->byte_length)
             js_trigger_gc_block(ctx->rt, len - abuf->byte_length);
-        data = js_array_buffer_realloc(ctx, abuf->data, max_int(len, 1));
+        data = js_realloc_stop(ctx, abuf->data, max_int(len, 1), NULL);
         if (!data)
             return JS_EXCEPTION;
         abuf->data = data;

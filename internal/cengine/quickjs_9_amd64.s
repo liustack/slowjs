@@ -21473,7 +21473,7 @@ TEXT ·js_array_buffer_resize(SB), $112-56
 	BYTE $0x7c
 	BYTE $0x24
 	BYTE $0x18
-	CALL ·js_array_buffer_realloc(SB)
+	CALL ·js_realloc_stop(SB)
 	QUAD $0xc0854800000006ba
 	QUAD $0x8b4cfffffed0840f
 	QUAD $0x491041894958244c
@@ -22064,7 +22064,7 @@ TEXT ·JS_ThrowTypeErrorInvalidClass(SB), $80-24
 	BYTE $0x00
 	RET
 
-TEXT ·js_array_buffer_realloc(SB), $80-32
+TEXT ·js_realloc_stop(SB), $80-32
 	NO_LOCAL_POINTERS
 #ifdef GOOS_windows
 	LEAQ -12288(SP), R12
@@ -22912,7 +22912,7 @@ TEXT ·js_array_buffer_transfer(SB), $144-56
 	BYTE $0x7c
 	BYTE $0x24
 	BYTE $0x18
-	CALL ·js_array_buffer_realloc(SB)
+	CALL ·js_realloc_stop(SB)
 	QUAD $0xc189487174c08548
 	QUAD $0x448b4850247c8b4c
 	QUAD $0x4c8948c729496824

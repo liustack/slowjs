@@ -66,7 +66,7 @@ typedef struct JSHeap {
     size_t release_target;     /* the release in progress */
     size_t release_offered;
     void *release_prev;
-    const volatile int *stop;  /* the interrupt flag while the runtime lets a move stop (the resize of an ArrayBuffer), read while a large block moves (heap_realloc), else NULL */
+    const volatile int *stop;  /* the interrupt flag while the runtime lets a move stop (js_realloc_stop), read while a large block moves (heap_realloc), else NULL */
     int stopped;               /* the last heap_realloc failed because *stop was set */
     uint32_t vm;
 } JSHeap;
