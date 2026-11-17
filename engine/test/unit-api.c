@@ -2939,6 +2939,73 @@ static void test_job_stop_returns(void)
     }
 }
 
+/* A call of the host that a stop ends returns the exception, whatever the
+   code it ran returned. An async function stopped before its first await
+   cannot reject its promise, as the call of its reject function is refused
+   while the error is pending, and returned that promise, still pending:
+   JS_Eval of a module with a top-level await after a busy loop returned the
+   pending promise of the module, no job was left to run, and a host that
+   takes the exception only when a call fails never took it, so the module
+   stayed evaluating for good. A module with no await returned its promise
+   rejected, a script that calls an async function and JS_Call of one their
+   pending promise. Each is stopped at each reading of the flag up to
+   ENTRY_STOPS, in the compile and in the loop. */
+#define ENTRY_STOPS 40
+static void test_entry_stop_returns(void)
+{
+    static const struct {
+        const char *what, *src;
+        int module, call;
+    } cases[] = {
+        { "module with an await", "for (;;) {} await 0;", 1, 0 },
+        { "module", "for (;;) {}", 1, 0 },
+        { "script", "(async () => { for (;;) {} })()", 0, 0 },
+        { "JS_Call", "globalThis.f = async () => { for (;;) {} };", 0, 1 },
+    };
+    size_t i;
+    long k;
+
+    for (i = 0; i < countof(cases); i++) {
+        for (k = 1; k <= ENTRY_STOPS; k++) {
+            VM v = vm_new();
+            JSValue r, f = JS_UNDEFINED, e;
+            const char *s;
+
+            if (cases[i].call) {
+                r = JS_Eval(v.ctx, cases[i].src, strlen(cases[i].src), "<entry>", JS_EVAL_TYPE_GLOBAL);
+                CHECK(!JS_IsException(r), "%s: the eval threw", cases[i].what);
+                JS_FreeValue(v.ctx, r);
+                JSValue g = JS_GetGlobalObject(v.ctx);
+
+                f = JS_GetPropertyStr(v.ctx, g, "f");
+                JS_FreeValue(v.ctx, g);
+            }
+            host_poll_reads = 0;
+            host_poll_stop_after(k);
+            if (cases[i].call)
+                r = JS_Call(v.ctx, f, JS_UNDEFINED, 0, NULL);
+            else
+                r = JS_Eval(v.ctx, cases[i].src, strlen(cases[i].src), "<entry>",
+                            cases[i].module ? JS_EVAL_TYPE_MODULE : JS_EVAL_TYPE_GLOBAL);
+            host_poll_stop_after(0);
+            CHECK(JS_IsException(r), "%s, stop at %ld: returned %s with %s pending", cases[i].what, k,
+                  JS_IsException(r) ? "the exception" : "a value",
+                  JS_IsUncatchableException(v.ctx) ? "an uncatchable error" : "no error");
+            JS_FreeValue(v.ctx, r);
+            *JS_GetInterruptFlag(v.rt) = 0;
+            e = JS_GetException(v.ctx);
+            s = JS_ToCString(v.ctx, e);
+            CHECK(s && strcmp(s, "InternalError: interrupted") == 0, "%s, stop at %ld: %s",
+                  cases[i].what, k, s ? s : "?");
+            JS_FreeCString(v.ctx, s);
+            JS_FreeValue(v.ctx, e);
+            JS_FreeValue(v.ctx, f);
+            drain_jobs(&v);
+            vm_free(&v);
+        }
+    }
+}
+
 int main(void)
 {
     test_compile_stops();
@@ -2949,6 +3016,7 @@ int main(void)
     test_module_await_species();
     test_module_fail_collect();
     test_job_stop_returns();
+    test_entry_stop_returns();
     test_for_in_keeps_shape();
     test_plain_objects();
     test_run_gc_threshold();
