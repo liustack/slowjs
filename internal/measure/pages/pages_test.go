@@ -37,6 +37,7 @@ var (
 	flagHash    = flag.Bool("hash", false, "print the SHA-256 of the HTML of the first render of each page (html NAME HASH)")
 	flagWindow  = flag.Bool("cg", false, "mark the window of callgrind (bench cg -dumps -small 0, amd64 only): render every page -warm times, zero the counts, render every page -timed times, then dump the counts")
 	flagRepo    = flag.String("repo", "", "the liustack/slowjs checkout that holds the pages (default: the one the working directory is in)")
+	flagCollect = flag.Bool("collect", false, "also report p50-collect-ms, the median of each timed render together with the collection the pool runs after it (After), which p50-ms leaves out")
 )
 
 var errNothing = errors.New("nothing to render")
@@ -126,7 +127,8 @@ func fromFlags() (run, error) {
 // BenchmarkPages loads the bundle in one VM, then renders each page -warm times and -timed times
 // more, and reports the median of the timed renders as p50-ms, on a line named
 // Pages/MODE/PAGE (Pages/PAGE in the stand-in mode). The collections between renders are not
-// timed.
+// in p50-ms: with -collect it also reports p50-collect-ms, the median of each render together with
+// the collection the pool runs after it, the cost of a render to the throughput of a VM.
 func BenchmarkPages(b *testing.B) {
 	r, err := fromFlags()
 	if errors.Is(err, errNothing) {
@@ -164,32 +166,19 @@ func BenchmarkPages(b *testing.B) {
 	render := func(b *testing.B, in string) {
 		input, name := page(b, in)
 		b.Run(name, func(b *testing.B) {
-			ds := make([]time.Duration, 0, r.timed)
-			var warm []time.Duration // for spinShare (spin.go)
-			for i := 0; i < r.warm+r.timed; i++ {
-				html, d, err := runner.Render(input)
-				if err != nil {
-					b.Fatalf("%s, render %d: %v", name, i, err)
-				}
-				if spinShare > 0 {
-					if i < r.warm {
-						warm = append(warm, d)
-					} else {
-						d += spinFor(spinTarget(warm, spinShare))
-					}
-				}
-				if i == 0 && *flagHash {
+			first := func(html string) {
+				if *flagHash {
 					fmt.Fprintf(os.Stderr, "html %s %x\n", name, sha256.Sum256([]byte(html)))
 				}
-				if err := runner.After(); err != nil {
-					b.Fatal(err)
-				}
-				if i >= r.warm {
-					ds = append(ds, d)
-				}
 			}
-			slices.Sort(ds)
-			b.ReportMetric(float64(ds[len(ds)/2])/1e6, "p50-ms")
+			ds, dc, err := timeRenders(runner, input, r.warm, r.timed, first)
+			if err != nil {
+				b.Fatalf("%s: %v", name, err)
+			}
+			b.ReportMetric(float64(median(ds))/1e6, "p50-ms")
+			if *flagCollect {
+				b.ReportMetric(float64(median(dc))/1e6, "p50-collect-ms")
+			}
 		})
 	}
 	if r.prefix == "" {
@@ -239,4 +228,44 @@ func window(b *testing.B, runner *Runner, r run, pages []string, page func(*test
 	do(r.timed)
 	clientRequest(&[6]uint64{cgDumpStats})
 	b.ReportMetric(float64(r.timed*len(pages)), "renders")
+}
+
+// timeRenders renders input warm+timed times, each render followed by what follows it in tifa
+// (After), and returns the times of the timed renders and, for -collect, the time of each timed
+// render together with its After. first gets the HTML of the first render.
+func timeRenders(runner *Runner, input string, warm, timed int, first func(html string)) (render, collect []time.Duration, err error) {
+	render = make([]time.Duration, 0, timed)
+	collect = make([]time.Duration, 0, timed)
+	var warms []time.Duration // for spinShare (spin.go)
+	for i := 0; i < warm+timed; i++ {
+		html, d, err := runner.Render(input)
+		if err != nil {
+			return nil, nil, fmt.Errorf("render %d: %w", i, err)
+		}
+		if spinShare > 0 {
+			if i < warm {
+				warms = append(warms, d)
+			} else {
+				d += spinFor(spinTarget(warms, spinShare))
+			}
+		}
+		if i == 0 {
+			first(html)
+		}
+		t := time.Now()
+		if err := runner.After(); err != nil {
+			return nil, nil, err
+		}
+		if i >= warm {
+			render = append(render, d)
+			collect = append(collect, d+time.Since(t))
+		}
+	}
+	return render, collect, nil
+}
+
+// median is the P50 of ds, which it sorts.
+func median(ds []time.Duration) time.Duration {
+	slices.Sort(ds)
+	return ds[len(ds)/2]
 }
