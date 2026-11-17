@@ -4,6 +4,10 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 
 ## [Unreleased]
 
+### Changed
+
+- A read of a method of `Array.prototype` from an array or an arguments object (`a.push(x)`, `a.map(f)`) keeps where it found the method, as a read of a method of a class already did, and costs about a fifth fewer instructions.
+
 ## [v0.31.4] - 2026-11-17
 
 ### Added
