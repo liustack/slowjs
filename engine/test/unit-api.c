@@ -2748,6 +2748,44 @@ static void test_module_await_stops(void)
             module_await_stops(inner, with_context);
 }
 
+/* A module with a top-level await that changes Promise.prototype.constructor
+   before its first await: the handlers of the module were put on the
+   promise of its function by Promise.prototype.then, whose look for the
+   species constructor threw, and the module stayed evaluating for good,
+   with the TypeError left pending after the eval returned its promise. The
+   module now runs to its end (js_execute_async_module). An import() whose
+   module is evaluated while the constructor is changed never settled, its
+   job ending with the TypeError pending, for the same look: it now gives
+   the module (JS_LoadModuleInternal). */
+static void test_module_await_species(void)
+{
+    static const char s[] = "Promise.prototype.constructor = 1; await 0; globalThis.s = 1;";
+    static const char imp[] = "import(\"q.js\")";
+    VM v = vm_new();
+    JSValue r = JS_Eval(v.ctx, s, strlen(s), "s.js", JS_EVAL_TYPE_MODULE);
+    int failed = 0;
+    JSContext *ctx;
+
+    CHECK(!JS_IsException(r) && !JS_HasException(v.ctx), "the eval of s.js threw");
+    drain_jobs(&v);
+    CHECK(JS_PromiseState(v.ctx, r) == JS_PROMISE_FULFILLED, "s.js is in state %d", JS_PromiseState(v.ctx, r));
+    CHECK(eval_is(v.ctx, "s", "1"), "s.js did not run to its end");
+    JS_FreeValue(v.ctx, r);
+    compile_module(&v, "q.js", "globalThis.q = 1;");
+    r = JS_Eval(v.ctx, imp, strlen(imp), "<import>", JS_EVAL_TYPE_GLOBAL);
+    CHECK(!JS_IsException(r), "the import threw");
+    while (JS_ExecutePendingJob(v.rt, &ctx) != 0 || JS_HasException(v.ctx)) {
+        if (JS_HasException(v.ctx)) {
+            JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+            failed++;
+        }
+    }
+    CHECK(failed == 0 && JS_PromiseState(v.ctx, r) == JS_PROMISE_FULFILLED,
+          "the import is in state %d, with %d exceptions left by its jobs", JS_PromiseState(v.ctx, r), failed);
+    JS_FreeValue(v.ctx, r);
+    vm_free(&v);
+}
+
 int main(void)
 {
     test_compile_stops();
@@ -2755,6 +2793,7 @@ int main(void)
     test_module_eval_stops();
     test_link_retry();
     test_module_await_stops();
+    test_module_await_species();
     test_for_in_keeps_shape();
     test_plain_objects();
     test_run_gc_threshold();

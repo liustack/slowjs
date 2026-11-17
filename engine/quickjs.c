@@ -36501,7 +36501,7 @@ static void JS_LoadModuleInternal(JSContext *ctx, const char *basename,
 {
     JSValue evaluate_promise;
     JSModuleDef *m;
-    JSValue ret, err, func_obj, evaluate_resolving_funcs[2];
+    JSValue ret, err, func_obj, evaluate_resolving_funcs[2], cap[2];
     JSValueConst func_data[3];
 
     m = js_host_resolve_imported_module(ctx, basename, filename, attributes);
@@ -36533,8 +36533,18 @@ static void JS_LoadModuleInternal(JSContext *ctx, const char *basename,
     evaluate_resolving_funcs[0] = JS_NewCFunctionData(ctx, js_load_module_fulfilled, 0, 0, 3, func_data);
     evaluate_resolving_funcs[1] = JS_NewCFunctionData(ctx, js_load_module_rejected, 0, 0, 3, func_data);
     JS_FreeValue(ctx, func_obj);
-    ret = js_promise_then(ctx, evaluate_promise, 2, (JSValueConst *)evaluate_resolving_funcs);
-    JS_FreeValue(ctx, ret);
+    /* PerformPromiseThen, with no species constructor to look up and no
+       promise made: Promise.prototype.then threw when a script had changed
+       Promise.prototype.constructor, and the import never settled (see
+       js_execute_async_module) */
+    cap[0] = JS_UNDEFINED;
+    cap[1] = JS_UNDEFINED;
+    if (perform_promise_then(ctx, evaluate_promise,
+                             (JSValueConst *)evaluate_resolving_funcs,
+                             (JSValueConst *)cap)) {
+        /* out of memory, which ends the call: the exception stays
+           pending for the caller of the job */
+    }
     JS_FreeValue(ctx, evaluate_resolving_funcs[0]);
     JS_FreeValue(ctx, evaluate_resolving_funcs[1]);
     JS_FreeValue(ctx, evaluate_promise);
@@ -36905,10 +36915,20 @@ static JSValue js_async_module_execution_fulfilled(JSContext *ctx, JSValueConst 
     return JS_UNDEFINED;
 }
 
+/* Start the evaluation of m, which has a top-level await, and put the
+   handlers of m on the promise of its function. That is PerformPromiseThen
+   of the spec, with no promise made for the result: Promise.prototype.then,
+   which upstream called, looks up the species constructor of the promise,
+   which a script changes (Promise.prototype.constructor = 1 in the module
+   before its first await): its TypeError left m with no handler, evaluating
+   for good, and the error pending after a call that did not fail. A failure
+   now is out of memory or an interrupt, which ends the call: the host
+   taking it records m as failed (js_fail_async_modules). */
 static int js_execute_async_module(JSContext *ctx, JSModuleDef *m)
 {
     JSValue promise, m_obj;
-    JSValue resolve_funcs[2], ret_val;
+    JSValue resolve_funcs[2], cap[2];
+    int ret;
 #ifdef DUMP_MODULE_EXEC
     js_dump_module(ctx, __func__, m);
 #endif
@@ -36918,13 +36938,15 @@ static int js_execute_async_module(JSContext *ctx, JSModuleDef *m)
     m_obj = JS_NewModuleValue(ctx, m);
     resolve_funcs[0] = JS_NewCFunctionData(ctx, js_async_module_execution_fulfilled, 0, 0, 1, (JSValueConst *)&m_obj);
     resolve_funcs[1] = JS_NewCFunctionData(ctx, js_async_module_execution_rejected, 0, 0, 1, (JSValueConst *)&m_obj);
-    ret_val = js_promise_then(ctx, promise, 2, (JSValueConst *)resolve_funcs);
-    JS_FreeValue(ctx, ret_val);
+    cap[0] = JS_UNDEFINED;
+    cap[1] = JS_UNDEFINED;
+    ret = perform_promise_then(ctx, promise, (JSValueConst *)resolve_funcs,
+                               (JSValueConst *)cap);
     JS_FreeValue(ctx, m_obj);
     JS_FreeValue(ctx, resolve_funcs[0]);
     JS_FreeValue(ctx, resolve_funcs[1]);
     JS_FreeValue(ctx, promise);
-    return 0;
+    return ret;
 }
 
 /* return < 0 in case of exception. *pvalue contains the exception. */
