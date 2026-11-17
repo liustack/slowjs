@@ -2901,18 +2901,36 @@ static void test_young_leaves_no_zero_count(void)
     }
 }
 
-/* A finalizer that a full collection runs as it frees its garbage can drop
-   the last reference to an object outside the garbage: here the host holds
-   the only strong reference to q, which its gc_mark does not report, and the
-   finalizer of a dead self cycle d lets it go. q is then freed after the
-   cycles, as outside a collection, with its children, and leaves no object
-   with a count of 0 on a list. With a WeakRef to q (weak = 1), the weak pass
-   after the cycles must not free the block of q while q is still on a list.
-   The leak check of these tests sees q's child if it is not freed. */
+/* A finalizer that a collection runs as it frees its garbage can drop the
+   last reference to an object outside the garbage: here the host holds the
+   only strong reference to q, which no gc_mark reports, and the finalizer of
+   a dead self cycle d lets it go. q is then freed after the garbage, as
+   outside a collection (gc_defer), with its children, and leaves no object
+   with a count of 0 on a list. The cases:
+   RF_WEAK     a WeakRef to q: the weak pass after the garbage must not free
+               the block of q while q is still on a list, and clears the
+               WeakRef in that same collection
+   RF_OLD      q made old by a full collection before d is made
+   RF_YOUNG_GC the collection that frees d is JS_RunYoungGC
+   RF_CHAIN    q is of a class whose finalizer drops the only reference to
+               r, another root of the host, with a child of its own
+   RF_FR_Q     a FinalizationRegistry watches q itself: its callback is
+               queued once
+   RF_MAP      a WeakMap with an entry whose key lives, so that a full
+               collection judges its entries (gc_ephemeron), where without
+               it the weak pass leaves none
+   What a program sees, the callbacks of the registry (in the order of the
+   registrations) and the WeakRef, is checked right after the collection
+   that freed d, and the lists after it and after a full collection more.
+   The leak check of these tests sees what is not freed. */
+enum {
+    RF_WEAK = 1, RF_OLD = 2, RF_YOUNG_GC = 4, RF_CHAIN = 8, RF_FR_Q = 16, RF_MAP = 32, RF_CASES = 64,
+};
+
 static struct {
-    JSClassID class_id;
-    JSValue q;
-    int finalized;
+    JSClassID class_id, chain_id;
+    JSValue q, r;
+    int finalized, chained;
 } root_freed;
 
 static void root_freed_finalizer(JSRuntime *rt, JSValue val)
@@ -2922,6 +2940,14 @@ static void root_freed_finalizer(JSRuntime *rt, JSValue val)
     root_freed.finalized++;
 }
 
+/* the finalizer of q in RF_CHAIN */
+static void root_freed_chain_finalizer(JSRuntime *rt, JSValue val)
+{
+    JS_FreeValueRT(rt, root_freed.r);
+    root_freed.r = JS_UNDEFINED;
+    root_freed.chained++;
+}
+
 static JSValue root_freed_new(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
 {
     return JS_NewObjectClass(ctx, root_freed.class_id);
@@ -2929,56 +2955,86 @@ static JSValue root_freed_new(JSContext *ctx, JSValueConst this_val, int argc, J
 
 static JSValue root_freed_get(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
 {
-    return JS_DupValue(ctx, root_freed.q);
+    return JS_DupValue(ctx, argc > 0 && JS_ToBool(ctx, argv[0]) ? root_freed.r : root_freed.q);
 }
 
-static void root_freed_case(int weak, int young)
+static void root_freed_case(int f)
 {
     JSClassDef def = { "RootFreed", root_freed_finalizer };
+    JSClassDef chain = { "RootFreedChain", root_freed_chain_finalizer };
     VM v = vm_new();
     JSContext *jctx;
     JSValue g;
+    char want[16];
     int old, nyoung;
 
     memset(&root_freed, 0, sizeof(root_freed));
+    root_freed.q = root_freed.r = JS_UNDEFINED;
     JS_SetGCThreshold(v.rt, (size_t)-1);
     JS_NewClassID(v.rt, &root_freed.class_id);
     CHECK(JS_NewClass(v.rt, root_freed.class_id, &def) == 0, "JS_NewClass");
+    JS_NewClassID(v.rt, &root_freed.chain_id);
+    CHECK(JS_NewClass(v.rt, root_freed.chain_id, &chain) == 0, "JS_NewClass");
     g = JS_GetGlobalObject(v.ctx);
     JS_SetPropertyStr(v.ctx, g, "rootFreed", JS_NewCFunction(v.ctx, root_freed_new, "rootFreed", 0));
-    JS_SetPropertyStr(v.ctx, g, "rootQ", JS_NewCFunction(v.ctx, root_freed_get, "rootQ", 0));
+    JS_SetPropertyStr(v.ctx, g, "rootGet", JS_NewCFunction(v.ctx, root_freed_get, "rootGet", 1));
     JS_FreeValue(v.ctx, g);
-    CHECK(eval_ok(v.ctx, "var got = [], fr = new FinalizationRegistry((v) => got.push(v)), wr = null; void 0"), "the setup");
-    root_freed.q = JS_NewObject(v.ctx);
+    CHECK(eval_ok(v.ctx, "var got = [], fr = new FinalizationRegistry((v) => got.push(v)), wr = null, keep = {}, wm = new WeakMap(); void 0"), "the setup");
+    if (f & RF_MAP)
+        CHECK(eval_ok(v.ctx, "wm.set(keep, {}); void 0"), "the entry of a live key");
+    root_freed.q = f & RF_CHAIN ? JS_NewObjectClass(v.ctx, root_freed.chain_id) : JS_NewObject(v.ctx);
     CHECK(!JS_IsException(root_freed.q), "q");
-    CHECK(eval_ok(v.ctx, "(() => { const q = rootQ(); q.c = {}; fr.register(q.c, 'c') })(); void 0"), "q's child");
-    if (weak)
-        CHECK(eval_ok(v.ctx, "wr = new WeakRef(rootQ()); void 0"), "the WeakRef");
+    CHECK(eval_ok(v.ctx, "(() => { const q = rootGet(); q.c = {}; fr.register(q.c, 'c') })(); void 0"), "q's child");
+    snprintf(want, sizeof(want), "c");
+    if (f & RF_CHAIN) {
+        root_freed.r = JS_NewObject(v.ctx);
+        CHECK(!JS_IsException(root_freed.r), "r");
+        CHECK(eval_ok(v.ctx, "(() => { const r = rootGet(true); r.c = {}; fr.register(r.c, 'r') })(); void 0"), "r's child");
+        strcat(want, ",r");
+    }
+    if (f & RF_FR_Q) {
+        CHECK(eval_ok(v.ctx, "fr.register(rootGet(), 'q'); void 0"), "q in the registry");
+        strcat(want, ",q");
+    }
+    if (f & RF_WEAK)
+        CHECK(eval_ok(v.ctx, "wr = new WeakRef(rootGet()); void 0"), "the WeakRef");
     /* the job ends, and with it the hold of the target of a new WeakRef */
     JS_ClearKeptObjects(v.rt);
-    if (!young)
+    if (f & RF_OLD)
         JS_RunGC(v.rt);
     CHECK(eval_ok(v.ctx, "(() => { const d = rootFreed(); d.self = d })(); void 0"), "the cycle");
-    JS_RunGC(v.rt);
-    CHECK(root_freed.finalized == 1, "weak %d young %d: the cycle was finalized %d times", weak, young, root_freed.finalized);
-    lists(&v, &old, &nyoung, "after the full collection whose finalizer dropped q");
+    if (f & RF_YOUNG_GC)
+        JS_RunYoungGC(v.rt);
+    else
+        JS_RunGC(v.rt);
+    CHECK(root_freed.finalized == 1, "case %d: the cycle was finalized %d times", f, root_freed.finalized);
+    CHECK(root_freed.chained == !!(f & RF_CHAIN), "case %d: q was finalized %d times", f, root_freed.chained);
+    lists(&v, &old, &nyoung, "after the collection whose finalizer dropped q");
+    while (JS_ExecutePendingJob(v.rt, &jctx) > 0)
+        ;
+    CHECK(eval_is(v.ctx, "got.join()", want), "case %d: the callbacks after the collection that freed q are not %s", f, want);
+    if (f & RF_WEAK)
+        CHECK(eval_is(v.ctx, "String(wr.deref())", "undefined"), "case %d: the WeakRef still gives q", f);
+    if (f & RF_MAP)
+        CHECK(eval_is(v.ctx, "String(wm.has(keep))", "true"), "case %d: the entry of the live key is gone", f);
     JS_RunGC(v.rt);
     lists(&v, &old, &nyoung, "after the next full collection");
     while (JS_ExecutePendingJob(v.rt, &jctx) > 0)
         ;
-    CHECK(eval_is(v.ctx, "got.join()", "c"), "weak %d young %d: q's child is not freed after the collections", weak, young);
-    if (weak)
-        CHECK(eval_is(v.ctx, "String(wr.deref())", "undefined"), "weak %d young %d: the WeakRef still gives q", weak, young);
+    CHECK(eval_is(v.ctx, "got.join()", want), "case %d: the callbacks after the next collection are not %s", f, want);
     vm_free(&v);
 }
 
 static void test_finalizer_frees_a_root(void)
 {
-    int weak, young;
+    int f;
 
-    for (weak = 0; weak <= 1; weak++)
-        for (young = 0; young <= 1; young++)
-            root_freed_case(weak, young);
+    for (f = 0; f < RF_CASES; f++) {
+        /* the weak map only changes the path of a full collection */
+        if ((f & RF_MAP) && (f & RF_YOUNG_GC))
+            continue;
+        root_freed_case(f);
+    }
 }
 
 
