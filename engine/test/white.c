@@ -2799,6 +2799,18 @@ int white_kept_shapes(JSRuntime *rt)
     return rt->shape_cache.count;
 }
 
+/* the length of the ring of the shape cache, 0 while it is off */
+int white_shape_cache_size(JSRuntime *rt)
+{
+    return rt->shape_cache.ring ? rt->shape_cache.n : 0;
+}
+
+/* the class of plain objects, for JS_SetClassProto */
+JSClassID white_class_object(void)
+{
+    return JS_CLASS_OBJECT;
+}
+
 /* white_kept_shape gives the block of the first shape the shape cache
    keeps, NULL when it keeps none, and the size to ask js_malloc_rt for to
    get a block of its size in *size. */

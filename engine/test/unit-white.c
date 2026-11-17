@@ -180,6 +180,8 @@ size_t white_heap_limit(JSContext *ctx);
 size_t white_gc_count(JSRuntime *rt);
 void white_drain_once(void);
 int white_kept_shapes(JSRuntime *rt);
+int white_shape_cache_size(JSRuntime *rt);
+JSClassID white_class_object(void);
 void *white_kept_shape(JSRuntime *rt, size_t *size);
 int white_take_slots(JSRuntime *rt, size_t size, void **out, int cap);
 size_t white_found_resize(JSContext *ctx, JSValueConst obj, const char *key);
@@ -2277,6 +2279,97 @@ static void test_shape_drop_in_resize(void)
     CHECK(eval_is(v.ctx, "Object.keys(o) + ':' + o.value + ':' + mk() + ':' + JSON.stringify(o)",
                   "length,name,value:3:0:{\"length\":1,\"name\":2,\"value\":3}"),
           "o after the property was added");
+    vm_free(&v);
+}
+
+/* ---- the shape cache set again while it lets shapes go ---- */
+
+/* The finalizer of a prototype that kept shapes held can run while the cache
+   lets them go, and set the cache again (JS_SetShapeCache). The cache lets
+   them go from a ring it took out first: the finalizer sees the cache empty,
+   and what it set stays, whole. */
+static int reenter_finalized;
+static JSContext *reenter_ctx;
+static int reenter_n;
+
+static void reenter_finalizer(JSRuntime *rt, JSValue val)
+{
+    reenter_finalized++;
+    if (reenter_ctx)
+        JS_SetShapeCache(reenter_ctx, reenter_n);
+}
+
+/* reenter_setup makes p, of a class of the host whose finalizer is
+   reenter_finalizer, the Object.prototype of v, turns the shape cache on
+   with n shapes, makes plain objects, puts the Object.prototype back and lets
+   p go: then the kept shapes hold p. It returns the number of kept shapes. */
+static int reenter_setup(VM *v, int n)
+{
+    JSClassDef def = { "Reenter", reenter_finalizer };
+    JSClassID class_id = 0;
+    JSValue o, p;
+    int kept;
+
+    reenter_finalized = 0;
+    reenter_ctx = NULL;
+    JS_NewClassID(v->rt, &class_id);
+    CHECK(JS_NewClass(v->rt, class_id, &def) == 0, "JS_NewClass");
+    o = JS_GetClassProto(v->ctx, white_class_object());
+    p = JS_NewObjectClass(v->ctx, class_id);
+    CHECK(JS_IsObject(p), "the prototype");
+    JS_SetClassProto(v->ctx, white_class_object(), JS_DupValue(v->ctx, p));
+    CHECK(JS_SetShapeCache(v->ctx, n) == 0, "a shape cache of %d shapes", n);
+    CHECK(eval_ok(v->ctx, "function mk() { var o = {}; o.qa = 1; o.qb = 2; return 0 }\nmk(); mk(); void 0"), "the objects");
+    kept = white_kept_shapes(v->rt);
+    JS_SetClassProto(v->ctx, white_class_object(), o);
+    JS_FreeValue(v->ctx, p);
+    return kept;
+}
+
+/* a drain of the heap lets the shapes go, and the finalizer of the
+   prototype they held sets a cache of 128 shapes, where the ring let go has
+   one */
+static void test_shape_cache_set_in_drop(void)
+{
+    VM v = vm_new();
+    void *p;
+    int kept;
+
+    kept = reenter_setup(&v, 1);
+    CHECK(kept == 1, "%d shapes kept in a ring of 1", kept);
+    reenter_ctx = v.ctx;
+    reenter_n = 128;
+    white_drain_once();
+    /* a block too large for an arena is a request to the heap */
+    p = js_malloc_rt(v.rt, 1 << 20);
+    CHECK(p != NULL, "a block of 1 MiB");
+    js_free_rt(v.rt, p);
+    reenter_ctx = NULL;
+    CHECK(reenter_finalized == 1, "the prototype was finalized %d times", reenter_finalized);
+    CHECK(white_shape_cache_size(v.rt) == 128, "a cache of %d shapes, after the finalizer set one of 128", white_shape_cache_size(v.rt));
+    CHECK(eval_ok(v.ctx, "mk(); mk(); void 0") && white_kept_shapes(v.rt) > 0, "the cache the finalizer set keeps no shape");
+    vm_free(&v);
+}
+
+/* JS_SetShapeCache lets the shapes go, and the finalizer of the prototype
+   they held sets a cache of 128 shapes: the call that let them go sets its
+   own, and the one of the finalizer goes */
+static void test_shape_cache_set_in_off(void)
+{
+    VM v = vm_new();
+    int kept, r;
+
+    kept = reenter_setup(&v, 4);
+    CHECK(kept > 0, "no shape kept");
+    reenter_ctx = v.ctx;
+    reenter_n = 128;
+    r = JS_SetShapeCache(v.ctx, 16);
+    reenter_ctx = NULL;
+    CHECK(r == 0, "JS_SetShapeCache: %d", r);
+    CHECK(reenter_finalized == 1, "the prototype was finalized %d times", reenter_finalized);
+    CHECK(white_shape_cache_size(v.rt) == 16, "a cache of %d shapes, after a call that set one of 16", white_shape_cache_size(v.rt));
+    CHECK(eval_ok(v.ctx, "mk(); mk(); void 0") && white_kept_shapes(v.rt) > 0, "the cache keeps no shape");
+    /* the runtime frees with no block left: the ring of the finalizer went */
     vm_free(&v);
 }
 
@@ -9935,6 +10028,8 @@ int main(int argc, char **argv)
     test_putel_atom_shape();
     test_shape_drop_slot();
     test_shape_drop_in_resize();
+    test_shape_cache_set_in_drop();
+    test_shape_cache_set_in_off();
     test_putel_atom_each_failing();
     test_object_rest_cache();
     test_object_spread_cache();
