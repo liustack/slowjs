@@ -538,7 +538,7 @@ static no_inline int rv_w_copy_data_properties(JSContext *ctx, JSValue *F, const
     pc += 5;
     RV_SYNC_TOP();
     if (!RV_INJ_ARMED) {
-        JSObjectLit *lit = &((RVHeader *)F)->rf->b->object_lits[get_u16(ip + 3)];
+        JSObjectLit *lit = &((RVHeader *)F)->rf->lits[get_u16(ip + 3)];
         JSShape *sh = lit->shape;
         if (likely(sh && !sh->inline_grew &&
                    offsetof(JSObject, u) + sizeof(JSProperty) * (size_t)sh->prop_size <=

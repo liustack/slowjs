@@ -1732,6 +1732,10 @@ static RVFunc *rv_build(JSRuntime *rt, JSFunctionBytecode *b, BOOL *oom)
         rf->arg_count = b->arg_count;
         rf->var_count = s->var_count;
         rf->nt = nt;
+        rf->realm = b->realm;
+        rf->lits = b->object_lits;
+        rf->cpool = b->cpool;
+        rf->js_mode = b->js_mode;
         rf->stack_size = b->stack_size;
         rf->fofs = b->arg_count + 2 + s->var_count;
         rf->fofs_b = sizeof(JSValue) * rf->fofs;

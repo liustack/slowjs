@@ -1964,8 +1964,10 @@ static inline BOOL rv_unwrap_in_loop(JSValueConst f)
             p = JS_VALUE_GET_OBJ(fv);                                   \
             if (unlikely(p->class_id != JS_CLASS_BYTECODE_FUNCTION))    \
                 goto label ## _out;                                     \
-            cb = p->u.func.function_bytecode;                           \
-            crf = cb->rv;                                               \
+            /* the record kept in the function object: the bytecode    \
+               is not read on the way in */                             \
+            crf = js_func_rv(p);                                        \
+        label ## _rf:                                                   \
             /* not converted yet, refused, more arguments than          \
                parameters, or a function that reads its arguments */    \
             if (unlikely(argc1 > crf->argmax)) {                        \
@@ -1977,14 +1979,21 @@ static inline BOOL rv_unwrap_in_loop(JSValueConst f)
                 }                                                       \
                 if (crf != RV_UNCONVERTED)                              \
                     goto label ## _out;                                 \
+                cb = p->u.func.function_bytecode;                       \
+                if (cb->rv != RV_UNCONVERTED) {                         \
+                    /* converted (or refused) after p was made */       \
+                    crf = js_func_rv(p) = cb->rv;                       \
+                    goto label ## _rf;                                  \
+                }                                                       \
                 RV_SYNC_TOP();                                          \
                 /* left unconverted: out of memory, thrown by the  */   \
                 /* call out (JS_CallInternal) */                        \
                 if (rv_convert(ctx, cb) == RV_UNCONVERTED)              \
                     goto label ## _out;                                 \
+                js_func_rv(p) = cb->rv;                                 \
                 again;                                                  \
             }                                                           \
-            if (unlikely(cb->realm != ctx))                             \
+            if (unlikely(crf->realm != ctx))                            \
                 goto label ## _out;                                     \
             Fn = (JSValue *)((uint8_t *)Wc + crf->fofs_b);              \
             if (unlikely((uint8_t *)Wc + crf->room_b >                  \
