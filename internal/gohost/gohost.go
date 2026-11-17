@@ -681,12 +681,19 @@ func (v *VM) readClock() int64 {
 // than the grace after the Interrupt or the deadline, whichever came first,
 // and KillPolls polls after the one that set the flag.
 // It does not call into the engine.
+//
+// A poll of a VM a kill already broke does nothing more: the host still
+// reads it (MemorySize, MemoryFree), with no call around the read to turn a
+// panic into an error, and a walk of the arenas polls as any loop does.
 func Poll(sp uintptr) {
 	v := ByStack(sp)
 	v.polls.Add(1)
 	pollHook(v)
 	if v.counter != 0 {
 		*(*int64)(addr(v.counter)) = v.interval
+	}
+	if v.killed {
+		return
 	}
 	t := v.stopAt()
 	if t == 0 {

@@ -523,6 +523,11 @@ struct JSRuntime {
     uint32_t shape_id_next;
     /* the ids ran out once and were given again (js_shape_renumber) */
     uint8_t shape_renumbered;
+    /* the steps a write of a name keeps (RV_PUTF of engine/regvm-ops-basic.h)
+       hold while it is the same: js_shape_step_end changes it when a step
+       kept may no longer be what add_property does, and it stops at
+       JS_STEP_EPOCH_DEAD */
+    uint32_t shape_step_epoch;
     /* the async context of promise jobs, an object or any other value for
        none (see JS_SetAsyncContext) */
     JSValue async_context;
@@ -771,6 +776,11 @@ struct JSContext {
     JSShape *mapped_arguments_shape;  /* shape for mapped arguments objects */
     JSShape *regexp_shape;  /* shape for regexp objects */
     JSShape *regexp_result_shape;  /* shape for regexp result objects */
+    /* the shapes of the objects Object.getOwnPropertyDescriptor makes,
+       a data descriptor (0) and an accessor one (1), at their first use
+       (js_new_desc_object), and let go when JS_SetClassProto replaces the
+       prototype of plain objects */
+    JSShape *desc_shape[2];
     /* for each prototype of new functions, the empty shape and the shape
        with length and name, or NULL (see js_function_shape) */
     JSShape *func_shapes[4][2];
@@ -856,7 +866,7 @@ typedef enum {
     JS_ATOM_KIND_PRIVATE,
 } JSAtomKindEnum;
 
-#define JS_ATOM_HASH_MASK  ((1 << 30) - 1)
+#define JS_ATOM_HASH_MASK  ((1 << 29) - 1)
 #define JS_ATOM_HASH_PRIVATE JS_ATOM_HASH_MASK
 
 struct JSString {
@@ -867,7 +877,14 @@ struct JSString {
        XXX: could change encoding to have one more bit in hash.
        A string that is no atom: 1 when it keeps a key (key_atom), else 0,
        see js_string_atom_or_key */
-    uint32_t hash : 30;
+    uint32_t hash : 29;
+    /* 1 when JSON.stringify writes every character as it is: set by the
+       first write that finds no character to escape (JS_ToQuotedString,
+       json_put_key) and kept for the life of the string, also when it
+       becomes an atom. A marked string is not appended to in place
+       (js_string_fixed). Not in the word of the length, whose reads it
+       would make mask one more bit. */
+    uint8_t plain : 1;
     uint8_t atom_type : 2; /* != 0 if atom, JS_ATOM_TYPE_x */
     uint32_t hash_next; /* atom_index for JS_ATOM_TYPE_SYMBOL */
     /* the atom of the string as a property key when JS_ValueToAtom takes the
@@ -1343,7 +1360,11 @@ struct JSShape {
        block (js_props_inline) got a key: the objects of an object literal with
        this shape then get a block of their own for the properties, so that the
        room in the block of the object is not wasted. Fits in the padding. */
-    uint8_t inline_grew;
+    uint8_t inline_grew : 1;
+    /* a write of a name keeps this shape as the step it makes (RV_PUTF):
+       its free, or its move to a bigger or a smaller block, ends every step
+       kept (js_shape_step_end) */
+    uint8_t step_kept : 1;
     /* while the shape is in the shape hash table, what build_for_in_iterator
        found for it: 0 not asked yet, JS_FOR_IN_KEYS_SHAPE when a for in loop
        lists the string keys of an ordinary object of this shape from the
@@ -1404,6 +1425,7 @@ enum {
     RV_FAST_STRING, /* String called as a function */
     RV_FAST_COUNT,
 };
+_Static_assert(RV_FAST_COUNT <= 64, "JSObject.rv_fast holds an RV_FAST_x in 6 bits");
 
 struct JSObject {
     JSGCObjectHeader header;
@@ -1426,7 +1448,10 @@ struct JSObject {
     /* RV_FAST_x: a C function the register loop answers itself when its
        arguments allow (rv_fast_call in regvm-ops-basic.h), set only by
        JS_NewCFunction3 */
-    uint8_t rv_fast : 7;
+    uint8_t rv_fast : 6;
+    /* the prototype of a shape once: a change of its keys or flags ends
+       the steps writes of a name keep (js_shape_step_end) */
+    uint8_t is_proto : 1;
     uint16_t class_id; /* see JS_CLASS_x */
     /* count the number of weak references to this object. The object
        structure is freed only if header.ref_count = 0 and
@@ -1741,6 +1766,7 @@ static JSValue js_compile_regexp(JSContext *ctx, JSValueConst pattern,
                                  JSValueConst flags);
 static void js_regexp_cache_off(JSRuntime *rt);
 static void js_shape_cache_off(JSRuntime *rt);
+static BOOL js_shape_cache_drop(JSRuntime *rt);
 static JSValue JS_NewRegexp(JSContext *ctx, JSValue pattern, JSValue bc);
 static void gc_decref(JSRuntime *rt);
 static int JS_NewClass1(JSRuntime *rt, JSClassID class_id,
@@ -2152,36 +2178,36 @@ static inline int js_front_give(JSMallocContext *s, void *ptr)
 }
 
 /* Give every block of the front cache back to its arena, and tell whether
-   there was any. The cache is off while it does. */
+   there was any. The cache is off while it does. Each block leaves its list
+   and the counts before it is freed, so that a kill at a poll of the loop
+   leaves them right for JS_GetMemoryFree, which reads a killed VM. */
 static BOOL js_front_drain(JSMallocContext *s)
 {
-    JSMallocBlockHeader *b, *next;
+    JSMallocBlockHeader *b;
     int i, max = s->front_max;
     BOOL any = FALSE;
 
     s->front_max = 0;
     for(i = 0; i < JS_MALLOC_FRONT_LISTS; i++) {
-        for(b = s->front_head[i]; b; b = next) {
-            next = *(JSMallocBlockHeader **)b->user_data;
+        while ((b = s->front_head[i]) != NULL) {
+            s->front_head[i] = *(JSMallocBlockHeader **)b->user_data;
+            s->front_count[i]--;
             __js_free_block(s, b->user_data);
             any = TRUE;
         }
-        s->front_head[i] = NULL;
-        s->front_count[i] = 0;
     }
     for(i = 0; i < JS_LARGE_CACHE_LISTS; i++) {
-        void *p, *next;
-        for(p = s->large_head[i]; p; p = next) {
-            next = js_large_next(p);
+        void *p;
+        while ((p = s->large_head[i]) != NULL) {
+            s->large_head[i] = js_large_next(p);
+            s->large_count[i]--;
+            s->large_bytes -= heap_usable_size(container_of(p, JSMallocLargeBlockHeader, header.user_data));
             /* as any large block: with JS_MALLOC_USE_ITER it leaves the list
                of large blocks too */
             __js_free_block(s, p);
             any = TRUE;
         }
-        s->large_head[i] = NULL;
-        s->large_count[i] = 0;
     }
-    s->large_bytes = 0;
     s->front_max = max;
     return any;
 }
@@ -2275,18 +2301,20 @@ static BOOL js_scratch_drain(JSMallocContext *s)
     return TRUE;
 }
 
-/* the scratch of the register pass and the front cache back, and whether
-   anything went back */
+/* the scratch of the register pass, the shapes the shape cache keeps and the
+   front cache back, and whether anything went back. The shapes go before the
+   front cache, so that their blocks reach the heap with it. */
 static BOOL js_heap_drain(JSMallocContext *s)
 {
     BOOL any = js_scratch_drain(s);
+    any |= js_shape_cache_drop((JSRuntime *)s); /* JS_NewRuntime: the first field */
     return js_front_drain(s) || any;
 }
 
 /* The heap, and when it fails, once more after the scratch of the register
-   pass and the front cache are given back: they may hold the memory the
-   request needs, or the count the limit would pass. A move the interrupt
-   flag stopped (heap.stopped) is not tried again. */
+   pass, the kept shapes and the front cache are given back: they may hold
+   the memory the request needs, or the count the limit would pass. A move
+   the interrupt flag stopped (heap.stopped) is not tried again. */
 static no_inline void *js_heap_alloc(JSMallocContext *s, size_t size)
 {
     void *p;
@@ -2322,13 +2350,25 @@ static no_inline JSMallocArena *js_malloc_new_arena(JSMallocContext *s, int bloc
     n_blocks = (JS_MALLOC_ARENA_SIZE - sizeof(JSMallocArena)) / block_size;
     arena_size = sizeof(JSMallocArena) + n_blocks * block_size;
     ar = js_heap_alloc(s, arena_size);
-    if (!ar)
-        return NULL;
+    if (!ar) {
+        /* the heap refused the arena after js_heap_drain gave back what it
+           could: the kept shapes it let go may have left free slots of this
+           size in arenas that still hold other blocks, which give no memory
+           back to the heap but serve the block the arena was for */
+        struct list_head *head = &s->free_arena_list[block_size_idx];
+        if (head->next == head)
+            return NULL;
+        return list_entry(head->next, JSMallocArena, free_link);
+    }
 
     ar->block_size_idx = block_size_idx;
     ar->n_blocks = n_blocks;
     ar->n_used_blocks = 0;
     ar->first_free_block = 0;
+    /* in the list of its class before the loops below, which may poll: a
+       kill there leaves it counted by JS_GetMemoryFree as the heap counts
+       it, all free */
+    list_add(&ar->link, &s->arena_list[block_size_idx]);
 #ifdef JS_MALLOC_USE_ITER
     {
         int n_bitmap_words = (n_blocks + 31) / 32;
@@ -2348,9 +2388,6 @@ static no_inline JSMallocArena *js_malloc_new_arena(JSMallocContext *s, int bloc
     heap_poison(b->user_data, block_size - sizeof(*b));
     /* what the heap gave beyond the slots */
     heap_poison((uint8_t *)ar + arena_size, heap_usable_size(ar) - arena_size);
-    
-    /* add to the head */
-    list_add(&ar->link, &s->arena_list[block_size_idx]);
     list_add(&ar->free_link, &s->free_arena_list[block_size_idx]);
     return ar;
 }
@@ -3328,6 +3365,53 @@ size_t JS_GetMemorySize(JSRuntime *rt)
     return rt->malloc_ctx.heap.count;
 }
 
+/* what a block of the runtime adds to the count of the heap: its slot, or
+   the TLSF block and its 8 byte word */
+static size_t js_block_count(JSMallocContext *s, const void *ptr)
+{
+    const JSMallocBlockHeader *b = container_of(ptr, JSMallocBlockHeader, user_data);
+
+    if (b->u.block_idx != FREE_NIL)
+        return js_malloc_block_sizes[b->block_size_idx];
+    return heap_usable_size(container_of(ptr, JSMallocLargeBlockHeader, header.user_data)) + 8;
+}
+
+/* The bytes of JS_GetMemorySize that no block in use holds, which the heap
+   keeps for reuse: in each arena of small blocks, which counts whole while
+   one of its slots is in use, the free slots, its header and the room after
+   its last slot; the blocks of the front cache and of the cache of large
+   blocks; and the scratch block of the register pass between two
+   conversions. So JS_GetMemorySize less this is the runtime and the blocks
+   in use, whatever arenas they are spread over: after a collection, a
+   steadier figure of what a script keeps than JS_GetMemorySize, which grows
+   with the holes the garbage of the collected objects left among the ones
+   kept. It walks the arenas, not the objects (tens of microseconds for
+   thousands of arenas), and can be read at any time. */
+size_t JS_GetMemoryFree(JSRuntime *rt)
+{
+    JSMallocContext *s = &rt->malloc_ctx;
+    struct list_head *el;
+    size_t n = s->large_bytes;
+    int i;
+
+    for(i = 0; i < JS_MALLOC_BLOCK_SIZE_COUNT; i++) {
+        size_t block_size = js_malloc_block_sizes[i];
+        list_for_each(el, &s->arena_list[i]) {
+            JSMallocArena *ar = list_entry(el, JSMallocArena, link);
+            n += heap_usable_size(ar) + 8 - (size_t)ar->n_used_blocks * block_size;
+        }
+        /* the blocks of the front cache are slots in use for their arena */
+        n += (size_t)s->front_count[i] * block_size;
+    }
+    /* large_bytes counts the blocks of the cache of large blocks without the
+       8 byte word of the heap */
+    for(i = 0; i < JS_LARGE_CACHE_LISTS; i++)
+        n += (size_t)s->large_count[i] * 8;
+    if (rt->rv_scratch && !rt->rv_in_pass)
+        n += js_block_count(s, rt->rv_scratch);
+    return n;
+}
+
 size_t JS_GetGCThreshold(JSRuntime *rt)
 {
     return rt->malloc_gc_threshold;
@@ -3529,6 +3613,7 @@ static JSString *js_alloc_string_rt(JSRuntime *rt, int max_len, int is_wide_char
     str->len = max_len;
     str->atom_type = 0;
     str->hash = 0;          /* see js_string_atom_or_key */
+    str->plain = 0;
     str->hash_next = 0;     /* optional */
     str->key_atom = JS_ATOM_NULL;
 #ifdef DUMP_LEAKS
@@ -3563,12 +3648,22 @@ static no_inline void js_string_drop_key(JSRuntime *rt, JSString *p)
 /* Nonzero when p is an atom, or a string that is no atom and keeps an atom
    as its key: js_string_to_atom gives such a string the hash 1, and every
    other string that is no atom has the hash 0. Both fields are one 32-bit
-   word, so this is the one test that p->atom_type alone was. */
+   word, so this is the one test that p->atom_type alone was. The mark plain
+   between them is no part of it. */
 static force_inline BOOL js_string_atom_or_key(const JSString *p)
 {
-    /* written as two tests, which LLVM makes one compare of the word; an or
-       of the two fields it does not */
+    /* written as two tests, which LLVM makes one test of the word under a
+       mask; an or of the two fields it does not */
     return p->hash != 0 || p->atom_type != 0;
+}
+
+/* Nonzero when the characters of p must not change: an atom, a string that
+   keeps a key, or one with the mark plain, which JSON.stringify trusts.
+   The three fields are the whole word, so LLVM makes this one compare of
+   it with 0, the test the append in place made before the mark. */
+static force_inline BOOL js_string_fixed(const JSString *p)
+{
+    return p->hash != 0 || p->plain != 0 || p->atom_type != 0;
 }
 
 /* Free p, a string that is no atom and keeps a key, whose ref_count reached
@@ -4061,6 +4156,16 @@ void JS_SetClassProto(JSContext *ctx, JSClassID class_id, JSValue obj)
         ctx->class_shapes[class_id] = NULL;
         js_free_shape_null(rt, sh);
     }
+    /* so do the shapes of property descriptors, which have the prototype
+       of plain objects (js_new_desc_object) */
+    if (class_id == JS_CLASS_OBJECT) {
+        int i;
+        for(i = 0; i < countof(ctx->desc_shape); i++) {
+            JSShape *sh = ctx->desc_shape[i];
+            ctx->desc_shape[i] = NULL;
+            js_free_shape_null(rt, sh);
+        }
+    }
 }
 
 JSValue JS_GetClassProto(JSContext *ctx, JSClassID class_id)
@@ -4298,6 +4403,10 @@ static void JS_MarkContext(JSRuntime *rt, JSContext *ctx,
 
     if (ctx->regexp_result_shape)
         mark_func(rt, &ctx->regexp_result_shape->header);
+    for(i = 0; i < countof(ctx->desc_shape); i++) {
+        if (ctx->desc_shape[i])
+            mark_func(rt, &ctx->desc_shape[i]->header);
+    }
 
     for(i = 0; i < countof(ctx->func_shapes); i++) {
         if (ctx->func_shapes[i][0]) {
@@ -4393,6 +4502,8 @@ void JS_FreeContext(JSContext *ctx)
     js_free_shape_null(ctx->rt, ctx->mapped_arguments_shape);
     js_free_shape_null(ctx->rt, ctx->regexp_shape);
     js_free_shape_null(ctx->rt, ctx->regexp_result_shape);
+    js_free_shape_null(ctx->rt, ctx->desc_shape[0]);
+    js_free_shape_null(ctx->rt, ctx->desc_shape[1]);
 
     list_del(&ctx->link);
     remove_gc_object(&ctx->header);
@@ -4738,7 +4849,7 @@ static JSAtom __JS_NewAtom(JSRuntime *rt, JSString *str, int atom_type,
 
     if (rt->atom_free_index == 0) {
         /* allow new atom entries */
-        uint32_t new_size, start;
+        uint32_t new_size, start, old_free;
         JSAtomStruct **new_array;
 
         /* alloc new with size progression 3/2:
@@ -4770,13 +4881,17 @@ static JSAtom __JS_NewAtom(JSRuntime *rt, JSString *str, int atom_type,
             rt->atom_count++;
             start = 1;
         }
+        /* the free entries the allocations above made, when a refused
+           request let go of kept shapes and of atoms with them
+           (js_shape_cache_drop), follow the new ones */
+        old_free = rt->atom_free_index;
         rt->atom_size = new_size;
         rt->atom_array = new_array;
         rt->atom_free_index = start;
         for(i = start; i < new_size; i++) {
             uint32_t next;
             if (i == (new_size - 1))
-                next = 0;
+                next = old_free;
             else
                 next = i + 1;
             rt->atom_array[i] = atom_set_free(next);
@@ -4801,6 +4916,7 @@ static JSAtom __JS_NewAtom(JSRuntime *rt, JSString *str, int atom_type,
             js_rc(p)->ref_count = 1;
             p->is_wide_char = str->is_wide_char;
             p->len = str->len;
+            p->plain = str->plain;
 #ifdef DUMP_LEAKS
             list_add_tail(&p->link, &rt->string_list);
 #endif
@@ -4815,6 +4931,7 @@ static JSAtom __JS_NewAtom(JSRuntime *rt, JSString *str, int atom_type,
         js_rc(p)->ref_count = 1;
         p->is_wide_char = 1;    /* Hack to represent NULL as a JSString */
         p->len = 0;
+        p->plain = 0;
 #ifdef DUMP_LEAKS
         list_add_tail(&p->link, &rt->string_list);
 #endif
@@ -4887,6 +5004,27 @@ static JSAtom __JS_FindAtom(JSRuntime *rt, const char *str, size_t len,
             return i;
         }
         i = p->hash_next;
+    }
+    return JS_ATOM_NULL;
+}
+
+/* The string atom of the characters of p, with no reference taken, or
+   JS_ATOM_NULL when the table has none: then no object has a property of
+   that name. Finds what __JS_NewAtom finds for p (the same hash and
+   compare) and makes nothing. p is a string that is no atom, shorter than
+   JS_ROPE_STEP, as the hash reads no interrupt flag. */
+static JSAtom js_find_string_atom(JSRuntime *rt, const JSString *p)
+{
+    uint32_t h, i;
+    JSAtomStruct *q;
+
+    h = hash_string(p, JS_ATOM_TYPE_STRING) & JS_ATOM_HASH_MASK;
+    for (i = rt->atom_hash[h & (rt->atom_hash_size - 1)]; i != 0;
+         i = q->hash_next) {
+        q = rt->atom_array[i];
+        if (q->hash == h && q->atom_type == JS_ATOM_TYPE_STRING &&
+            q->len == p->len && js_string_memcmp(q, 0, p, 0, p->len) == 0)
+            return i;
     }
     return JS_ATOM_NULL;
 }
@@ -7108,7 +7246,8 @@ static no_inline JSValue JS_ConcatString1(JSContext *ctx,
    holder but the 'owners' references its caller knows of (1, or 2 for
    JS_ConcatStringAppend), and must not be an atom: the atom table holds the
    same JSString without counting a reference. Nor may it keep an atom as its
-   key (js_string_to_atom), which names its characters as they are. */
+   key (js_string_to_atom), which names its characters as they are, nor have
+   the mark plain, which says them free of escapes (js_string_fixed). */
 static force_inline BOOL js_concat_string_in_place(JSContext *ctx, JSString *p1,
                                                    JSValueConst op2, int owners)
 {
@@ -7118,7 +7257,7 @@ static force_inline BOOL js_concat_string_in_place(JSContext *ctx, JSString *p1,
 
         if (p2->len == 0)
             return TRUE;
-        if (js_rc(p1)->ref_count != owners || js_string_atom_or_key(p1))
+        if (js_rc(p1)->ref_count != owners || js_string_fixed(p1))
             return FALSE;
         size1 = js_malloc_usable_size(ctx, p1);
         if (p1->is_wide_char) {
@@ -7933,6 +8072,26 @@ static void js_shape_hash_unlink(JSRuntime *rt, JSShape *sh)
    parent id is the id of sh starts with the keys and flags of sh. */
 #define JS_SHAPE_ID_MAX UINT32_MAX
 
+/* The step of a write of a name: the site keeps the id of the shape an
+   object had, the shape add_property gave it for the key, the id of that
+   shape and the epoch (RV_PUTF, engine/regvm-ops-basic.h). The next object
+   of that id takes the shape kept without the walk up its prototypes or the
+   lookup in the shape hash table, while the epoch is the same. It holds no
+   reference: js_shape_step_end ends every step kept when one may no longer
+   be what the store does: a shape kept is freed or moved (step_kept), the keys,
+   flags or prototype of a prototype change in place (is_proto: a setter or
+   a read-only key on the way, or the way itself, js_shape_prepare_update and
+   add_property), and the ids are given again (two shapes of one id then
+   need not be alike). JS_STEP_EPOCH_DEAD, once the epoch runs out, keeps
+   none from then on: no site fills at it, and it never changes again. */
+#define JS_STEP_EPOCH_DEAD 0xfffffffeu
+
+static no_inline void js_shape_step_end(JSRuntime *rt)
+{
+    if (rt->shape_step_epoch < JS_STEP_EPOCH_DEAD)
+        rt->shape_step_epoch++;
+}
+
 /* The ids ran out: number the shapes of the table again from 1, with no
    parent, and return the id of the next shape. Until shapes get keys again,
    find_hashed_shape_prop compares every key. */
@@ -7944,6 +8103,7 @@ static no_inline uint32_t js_shape_renumber(JSRuntime *rt)
     int i;
 
     rt->shape_renumbered = TRUE;
+    js_shape_step_end(rt);
     list_for_each(el, &rt->context_list) {
         JSContext *ctx = list_entry(el, JSContext, link);
         ctx->rv_renumbered = TRUE;
@@ -7984,6 +8144,9 @@ static inline JSShape *js_new_shape_nohash(JSContext *ctx, JSObject *proto,
     if (proto)
         JS_DupValue(ctx, JS_MKPTR(JS_TAG_OBJECT, proto));
     sh->proto = proto;
+    if (proto)
+        proto->is_proto = TRUE;
+    sh->step_kept = FALSE;
     memset(sh->hash_table, 0, sizeof(sh->hash_table[0]) * hash_size);
     sh->prop_hash_mask = hash_size - 1;
     sh->prop_size = prop_size;
@@ -8050,6 +8213,7 @@ static JSShape *js_clone_shape(JSContext *ctx, JSShape *sh1)
     sh->is_hashed = FALSE;
     sh->parent = NULL;
     sh->parent_ok = 0;
+    sh->step_kept = FALSE;
     if (sh->proto) {
         JS_DupValue(ctx, JS_MKPTR(JS_TAG_OBJECT, sh->proto));
     }
@@ -8097,9 +8261,9 @@ static JSShape *js_dup_shape(JSShape *sh)
    nothing but that prototype, which its context holds anyway, and the atoms
    of its keys. The cache keeps the last n shapes in a ring: when the ring is
    full, the oldest shape is let go. Kept shapes count against the memory
-   limit, and the cache does not let them go when an allocation fails:
-   add_property reallocates the properties of an object before it takes the
-   shape it found, which may be one only the cache holds. */
+   limit, and a request the heap refuses lets them all go before it is tried
+   again (js_shape_cache_drop), so that with the cache on a script runs out of
+   memory where it would with the ring empty. */
 #define JS_SHAPE_MAX_PROPS 32
 #define JS_SHAPE_CREDIT_MAX 64
 
@@ -8118,6 +8282,40 @@ static void js_shape_cache_off(JSRuntime *rt)
             js_free_shape(rt, off.ring[i]);
     }
     js_free_rt(rt, off.ring);
+}
+
+/* Let go of the shapes the shape cache keeps and leave it on, with its ring
+   empty: a request the heap refused (js_heap_drain) may need their memory, or
+   the count of the limit they take. Return whether one went. It is called
+   from inside any allocation, so it frees nothing a caller may be holding
+   without a reference: a kept shape is held by the ring alone, which
+   add_property, the one place that takes a kept shape and allocates before
+   it has its own reference, does not rely on (it takes its reference
+   first). A kept shape has no parent, and its prototype is the
+   Object.prototype its context holds, so only the shape and the atoms of its
+   keys go. Nothing goes while the collector frees objects (gc_phase), when
+   it walks the lists a shape is on. */
+static BOOL js_shape_cache_drop(JSRuntime *rt)
+{
+    JSShapeCache *sc = &rt->shape_cache;
+    JSShape **ring = sc->ring;
+    int i;
+
+    if (!ring || sc->count == 0 || rt->gc_phase != JS_GC_PHASE_NONE)
+        return FALSE;
+    /* with no ring, js_free_shape0 frees the shapes let go here rather than
+       keeping them again */
+    sc->ring = NULL;
+    for(i = 0; i < sc->n; i++) {
+        if (ring[i]) {
+            js_free_shape(rt, ring[i]);
+            ring[i] = NULL;
+        }
+    }
+    sc->ring = ring;
+    sc->next = 0;
+    sc->count = 0;
+    return TRUE;
 }
 
 /* Set the shape cache of the runtime of ctx to keep the last n shapes of
@@ -8247,6 +8445,8 @@ static inline JSShape *js_free_shape1(JSRuntime *rt, JSShape *sh)
     sh = js_shape_keep(rt, sh);
     if (!sh)
         return NULL;
+    if (unlikely(sh->step_kept))
+        js_shape_step_end(rt);
     if (sh->is_hashed)
         js_shape_hash_unlink(rt, sh);
     if (sh->proto != NULL) {
@@ -8409,6 +8609,11 @@ static no_inline int resize_properties(JSContext *ctx, JSShape **psh,
 
     memcpy(&sh->header + 1, &old_sh->header + 1,
            sizeof(JSShape) - sizeof(JSGCObjectHeader));
+    /* old_sh is freed below: a site that keeps it as a step must let go */
+    if (unlikely(old_sh->step_kept)) {
+        js_shape_step_end(ctx->rt);
+        sh->step_kept = FALSE;
+    }
     
     if (new_hash_size != (sh->prop_hash_mask + 1)) {
         /* resize the hash table and the properties */
@@ -8474,6 +8679,11 @@ static int compact_properties(JSContext *ctx, JSObject *p)
 
     memcpy(&sh->header + 1, &old_sh->header + 1,
            sizeof(JSShape) - sizeof(JSGCObjectHeader));
+    /* old_sh is freed below: a site that keeps it as a step must let go */
+    if (unlikely(old_sh->step_kept)) {
+        js_shape_step_end(ctx->rt);
+        sh->step_kept = FALSE;
+    }
 
     memset(sh->hash_table, 0, sizeof(sh->hash_table[0]) * new_hash_size);
     sh->prop_hash_mask = new_hash_mask;
@@ -8667,6 +8877,7 @@ static JSValue JS_NewObjectFromShape(JSContext *ctx, JSShape *sh, JSClassID clas
     p->tmp_mark = 0;
     p->is_HTMLDDA = 0;
     p->rv_fast = 0;
+    p->is_proto = 0;
     p->weakref_count = 0;
     if (class_id != JS_CLASS_OBJECT) /* the block of an ordinary object ends before u */
         p->u.opaque = NULL;
@@ -8812,6 +9023,7 @@ static force_inline JSValue js_new_object_inline(JSContext *ctx, JSShape *sh)
     p->tmp_mark = 0;
     p->is_HTMLDDA = 0;
     p->rv_fast = 0;
+    p->is_proto = 0;
     p->weakref_count = 0;
     p->shape = sh;
     p->prop = JS_OBJ_INLINE_PROPS(p);
@@ -11101,6 +11313,32 @@ static void compute_value_size(JSValueConst val, JSMemoryUsage_helper *hp)
     }
 }
 
+/* the register code of b, made at its first call (rv_convert) and kept as
+   long as b: the block of its RVFunc, which holds the code and its tables,
+   and the entries of its copy sites. JSFuncCodeSize stays the bytecode, which
+   a runtime that loads shared bytecode does not count, and the register code,
+   which every runtime makes for itself and only for the functions that ran,
+   has its own fields. */
+static void compute_register_code_size(JSRuntime *rt, JSFunctionBytecode *b,
+                                       JSMemoryUsage *s)
+{
+    RVFunc *rf = b->rv;
+    int i, j;
+
+    /* RV_UNCONVERTED or RV_REFUSED: no code of its own */
+    if (rf->arg_count < 0)
+        return;
+    s->register_code_count++;
+    s->register_code_size += js_malloc_usable_size_rt(rt, rf);
+    s->memory_used_count++;
+    for (i = 0; i < rf->copy_count; i++) {
+        for (j = 0; j < RV_COPY_WAYS && rf->copy[i].e[j]; j++) {
+            s->register_code_size += js_malloc_usable_size_rt(rt, rf->copy[i].e[j]);
+            s->memory_used_count++;
+        }
+    }
+}
+
 void JS_ComputeMemoryUsage(JSRuntime *rt, JSMemoryUsage *s)
 {
     struct list_head *el, *el1;
@@ -11113,6 +11351,7 @@ void JS_ComputeMemoryUsage(JSRuntime *rt, JSMemoryUsage *s)
     s->malloc_size = rt->malloc_ctx.heap.count;
     s->malloc_limit = rt->malloc_ctx.heap.limit_set;
     s->footprint = rt->malloc_ctx.heap.footprint;
+    s->free_size = JS_GetMemoryFree(rt);
     s->footprint_limit = rt->malloc_ctx.heap.footprint_limit;
     s->chunk_count = rt->malloc_ctx.heap.chunk_count;
     s->release_candidate = rt->malloc_ctx.heap.release_candidate;
@@ -11181,6 +11420,7 @@ void JS_ComputeMemoryUsage(JSRuntime *rt, JSMemoryUsage *s)
         /* XXX: could count the other GC object types too */
         if (js_rc(gp)->gc_obj_type == JS_GC_OBJ_TYPE_FUNCTION_BYTECODE) {
             compute_bytecode_size((JSFunctionBytecode *)gp, hp);
+            compute_register_code_size(rt, (JSFunctionBytecode *)gp, s);
             continue;
         } else if (js_rc(gp)->gc_obj_type != JS_GC_OBJ_TYPE_JS_OBJECT) {
             continue;
@@ -11413,7 +11653,8 @@ void JS_ComputeMemoryUsage(JSRuntime *rt, JSMemoryUsage *s)
         s->js_func_count + s->js_func_pc2line_count;
     s->memory_used_size += s->atom_size + s->str_size +
         s->obj_size + s->prop_size + s->shape_size +
-        s->js_func_size + s->js_func_code_size + s->js_func_pc2line_size;
+        s->js_func_size + s->js_func_code_size + s->js_func_pc2line_size +
+        s->register_code_size;
 }
 
 /* v with one decimal, as printf's %.1f prints it. The double is rounded once,
@@ -11563,6 +11804,8 @@ size_t JS_DumpMemoryUsage(char *buf, size_t size, const JSMemoryUsage *s, JSRunt
                 "memory used", s->memory_used_count, s->memory_used_size,
                 MALLOC_OVERHEAD, dump_tenths(t, ((double)(s->malloc_size - s->memory_used_size) /
                                   s->memory_used_count)));
+        dump_printf(&out, "%-20s %8s %8"PRId64"  (no block in use: free slots, caches)\n",
+                "memory free", "", s->free_size);
     }
     if (s->atom_count) {
         dump_printf(&out, "%-20s %8"PRId64" %8"PRId64"  (%s per atom)\n",
@@ -11597,6 +11840,11 @@ size_t JS_DumpMemoryUsage(char *buf, size_t size, const JSMemoryUsage *s, JSRunt
                     s->js_func_pc2line_size,
                     dump_tenths(t, (double)s->js_func_pc2line_size / s->js_func_pc2line_count));
         }
+    }
+    if (s->register_code_count) {
+        dump_printf(&out, "%-20s %8"PRId64" %8"PRId64"  (%s per function)\n",
+                "register code", s->register_code_count, s->register_code_size,
+                dump_tenths(t, (double)s->register_code_size / s->register_code_count));
     }
     if (s->c_func_count) {
         dump_printf(&out, "%-20s %8"PRId64"\n", "C functions", s->c_func_count);
@@ -13101,6 +13349,8 @@ static int JS_SetPrototypeInternal(JSContext *ctx, JSValueConst obj,
     if (sh->proto)
         JS_FreeValue(ctx, JS_MKPTR(JS_TAG_OBJECT, sh->proto));
     sh->proto = proto;
+    if (proto)
+        proto->is_proto = TRUE;
     p->is_std_array_prototype = FALSE; 
     return TRUE;
 }
@@ -13331,6 +13581,9 @@ static int JS_AutoInitProperty(JSContext *ctx, JSObject *p, JSAtom prop,
             return -1;
         }
     }
+    /* the flags change in place */
+    if (unlikely(p->is_proto))
+        js_shape_step_end(ctx->rt);
     js_autoinit_free(ctx->rt, pr);
     prs->flags &= ~JS_PROP_TMASK;
     if (ns_var_ref) {
@@ -14810,6 +15063,11 @@ static JSProperty *add_property(JSContext *ctx,
 {
     JSShape *sh, *new_sh;
 
+    /* a setter or a read-only key on a prototype: a store to an object
+       below it no longer adds the key */
+    if (unlikely(p->is_proto) &&
+        (prop_flags & (JS_PROP_TMASK | JS_PROP_WRITABLE)) != JS_PROP_WRITABLE)
+        js_shape_step_end(ctx->rt);
     if (unlikely(__JS_AtomIsTaggedInt(prop))) {
         /* update is_std_array_prototype */
         if (unlikely(p->is_std_array_prototype)) {
@@ -14839,18 +15097,24 @@ static JSProperty *add_property(JSContext *ctx,
         /* try to find an existing shape */
         new_sh = find_hashed_shape_prop(ctx->rt, sh, prop, prop_flags);
         if (new_sh) {
-            /* matching shape found: use it */
+            /* matching shape found: use it. Its reference is taken before
+               the property array is resized: new_sh may be held by the
+               shape cache alone, which a refused request lets go of
+               (js_shape_cache_drop). */
+            js_dup_shape(new_sh);
             /*  the property array may need to be resized */
             if (new_sh->prop_size != sh->prop_size) {
                 JSProperty *new_prop;
                 new_prop = js_resize_prop(ctx, p, sh->prop_count,
                                           new_sh->prop_size);
-                if (!new_prop)
+                if (!new_prop) {
+                    js_free_shape(ctx->rt, new_sh);
                     return NULL;
+                }
                 p->prop = new_prop;
             }
             js_shape_found(ctx);
-            p->shape = js_dup_shape(new_sh);
+            p->shape = new_sh;
             js_shape_release(ctx, new_sh, sh);
             return &p->prop[new_sh->prop_count - 1];
         } else if (js_rc(sh)->ref_count != 1 || js_shape_keepable(ctx, sh)) {
@@ -16127,6 +16391,10 @@ static int js_shape_prepare_update(JSContext *ctx, JSObject *p,
     JSShape *sh;
     uint32_t idx = 0;    /* prevent warning */
 
+    /* what the steps of writes kept for objects with p on their way of
+       prototypes may no longer hold */
+    if (unlikely(p->is_proto))
+        js_shape_step_end(ctx->rt);
     sh = p->shape;
     if (sh->is_hashed) {
         if (js_rc(sh)->ref_count != 1) {
@@ -23111,6 +23379,12 @@ typedef struct JSArrayIteratorData {
     uint32_t idx;
 } JSArrayIteratorData;
 
+/* The copy of the keys of a source reads the interrupt flag every
+   JS_COPY_POLL_KEYS keys: a string of n characters gives n keys, and a
+   source may have millions (docs/changes/uncatchable.md). So does the copy
+   of the elements of a spread and of the arguments of a call. */
+#define JS_COPY_POLL_KEYS 4096
+
 /* Access an Array's internal JSValue array if available */
 static BOOL js_get_fast_array(JSContext *ctx, JSValueConst obj,
                               JSValue **arrpp, uint32_t *countp)
@@ -23151,12 +23425,12 @@ static no_inline JSValue js_spread_iterator(JSContext *ctx, JSValueConst obj,
    with sp[-2] elements and that length, the elements go to its end at once,
    as CreateDataPropertyOrThrow would put them one by one. 1 when done, 0
    when not (nothing changed), -1 on an exception (out of memory, the array
-   as it was). */
+   as it was, or the interrupt, with the elements copied so far). */
 static no_inline int js_append_array(JSContext *ctx, JSValue *sp)
 {
     JSObject *ps, *pt;
     JSValue next;
-    uint32_t i, n, len, pos;
+    uint32_t i, n, len, pos, j, k;
     int ret;
 
     if (JS_VALUE_GET_TAG(sp[-1]) != JS_TAG_OBJECT ||
@@ -23187,12 +23461,23 @@ static no_inline int js_append_array(JSContext *ctx, JSValue *sp)
     if (pos + n > pt->u.array.u1.size &&
         expand_fast_array_append(ctx, pt, pos + n))
         return -1;
-    for (i = 0; i < n; i++)
-        pt->u.array.u.values[pos + i] = JS_DupValue(ctx, ps->u.array.u.values[i]);
-    pt->u.array.count = pos + n;
-    pt->prop[0].u.value = JS_NewInt32(ctx, pos + n);
-    sp[-2] = JS_NewInt32(ctx, pos + n);
-    return 1;
+    /* the flag is read every JS_COPY_POLL_KEYS elements: a read runs no
+       script, so the source stays as it is, and a stop leaves the target
+       with the elements copied so far */
+    ret = 1;
+    for (i = 0; i < n; i += k) {
+        k = min_uint32(n - i, JS_COPY_POLL_KEYS);
+        if (i > 0 && js_poll_interrupts(ctx)) {
+            ret = -1;
+            break;
+        }
+        for (j = i; j < i + k; j++)
+            pt->u.array.u.values[pos + j] = JS_DupValue(ctx, ps->u.array.u.values[j]);
+    }
+    pt->u.array.count = pos + i;
+    pt->prop[0].u.value = JS_NewInt32(ctx, pos + i);
+    sp[-2] = JS_NewInt32(ctx, pos + i);
+    return ret;
 }
 
 /* force_inline: with one caller, LLVM inlined it into JS_CallInternal. The
@@ -23260,8 +23545,12 @@ static force_inline __exception int js_append_enumerate(JSContext *ctx, JSValue 
            the prototypes and might have side effects */
         if (len != count32)
             goto general_case;
-        /* Handle fast arrays explicitly */
+        /* Handle fast arrays explicitly, with the flag read every
+           JS_COPY_POLL_KEYS elements */
         for (i = it->idx; i < count32; i++) {
+            if (unlikely((i & (JS_COPY_POLL_KEYS - 1)) == JS_COPY_POLL_KEYS - 1) &&
+                js_poll_interrupts(ctx))
+                goto exception;
             it->idx = i + 1;
             if (JS_DefinePropertyValueUint32(ctx, sp[-3], pos++,
                                              JS_DupValue(ctx, arrp[i]), JS_PROP_C_W_E) < 0)
@@ -23373,11 +23662,6 @@ static int js_copy_excluded(JSContext *ctx, JSObject *pexcl,
         return 0;
     return js_get_own_property_flags(ctx, NULL, pexcl, atom);
 }
-
-/* The copy of the keys of a source reads the interrupt flag every
-   JS_COPY_POLL_KEYS keys: a string of n characters gives n keys, and a
-   source may have millions (docs/changes/uncatchable.md) */
-#define JS_COPY_POLL_KEYS 4096
 
 /* Copy the own properties of source into target as JS_CopyDataProperties
    does for a spread in an object literal or the rest of a destructuring,
@@ -23786,6 +24070,8 @@ static JSVarRef *js_closure_define_global_var(JSContext *ctx, JSClosureVar *cv,
                 (prs->flags & JS_PROP_CONFIGURABLE)) {
                 /* update the property flags if possible when
                    declaring a global function */
+                if (unlikely(p->is_proto))
+                    js_shape_step_end(ctx->rt);
                 if ((prs->flags & JS_PROP_TMASK) == JS_PROP_GETSET) {
                     free_property(ctx->rt, pr, prs->flags);
                     prs->flags = flags | JS_PROP_VARREF;
@@ -24071,6 +24357,7 @@ static force_inline JSValue js_new_function_object(JSContext *ctx, JSShape *sh,
     p->tmp_mark = 0;
     p->is_HTMLDDA = 0;
     p->rv_fast = 0;
+    p->is_proto = 0;
     p->weakref_count = 0;
     p->shape = sh;
     p->prop = JS_FUNC_INLINE_PROPS(p);
@@ -24678,7 +24965,11 @@ static force_inline int goasm_case_table(JSValueConst v, const uint8_t *tab)
         p = JS_VALUE_GET_STRING(v);
         if (p->atom_type != JS_ATOM_TYPE_STRING)
             return -1;
-        m = (1u << tab[0]) - 1;
+        /* a table has far fewer than 2^29 slots: the mask of the hash in m
+           lets the compiler take the hash with one and. Without it LLVM
+           shifts the word to make the index of the first probe, two more
+           instructions. */
+        m = ((1u << tab[0]) - 1) & JS_ATOM_HASH_MASK;
         for (h = p->hash & m;; h = (h + 1) & m) {
             memcpy(&q, tab + 2 + sizeof(q) * h, sizeof(q));
             if (q == p)
@@ -49166,6 +49457,55 @@ static JSValue js_object___defineGetter__(JSContext *ctx, JSValueConst this_val,
     }
 }
 
+/* The object FromPropertyDescriptor makes for desc: an ordinary object of
+   Object.prototype with value, writable, enumerable and configurable, or
+   get, set, enumerable and configurable for an accessor, in that order,
+   each a plain data property (CreateDataPropertyOrThrow on a new object,
+   which no setter of a prototype sees). The shape of each form is the one
+   an object literal of those keys has (js_shape_of_keys), which defining
+   the keys one by one leads to, made at the first use in ctx and kept
+   there, so that a descriptor is made with no lookup of a key: a shape
+   held twice is copied before an object of it changes. It takes nothing
+   of desc. */
+static JSValue js_new_desc_object(JSContext *ctx, const JSPropertyDescriptor *desc)
+{
+    static const JSAtom keys[2][4] = {
+        { JS_ATOM_value, JS_ATOM_writable, JS_ATOM_enumerable, JS_ATOM_configurable },
+        { JS_ATOM_get, JS_ATOM_set, JS_ATOM_enumerable, JS_ATOM_configurable },
+    };
+    int acc = (desc->flags & JS_PROP_GETSET) != 0;
+    JSShape *sh = ctx->desc_shape[acc];
+    JSValue obj;
+    JSObject *p;
+
+    if (unlikely(!sh)) {
+        sh = js_shape_of_keys(ctx, JS_VALUE_GET_OBJ(ctx->class_proto[JS_CLASS_OBJECT]),
+                              keys[acc], 4);
+        if (!sh)
+            return JS_ThrowOutOfMemory(ctx);
+        ctx->desc_shape[acc] = sh;
+    }
+    if (likely(!sh->inline_grew &&
+               offsetof(JSObject, u) + sizeof(JSProperty) * (size_t)sh->prop_size <=
+               JS_OBJ_INLINE_MAX_SIZE))
+        obj = js_new_object_inline(ctx, js_dup_shape(sh));
+    else
+        obj = JS_NewObjectFromShape(ctx, js_dup_shape(sh), JS_CLASS_OBJECT, NULL);
+    if (JS_IsException(obj))
+        return obj;
+    p = JS_VALUE_GET_OBJ(obj);
+    if (acc) {
+        p->prop[0].u.value = JS_DupValue(ctx, desc->getter);
+        p->prop[1].u.value = JS_DupValue(ctx, desc->setter);
+    } else {
+        p->prop[0].u.value = JS_DupValue(ctx, desc->value);
+        p->prop[1].u.value = JS_NewBool(ctx, desc->flags & JS_PROP_WRITABLE);
+    }
+    p->prop[2].u.value = JS_NewBool(ctx, desc->flags & JS_PROP_ENUMERABLE);
+    p->prop[3].u.value = JS_NewBool(ctx, desc->flags & JS_PROP_CONFIGURABLE);
+    return obj;
+}
+
 static JSValue js_object_getOwnPropertyDescriptor(JSContext *ctx, JSValueConst this_val,
                                                   int argc, JSValueConst *argv, int magic)
 {
@@ -49173,7 +49513,7 @@ static JSValue js_object_getOwnPropertyDescriptor(JSContext *ctx, JSValueConst t
     JSAtom atom;
     JSValue ret, obj;
     JSPropertyDescriptor desc;
-    int res, flags;
+    int res;
 
     if (magic) {
         /* Reflect.getOwnPropertyDescriptor case */
@@ -49195,35 +49535,16 @@ static JSValue js_object_getOwnPropertyDescriptor(JSContext *ctx, JSValueConst t
         if (res < 0)
             goto exception;
         if (res) {
-            ret = JS_NewObject(ctx);
-            if (JS_IsException(ret))
-                goto exception1;
-            flags = JS_PROP_C_W_E | JS_PROP_THROW;
-            if (desc.flags & JS_PROP_GETSET) {
-                if (JS_DefinePropertyValue(ctx, ret, JS_ATOM_get, JS_DupValue(ctx, desc.getter), flags) < 0
-                ||  JS_DefinePropertyValue(ctx, ret, JS_ATOM_set, JS_DupValue(ctx, desc.setter), flags) < 0)
-                    goto exception1;
-            } else {
-                if (JS_DefinePropertyValue(ctx, ret, JS_ATOM_value, JS_DupValue(ctx, desc.value), flags) < 0
-                ||  JS_DefinePropertyValue(ctx, ret, JS_ATOM_writable,
-                                           JS_NewBool(ctx, desc.flags & JS_PROP_WRITABLE), flags) < 0)
-                    goto exception1;
-            }
-            if (JS_DefinePropertyValue(ctx, ret, JS_ATOM_enumerable,
-                                       JS_NewBool(ctx, desc.flags & JS_PROP_ENUMERABLE), flags) < 0
-            ||  JS_DefinePropertyValue(ctx, ret, JS_ATOM_configurable,
-                                       JS_NewBool(ctx, desc.flags & JS_PROP_CONFIGURABLE), flags) < 0)
-                goto exception1;
+            ret = js_new_desc_object(ctx, &desc);
             js_free_desc(ctx, &desc);
+            if (JS_IsException(ret))
+                goto exception;
         }
     }
     JS_FreeAtom(ctx, atom);
     JS_FreeValue(ctx, obj);
     return ret;
 
-exception1:
-    js_free_desc(ctx, &desc);
-    JS_FreeValue(ctx, ret);
 exception:
     JS_FreeAtom(ctx, atom);
     JS_FreeValue(ctx, obj);
@@ -50336,7 +50657,7 @@ static void free_arg_list(JSContext *ctx, JSValue *tab, uint32_t len)
 static JSValue *build_arg_list(JSContext *ctx, uint32_t *plen,
                                JSValueConst array_arg)
 {
-    uint32_t len, i;
+    uint32_t len, i, j, n;
     int64_t len64;
     JSValue *tab, ret;
     JSObject *p;
@@ -50354,25 +50675,41 @@ static JSValue *build_arg_list(JSContext *ctx, uint32_t *plen,
         return NULL;
     }
     len = len64;
-    /* avoid allocating 0 bytes */
-    tab = js_mallocz(ctx, sizeof(tab[0]) * max_uint32(1, len));
+    /* avoid allocating 0 bytes. Each element is written before the next
+       one, and a failure frees the ones written, so the table needs no
+       clearing: up to 1 MiB of it, which read no flag. */
+    tab = js_malloc(ctx, sizeof(tab[0]) * max_uint32(1, len));
     if (!tab)
         return NULL;
     p = JS_VALUE_GET_OBJ(array_arg);
+    /* the flag is read every JS_COPY_POLL_KEYS elements: up to 65534 of
+       them, then the call frees as many */
     if ((p->class_id == JS_CLASS_ARRAY || p->class_id == JS_CLASS_ARGUMENTS || p->class_id == JS_CLASS_MAPPED_ARGUMENTS) &&
         p->fast_array &&
         len == p->u.array.count) {
-        if (p->class_id == JS_CLASS_MAPPED_ARGUMENTS) {
-            for(i = 0; i < len; i++) {
-                tab[i] = JS_DupValue(ctx, *p->u.array.u.var_refs[i]->pvalue);
+        for (i = 0; i < len; i += n) {
+            n = min_uint32(len - i, JS_COPY_POLL_KEYS);
+            if (i > 0 && js_poll_interrupts(ctx)) {
+                free_arg_list(ctx, tab, i);
+                return NULL;
             }
-        } else {
-            for(i = 0; i < len; i++) {
-                tab[i] = JS_DupValue(ctx, p->u.array.u.values[i]);
+            /* a read of the flag runs no script: the fast array is as it
+               was */
+            if (p->class_id == JS_CLASS_MAPPED_ARGUMENTS) {
+                for (j = i; j < i + n; j++)
+                    tab[j] = JS_DupValue(ctx, *p->u.array.u.var_refs[j]->pvalue);
+            } else {
+                for (j = i; j < i + n; j++)
+                    tab[j] = JS_DupValue(ctx, p->u.array.u.values[j]);
             }
         }
     } else {
         for(i = 0; i < len; i++) {
+            if (unlikely((i & (JS_COPY_POLL_KEYS - 1)) == JS_COPY_POLL_KEYS - 1) &&
+                js_poll_interrupts(ctx)) {
+                free_arg_list(ctx, tab, i);
+                return NULL;
+            }
             ret = JS_GetPropertyUint32(ctx, array_arg, i);
             if (JS_IsException(ret)) {
                 free_arg_list(ctx, tab, i);
@@ -64287,10 +64624,11 @@ typedef struct JSONStringifyContext {
    they are into b at once, and move *pi past them. A kept character is not
    '"', '\\' or below 0x20, which JS_ToQuotedString escapes, and, in a
    string of 16-bit units, no surrogate: a surrogate pair goes as it is and a
-   lone surrogate as \uXXXX, which JS_ToQuotedString decides. Return -1 when
-   b could not grow. */
-static int json_quote_run(StringBuffer *b, const JSString *p, int *pi,
-                          uint32_t *pwork)
+   lone surrogate as \uXXXX, which JS_ToQuotedString decides. With plain set
+   every character of p is kept (JSString.plain) and none is looked at.
+   Return -1 when b could not grow. */
+static force_inline int json_quote_run(StringBuffer *b, const JSString *p,
+                                       int *pi, uint32_t *pwork, BOOL plain)
 {
     int i = *pi, j = i, n = p->len;
     uint32_t c, w, left;
@@ -64303,7 +64641,13 @@ static int json_quote_run(StringBuffer *b, const JSString *p, int *pi,
     if ((uint32_t)(n - i) > left)
         n = i + left;
 
-    if (!p->is_wide_char) {
+    if (plain) {
+        j = n;
+        if (j > i && (!p->is_wide_char ?
+                      string_buffer_write8(b, p->u.str8 + i, j - i) :
+                      string_buffer_write16(b, p->u.str16 + i, j - i)))
+            return -1;
+    } else if (!p->is_wide_char) {
         const uint8_t *str = p->u.str8;
         for(; j < n; j++) {
             c = str[j];
@@ -64339,6 +64683,7 @@ static int JS_ToQuotedString(JSContext *ctx, StringBuffer *b, JSValueConst val1)
     JSString *p;
     int i;
     uint32_t c, work = 0;
+    uint32_t start;
     char buf[16];
 
     val = JS_ToStringCheckObject(ctx, val1);
@@ -64346,12 +64691,22 @@ static int JS_ToQuotedString(JSContext *ctx, StringBuffer *b, JSValueConst val1)
         return -1;
     p = JS_VALUE_GET_STRING(val);
 
+    start = b->len;
     if (string_buffer_putc8(b, '\"'))
         goto fail;
     i = 0;
+    if (p->plain) {
+        /* written before with no escape: copied with no look at its
+           characters, in the same steps */
+        while (i < p->len) {
+            if (json_quote_run(b, p, &i, &work, TRUE))
+                goto fail;
+        }
+        goto done;
+    }
     for(;;) {
         /* the characters kept as they are, in one run */
-        if (json_quote_run(b, p, &i, &work))
+        if (json_quote_run(b, p, &i, &work, FALSE))
             goto fail;
         if (i >= p->len)
             break;
@@ -64399,6 +64754,11 @@ static int JS_ToQuotedString(JSContext *ctx, StringBuffer *b, JSValueConst val1)
             break;
         }
     }
+    /* a string that went out at its length had no escape (a surrogate
+       pair, which ends a run, goes out as it is too): marked so */
+    if (b->len - start == p->len + 1)
+        p->plain = 1;
+ done:
     if (string_buffer_putc8(b, '\"'))
         goto fail;
     JS_FreeValue(ctx, val);
@@ -64633,17 +64993,21 @@ static no_inline int json_put_float64(StringBuffer *b, double d)
 /* Write the key ks of an object, quoted, and the colon after it, after a
    comma when comma is set. A short key of 8 bits with no character to
    escape, the common one, goes in one copy and counts the work
-   JS_ToQuotedString counts for it. */
+   JS_ToQuotedString counts for it. Its characters are looked at once:
+   after that it has the mark plain. */
 static int json_put_key(JSContext *ctx, StringBuffer *b, JSString *ks, BOOL comma)
 {
     if (!ks->is_wide_char && ks->len <= JSON_KEY_SHORT) {
         const uint8_t *s = ks->u.str8;
         int i, n = ks->len, need;
 
-        for (i = 0; i < n; i++) {
-            uint32_t c = s[i];
-            if (c < 0x20 || c == '\"' || c == '\\')
-                goto slow;
+        if (!ks->plain) {
+            for (i = 0; i < n; i++) {
+                uint32_t c = s[i];
+                if (c < 0x20 || c == '\"' || c == '\\')
+                    goto slow;
+            }
+            ks->plain = 1;
         }
         need = n + 3 + comma;
         if (b->len + need > b->size &&

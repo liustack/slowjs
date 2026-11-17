@@ -9,6 +9,6 @@ result cycles: 2550
 result names from set_name: anon,arrow,later,a,b,named,d1,e,f,m,get g length=0c name=ac length=0c name=bc prototype=objectw length=0c name=anonc prototype=objectw
 result names made many times: firstsecond0length=0c name=secondc prototype=objectw firstsecond4length=0c name=secondc prototype=objectw
 result name in an error stack: true
-mem-end obj=208 atom=556 shape=153 prop=998 jsfunc=5 cfunc=134 array=1 fast_array=1 elements=0 binary=0
-mem-gc obj=197 atom=552 shape=146 prop=973 jsfunc=0 cfunc=134 array=1 fast_array=1 elements=0 binary=0
+mem-end obj=208 atom=556 shape=149 prop=998 jsfunc=5 cfunc=134 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=197 atom=552 shape=142 prop=973 jsfunc=0 cfunc=134 array=1 fast_array=1 elements=0 binary=0
 --- status exit 0

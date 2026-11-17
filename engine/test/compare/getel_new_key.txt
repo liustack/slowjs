@@ -1,0 +1,25 @@
+absent: undefined,undefined
+own and proto: 1,2,3
+repeated absent: undefined,undefined,undefined
+null proto: x,undefined
+added between reads: undefined,now,undefined
+proto added between reads: undefined,base,base
+getter on proto: g true
+Object.prototype: op,op,undefined undefined
+array: 3,undefined,undefined,true,20
+array with own key: e,undefined
+arguments: 2,undefined,1
+typed array: undefined,undefined,undefined,undefined,undefined,undefined,2,2
+typed array, prototype names: undefined,undefined,op,undefined
+typed array on the chain: undefined,undefined,undefined,2
+String object: 3,undefined,b,undefined
+primitive string: 3,undefined,c
+proxy: h,trap:zz_proxy_absent here_key,zz_proxy_absent
+proxy on the chain: own,p:zz_proxy_chain zz_proxy_chain
+global: gl,undefined
+wide: cn,undefined,e1,e1,undefined
+long: long,undefined,undefined,very
+symbol named the same: undefined,sym
+keys of a template: dialog,undefined,dialog
+class names: color:red;
+memory after: 0

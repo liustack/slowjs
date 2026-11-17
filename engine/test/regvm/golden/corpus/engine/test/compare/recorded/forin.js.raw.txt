@@ -40,6 +40,6 @@ result object changes: a,c
 result prototype swapped: a,two
 result Object.prototype polluted: a,polluted,a
 result again: 3,3,3
-mem-end obj=224 atom=583 shape=171 prop=1047 jsfunc=11 cfunc=134 array=6 fast_array=5 elements=53 binary=0
-mem-gc obj=224 atom=583 shape=171 prop=1047 jsfunc=11 cfunc=134 array=6 fast_array=5 elements=53 binary=0
+mem-end obj=224 atom=583 shape=169 prop=1047 jsfunc=11 cfunc=134 array=6 fast_array=5 elements=53 binary=0
+mem-gc obj=224 atom=583 shape=169 prop=1047 jsfunc=11 cfunc=134 array=6 fast_array=5 elements=53 binary=0
 --- status exit 0

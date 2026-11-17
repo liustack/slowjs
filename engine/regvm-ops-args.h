@@ -312,7 +312,7 @@ static JSValue rv_build_arguments(JSContext *ctx, JSValue *F, const RVFunc *rf, 
     JSValue val, *tab;
     JSProperty props[3];
     JSObject *p;
-    int i;
+    int i, j, n;
 
     props[0].u.value = JS_NewInt32(ctx, argc); /* length */
     props[1].u.value = JS_DupValue(ctx, ctx->array_proto_values); /* Symbol.iterator */
@@ -330,8 +330,18 @@ static JSValue rv_build_arguments(JSContext *ctx, JSValue *F, const RVFunc *rf, 
             JS_FreeValue(ctx, val);
             return JS_EXCEPTION;
         }
-        for (i = 0; i < argc; i++)
-            tab[i] = JS_DupValue(ctx, rv_arg_at(F, rf, argc, i));
+        /* the flag is read every JS_COPY_POLL_KEYS arguments */
+        for (i = 0; i < argc; i += n) {
+            n = min_int(argc - i, JS_COPY_POLL_KEYS);
+            if (i > 0 && js_poll_interrupts(ctx)) {
+                p->u.array.u.values = tab;
+                p->u.array.count = i;
+                JS_FreeValue(ctx, val);
+                return JS_EXCEPTION;
+            }
+            for (j = i; j < i + n; j++)
+                tab[j] = JS_DupValue(ctx, rv_arg_at(F, rf, argc, j));
+        }
     }
     p->u.array.u.values = tab;
     p->u.array.count = argc;
@@ -370,8 +380,13 @@ static JSValue rv_build_mapped_arguments(JSContext *ctx, JSValue *F, const RVFun
                 goto fail1;
             tab[i] = var_ref;
         }
+        /* the flag is read every 1,024 arguments: each makes a var ref, an
+           allocation of about 15 ticks, where a copy is about one */
         for (i = n; i < argc; i++) {
-            var_ref = js_create_var_ref(ctx, FALSE);
+            var_ref = NULL;
+            if (likely((i & 1023) != 1023) ||
+                !js_poll_interrupts(ctx))
+                var_ref = js_create_var_ref(ctx, FALSE);
             if (!var_ref) {
             fail1:
                 for (j = 0; j < i; j++)
@@ -398,7 +413,7 @@ static JSValue rv_build_rest(JSContext *ctx, JSValue *F, const RVFunc *rf, int a
 {
     JSValue obj;
     JSObject *p;
-    int i, len;
+    int i, j, n, len;
 
     first = min_int(first, argc);
     len = argc - first;
@@ -411,9 +426,20 @@ static JSValue rv_build_rest(JSContext *ctx, JSValue *F, const RVFunc *rf, int a
             JS_FreeValue(ctx, obj);
             return JS_EXCEPTION;
         }
+        /* the flag is read every JS_COPY_POLL_KEYS arguments: a stop
+           leaves the array with those copied so far */
+        for (i = 0; i < len; i += n) {
+            n = min_int(len - i, JS_COPY_POLL_KEYS);
+            if (i > 0 && js_poll_interrupts(ctx)) {
+                p->u.array.count = i;
+                set_value(ctx, &p->prop[0].u.value, JS_NewInt32(ctx, i));
+                JS_FreeValue(ctx, obj);
+                return JS_EXCEPTION;
+            }
+            for (j = i; j < i + n; j++)
+                p->u.array.u.values[j] = JS_DupValue(ctx, rv_arg_at(F, rf, argc, first + j));
+        }
         p->u.array.count = len;
-        for (i = 0; i < len; i++)
-            p->u.array.u.values[i] = JS_DupValue(ctx, rv_arg_at(F, rf, argc, first + i));
         set_value(ctx, &p->prop[0].u.value, JS_NewInt32(ctx, len));
     }
     return obj;

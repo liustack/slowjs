@@ -23,6 +23,7 @@ JS_GetGlobalObject
 JS_GetHostLimit
 JS_GetImportMeta
 JS_GetInterruptFlag
+JS_GetMemoryFree
 JS_GetMemorySize
 JS_GetModuleName
 JS_GetOwnProperty

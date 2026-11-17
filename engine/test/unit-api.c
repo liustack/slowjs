@@ -760,6 +760,25 @@ static void test_new_string_chars(void)
     JS_SetPropertyStr(v.ctx, g, "s16", s);
     CHECK(eval_is(v.ctx, "s16 === '\\u4e2d\\u{1f600}' && s16.length", "3"), "the 16-bit string");
 
+    /* a string JSON.stringify has marked as needing no escape, and an atom:
+       the mark is not part of the length */
+    for (i = 0; i < 2; i++) {
+        static const char *names[] = { "sp", "sa" };
+        static const uint32_t lens[] = { 15, 9 };
+
+        CHECK(eval_is(v.ctx, i ? "globalThis.sa = 'plainAtom'; JSON.stringify({ plainAtom: sa }).length"
+                               : "globalThis.sp = 'plain'.repeat(3); JSON.stringify([sp, sp]).length",
+                      i ? "25" : "37"), "JSON.stringify of %s", names[i]);
+        s = JS_GetPropertyStr(v.ctx, g, names[i]);
+        CHECK(JS_VALUE_GET_TAG(s) == JS_TAG_STRING, "%s is a string", names[i]);
+        p = JS_VALUE_GET_PTR(s);
+        memcpy(&word, p, 4);
+        CHECK((word & js_host_layout[JS_HOST_LAYOUT_STRING_LEN_MASK]) == lens[i] &&
+              !(word & js_host_layout[JS_HOST_LAYOUT_STRING_WIDE_BIT]),
+              "the first word of %s after JSON.stringify: %#x", names[i], word);
+        JS_FreeValue(v.ctx, s);
+    }
+
     /* the reference count, and the strings the engine makes */
     for (i = 0; i < 2; i++) {
         static const char *texts[] = { "abcdddddddddd", "abc\xe4\xb8\xad" };

@@ -140,6 +140,7 @@ int white_shape_id_twins(JSRuntime *rt);
 int white_shape_hashed(JSValueConst obj);
 int white_shape_parents_bad(JSRuntime *rt, JSValueConst proto, int *count, int *parented);
 uint32_t white_key_atom(JSValueConst v);
+int white_string_plain(JSContext *ctx, JSValueConst v);
 long white_call_debt(JSContext *ctx, int direct, int *depth);
 int white_key_atoms_bad(JSRuntime *rt, int *live, int *keys);
 unsigned long white_gc_run_count(int young);
@@ -159,6 +160,9 @@ int white_regvm_read_check(JSContext *ctx, JSValueConst f);
 int white_regvm_dst_sites(JSValueConst f, int *dst, int *win);
 int white_regvm_forin_sites(JSValueConst f, int n[4]);
 int white_regvm_getf_slots(JSValueConst f, uint32_t *slots, uint32_t *ids, int max);
+int white_regvm_putf_sites(JSValueConst f, uint32_t *s, int max);
+uint32_t white_shape_step_epoch(JSRuntime *rt);
+void white_shape_step_epoch_set(JSRuntime *rt, uint32_t e);
 int white_regvm_stack(JSContext *ctx, long out[7]);
 int white_set_code(JSContext *ctx, JSValueConst f, const uint8_t *code, int len, int stack_size, int undo);
 uint32_t white_array_fake_count(JSContext *ctx, JSValueConst a, uint32_t count);
@@ -180,6 +184,11 @@ size_t white_sb_block_usable(const struct StringBuffer *b);
 void white_front_drain(JSContext *ctx);
 size_t white_heap_limit(JSContext *ctx);
 size_t white_gc_count(JSRuntime *rt);
+void white_drain_once(void);
+int white_kept_shapes(JSRuntime *rt);
+void *white_kept_shape(JSRuntime *rt, size_t *size);
+int white_take_slots(JSRuntime *rt, size_t size, void **out, int cap);
+size_t white_found_resize(JSContext *ctx, JSValueConst obj, const char *key);
 
 /* ---- texts of every kind of character ---- */
 
@@ -2190,6 +2199,93 @@ static void test_putel_atom_shape(void)
     }
 }
 
+/* ---- the kept shapes let go on a refused request ---- */
+
+#define SLOTS_MAX 4096
+
+/* A block whose size has no free slot left needs a new arena. Under the
+   memory limit the heap refuses it, and js_heap_drain lets the kept shapes
+   go: a kept shape in an arena that still holds other blocks leaves a free
+   slot there, which gives no memory back to the heap, and the block is
+   taken from that slot. The keys are atoms of the engine, so that the
+   shapes are all that goes. */
+static void test_shape_drop_slot(void)
+{
+    static void *slots[SLOTS_MAX];
+    VM v;
+    void *shape, *p;
+    size_t size;
+    int n, kept;
+
+    if (white_every_block_is_a_request())
+        return;
+    v = vm_new();
+    JS_SetShapeCache(v.ctx, 64);
+    CHECK(eval_ok(v.ctx, "function mk() { var o = {}; o.length = 1; o.name = 2; return 0 }\nmk(); mk();"),
+          "the script threw");
+    JS_RunGC(v.rt);
+    kept = white_kept_shapes(v.rt);
+    shape = white_kept_shape(v.rt, &size);
+    CHECK(kept > 0 && shape, "no shape kept");
+    n = white_take_slots(v.rt, size, slots, SLOTS_MAX);
+    CHECK(n >= 0, "more than %d free blocks of %lu bytes", SLOTS_MAX, (unsigned long)size);
+    JS_SetMemoryLimit(v.rt, JS_GetMemorySize(v.rt));
+    p = js_malloc_rt(v.rt, size);
+    JS_SetMemoryLimit(v.rt, (size_t)-1);
+    CHECK(white_kept_shapes(v.rt) == 0, "%d shapes kept after the refused request, %d before", white_kept_shapes(v.rt), kept);
+    CHECK(p == shape, "a block of %lu bytes: %p, want the slot the kept shape left, %p", (unsigned long)size, p, shape);
+    js_free_rt(v.rt, p);
+    while (n > 0)
+        js_free_rt(v.rt, slots[--n]);
+    vm_free(&v);
+}
+
+/* add_property takes a shape it finds in the shape hash table that the
+   shape cache alone holds, and grows the property array of the object to its
+   room. That block needs a new arena, whose request runs js_heap_drain first,
+   as a refused one does: the drain lets the kept shapes go, the one found
+   among them, while add_property holds it, and the object gets it whole (the sanitizer builds see any read of it after it
+   was freed, and the runtime frees with no block left). */
+static void test_shape_drop_in_resize(void)
+{
+    static void *slots[SLOTS_MAX];
+    VM v;
+    JSValue g, o;
+    size_t size;
+    int n, kept, r;
+
+    if (white_every_block_is_a_request())
+        return;
+    v = vm_new();
+    JS_SetShapeCache(v.ctx, 64);
+    CHECK(eval_ok(v.ctx,
+                  "function mk() { var o = {}; o.length = 1; o.name = 2; o.value = 3; o.done = 4; return 0 }\n"
+                  "mk(); mk();\n"
+                  "var o = {}; o.length = 1; o.name = 2;"),
+          "the script threw");
+    JS_RunGC(v.rt);
+    g = JS_GetGlobalObject(v.ctx);
+    o = JS_GetPropertyStr(v.ctx, g, "o");
+    size = white_found_resize(v.ctx, o, "value");
+    kept = white_kept_shapes(v.rt);
+    CHECK(size > 0 && kept > 0, "adding value to o finds no shape held by the cache alone with more room");
+    n = white_take_slots(v.rt, size, slots, SLOTS_MAX);
+    CHECK(n >= 0, "more than %d free blocks of %lu bytes", SLOTS_MAX, (unsigned long)size);
+    white_drain_once();
+    r = JS_SetPropertyStr(v.ctx, o, "value", JS_NewInt32(v.ctx, 3));
+    CHECK(r == 1, "the property was not added: %d", r);
+    /* the shape o left once it had the new one is the only one kept */
+    CHECK(kept > 1 && white_kept_shapes(v.rt) == 1, "%d shapes kept after the refused request, %d before", white_kept_shapes(v.rt), kept);
+    while (n > 0)
+        js_free_rt(v.rt, slots[--n]);
+    JS_FreeValue(v.ctx, o);
+    JS_FreeValue(v.ctx, g);
+    CHECK(eval_is(v.ctx, "Object.keys(o) + ':' + o.value + ':' + mk() + ':' + JSON.stringify(o)",
+                  "length,name,value:3:0:{\"length\":1,\"name\":2,\"value\":3}"),
+          "o after the property was added");
+    vm_free(&v);
+}
+
 /* each_vm_failing calls the global f of setup with each call of the
    allocator failing in turn, as each_call_failing does, but each call in a VM
    of its own, made and set up again, so that what only a first call
@@ -2532,6 +2628,121 @@ static void test_key_atom(void)
     key_atoms_ok(&v, "thousands of atoms");
     JS_RunGC(v.rt);
     key_atoms_ok(&v, "after a collection");
+    vm_free(&v);
+}
+
+/* white_string_plain of the value of the expression src, -1 when it is no
+   flat string */
+static int plain_of(JSContext *ctx, const char *src)
+{
+    JSValue v = JS_Eval(ctx, src, strlen(src), "<plain>", 0);
+    int r = JS_VALUE_GET_TAG(v) == JS_TAG_STRING ? white_string_plain(ctx, v) : -1;
+
+    JS_FreeValue(ctx, v);
+    return r;
+}
+
+/* The mark "needs no escape" (JSString.plain): JS_ToQuotedString sets it on
+   a string it wrote with no escape, an atom or not, and copies a marked
+   string with no look at its characters. A string with a quote, a control
+   character or a lone surrogate never gets it, a marked string is not
+   appended to in place, and the number of a freed atom comes back with no
+   mark. */
+static void test_json_plain(void)
+{
+    VM v = vm_new();
+    JSValue o, j;
+    JSAtom a, b;
+
+    /* strings that are no atoms: marked by a write with no escape */
+    CHECK(eval_ok(v.ctx,
+        "var a = ['wjp', 'Plain'].join(''), q = ['wjp', '\"q'].join(''),\n"
+        "  n = ['wjp', '\\n'].join(''), u = ['wjp', '\\ud800'].join(''),\n"
+        "  pr = ['wjp', '\\ud83d\\ude00'].join(''), w = ['wjp', '\\u4e2d'].join('');\n"), "the script threw");
+    CHECK(plain_of(v.ctx, "a") == 0, "a new string is marked");
+    CHECK(eval_is(v.ctx, "JSON.stringify([a, q, n, u, pr, w])",
+                  "[\"wjpPlain\",\"wjp\\\"q\",\"wjp\\n\",\"wjp\\ud800\",\"wjp\xf0\x9f\x98\x80\",\"wjp\xe4\xb8\xad\"]"),
+          "the first write");
+    CHECK(plain_of(v.ctx, "a") == 1 && plain_of(v.ctx, "w") == 1 && plain_of(v.ctx, "pr") == 1,
+          "a string written with no escape: %d %d %d", plain_of(v.ctx, "a"), plain_of(v.ctx, "w"),
+          plain_of(v.ctx, "pr"));
+    CHECK(plain_of(v.ctx, "q") == 0 && plain_of(v.ctx, "n") == 0 && plain_of(v.ctx, "u") == 0,
+          "a string with an escape or a lone surrogate is marked");
+    CHECK(eval_is(v.ctx, "JSON.stringify([a, q, n, u, pr, w])",
+                  "[\"wjpPlain\",\"wjp\\\"q\",\"wjp\\n\",\"wjp\\ud800\",\"wjp\xf0\x9f\x98\x80\",\"wjp\xe4\xb8\xad\"]"),
+          "the second write");
+
+    /* a marked string with room at its end is copied to append to: appended
+       to in place, it would keep the mark with a quote in it */
+    CHECK(eval_is(v.ctx,
+        "(function () { let m = 'wjp'; for (let i = 0; i < 20; i++) m += 'Mark';\n"
+        "  const j1 = JSON.stringify(m); m += '\"'; const j2 = JSON.stringify(m);\n"
+        "  return [j1.length === m.length + 1, j2.length === m.length + 3, j2.endsWith('\\\\\"\"'),\n"
+        "    JSON.stringify({ k: m }).endsWith('\\\\\"\"}')].join() })()",
+        "true,true,true,true"), "a marked string appended to");
+
+    /* strings of JSON.parse, written twice */
+    CHECK(eval_ok(v.ctx, "var pp = JSON.parse('[\"wjpParsedLong\", \"wjp\\\\nx\", \"wjp\\\\u0041\"]')"),
+          "the script threw");
+    CHECK(eval_is(v.ctx, "JSON.stringify(pp)", "[\"wjpParsedLong\",\"wjp\\nx\",\"wjpA\"]"), "the parsed strings");
+    CHECK(plain_of(v.ctx, "pp[0]") == 1 && plain_of(v.ctx, "pp[1]") == 0 && plain_of(v.ctx, "pp[2]") == 1,
+          "parsed strings written: %d %d %d", plain_of(v.ctx, "pp[0]"), plain_of(v.ctx, "pp[1]"),
+          plain_of(v.ctx, "pp[2]"));
+    CHECK(eval_is(v.ctx, "JSON.stringify(pp)", "[\"wjpParsedLong\",\"wjp\\nx\",\"wjpA\"]"), "the parsed strings again");
+
+    /* a string that keeps the atom of its key (the hash 1) and has the
+       mark: the mark is no part of the test of js_string_atom_or_key, so
+       the string is not appended to in place and gives its key back when
+       it is freed (vm_free finds an atom left) */
+    CHECK(eval_ok(v.ctx,
+        "var ko = { wjpKey: 1 }, kk = ['wjp', 'Key'].join(''); ko[kk]; JSON.stringify([kk]);"),
+          "the script threw");
+    {
+        JSValue s = JS_Eval(v.ctx, "kk", 2, "<plain>", 0);
+
+        CHECK(white_key_atom(s) != JS_ATOM_NULL && white_string_plain(v.ctx, s) == 1,
+              "the key %u and the mark %d of kk", white_key_atom(s), white_string_plain(v.ctx, s));
+        JS_FreeValue(v.ctx, s);
+    }
+    CHECK(eval_is(v.ctx, "kk += 'More'; [kk, ko[kk.slice(0, 6)], JSON.stringify(kk)].join()",
+                  "wjpKeyMore,1,\"wjpKeyMore\""), "kk appended to");
+    CHECK(eval_ok(v.ctx, "kk = undefined;"), "the script threw");
+
+    /* a long string, over several steps of the interrupt check */
+    CHECK(eval_is(v.ctx,
+        "var big = 'wjp'.repeat(40000) + 'x', s1 = JSON.stringify(big), s2 = JSON.stringify(big);\n"
+        "s1 === s2 && s1.length === big.length + 2", "true"), "a long marked string");
+
+    /* atoms: a key is marked by its first write */
+    a = JS_NewAtom(v.ctx, "wjpFirst");
+    o = JS_NewObject(v.ctx);
+    JS_SetProperty(v.ctx, o, a, JS_NewInt32(v.ctx, 1));
+    {
+        JSValue s = JS_AtomToString(v.ctx, a);
+
+        CHECK(white_string_plain(v.ctx, s) == 0, "a new atom is marked");
+        j = JS_JSONStringify(v.ctx, o, JS_UNDEFINED, JS_UNDEFINED);
+        CHECK(white_string_plain(v.ctx, s) == 1, "a key written: not marked");
+        JS_FreeValue(v.ctx, j);
+        JS_FreeValue(v.ctx, s);
+    }
+    JS_FreeValue(v.ctx, o);
+    JS_FreeAtom(v.ctx, a);
+    /* its number, given to the next atom, comes with no mark */
+    b = JS_NewAtom(v.ctx, "wjp\"Second");
+    CHECK(b == a, "the number %u of the freed atom was not given again (%u)", a, b);
+    o = JS_NewObject(v.ctx);
+    JS_SetProperty(v.ctx, o, b, JS_NewInt32(v.ctx, 2));
+    j = JS_JSONStringify(v.ctx, o, JS_UNDEFINED, JS_UNDEFINED);
+    {
+        const char *t = JS_ToCString(v.ctx, j);
+
+        CHECK(t && strcmp(t, "{\"wjp\\\"Second\":2}") == 0, "the key of the new atom: %s", t ? t : "(null)");
+        JS_FreeCString(v.ctx, t);
+    }
+    JS_FreeValue(v.ctx, j);
+    JS_FreeValue(v.ctx, o);
+    JS_FreeAtom(v.ctx, b);
     vm_free(&v);
 }
 
@@ -5591,6 +5802,13 @@ static void test_fused_edges(void)
         CHECK(eval_is(v.ctx, src, "bcde"), "on %d: the branches of dda", on);
         CHECK(eval_is(v.ctx, "typeof dda + (dda == undefined) + (dda === undefined)", "undefinedtruefalse"),
               "on %d: dda itself", on);
+        /* its truth in the branches and ! of the register loop, from a
+           local and from a temp that is not its last reference */
+        CHECK(eval_is(v.ctx, "(function (x) { var o = { d: x }, r = []; if (x) r.push('if'); if (o.d) r.push('temp');"
+                      " while (o.d) { r.push('loop'); break } r.push(!x, !o.d, x ? 1 : 0, o.d ? 1 : 0,"
+                      " (function () { return x })() ? 1 : 0, !{}, ![], !(function () { return {} })()); return r.join() })(dda)",
+                      "true,true,0,0,0,false,false,false"),
+              "on %d: the truth of dda", on);
 
         /* the exports of a namespace are read through their references:
            the read after bump() sees the new value */
@@ -8478,6 +8696,103 @@ static void test_regvm_getf_slot(void)
     vm_free(&v);
 }
 
+/* what the one write of a name of the function s keeps after src ran
+   (engine/regvm-ops-basic.h): the slot, and whether it keeps a step and the
+   epoch of the step is the one of the runtime (step 2), is another (1) or
+   it keeps none (0) */
+static void putf_case(VM *v, const char *src, const char *want, uint32_t slot, int step)
+{
+    JSValue g = JS_GetGlobalObject(v->ctx), f = JS_GetPropertyStr(v->ctx, g, "s");
+    uint32_t w[4] = { 0, 0, 0, 0 };
+    int n, got;
+
+    CHECK(eval_is(v->ctx, src, want), "%s does not give %s", src, want);
+    n = white_regvm_putf_sites(f, w, 1);
+    CHECK(n == 1, "%s: %d writes of a name, want 1", src, n);
+    got = w[3] == 0xffffffffu ? 0 : w[3] == white_shape_step_epoch(v->rt) ? 2 : 1;
+    CHECK(n != 1 || w[0] == slot, "after %s: the site keeps slot %u, want %u", src, w[0], slot);
+    CHECK(n != 1 || got == step, "after %s: the step is %d (ids %u %u, epoch %u of %u), want %d",
+          src, got, w[1], w[2], w[3], white_shape_step_epoch(v->rt), step);
+    CHECK(n != 1 || got == 0 || (w[1] != 0 && w[2] != 0 && w[1] != w[2]),
+          "after %s: the step keeps the ids %u %u", src, w[1], w[2]);
+    JS_FreeValue(v->ctx, f);
+    JS_FreeValue(v->ctx, g);
+}
+
+/* The slot and the step a write of a name keeps (PUTF): none after a
+   store to an array, the slot of the own key it set, the step of the key
+   it added to an ordinary object (the objects of C stay alive, so that an
+   add copies the shape of the one before). The epoch moves when a
+   prototype gets a setter or loses it and when the ids run out and are
+   given again (also inside the add the site makes), and it stops at its
+   last value, after which no site takes a step. */
+static void test_regvm_putf_step(void)
+{
+    VM v = vm_new();
+
+    CHECK(eval_ok(v.ctx,
+        "globalThis.s = function (o, v) { o.x = v; return o; };"
+        "globalThis.keep = []; globalThis.C = function () { this.a = 1; keep.push(this); }; s(new C(), 0); 0"), "the setup threw");
+    putf_case(&v, "s([1], 1).x", "1", 0xffffffffu, 0);
+    putf_case(&v, "s(new C(), 2).x", "2", 0xffffffffu, 2);
+    putf_case(&v, "s(new C(), 3).x", "3", 0xffffffffu, 2);
+    putf_case(&v, "s({ b: 1, x: 2 }, 4).x", "4", 1, 2);
+    putf_case(&v, "Object.defineProperty(C.prototype, 'x', { set: function (v) { this.y = v; }, configurable: true });"
+                  "s(new C(), 5).y", "5", 1, 1);
+    putf_case(&v, "var o = s(new C(), 6); o.x + ',' + o.y + ',' + Object.keys(o)", "undefined,6,a,y", 1, 1);
+    putf_case(&v, "delete C.prototype.x; s(new C(), 7).x", "7", 1, 2);
+    vm_free(&v);
+
+    /* the ids run out and are given again: the epoch moves, so a step kept
+       with the old ids is not taken, whatever shape has its ids now */
+    v = vm_new();
+    CHECK(eval_ok(v.ctx,
+        "globalThis.s = function (o, v) { o.x = v; return o; };"
+        "globalThis.keep = []; globalThis.C = function () { this.a = 1; keep.push(this); }; s(new C(), 1); 0"), "the setup threw");
+    putf_case(&v, "s(new C(), 2).x", "2", 0xffffffffu, 2);
+    white_shape_id_set(v.rt, white_shape_id_max() - 8);
+    CHECK(eval_ok(v.ctx, "var objs = []; for (var i = 0; i < 64; i++) { var o = {}; o['r' + i] = i; objs.push(o); } 0"),
+          "the shapes threw");
+    CHECK(white_shape_id_next(v.rt) < white_shape_id_max() - 8, "the ids did not run out (next %u)",
+          white_shape_id_next(v.rt));
+    putf_case(&v, "objs.length", "64", 0xffffffffu, 1);
+    CHECK(eval_ok(v.ctx, "var S = { set x(v) { this.y = v; } }, many = [];"
+                         " for (var i = 0; i < 4096; i++) { var o = Object.create(S); o['s' + i] = i; many.push(o); } 0"),
+          "the shapes threw");
+    putf_case(&v, "var n = 0; for (var i = 0; i < 4096; i++) if (s(many[i], i).y === i &&"
+                  " !Object.hasOwn(many[i], 'x')) n++; n", "4096", 0xffffffffu, 1);
+    putf_case(&v, "s(new C(), 3).x", "3", 0xffffffffu, 2);
+    vm_free(&v);
+
+    /* the epoch stops at its last value: no site takes a step after */
+    v = vm_new();
+    CHECK(eval_ok(v.ctx,
+        "globalThis.s = function (o, v) { o.x = v; return o; };"
+        "globalThis.keep = []; globalThis.C = function () { this.a = 1; keep.push(this); }; s(new C(), 0); 0"), "the setup threw");
+    white_shape_step_epoch_set(v.rt, 0xfffffffdu);
+    putf_case(&v, "s(new C(), 1).x", "1", 0xffffffffu, 2);
+    putf_case(&v, "Object.defineProperty(C.prototype, 'z', { get: function () { return 0; } }); s(new C(), 2).x",
+              "2", 0xffffffffu, 1);
+    CHECK(white_shape_step_epoch(v.rt) == 0xfffffffeu, "the epoch is %u", white_shape_step_epoch(v.rt));
+    putf_case(&v, "Object.defineProperty(C.prototype, 'w', { get: function () { return 0; } }); s(new C(), 3).x",
+              "3", 0xffffffffu, 1);
+    CHECK(white_shape_step_epoch(v.rt) == 0xfffffffeu, "the epoch is %u", white_shape_step_epoch(v.rt));
+    vm_free(&v);
+
+    /* the ids run out inside the add itself: the id the object had is one
+       of the old numbering, so the site takes no step from it */
+    v = vm_new();
+    CHECK(eval_ok(v.ctx,
+        "globalThis.s = function (o, v) { o.x = v; return o; };"
+        "var P = {}, o1 = Object.create(P), o2 = Object.create(P); s([1], 0); 0"), "the setup threw");
+    white_shape_id_set(v.rt, white_shape_id_max());
+    putf_case(&v, "s(o1, 1).x", "1", 0xffffffffu, 0);
+    CHECK(white_shape_id_next(v.rt) < white_shape_id_max() / 2, "the ids did not run out (next %u)",
+          white_shape_id_next(v.rt));
+    putf_case(&v, "s(o2, 2).x", "2", 0xffffffffu, 2);
+    vm_free(&v);
+}
+
 /* Array destructuring with no iterator (engine/regvm-ops-dst.h): the pass
    makes DSTART for the for_of_start of a destructuring, and not for a
    for-of loop, yield* or a destructuring with a yield in a default (its
@@ -9812,6 +10127,8 @@ int main(int argc, char **argv)
     test_object_inline_limit();
     test_object_lit_shared_shape();
     test_putel_atom_shape();
+    test_shape_drop_slot();
+    test_shape_drop_in_resize();
     test_putel_atom_each_failing();
     test_object_rest_cache();
     test_object_spread_cache();
@@ -9821,6 +10138,7 @@ int main(int argc, char **argv)
     test_new_shapes_each_failing();
     test_counted_call_debt();
     test_key_atom();
+    test_json_plain();
     test_young_lists();
     test_young_leaves_no_zero_count();
     test_gc_in_free();
@@ -9896,6 +10214,7 @@ int main(int argc, char **argv)
     test_regvm_dst_alloc();
     test_regvm_forin();
     test_regvm_getf_slot();
+    test_regvm_putf_step();
     test_spread_alloc();
     test_spread_refs();
     test_days_to_date();

@@ -818,7 +818,7 @@ static force_inline BOOL rv_rel(int rel, double d1, double d2)
         int res;
         if ((uint32_t)JS_VALUE_GET_TAG(v) <= JS_TAG_UNDEFINED) {
             res = JS_VALUE_GET_INT(v) != 0;
-        } else {
+        } else if (!RV_TRUTH_OBJ(v, (int8_t)ip[1], res)) {
             RV_SYNC_TOP();
             res = rv_tobool_slow(ctx, F, (int8_t)ip[1]);
         }

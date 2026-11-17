@@ -149,3 +149,128 @@ func TestConstructorsOutOfMemory(t *testing.T) {
 		})
 	}
 }
+
+// MemoryFree is the part of MemorySize no block in use holds: never more than
+// MemorySize, larger once a collection leaves arenas with holes, and the rest
+// of MemorySize, what is in use, comes back when the same objects are made
+// again. It can be read at any time, from a Go function too.
+func TestMemoryFree(t *testing.T) {
+	m := newTestVM(t)
+	check := func(what string) (size, free uintptr) {
+		t.Helper()
+		size, free = m.MemorySize(), m.MemoryFree()
+		if free > size {
+			t.Fatalf("%s: MemoryFree %d over MemorySize %d", what, free, size)
+		}
+		if u := m.MemoryUsage(); uintptr(u.FreeSize) != free || uintptr(u.MallocSize) != size {
+			t.Fatalf("%s: MemoryUsage gives %d free of %d, MemoryFree %d of %d", what, u.FreeSize, u.MallocSize, free, size)
+		}
+		return size, free
+	}
+	m.RunGC()
+	size0, free0 := check("a new VM")
+	// Make 64000 objects at once and keep one of every 16: the arenas of the
+	// others stay, with holes, as long as one object of each lives. The kept
+	// objects hold each other in a chain, not in an array: an array grows by
+	// realloc, and its block is as big as the room it was given, which
+	// depends on what was around it.
+	if _, err := m.Eval(`{
+	const all = []
+	for (let i = 0; i < 64000; i++) all.push({ i, s: 'v' + i, next: null })
+	globalThis.kept = null
+	for (let i = 0; i < all.length; i += 16) { all[i].next = kept; kept = all[i] }
+	undefined
+}`, EvalGlobal); err != nil {
+		t.Fatal(err)
+	}
+	m.RunGC()
+	size1, free1 := check("one object of 16 kept")
+	if free1-free0 < 256<<10 {
+		t.Errorf("MemoryFree %d to %d with 60000 objects freed among 4000 kept, want 256 KiB more", free0, free1)
+	}
+	used1 := size1 - free1
+	if used1 <= size0-free0 {
+		t.Errorf("in use %d, before %d: the kept objects do not show", used1, size0-free0)
+	}
+	// The same 4000 objects made again, with no garbage between: the same
+	// bytes in use, in fewer arenas.
+	if _, err := m.Eval(`kept = null`, EvalGlobal); err != nil {
+		t.Fatal(err)
+	}
+	m.RunGC()
+	if _, err := m.Eval(`for (let i = 0; i < 64000; i += 16) kept = { i, s: 'v' + i, next: kept }; undefined`, EvalGlobal); err != nil {
+		t.Fatal(err)
+	}
+	m.RunGC()
+	size2, free2 := check("the kept objects made alone")
+	if used2 := size2 - free2; used2 != used1 {
+		t.Errorf("in use %d with the objects made among garbage, %d made alone", used1, used2)
+	}
+	if size2 >= size1 {
+		t.Errorf("MemorySize %d among garbage, %d alone: the test makes no holes", size1, size2)
+	}
+
+	var inside, insideSize uintptr
+	defineBuiltin(t, m, "free", NewBuiltin("free", 0, func(a Args) (Value, error) {
+		inside, insideSize = a.VM().MemoryFree(), a.VM().MemorySize()
+		return Value{}, nil
+	}))
+	if _, err := m.Eval(`{ const junk = []; for (let i = 0; i < 1000; i++) junk.push({ i }); free() }`, EvalGlobal); err != nil {
+		t.Fatal(err)
+	}
+	if inside > insideSize || insideSize == 0 {
+		t.Errorf("from a Go function: MemoryFree %d, MemorySize %d", inside, insideSize)
+	}
+}
+
+// MemoryFree walks the lists of arenas, not the objects: on an Apple M4, a VM
+// of 6400 blocks with holes takes it about 50 microseconds here, and the first
+// call after a full collection of the store pages (about 6000 blocks) 100 to
+// 400, as the arenas are no longer in the cache.
+func BenchmarkMemoryFree(b *testing.B) {
+	m, err := NewVM()
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer m.Close()
+	if _, err := m.Eval(`{
+	const all = []
+	for (let i = 0; i < 200000; i++) all.push({ i, s: 'v' + i, next: null })
+	globalThis.kept = null
+	for (let i = 0; i < all.length; i += 16) { all[i].next = kept; kept = all[i] }
+	undefined
+}`, EvalGlobal); err != nil {
+		b.Fatal(err)
+	}
+	m.RunGC()
+	for b.Loop() {
+		m.MemoryFree()
+	}
+	b.ReportMetric(float64(m.MemoryUsage().MallocCount), "blocks")
+}
+
+// MemoryUsage counts the register code of the functions that ran, apart from
+// their bytecode, and in MemoryUsedSize.
+func TestMemoryUsageRegisterCode(t *testing.T) {
+	m := newTestVM(t)
+	if _, err := m.Eval(`globalThis.fs = []
+for (let i = 0; i < 50; i++) fs.push(new Function('a', 'b', 'let s = 0; for (let j = a; j < b; j++) s += j * ' + i + '; return s'))`, EvalGlobal); err != nil {
+		t.Fatal(err)
+	}
+	m.RunGC()
+	before := m.MemoryUsage()
+	if _, err := m.Eval(`for (const f of fs) f(0, 10)`, EvalGlobal); err != nil {
+		t.Fatal(err)
+	}
+	m.RunGC()
+	after := m.MemoryUsage()
+	if after.RegisterCodeCount-before.RegisterCodeCount < 50 || after.RegisterCodeSize-before.RegisterCodeSize < 50*64 {
+		t.Errorf("register code %d functions, %d bytes, then %d, %d: want 50 functions more, of 64 bytes or more", before.RegisterCodeCount, before.RegisterCodeSize, after.RegisterCodeCount, after.RegisterCodeSize)
+	}
+	if after.JSFuncCodeSize != before.JSFuncCodeSize {
+		t.Errorf("JSFuncCodeSize %d to %d: the bytecode did not change", before.JSFuncCodeSize, after.JSFuncCodeSize)
+	}
+	if grew := after.MemoryUsedSize - before.MemoryUsedSize; grew < after.RegisterCodeSize-before.RegisterCodeSize {
+		t.Errorf("MemoryUsedSize grew %d, the register code %d", grew, after.RegisterCodeSize-before.RegisterCodeSize)
+	}
+}

@@ -100,6 +100,9 @@ go test -run 'Interrupt|Killed' .                        # Interrupt, and the ki
 go test -tags testhooks -run ArrayDestructuringRestStop . # the rest of a long array stops within 5 polls of its loop, apart from those of the collector and of freeing
 go test -tags testhooks -run SpreadCopyStops . # the spread, the rest and Object.assign of 65,536 keys stop within 16 polls of the copy, apart from those of freeing
 go test -tags testhooks -run RegExpCaptureLoopsStopPolls . # the loops over the captures of exec, replace and split stop within 9 polls, apart from those of freeing
+go test -tags testhooks -run TestMatcherStops . # a long match (a pattern written out, a back reference, a long x+) stops within 9 polls wherever the stop comes
+go test -tags testhooks -run TestArgListStops . # a call of 65,534 arguments (apply, spread, new, super, arguments, rest) and a spread of 2^21 elements stop within 9 polls, apart from those of freeing
+go test -run TestRegExpLongRunsMatchTheSame .           # a long pattern, which gets gotos that read the flag, matches as the same pattern written with a count
 go test -tags testhooks -run TestInterruptStopsLongKeys ./internal/cengine # the first use of a string of tens of millions of characters as a key, and a JSON text with one, stops within a few polls
 go test -tags testhooks -run TestInterruptStopsRegExpCompile ./internal/cengine # the compile of a class of many characters or strings stops within a few polls
 go test -tags testhooks -run TestInterruptStopsRegExpFlags ./internal/cengine # a regexp with flags of 16 Mi characters stops within a few polls
@@ -147,6 +150,7 @@ engine/test/test262.sh -m plain -T 2      # about 1.5 minutes
 
 - `engine/test/test262_errors.txt` lists the 33 tests known to fail, one line each (the file, the line and the error). The script compares the errors it found with that list, line by line, and fails on any difference. A change to the engine must leave the same 33 errors.
 - The runner is `engine/test/run-test262.c`, upstream QuickJS's runner with a few changes. The configuration is `engine/test/test262.conf` and the patch to test262 is `engine/test/test262.diff`. The unpacked test262 in `engine/test/out/test262-MODE/run` carries a stamp (`test262.stamp`: the archive name, the SHA-256 of the archive and of the patch). When the pinned commit, the archive or the patch change, the script unpacks and patches it again, and the stamp is written only after both worked. `engine/test/test262-test.sh` (the `scripts` step) tests that.
+- A change to the gotos the regexp compiler puts in long patterns, or to the loops of the matcher that read the flag in steps (`lre_insert_checks` and `LRE_EXEC_STEP` in `engine/libregexp.c`), runs test262 on a build that takes those ways all the time: `EXTRA_DEFS='-DLRE_CHECK_RUN=1 -DLRE_EXEC_STEP=2' engine/test/build.sh plain engine/test/out/stress`, then `engine/test/test262.sh -m stress -T 2`. It gives the same 33 errors.
 - The Go API and the Go host are not run on test262. What they add is tested by the Go tests of the root package, and what crosses between Go and the engine by the tests of `internal/cengine`.
 
 ## The C tree and its native test host

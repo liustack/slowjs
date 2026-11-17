@@ -4,14 +4,44 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 
 ## [Unreleased]
 
+### Fixed
+
+- An interrupt or the eval timeout stops the parse and the compile of a script of many short tokens, and the conversion of a long function to register code, within a few polls: a timeout in the compile of a script of 3 MB or more killed the VM (ErrKilled).
+- A timeout that stops the compile of a script of several MB no longer kills the VM while the engine frees the code the compile made: those polls no longer count toward the kill.
+
+## [v0.31.4] - 2026-11-17
+
+### Added
+
+- `VM.MemoryFree` gives the part of `MemorySize` that no block in use holds, mostly the holes collected garbage leaves in the arenas of the objects kept, so `MemorySize() - MemoryFree()` after `RunGC` stays the same while a VM keeps the same objects. `MemoryUsage` has it as `FreeSize` and now counts the register code of the functions that ran (`RegisterCodeCount`, `RegisterCodeSize`, and in `MemoryUsedSize`).
+
 ### Changed
 
+- tifa's React page renders in 0.9% less time than with v0.31.3, its MUI pages in 0.7% less and its store pages in 0.6% less, and its workbench pages show no change beyond 1%, with the changes below and a profile trained again on them (against v0.31.3, whose profile was trained the same way, linux/amd64, an AMD EPYC 7B13, the mean of 16 code layouts). The V8 suite scores 1.5% higher, EarleyBoyer 9.3%, and NavierStokes 6.5% lower, though it runs the same instructions as before: a known step back that comes from where the code lies or from the profile ([performance.md](docs/performance.md#v0314-against-v0313)).
+- A write of a property by name keeps, at each place in the code, the slot it last set and, when it added the key, the shape the object moved to, and takes them again without a lookup. On a linux/amd64 machine with an AMD EPYC 7B13 the V8 suite takes 3.3% less time (Boyer 12% less, Richards 5% less, NavierStokes 2% more), and tifa's pages show no change beyond 1%, for up to 1% more memory in a VM.
+- `Object.getOwnPropertyDescriptor` makes each descriptor at once at a shape the context keeps, where it added the four keys one by one: about 580 fewer instructions a call, and 0.1% to 0.2% fewer in a render of tifa's store and workbench pages, whose Radix components call it for each element.
+- `JSON.stringify` remembers which strings it wrote with nothing to escape and copies them the next time without looking at them. Writing a small options object again runs 16% fewer instructions, 300 orders 21% fewer, and the react-intl page 1.9% fewer ([changes](docs/changes/README.md#json)).
+- `a + b` of two short one-byte strings, as class names and keys are built, grows the left one in place or copies both without the three calls of the generic concatenation.
+- `if (o)`, `!o` and the loops on an object take its truth in the register loop, with no call out of it.
+- `o[k]` by a string made while the script runs, such as a class name read from Emotion's registered styles, no longer makes and frees an atom when no object has a property of that name.
+
+### Fixed
+
+- An interrupt or the eval timeout stops a long match wherever it is. A pattern written out many times, a back reference over a long capture and a long `x+` or `x{n,}` did not look at the stop for as long as they ran: about 20 ms for `/^a+/` over a million characters, 40 ms for `\w+` over a million of 16 bits.
+- An interrupt or the eval timeout stops the copy of a long list of arguments (`apply`, a spread into a call or `new`, `arguments`, a rest parameter) and of a spread into an array: a spread of 8 million elements ran about 70 ms without looking at the stop.
+- The shapes a VM keeps for later objects (`SetShapeCache`, up to about 6 MiB) are let go when an allocation would pass the memory limit, so a script close to its limit no longer runs out of memory because of them.
+
+## [v0.31.3] - 2026-11-16
+
+### Changed
+
+- tifa's store pages render in 4.2% less time than with v0.31.2, its workbench pages in 3.5% less, React's page in 2.7% less and the MUI pages in 1.7% less, with the changes below and a profile trained again on them (against v0.31.2 trained the same way, linux/amd64, an AMD EPYC 7B13, the mean of 16 code layouts), and the V8 suite scores 12.9% higher, RegExp 64.8% ([performance.md](docs/performance.md#v0313-against-v0312)). Both sides ran the pinned pages remade from tifa 63a2099e, which do less work in a render, so these numbers are not to be set beside those of earlier releases.
 - Loops and the code around them run fewer register instructions: a `for` or `while` loop reads its test again at the end of the body, and `++k`, a chained assignment and a destructuring that renames its fields leave out their copies. The NavierStokes benchmark runs 8.4% fewer instructions and tifa's pages 0.1% to 0.5% fewer.
 - `JSON.stringify` with no replacer and no indent writes plain objects and arrays straight from their shapes. A react-intl page, which makes a memo key with it for every formatter, runs 16% fewer instructions, and writing 300 orders as a loader does takes two thirds fewer ([changes](docs/changes/README.md#json)).
 - A string made while the script runs, such as one from `join` or `JSON.parse`, finds a property as fast as a key written in the source from its second use as a key on: 398 instructions a read, not 901 ([changes](docs/changes/README.md#strings)).
 - A closure is one block of memory where it took three, a full collection marks closures and arrays without a call through the class table, and a function with no name of its own takes its name in place. With the profile trained again, the TanStack Table page runs 8.2% fewer instructions and TanStack Query 6.2% fewer ([performance.md](docs/performance.md#closures-in-one-block)).
 - `split`, `replace` with a function and `match` by a regexp that nothing changed find their matches without calls of `exec`, and a regexp that starts with `\s` skips to where a match can start: the RegExp benchmark of the V8 suite runs 44% fewer instructions ([performance.md](docs/performance.md#split-replace-with-a-function-and-match-without-exec)). A regexp whose flag getters or `exec` a script replaced is now told apart by the slots of its shape, so `replace` by it calls them as the specification says.
-- A read of a property by name keeps, at each place in the code, where it last found the property, on the object or on its prototype, and looks there first. On a linux/amd64 machine with an AMD EPYC 7B13, React and workbench pages take about 2% less time, the store pages up to 2.4% less and the V8 suite 2.4% less, for 0.4% to 1.4% more memory in a VM. Known limit: Splay of the V8 suite takes about 3% more time.
+- A read of a property by name keeps, at each place in the code, where it last found the property, on the object or on its prototype, and looks there first. On a linux/amd64 machine with an AMD EPYC 7B13, React and workbench pages take about 2% less time, the store pages up to 2.4% less and the V8 suite 2.4% less, for 0.4% to 1.4% more memory in a VM.
 
 ### Fixed
 
@@ -20,8 +50,6 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 - An interrupt or the eval timeout stops replace and split on the result of a custom `exec` of any length, which ran on until the kill, and the result of an exec of thousands of groups.
 - An interrupt or the eval timeout stops the parse of a regexp literal of megabytes within the usual number of polls wherever its text falls in memory, where up to 13 polls could pass.
 - A call of Intl on a long list of locales no longer has Go clear memory for the whole list before it first checks the eval timeout: 189 MiB for a million tags, which held a timeout of 20 ms for up to 103 ms on an AMD EPYC.
-- An interrupt or the eval timeout stops the parse and the compile of a script of many short tokens, and the conversion of a long function to register code, within a few polls: a timeout in the compile of a script of 3 MB or more killed the VM (ErrKilled).
-- A timeout that stops the compile of a script of several MB no longer kills the VM while the engine frees the code the compile made: those polls no longer count toward the kill.
 
 ## [v0.31.2] - 2026-11-16
 
@@ -798,7 +826,9 @@ The first release of the fork, from modernc.org/quickjs v0.25.0 and libquickjs v
 - A VM that runs out of memory inside `JSON.parse`, or anything else that converts a string with non-ASCII characters to UTF-8, no longer leaks that string.
 - `VM.Call` and `VM.CallValue` report the exception thrown while evaluating the function expression instead of `cannot call a non-function`.
 
-[Unreleased]: https://github.com/liustack/slowjs/compare/v0.31.2...main
+[Unreleased]: https://github.com/liustack/slowjs/compare/v0.31.4...main
+[v0.31.4]: https://github.com/liustack/slowjs/compare/v0.31.3...v0.31.4
+[v0.31.3]: https://github.com/liustack/slowjs/compare/v0.31.2...v0.31.3
 [v0.31.2]: https://github.com/liustack/slowjs/compare/v0.31.1...v0.31.2
 [v0.31.1]: https://github.com/liustack/slowjs/compare/v0.31.0...v0.31.1
 [v0.31.0]: https://github.com/liustack/slowjs/compare/v0.30.7...v0.31.0
