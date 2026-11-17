@@ -3153,6 +3153,45 @@ static void test_api_stop_returns(void)
     }
 }
 
+/* The requests queued on an async generator that finished all settle, as
+   the drain of the spec settles them (AsyncGeneratorDrainQueue): after a
+   failure of its body, and behind a return. Only the first after the end
+   settled, and those after it stayed pending for good. */
+static void test_async_gen_drain(void)
+{
+    static const struct {
+        const char *what, *src, *want;
+    } cases[] = {
+        { "after a throw",
+          "var r = [];\n"
+          "var it = (async function* () { await 0; throw 1; })();\n"
+          "it.next().then(v => r.push('1ok'), e => r.push('1err'));\n"
+          "it.next().then(v => r.push('2 ' + v.done));\n"
+          "it.next().then(v => r.push('3 ' + v.done));\n"
+          "it.throw(4).catch(e => r.push('4 ' + e));\n"
+          "it.next().then(v => r.push('5 ' + v.done));\n",
+          "1err,2 true,3 true,4 4,5 true" },
+        { "behind a return",
+          "var r = [];\n"
+          "var it = (async function* () {})();\n"
+          "it.next();\n"
+          "it.return(5).then(v => r.push('ret ' + v.value));\n"
+          "it.next().then(v => r.push('n1 ' + v.done));\n"
+          "it.next().then(v => r.push('n2 ' + v.done));\n",
+          "ret 5,n1 true,n2 true" },
+    };
+    size_t i;
+
+    for (i = 0; i < countof(cases); i++) {
+        VM v = vm_new();
+
+        eval_ok(v.ctx, cases[i].src);
+        drain_jobs(&v);
+        CHECK(eval_is(v.ctx, "r.join()", cases[i].want), "%s", cases[i].what);
+        vm_free(&v);
+    }
+}
+
 int main(void)
 {
     test_compile_stops();
@@ -3165,6 +3204,7 @@ int main(void)
     test_job_stop_returns();
     test_entry_stop_returns();
     test_api_stop_returns();
+    test_async_gen_drain();
     test_for_in_keeps_shape();
     test_plain_objects();
     test_run_gc_threshold();

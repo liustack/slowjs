@@ -26305,17 +26305,23 @@ static int js_async_generator_resume_next(JSContext *ctx,
             }
             break;
         case JS_ASYNC_GENERATOR_STATE_COMPLETED:
-            if (next->completion_type == GEN_MAGIC_NEXT) {
-                ret = js_async_generator_resolve(ctx, s, JS_UNDEFINED, TRUE);
-            } else if (next->completion_type == GEN_MAGIC_RETURN) {
+            /* the queue drains: each next and throw settles, and a return
+               waits for its value, the drain going on once it settled
+               (js_async_generator_resolve_function) */
+            if (next->completion_type == GEN_MAGIC_RETURN) {
                 s->state = JS_ASYNC_GENERATOR_STATE_AWAITING_RETURN;
                 if (js_async_generator_completed_return(ctx, s, next->result) < 0 &&
                     js_catch_ends(ctx))
                     ret = -1;
-            } else {
-                ret = js_async_generator_reject(ctx, s, next->result);
+                goto done;
             }
-            goto done;
+            if (next->completion_type == GEN_MAGIC_NEXT)
+                ret = js_async_generator_resolve(ctx, s, JS_UNDEFINED, TRUE);
+            else
+                ret = js_async_generator_reject(ctx, s, next->result);
+            if (ret < 0)
+                return -1;
+            break;
         case JS_ASYNC_GENERATOR_STATE_SUSPENDED_YIELD:
         case JS_ASYNC_GENERATOR_STATE_SUSPENDED_YIELD_STAR:
             value = JS_DupValue(ctx, next->result);
@@ -26422,6 +26428,9 @@ static JSValue js_async_generator_resolve_function(JSContext *ctx,
             if (js_async_generator_resolve(ctx, s, arg, TRUE) < 0)
                 return JS_EXCEPTION;
         }
+        /* the requests queued behind the return */
+        if (js_async_generator_resume_next(ctx, s) < 0)
+            return JS_EXCEPTION;
     } else if (s->state == JS_ASYNC_GENERATOR_STATE_EXECUTING) {
         /* restart function execution after await() */
         s->func_state->throw_flag = is_reject;
