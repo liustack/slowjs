@@ -20,7 +20,8 @@
 #
 # The errors found are compared, line by line, with the 33 known errors in
 # engine/test/test262_errors.txt and the script exits 0 only when they are the
-# same lines and the runner exited with its own status, 0 or 1. Wrap the script
+# same lines, the runner exited with its own status, 0 or 1, and no sanitizer
+# reported a finding in the log. Wrap the script
 # in taskset, flock or systemd-run to keep it to the CPUs and the memory you
 # give it.
 set -eu
@@ -98,6 +99,15 @@ case $status in
 0|1) ;;
 *) echo "test262.sh: the runner exited with status $status, see $work/run.log" >&2; exit 1 ;;
 esac
+# UndefinedBehaviorSanitizer reports a finding and goes on (build.sh), as
+# AddressSanitizer does with halt_on_error=0, and the status of the runner
+# stays 0 or 1: a report in the log fails the run.
+san='runtime error: |ERROR: (AddressSanitizer|LeakSanitizer)'
+if grep -q -E "$san" "$work/run.log"; then
+	echo "test262.sh: sanitizer reports in $work/run.log:" >&2
+	grep -E "$san" "$work/run.log" | sed 's/^\.*//' | sort | uniq -c >&2
+	exit 1
+fi
 # with -p, the known errors under the paths run only
 awk -v paths="$paths" '
 	BEGIN { n = split(paths, p, " ") }
