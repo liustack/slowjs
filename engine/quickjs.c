@@ -35976,12 +35976,17 @@ static int js_create_module_bytecode_function(JSContext *ctx, JSModuleDef *m)
     if (JS_IsException(func_obj))
         return -1;
     m->func_obj = func_obj;
+    /* the function takes the reference m had to b, and frees it when
+       js_closure2 fails: m keeps one of its own, so that a link again
+       makes the function again. With none, m was left with no code, and
+       the link again took it as made and read the function it lacked. */
+    JS_DupValue(ctx, bfunc);
     func_obj = js_closure2(ctx, func_obj, b, NULL, NULL, TRUE, m);
     if (JS_IsException(func_obj)) {
-        m->func_obj = JS_UNDEFINED; /* XXX: keep it ? */
-        JS_FreeValue(ctx, func_obj);
+        m->func_obj = bfunc;
         return -1;
     }
+    JS_FreeValue(ctx, bfunc);
     return 0;
 }
 

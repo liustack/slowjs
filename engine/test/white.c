@@ -1047,6 +1047,44 @@ int white_props_inline(JSValueConst obj, int *room)
     return p->prop == (JSProperty *)((uint8_t *)p + offsetof(JSObject, u));
 }
 
+/* Evaluate the module m (JS_EvalFunction, which takes it) with call number
+   fail of js_malloc_rt and js_realloc_rt failing (0 for none), the others
+   working. *nallocs is how many calls it made. Returns what
+   JS_EvalFunction returns. */
+JSValue white_eval_function_failing(JSContext *ctx, JSValue m, int fail, int *nallocs)
+{
+    JSValue v;
+
+    white_alloc_calls = 1;
+    white_alloc_count = 0;
+    white_alloc_fail_at = fail;
+    v = JS_EvalFunction(ctx, m);
+    *nallocs = white_alloc_count;
+    white_alloc_fail_at = 0;
+    white_alloc_calls = 0;
+    return v;
+}
+
+/* Run the pending jobs of rt until none is left or one fails, with call
+   number fail of js_malloc_rt and js_realloc_rt failing (0 for none), the
+   others working. The exception of a job that failed stays in its
+   context, which goes in *pctx. *nallocs is how many calls they made.
+   Returns what the last JS_ExecutePendingJob returned. */
+int white_jobs_failing(JSRuntime *rt, JSContext **pctx, int fail, int *nallocs)
+{
+    int r;
+
+    white_alloc_calls = 1;
+    white_alloc_count = 0;
+    white_alloc_fail_at = fail;
+    while ((r = JS_ExecutePendingJob(rt, pctx)) > 0)
+        ;
+    *nallocs = white_alloc_count;
+    white_alloc_fail_at = 0;
+    white_alloc_calls = 0;
+    return r;
+}
+
 /* Call func with this and the arguments, with call number fail of
    js_malloc_rt and js_realloc_rt failing (0 for none), the others working.
    *nallocs is how many calls it made. Returns what JS_Call returns. */

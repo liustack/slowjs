@@ -144,6 +144,8 @@ long white_call_debt(JSContext *ctx, int direct, int *depth);
 int white_key_atoms_bad(JSRuntime *rt, int *live, int *keys);
 unsigned long white_gc_run_count(int young);
 JSValue white_call_failing(JSContext *ctx, JSValueConst func, JSValueConst this_val, int argc, JSValueConst *argv, int fail, int *nallocs);
+JSValue white_eval_function_failing(JSContext *ctx, JSValue m, int fail, int *nallocs);
+int white_jobs_failing(JSRuntime *rt, JSContext **pctx, int fail, int *nallocs);
 int white_regvm_convert_failing(JSContext *ctx, JSValueConst f, int fail, int mode, int *nallocs);
 uint32_t white_regvm_code_hash(JSValueConst f, int *code_len);
 const uint8_t *white_regvm_code(JSValueConst f, int *code_len);
@@ -9323,6 +9325,71 @@ static void test_define_existing_oom(void)
     vm_free(&v);
 }
 
+/* Each allocation of the evaluation of module u.js failing in turn, which
+   imports t.js, which has a top-level await it runs or not
+   (globalThis.runAwait), and each allocation of the jobs that go on with it
+   once it awaited, then the error taken as the host takes it. A failure
+   in making the function of u.js left u.js with no code, and the import
+   again crashed (js_create_module_bytecode_function). A failure that lost
+   a job of t.js, or of the handlers it put on the promise of its function,
+   left t.js and u.js evaluating for good, an import of either never
+   settling: running out of memory ends the call as a stop does, and the
+   host taking the error records them as failed (js_fail_async_modules). An
+   import of u.js after the failure gives the result or the error out of
+   memory, and so does one of t.js, which fails only when u.js does, and
+   nothing leaks. */
+static void test_module_jobs_oom(void)
+{
+    static const char t[] = "if (globalThis.runAwait) await 0; globalThis.n = 1;";
+    static const char u[] = "import \"t.js\"; globalThis.x = n + 1;";
+    static const char *const modes[] = { "no await", "await", "await, jobs" };
+    static const char oom[] = "InternalError: out of memory";
+    char buf[128], buf2[128];
+    int mode, fail, n, made, failed, leaked;
+    JSContext *ctx;
+    JSValue m, r;
+
+    for (mode = 0; mode < 3; mode++) {
+        n = 0;
+        failed = 0;
+        for (fail = 0; fail == 0 || fail <= n; fail++) {
+            VM v = vm_new();
+
+            CHECK(eval_ok(v.ctx, mode ? "globalThis.runAwait = true" : "globalThis.runAwait = false"), "the setup threw");
+            compile_module(&v, "t.js", t);
+            m = JS_Eval(v.ctx, u, strlen(u), "u.js", JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY);
+            CHECK(!JS_IsException(m), "u.js does not compile");
+            if (mode < 2) {
+                r = white_eval_function_failing(v.ctx, m, fail, &made);
+            } else {
+                r = JS_EvalFunction(v.ctx, m);
+                CHECK(!JS_IsException(r), "the evaluation of u.js threw");
+                white_jobs_failing(v.rt, &ctx, fail, &made);
+            }
+            if (fail == 0)
+                n = made;
+            JS_FreeValue(v.ctx, r);
+            JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+            drain_jobs(&v);
+            import_state(&v, "u.js", buf, sizeof(buf));
+            import_state(&v, "t.js", buf2, sizeof(buf2));
+            if (strcmp(buf, "ok") == 0) {
+                CHECK(strcmp(buf2, "ok") == 0 && eval_is(v.ctx, "x", "2"),
+                      "%s, allocation %d of %d failing: u.js ran, and the import of t.js gave %s", modes[mode], fail, n, buf2);
+            } else {
+                CHECK(fail > 0 && strcmp(buf, oom) == 0 && (strcmp(buf2, "ok") == 0 || strcmp(buf2, oom) == 0),
+                      "%s, allocation %d of %d failing: the imports after it gave %s and %s", modes[mode], fail, n, buf, buf2);
+                failed++;
+            }
+            leaked = host_leaked_runtimes();
+            vm_free(&v);
+            CHECK(host_leaked_runtimes() == leaked, "%s, allocation %d of %d failing: blocks left in the runtime",
+                  modes[mode], fail, n);
+        }
+        CHECK(n > 10 && failed > 0, "%s: %d allocations, %d failures recorded", modes[mode], n, failed);
+    }
+}
+
 int main(int argc, char **argv)
 {
     /* one case of test_gc_in_free, in a process of its own */
@@ -9468,6 +9535,7 @@ int main(int argc, char **argv)
     test_spread_alloc();
     test_spread_refs();
     test_days_to_date();
+    test_module_jobs_oom();
     if (failures) {
         printf("unit-white: %d of %ld checks failed\n", failures, checks);
         return 1;
