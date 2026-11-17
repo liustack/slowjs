@@ -2383,6 +2383,7 @@ Each item says what it would give and why it was dropped. Check here before tryi
   - VD and L together: store -0.86% [-1.39, -0.32], workbench -0.68% [-1.65, +0.31], MUI -0.38%, React -0.78%, V8 +0.26%, with the formal layout +0.89% [+0.06, +1.73].
 
   None kept: the pages gain under 1% and the V8 suite is slower.
+- **A shorter hit of a read by name** (GETF, GETFL and GETFT on an own slot), timed on 2026-11-17 against v0.31.3 (AMD EPYC 7B13, 16 layouts, every side trained again). A hit of GETFL is 51 instructions on amd64. Three cuts were tried: an own slot taken by the id of the object's shape alone, without the check of the key and flags of the slot, which reads one cache line less a hit (94% of own hits are on shapes with an id); the tag of the object tested before the test of a null pointer; and the test of whether the destination is a local done once for each opcode rather than at each read. Together they run 0.9% to 1.0% fewer instructions on the pages (on the native C tree a GETFL hit went from 49 to 41), but the mean of the layouts took 0.83% more time on the store [+0.36%, +1.31%] and 1.06% more on the workbench [+0.55%, +1.58%]. The shape id alone took +0.36% [-0.06%, +0.79%] and -0.00% [-0.51%, +0.51%]: the line it saves is already in the cache on these pages. Not done.
 
 ## Where to continue
 
