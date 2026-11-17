@@ -185,6 +185,8 @@ size_t white_gc_count(JSRuntime *rt);
 void white_drain_once(void);
 void white_drain_once_then(void (*f)(void *), void *arg);
 int white_kept_shapes(JSRuntime *rt);
+int white_shape_cache_size(JSRuntime *rt);
+JSClassID white_class_object(void);
 void *white_kept_shape(JSRuntime *rt, size_t *size);
 int white_take_slots(JSRuntime *rt, size_t size, void **out, int cap);
 size_t white_found_resize(JSContext *ctx, JSValueConst obj, const char *key);
@@ -2288,6 +2290,207 @@ static void test_shape_drop_in_resize(void)
                   "length,name,value:3:0:{\"length\":1,\"name\":2,\"value\":3}"),
           "o after the property was added");
     vm_free(&v);
+}
+
+/* ---- the shape cache and the prototype it holds ---- */
+
+/* The cache holds the prototype of the shapes it keeps. Letting them go in a
+   drain of the heap never frees it, so no finalizer runs inside an
+   allocation. JS_SetShapeCache lets the prototype go after the shapes, once
+   the cache is off, and the finalizer of the prototype may set the cache
+   again: the call that let it go sets its own, and the one of the finalizer
+   goes. */
+static int reenter_finalized;
+static JSContext *reenter_ctx;
+static int reenter_n;
+
+static void reenter_finalizer(JSRuntime *rt, JSValue val)
+{
+    reenter_finalized++;
+    if (reenter_ctx)
+        JS_SetShapeCache(reenter_ctx, reenter_n);
+}
+
+/* the finalizer of put_back, which puts put_back_proto back as the
+   Object.prototype of put_back_ctx while the collector frees objects */
+static JSContext *put_back_ctx;
+static JSValue put_back_proto;
+
+static void put_back_finalizer(JSRuntime *rt, JSValue val)
+{
+    JS_SetClassProto(put_back_ctx, white_class_object(), put_back_proto);
+}
+
+/* reenter_setup makes p, of a class of the host whose finalizer is
+   reenter_finalizer, the Object.prototype of v, turns the shape cache on
+   with n shapes and makes plain objects. Then it lets go of an object whose
+   finalizer puts the Object.prototype back, while the collector frees
+   objects, and of p: the cache keeps its shapes and p, which nothing else
+   holds. It returns the number of kept shapes. */
+static int reenter_setup(VM *v, int n)
+{
+    JSClassDef def = { "Reenter", reenter_finalizer };
+    JSClassDef put_back = { "PutBack", put_back_finalizer };
+    JSClassID class_id = 0, put_back_id = 0;
+    JSValue p, x;
+    int kept;
+
+    reenter_finalized = 0;
+    reenter_ctx = NULL;
+    JS_NewClassID(v->rt, &class_id);
+    CHECK(JS_NewClass(v->rt, class_id, &def) == 0, "JS_NewClass");
+    JS_NewClassID(v->rt, &put_back_id);
+    CHECK(JS_NewClass(v->rt, put_back_id, &put_back) == 0, "JS_NewClass");
+    put_back_ctx = v->ctx;
+    put_back_proto = JS_GetClassProto(v->ctx, white_class_object());
+    p = JS_NewObjectClass(v->ctx, class_id);
+    CHECK(JS_IsObject(p), "the prototype");
+    JS_SetClassProto(v->ctx, white_class_object(), JS_DupValue(v->ctx, p));
+    CHECK(JS_SetShapeCache(v->ctx, n) == 0, "a shape cache of %d shapes", n);
+    CHECK(eval_ok(v->ctx, "function mk() { var o = {}; o.qa = 1; o.qb = 2; return 0 }\nmk(); mk(); void 0"), "the objects");
+    x = JS_NewObjectClass(v->ctx, put_back_id);
+    CHECK(JS_IsObject(x), "the object that puts the prototype back");
+    JS_FreeValue(v->ctx, x);
+    CHECK(eval_is(v->ctx, "String(Object.getPrototypeOf({}) === Object.prototype)", "true"),
+          "the Object.prototype was not put back");
+    /* the shapes of p stay, and the empty one the context held for p may
+       join them */
+    kept = white_kept_shapes(v->rt);
+    CHECK(kept > 0, "no shape kept after the prototype was replaced in a collection");
+    JS_FreeValue(v->ctx, p);
+    CHECK(reenter_finalized == 0, "the prototype the cache holds was finalized");
+    return kept;
+}
+
+/* a drain of the heap lets the shapes go, and not the prototype */
+static void test_shape_cache_set_in_drop(void)
+{
+    VM v = vm_new();
+    void *p;
+    int kept;
+
+    kept = reenter_setup(&v, 1);
+    CHECK(kept == 1, "%d shapes kept in a ring of 1", kept);
+    reenter_ctx = v.ctx;
+    reenter_n = 128;
+    white_drain_once();
+    /* a block too large for an arena is a request to the heap */
+    p = js_malloc_rt(v.rt, 1 << 20);
+    CHECK(p != NULL, "a block of 1 MiB");
+    js_free_rt(v.rt, p);
+    reenter_ctx = NULL;
+    CHECK(reenter_finalized == 0, "the prototype was finalized %d times in a drain of the heap", reenter_finalized);
+    CHECK(white_kept_shapes(v.rt) == 0 && white_shape_cache_size(v.rt) == 1,
+          "%d shapes kept in a cache of %d after the drain, want 0 in 1", white_kept_shapes(v.rt), white_shape_cache_size(v.rt));
+    /* the new objects have the Object.prototype put back, not the one the
+       cache holds */
+    CHECK(eval_ok(v.ctx, "mk(); mk(); void 0") && white_kept_shapes(v.rt) == 0, "the cache keeps a shape of another prototype");
+    vm_free(&v);
+    CHECK(reenter_finalized == 1, "the prototype was finalized %d times in all", reenter_finalized);
+}
+
+/* JS_SetShapeCache lets the shapes go, then the prototype, and the finalizer
+   of the prototype sets a cache of 128 shapes: the call that let it go sets
+   its own, and the one of the finalizer goes */
+static void test_shape_cache_set_in_off(void)
+{
+    VM v = vm_new();
+    int kept, r;
+
+    kept = reenter_setup(&v, 4);
+    CHECK(kept > 0, "no shape kept");
+    reenter_ctx = v.ctx;
+    reenter_n = 128;
+    r = JS_SetShapeCache(v.ctx, 16);
+    reenter_ctx = NULL;
+    CHECK(r == 0, "JS_SetShapeCache: %d", r);
+    CHECK(reenter_finalized == 1, "the prototype was finalized %d times", reenter_finalized);
+    CHECK(white_shape_cache_size(v.rt) == 16, "a cache of %d shapes, after a call that set one of 16", white_shape_cache_size(v.rt));
+    CHECK(eval_ok(v.ctx, "mk(); mk(); void 0") && white_kept_shapes(v.rt) > 0, "the cache keeps no shape");
+    /* the runtime frees with no block left: the ring of the finalizer went */
+    vm_free(&v);
+}
+
+/* JS_SetClassProto replaces the Object.prototype of the context of the
+   cache: the cache lets go of the shapes of the old one, then of the old one,
+   and keeps the shapes of the new one from then on */
+static void test_shape_cache_proto_replaced(void)
+{
+    JSClassDef def = { "Replaced", reenter_finalizer };
+    JSClassID class_id = 0;
+    JSValue o, p;
+    VM v;
+    int kept;
+
+    v = vm_new();
+    reenter_finalized = 0;
+    reenter_ctx = NULL;
+    JS_NewClassID(v.rt, &class_id);
+    CHECK(JS_NewClass(v.rt, class_id, &def) == 0, "JS_NewClass");
+    o = JS_GetClassProto(v.ctx, white_class_object());
+    p = JS_NewObjectClass(v.ctx, class_id);
+    CHECK(JS_IsObject(p), "the prototype");
+    JS_SetClassProto(v.ctx, white_class_object(), JS_DupValue(v.ctx, p));
+    JS_SetShapeCache(v.ctx, 64);
+    CHECK(eval_ok(v.ctx, "function mk() { var o = {}; o.qa = 1; o.qb = 2; return 0 }\nmk(); mk(); void 0"), "the objects");
+    kept = white_kept_shapes(v.rt);
+    CHECK(kept > 0, "no shape of the prototype of the host kept");
+    JS_SetClassProto(v.ctx, white_class_object(), o);
+    JS_FreeValue(v.ctx, p);
+    CHECK(white_kept_shapes(v.rt) == 0, "%d shapes kept after the prototype was replaced, %d before", white_kept_shapes(v.rt), kept);
+    CHECK(reenter_finalized == 1, "the replaced prototype was finalized %d times once the host let it go", reenter_finalized);
+    CHECK(eval_is(v.ctx, "mk(); mk(); String(Object.getPrototypeOf((function () { var o = {}; o.qa = 1; return o })()) === Object.prototype)", "true"),
+          "a plain object after the prototype was replaced");
+    CHECK(white_kept_shapes(v.rt) > 0, "the cache keeps no shape of the new prototype");
+    vm_free(&v);
+    CHECK(reenter_finalized == 1, "the replaced prototype was finalized %d times in all", reenter_finalized);
+}
+
+/* A second context that shares the Object.prototype of the context of the
+   cache, then replaces its own, leaves the cache as it is: only the context
+   given to JS_SetShapeCache moves it */
+static void test_shape_cache_two_contexts(void)
+{
+    JSClassDef def = { "Other", reenter_finalizer };
+    JSClassID class_id = 0;
+    JSContext *b;
+    JSValue oa, ob, q;
+    VM v;
+    void *p;
+    int kept;
+
+    v = vm_new();
+    reenter_finalized = 0;
+    reenter_ctx = NULL;
+    JS_NewClassID(v.rt, &class_id);
+    CHECK(JS_NewClass(v.rt, class_id, &def) == 0, "JS_NewClass");
+    JS_SetShapeCache(v.ctx, 64);
+    CHECK(eval_ok(v.ctx, "function mk() { var o = {}; o.qa = 1; o.qb = 2; return 0 }\nmk(); mk(); void 0"), "the objects");
+    kept = white_kept_shapes(v.rt);
+    CHECK(kept > 0, "no shape kept");
+    b = JS_NewContext(v.rt);
+    CHECK(b != NULL, "the second context");
+    oa = JS_GetClassProto(v.ctx, white_class_object());
+    ob = JS_GetClassProto(b, white_class_object());
+    JS_SetClassProto(b, white_class_object(), oa);
+    q = JS_NewObjectClass(b, class_id);
+    CHECK(JS_IsObject(q), "the prototype of the second context");
+    JS_SetClassProto(b, white_class_object(), JS_DupValue(b, q));
+    CHECK(white_kept_shapes(v.rt) == kept, "%d shapes kept after the second context replaced its prototype, %d before",
+          white_kept_shapes(v.rt), kept);
+    JS_SetClassProto(b, white_class_object(), ob);
+    JS_FreeValue(b, q);
+    CHECK(reenter_finalized == 1, "the prototype of the second context was finalized %d times once it let it go", reenter_finalized);
+    JS_FreeContext(b);
+    JS_RunGC(v.rt);
+    white_drain_once();
+    p = js_malloc_rt(v.rt, 1 << 20);
+    CHECK(p != NULL, "a block of 1 MiB");
+    js_free_rt(v.rt, p);
+    CHECK(white_kept_shapes(v.rt) == 0, "%d shapes kept after the drain", white_kept_shapes(v.rt));
+    CHECK(eval_ok(v.ctx, "mk(); mk(); void 0") && white_kept_shapes(v.rt) > 0, "the cache keeps no shape of its context");
+    vm_free(&v);
+    CHECK(reenter_finalized == 1, "the prototype of the second context was finalized %d times in all", reenter_finalized);
 }
 
 /* each_vm_failing calls the global f of setup with each call of the
@@ -10414,6 +10617,10 @@ int main(int argc, char **argv)
     test_putel_atom_shape();
     test_shape_drop_slot();
     test_shape_drop_in_resize();
+    test_shape_cache_set_in_drop();
+    test_shape_cache_set_in_off();
+    test_shape_cache_proto_replaced();
+    test_shape_cache_two_contexts();
     test_putel_atom_each_failing();
     test_object_rest_cache();
     test_object_spread_cache();

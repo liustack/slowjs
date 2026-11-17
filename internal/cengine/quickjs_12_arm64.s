@@ -18404,7 +18404,7 @@ TEXT ·js_date_toJSON(SB), $136-48
 	MOVD $·engine_rodata+12752(SB), R9
 	WORD $0xeb09011f
 	WORD $0x540001c1
-	WORD $0xf955b6a8
+	WORD $0xf955bea8
 	WORD $0xeb16011f
 	WORD $0x54000160
 	WORD $0xf9403fe8

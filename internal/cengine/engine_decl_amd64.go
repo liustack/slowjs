@@ -1171,6 +1171,7 @@ func js_set_isSupersetOf(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uint
 func js_set_module_evaluated(a0 uintptr, a1 uintptr, a2 uintptr)
 func js_set_symmetricDifference(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr)
 func js_set_union(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr)
+func js_shape_cache_drop(a0 uintptr, a1 uintptr)
 func js_shape_cache_off(a0 uintptr, a1 uintptr)
 func js_shape_leave(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
 func js_shape_of_keys(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr)
