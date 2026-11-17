@@ -110,6 +110,18 @@ From 2026-11-16, `engine/pgo/pages` holds the pages of tifa 63a2099e (v0.0.10) i
 
 On the store, the own keys of objects take 12.7 million fewer instructions a kind, and the register loop 45 to 47 million fewer. The Proxy of react-i18next is made and freed once a render (about 26,000 instructions a page) and its traps do not run. The profile of v0.31.2 was trained on the old pages, which never wrote the modes of the start tag (`js_emit_mode_attrs` had no count). Trained again on these pages, the engine runs -0.01% to +0.12% instructions on each kind.
 
+### The pages of tifa d668f2d9
+
+From 2026-11-17, `engine/pgo/pages` holds the pages of tifa d668f2d9 (main after v0.0.16) in place of those of tifa 63a2099e: the same 23 pages, with TanStack Router 1.170.46 and the bundles of tifa's newer plugin, which keeps the prefix of i18next's cache when its inputs repeat and builds the links of a language prefix without a `URL`. They do less work, so a count or a time on the old pages does not compare with one on these. The base for the next comparison is v0.31.5 (main at ed73c9cb) on these pages. Instructions a render, summed over the pages of each kind, counted by `scripts/count-pages.sh` on linux/amd64 (AMD EPYC 7B13), the same binary on both sets:
+
+| kind | pages | old pages | these pages | change |
+| --- | ---: | ---: | ---: | ---: |
+| wb | 6 | 452,102,332 | 446,725,552 | -1.19% |
+| store, en-US | 7 | 925,173,244 | 894,162,611 | -3.35% |
+| store, zh-CN | 7 | 890,873,820 | 843,096,747 | -5.36% |
+| mui | 3 | 351,769,350 | 346,672,058 | -1.45% |
+
+On the store, the register loop takes 10 to 12 million fewer instructions a kind, the URL parser 1.5 to 2.8 million fewer and the concatenation of strings 2.3 million fewer, and the backtracking of regular expressions 3.9 million more. The profile of v0.31.5 was trained on the old pages.
 
 ### Code positions
 
