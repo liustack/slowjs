@@ -389,7 +389,8 @@ int64_t white_backtrace_frame_size(void)
 /* Check the GC objects of rt outside a collection: each is on gc_obj_list or
    on the young list, with a count above 0 and no mark, which js_weakref_free
    and the collectors rely on. Returns how many there are on each list, and a
-   bit in *bad for a count of 0 or less (1) or a mark that is set (2). */
+   bit in *bad for a count of 0 or less (1), a mark that is set (2), or a
+   young bit that is not that of its list (4): set on the young list only. */
 void white_gc_lists(JSRuntime *rt, int *old, int *young, int *bad)
 {
     struct list_head *heads[2] = { &rt->gc_obj_list, &rt->young_obj_list };
@@ -407,6 +408,8 @@ void white_gc_lists(JSRuntime *rt, int *old, int *young, int *bad)
                 *bad |= 1;
             if (js_rc(p)->mark)
                 *bad |= 2;
+            if (js_rc(p)->young != k)
+                *bad |= 4;
             counts[k]++;
         }
     }

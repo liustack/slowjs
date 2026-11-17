@@ -1315,6 +1315,7 @@ var goasmKeep = []any{
 	map_hash_long_key_poll,
 	map_key_eq,
 	mark_children_specialized_1,
+	mark_children_specialized_2,
 	mark_children_specialized_4,
 	mark_children_specialized_5,
 	memchr,
@@ -1680,7 +1681,6 @@ var goasmKeep = []any{
 	var_object_test,
 	vsnprintf,
 	young_decref_child,
-	young_defer,
 	young_scan_incref_child,
 	young_scan_incref_child2,
 }
