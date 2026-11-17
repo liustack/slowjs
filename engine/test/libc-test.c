@@ -90,7 +90,9 @@ static int ref_memcmp(const unsigned char *l, const unsigned char *r, size_t n)
 /* Every length from 0 to 40, both sides at every offset from 0 to 8 (so they
    are unaligned and differently aligned), a difference at every position and
    in every length (and none), with bytes below and above 0x80 on both sides,
-   and bytes past the end that differ and must not count. */
+   and bytes past the end that differ and must not count. The two ranges are
+   equal but for the planted difference, so the equal words and the tail are
+   compared at every pair of offsets. */
 static void test_memcmp_words(void)
 {
     static const unsigned char vals[] = {0x00, 0x01, 0x7f, 0x80, 0x81, 0xfe, 0xff};
@@ -102,8 +104,14 @@ static void test_memcmp_words(void)
                 for (size_t pos = 0; pos <= n + 1; pos++)
                     for (size_t va = 0; va < sizeof vals; va++)
                         for (size_t vb = 0; vb < sizeof vals; vb++) {
-                            for (size_t i = 0; i < sizeof a; i++)
-                                a[i] = b[i] = (unsigned char)(0x80 ^ (i * 37));
+                            /* the two ranges are equal, whatever the offsets, and the bytes
+                               around them differ: the difference is the only one in range */
+                            for (size_t i = 0; i < sizeof a; i++) {
+                                a[i] = (unsigned char)(0x80 ^ (i * 37));
+                                b[i] = (unsigned char)(0x13 ^ (i * 91));
+                            }
+                            for (size_t i = 0; i < n; i++)
+                                b[ro + i] = a[lo + i];
                             /* a second difference after the first, and one past the end */
                             if (pos < n) {
                                 a[lo + pos] = vals[va];
@@ -748,8 +756,8 @@ static void test_snprintf(void)
 
 int main(int argc, char **argv)
 {
-    test_mem();
     test_memcmp_words();
+    test_mem();
     test_memcpy_all();
     test_memcpy_borders();
     test_str();
