@@ -81,6 +81,8 @@ int white_backtrace_class_has_handlers(JSRuntime *rt);
 int white_pending_needs_data_property(JSContext *ctx, JSValueConst err);
 int64_t white_backtrace_frame_size(void);
 void white_gc_lists(JSRuntime *rt, int *old, int *young, int *bad);
+int white_gc_outside(JSRuntime *rt, int record, int *n);
+void white_young_gc_failing(JSRuntime *rt, int fail, int *nallocs);
 int white_error_nest(JSRuntime *rt, int n);
 JSValue white_bare_function(JSContext *ctx, JSValueConst proto);
 int white_function_set_properties(JSContext *ctx, JSValueConst f, JSAtom name, int len);
@@ -179,12 +181,15 @@ void white_front_drain(JSContext *ctx);
 size_t white_heap_limit(JSContext *ctx);
 size_t white_gc_count(JSRuntime *rt);
 void white_drain_once(void);
+void white_drain_once_then(void (*f)(void *), void *arg);
 int white_kept_shapes(JSRuntime *rt);
 void *white_kept_shape(JSRuntime *rt, size_t *size);
 int white_take_slots(JSRuntime *rt, size_t size, void **out, int cap);
 size_t white_found_resize(JSContext *ctx, JSValueConst obj, const char *key);
 int white_being_freed(JSValueConst obj);
 void white_gc_failing(JSRuntime *rt, int young, int fail, int *nallocs, int *early);
+int white_kept_young_shape(JSRuntime *rt, JSValueConst obj);
+long white_gc_window_count(void);
 
 /* ---- texts of every kind of character ---- */
 
@@ -3114,6 +3119,97 @@ static void test_young_leaves_no_zero_count(void)
     }
 }
 
+/* A young collection treats the record of a weak map whose key and value are
+   young as a reference that holds only once the key is kept: it takes the
+   reference to the value away before the scan and gives it back once, when
+   the key is kept, or before it frees the garbage when the key is not and it
+   deletes the record. Every object it keeps must then have the references
+   from outside the GC objects it had before (white_gc_outside): for records
+   in an old map and in a young one, a key kept before or after its map, a
+   chain of records, a value kept another way and the same key in two maps.
+   The young collection is also run with each of its calls of the allocator
+   failing in turn: when the table of records cannot be made, every record
+   holds its value as before the change (today), and the counts are as before
+   all the same. key is what the WeakRef wr watches, and dead and today say
+   whether the young collection frees it with and without its table. */
+static void young_weak_case(size_t i, int fail, int *nallocs);
+
+static const struct {
+    const char *what, *body, *check;
+    int dead, today; /* the young collection frees the key, with and without the table */
+} young_weak_cases[] = {
+    { "old map, the value holds its key", "let key = {}; wm.set(key, {key, p: [1, 2, 3]});", "true", 1, 0 },
+    { "old map, a key in a cycle, the value kept another way", "let key = {}; key.self = key; hold = {p: [1]}; wm.set(key, hold);", "hold.p.length === 1", 1, 1 },
+    { "old map, the value kept another way holds its key", "let key = {}; hold = {key}; wm.set(key, hold);", "wm.get(hold.key) === hold", 0, 0 },
+    { "old map, a chain kept from its first key", "let a = {}, key = {}; hold = a; wm.set(key, {a, p: [1]}); wm.set(a, {key});", "wm.get(wm.get(hold).key).a === hold", 0, 0 },
+    { "old map, a chain that is garbage", "let a = {}, key = {}; a.self = a; wm.set(a, {key}); wm.set(key, {a});", "true", 1, 0 },
+    { "the same key in two old maps", "let key = {}; wm.set(key, {key}); wm2.set(key, {key});", "true", 1, 0 },
+    { "young map kept, its key garbage", "const m = new WeakMap(); ym = m; let key = {}; m.set(key, {key});", "true", 1, 0 },
+    { "young map kept, its key kept and made before it", "let key = {}; hold = key; const m = new WeakMap(); ym = m; m.set(key, {key, p: [1]});", "ym.get(hold).p.length === 1", 0, 0 },
+    { "young map kept, its key kept and made after it", "const m = new WeakMap(); ym = m; let key = {}; hold = key; m.set(key, {key, p: [1]});", "ym.get(hold).p.length === 1", 0, 0 },
+    { "young map that is garbage", "const m = new WeakMap(); let key = {}; hold = key; m.set(key, {key, m});", "true", 0, 0 },
+    { "key held by an old object", "let key = {}; hold = key; wm.set(key, {key});", "wm.get(hold).key === hold", 0, 0 },
+    { "old key", "let key = oldKey; wm.set(key, {key, p: [1]});", "wm.get(oldKey).p.length === 1", 0, 0 },
+    { "the value is its key", "let key = {}; wm.set(key, key);", "true", 1, 0 },
+    { "a closure of the value holds its key", "let r = {}; const rw = {attach(x) { r = x }}; rw.attach(r); wm.set(r, rw); let key = r;", "true", 1, 0 },
+};
+
+static void young_weak_case(size_t i, int fail, int *nallocs)
+{
+    VM v = vm_new();
+    char src[1024], when[200];
+    int old, young, n, bad;
+
+    JS_SetGCThreshold(v.rt, (size_t)-1);
+    CHECK(eval_ok(v.ctx, "globalThis.wm = new WeakMap(); globalThis.wm2 = new WeakMap(); globalThis.oldKey = {};"
+                         "globalThis.wr = null; globalThis.hold = null; globalThis.ym = null; void 0"),
+          "%s: the setup", young_weak_cases[i].what);
+    JS_ClearKeptObjects(v.rt);
+    JS_RunGC(v.rt);
+    snprintf(src, sizeof(src), "(() => { %s wr = new WeakRef(key); })(); void 0", young_weak_cases[i].body);
+    CHECK(eval_ok(v.ctx, src), "%s: the case", young_weak_cases[i].what);
+    /* the job ends, and with it the hold of the target of the new WeakRef */
+    JS_ClearKeptObjects(v.rt);
+    snprintf(when, sizeof(when), "%s, call %d failing", young_weak_cases[i].what, fail);
+    CHECK(white_gc_outside(v.rt, 1, &n) == 0, "%s: the counts before", when);
+    white_young_gc_failing(v.rt, fail, nallocs);
+    bad = white_gc_outside(v.rt, 0, &n);
+    CHECK(bad == 0 && n > 0, "%s: %d of %d objects kept have another count from outside after the young collection", when, bad, n);
+    lists(&v, &old, &young, when);
+    CHECK(eval_is(v.ctx, young_weak_cases[i].check ? young_weak_cases[i].check : "true", "true"), "%s: the check after the young collection", when);
+    if (fail == 0)
+        CHECK(eval_is(v.ctx, "String(wr.deref() === undefined)", young_weak_cases[i].dead ? "true" : "false"),
+              "%s: the young collection frees the key: want %d", when, young_weak_cases[i].dead);
+    else if (fail == 1)
+        CHECK(eval_is(v.ctx, "String(wr.deref() === undefined)", young_weak_cases[i].today ? "true" : "false"),
+              "%s: without its table the young collection frees the key: want %d", when, young_weak_cases[i].today);
+    JS_ClearKeptObjects(v.rt);
+    CHECK(white_gc_outside(v.rt, 1, &n) == 0, "%s: the counts before the full collection", when);
+    JS_RunGC(v.rt);
+    bad = white_gc_outside(v.rt, 0, &n);
+    CHECK(bad == 0, "%s: %d of %d objects kept have another count from outside after the full collection", when, bad, n);
+    lists(&v, &old, &young, when);
+    CHECK(eval_is(v.ctx, young_weak_cases[i].check, "true"), "%s: the check after the full collection", when);
+    CHECK(eval_is(v.ctx, "String(wr.deref() === undefined)", young_weak_cases[i].dead ? "true" : "false"),
+          "%s: the full collection frees the key: want %d", when, young_weak_cases[i].dead);
+    vm_free(&v);
+}
+
+static void test_young_weak_counts(void)
+{
+    size_t i;
+    int nallocs, fail, n;
+
+    for (i = 0; i < countof(young_weak_cases); i++) {
+        young_weak_case(i, 0, &nallocs);
+        /* the cases with a young key make the table of records */
+        if (strstr(young_weak_cases[i].what, "old key") == NULL)
+            CHECK(nallocs >= 1, "%s: the young collection made no table", young_weak_cases[i].what);
+        for (fail = 1; fail <= nallocs; fail++)
+            young_weak_case(i, fail, &n);
+    }
+}
+
 /* A finalizer that a collection runs as it frees its garbage can drop the
    last reference to an object outside the garbage: here the host holds the
    only strong reference to q, which no gc_mark reports, and the finalizer of
@@ -3414,8 +3510,7 @@ static const struct {
 } deref_in_gc_cases[] = {
     { "a cycle", "k.self = k;", 1, 0 },
     { "a cycle in a registry", "k.self = k; fr.register(k, 'k');", 1, 1 },
-    /* a young collection keeps it, held by its record, until the next full one */
-    { "the key of an old weak map whose value holds it", "wm.set(k, {k});", 0, 0 },
+    { "the key of an old weak map whose value holds it", "wm.set(k, {k});", 1, 0 },
 };
 
 static void deref_in_gc_case(int i, int young)
@@ -3538,6 +3633,95 @@ static void test_registry_job_after_free(void)
         }
         CHECK(total >= 1 && lost <= 1, "young %d: %d allocations, the callback lost %d times", young, total, lost);
     }
+}
+
+/* A collection allocates nothing while it has counts taken away (JS_GC_WINDOW
+   in quickjs.c), here at the memory limit, where a request the heap refuses
+   runs js_heap_drain and the kept shapes go. A young shape the shape cache
+   keeps that a live young object uses has, after the decref pass, the count
+   of the cache only: freed by a drain then, it is read again by the scan of
+   the object (the sanitizer builds see the read). The young collection made
+   the table of its weak map records (young_weak_start) after its decref pass,
+   and 128 records make it a request to the heap. */
+static void test_gc_alloc_at_limit(void)
+{
+    VM v;
+    JSValue live, g;
+    long before;
+    int young, count;
+
+    for (young = 1; young >= 0; young--) {
+        v = vm_new();
+        JS_SetGCThreshold(v.rt, (size_t)-1);
+        JS_SetShapeCache(v.ctx, 64);
+        CHECK(eval_ok(v.ctx,
+                      "var wm = new WeakMap();\n"
+                      "(function () { for (let i = 0; i < 128; i++) { const k = {}; k.self = k; wm.set(k, {k}) } })();\n"
+                      "function mk(v) { var o = {}; o.zq = v; return o }\n"
+                      "mk(1); void 0"),
+              "the setup");
+        live = JS_Eval(v.ctx, "mk(2)", 5, "<live>", JS_EVAL_TYPE_GLOBAL);
+        CHECK(JS_IsObject(live), "mk(2)");
+        count = JS_IsObject(live) ? white_kept_young_shape(v.rt, live) : 0;
+        CHECK(count == 2, "young %d: the shape of the live object has a count of %d, want the cache's and its own", young, count);
+        before = white_gc_window_count();
+        JS_SetMemoryLimit(v.rt, JS_GetMemorySize(v.rt));
+        if (young)
+            JS_RunYoungGC(v.rt);
+        else
+            JS_RunGC(v.rt);
+        unlimit(&v);
+        CHECK(white_gc_window_count() == before, "young %d: %ld allocations while the collection had counts taken away",
+              young, white_gc_window_count() - before);
+        g = JS_GetGlobalObject(v.ctx);
+        JS_SetPropertyStr(v.ctx, g, "live", live);
+        JS_FreeValue(v.ctx, g);
+        CHECK(eval_is(v.ctx, "JSON.stringify(live) + ':' + JSON.stringify(mk(3))", "{\"zq\":2}:{\"zq\":3}"),
+              "young %d: the live object after the collection", young);
+        vm_free(&v);
+    }
+}
+
+/* The request for the table of the young weak records (young_weak_alloc) can
+   run a drain of the heap, and the drain can free an object whose class has a
+   finalizer of the host, which can run javascript: here it makes the record
+   of a young key with the value 0, which the table was not counted for, a
+   record whose young value waits for its key. The records are counted again
+   after the request: with one more, the collection goes without the table,
+   as when there is no memory for it, where it made room for 128 and queued
+   129 (an assert, or a write past the table). */
+static int young_weak_drain_ran;
+
+static void young_weak_set_in_drain(void *arg)
+{
+    VM *v = arg;
+
+    young_weak_drain_ran = eval_ok(v->ctx, "wm.set(k0, v0); void 0") ? 1 : -1;
+}
+
+static void test_young_weak_table_recount(void)
+{
+    VM v = vm_new();
+    long before;
+
+    young_weak_drain_ran = 0;
+    JS_SetGCThreshold(v.rt, (size_t)-1);
+    CHECK(eval_ok(v.ctx, "var wm = new WeakMap(); void 0"), "the map");
+    JS_RunGC(v.rt);
+    CHECK(eval_ok(v.ctx,
+                  "(function () { for (let i = 0; i < 128; i++) { const k = {}; k.self = k; wm.set(k, {k}) } })();\n"
+                  "var k0 = {}, v0 = { x: 1 }; wm.set(k0, 0); void 0"),
+          "the records");
+    before = white_gc_window_count();
+    white_drain_once_then(young_weak_set_in_drain, &v);
+    JS_RunYoungGC(v.rt);
+    CHECK(young_weak_drain_ran == 1, "the code of the drain: %d", young_weak_drain_ran);
+    CHECK(white_gc_window_count() == before, "%ld allocations while the collection had counts taken away",
+          white_gc_window_count() - before);
+    CHECK(eval_is(v.ctx, "String(wm.get(k0) === v0 && v0.x)", "1"), "the record the drain set");
+    JS_RunGC(v.rt);
+    CHECK(eval_is(v.ctx, "String(wm.get(k0) === v0 && v0.x)", "1"), "the record the drain set, after a full collection");
+    vm_free(&v);
 }
 
 /* ---- a collection asked for while objects are freed ----
@@ -10118,10 +10302,13 @@ int main(int argc, char **argv)
     test_json_plain();
     test_young_lists();
     test_young_leaves_no_zero_count();
+    test_young_weak_counts();
     test_finalizer_frees_a_root();
     test_object_made_in_the_weak_pass();
     test_deref_in_gc();
     test_registry_job_after_free();
+    test_gc_alloc_at_limit();
+    test_young_weak_table_recount();
     test_gc_in_free();
     test_error_nest();
     test_function_properties_oom();
@@ -10198,6 +10385,7 @@ int main(int argc, char **argv)
     test_spread_alloc();
     test_spread_refs();
     test_days_to_date();
+    CHECK(white_gc_window_count() == 0, "%ld allocations while a collection had counts taken away", white_gc_window_count());
     if (failures) {
         printf("unit-white: %d of %ld checks failed\n", failures, checks);
         return 1;
