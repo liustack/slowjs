@@ -528,6 +528,11 @@ struct JSRuntime {
     JSOwnKeyEntry own_key_cache[JS_OWN_KEY_CACHE_SIZE];
     void *user_opaque;
     struct JSGCEphemeron *ephemeron;
+    /* the weak pass of gc_clear_weak, which counts the garbage of the
+       collection as dead (gc_weak_live) */
+    BOOL weak_garbage;
+    /* the weak map records of a young collection (young_weak_start) */
+    struct JSYoungWeak *young_weak;
     /* the GC objects made since the last collection (see JS_RunYoungGC) */
     struct list_head young_obj_list;
     /* the objects outside the garbage whose count got to 0 while a
@@ -1556,6 +1561,9 @@ typedef struct JSMapState {
     uint32_t record_count_threshold; /* count at which a hash table
                                         resize is needed */
     JSWeakRefHeader weakref_header; /* only used if is_weak = TRUE */
+    /* the Map, Set, WeakMap or WeakSet object of this state: a young
+       collection asks whether a weak map is young (young_weak_start) */
+    struct JSObject *obj;
 } JSMapState;
 
 enum {
@@ -2268,6 +2276,17 @@ static BOOL js_front_drain(JSMallocContext *s)
    and the engine has nothing there. */
 #ifndef JS_GC_RUN
 #define JS_GC_RUN(young) ((void)0)
+#endif
+
+/* JS_GC_WINDOW(1) is called when a collection starts to take counts away
+   (its decref pass), and JS_GC_WINDOW(0) when it has given back every count
+   it keeps (the end of its scan). Nothing may allocate in between: a request
+   the heap refuses runs js_heap_drain, which lets the kept shapes go, and a
+   kept shape whose other counts the pass took away would be freed while live
+   objects still use it. white.c counts the allocations made in between, and
+   the engine has nothing there. */
+#ifndef JS_GC_WINDOW
+#define JS_GC_WINDOW(on) ((void)0)
 #endif
 
 /* the most characters a loop over the strings of a rope, or over one long
@@ -10362,6 +10381,52 @@ static void gc_remove_weak_objects(JSRuntime *rt)
     free_zero_refcount(rt);
 }
 
+/* Before a collection frees its garbage (gc_free_cycles), clear the WeakRefs
+   whose target is garbage, all at once, as the spec clears them. The free
+   runs the finalizers of the host, which can run javascript, and until it is
+   freed the garbage holds counts on itself, so js_weakref_is_live calls it
+   live: a WeakRef cleared only after the free gave such a finalizer an
+   object that the collection went on to free (test_deref_in_gc in
+   engine/test/unit-white.c). The garbage is the objects of tmp_obj_list, the
+   only GC objects with their mark set then whose count is not 0 (gc_keep
+   clears it on the rest, and the objects of gc_dead_list have a count of 0):
+   weakref_delete_weakref counts them as dead while weak_garbage is set
+   (gc_weak_live). The pass runs in the phase of the free, so it frees
+   nothing and runs no finalizer. A WeakRef is the only weak reference a
+   finalizer can follow to the garbage: a weak map record needs its key, and a
+   registry gives no way to its targets. So the records and the registries
+   wait for the weak pass after the free, as before: a record of a dead key
+   lets its value go then, and the jobs of the registries are made then, in
+   the order of the registrations, whatever the order of the frees
+   (test_young_free_order in engine/test/unit.c). With no object of the
+   garbage that is a target, there is nothing to clear. A full collection
+   while the runtime is freed (remove_weak_objects FALSE) does not call it:
+   no javascript runs then. */
+static void gc_clear_weak(JSRuntime *rt)
+{
+    struct list_head *el;
+    JSGCObjectHeader *p;
+    JSWeakRefHeader *wh;
+
+    list_for_each(el, &rt->tmp_obj_list) {
+        p = list_entry(el, JSGCObjectHeader, link);
+        if (js_rc(p)->gc_obj_type == JS_GC_OBJ_TYPE_JS_OBJECT &&
+            ((JSObject *)p)->weakref_count != 0)
+            break;
+    }
+    if (el == &rt->tmp_obj_list)
+        return;
+    rt->weak_garbage = TRUE;
+    rt->gc_phase = JS_GC_PHASE_REMOVE_CYCLES;
+    list_for_each(el, &rt->weakref_list) {
+        wh = list_entry(el, JSWeakRefHeader, link);
+        if (wh->weakref_type == JS_WEAKREF_TYPE_WEAKREF)
+            weakref_delete_weakref(rt, wh);
+    }
+    rt->gc_phase = JS_GC_PHASE_NONE;
+    rt->weak_garbage = FALSE;
+}
+
 static void add_gc_object(JSRuntime *rt, JSGCObjectHeader *h,
                           JSGCObjectTypeEnum type)
 {
@@ -10588,6 +10653,7 @@ static void gc_decref(JSRuntime *rt)
     /* decrement the refcount of all the children of all the GC
        objects and move the GC objects with zero refcount to
        tmp_obj_list */
+    JS_GC_WINDOW(1);
     list_for_each_safe(el, el1, &rt->gc_obj_list) {
         p = list_entry(el, JSGCObjectHeader, link);
         assert(js_rc(p)->mark == 0);
@@ -10635,6 +10701,7 @@ static void gc_scan(JSRuntime *rt)
         p = list_entry(el, JSGCObjectHeader, link);
         mark_children(rt, p, gc_scan_incref_child2);
     }
+    JS_GC_WINDOW(0);
 }
 
 static void gc_free_cycles(JSRuntime *rt)
@@ -10867,6 +10934,7 @@ static BOOL gc_ephemeron(JSRuntime *rt, BOOL remove_weak_objects)
     if (!count) {
         gc_decref(rt);
         gc_scan(rt);
+        gc_clear_weak(rt);
         gc_free_cycles(rt);
         gc_remove_weak_objects(rt);
         return TRUE;
@@ -10952,6 +11020,7 @@ static BOOL gc_ephemeron(JSRuntime *rt, BOOL remove_weak_objects)
         p = list_entry(el, JSGCObjectHeader, link);
         mark_children(rt, p, gc_scan_incref_child2);
     }
+    JS_GC_WINDOW(0);
     rt->gc_phase = JS_GC_PHASE_REMOVE_CYCLES;
     list_for_each(el, &rt->gc_obj_list) {
         p = list_entry(el, JSGCObjectHeader, link);
@@ -10961,6 +11030,7 @@ static BOOL gc_ephemeron(JSRuntime *rt, BOOL remove_weak_objects)
         if ((obj->class_id == JS_CLASS_WEAKMAP || obj->class_id == JS_CLASS_WEAKSET) && obj->u.map_state)
             gc_ephemeron_prune(rt, obj->u.map_state);
     }
+    gc_clear_weak(rt);
     gc_free_cycles(rt);
     rt->ephemeron = NULL;
     js_free_rt(rt, s->keys);
@@ -10997,6 +11067,8 @@ static void JS_RunGCInternal(JSRuntime *rt, BOOL remove_weak_objects)
     gc_scan(rt);
 
     /* free the GC objects in a cycle */
+    if (remove_weak_objects)
+        gc_clear_weak(rt);
     gc_free_cycles(rt);
 }
 
@@ -11033,9 +11105,11 @@ void JS_RunGC(JSRuntime *rt)
    since the last collection only. What is left of the count of a young
    object comes from outside the young objects, so it stays with what it
    reaches, and the rest are cycles of garbage. Old objects are never
-   visited and their counts never change. A cycle through an old object and
-   a weak map value, with what it holds, while its map is reachable or old,
-   stay until the next full collection. The young bit of the header tells
+   visited and their counts never change. A cycle through an old object
+   stays until the next full collection, and so does the value of a weak map
+   record whose key is old or a symbol, while its map is reachable or old. A
+   record whose key and value are young holds its value only once the scan
+   keeps its key (young_weak_start). The young bit of the header tells
    the young objects: add_gc_object sets it, and an object loses it when it
    becomes old or is kept for its weak references after its free (gc_keep). So
    the collection needs no pass to mark them, and one pass over the young list
@@ -11109,6 +11183,264 @@ static void young_scan_incref_child2(JSRuntime *rt, JSGCObjectHeader *p)
         js_rc(p)->ref_count++;
 }
 
+/* Weak map records in a young collection. A record holds its value with a
+   count and its key with weakref_count only, so a value that holds its key
+   keeps it, and a young collection that counts the reference of a record to
+   its value as any other keeps both until the next full collection: for an
+   old map the reference comes from outside the young objects, for a young
+   map the scan gives it back once it keeps the map. A module of a bundle that
+   keeps, in a WeakMap made at its load, a value for an object of each render
+   that the value holds through a closure keeps every render that way.
+
+   So a record whose key is a young object and whose value is a young GC
+   object holds its value only once the scan keeps its key, as gc_ephemeron
+   does in a full collection. A key that is old or a symbol is never freed by
+   a young collection and an old value is not counted by it: their records
+   are as they were. The reference of each such record to its value is taken
+   away exactly once before the scan: by the decref pass for a young map
+   (js_map_mark, as for any record), by young_weak_start for an old one, with
+   the same test (young_weak_record), and the young bits it reads do not
+   change until the survivors become old. It is given back exactly once: when
+   the scan keeps the key (young_weak_activate), at once when the scan keeps a
+   young map whose key it has kept already (young_weak_map), by the restore of
+   a young map that is garbage (js_map_mark, as for any record), or, for a
+   record whose key the scan never kept, by young_weak_restore, after which
+   young_weak_end deletes the record before the garbage is freed. */
+
+typedef struct JSYoungWeakRecord {
+    JSMapState *map;
+    JSMapRecord *mr;
+    struct JSYoungWeakRecord *next;
+} JSYoungWeakRecord;
+
+typedef struct JSYoungWeakKey {
+    void *ptr;
+    JSYoungWeakRecord *waiting; /* the records whose value waits for the key */
+} JSYoungWeakKey;
+
+typedef struct JSYoungWeak {
+    size_t mask, used, count;
+    JSYoungWeakKey *keys; /* mask + 1 of them, open addressing */
+    JSYoungWeakRecord *records; /* count of them */
+} JSYoungWeak;
+
+/* a record of a weak map whose reference to its value holds only once the
+   young collection keeps its key */
+static BOOL young_weak_record(JSMapRecord *mr)
+{
+    if (mr->empty || JS_VALUE_GET_TAG(mr->key) != JS_TAG_OBJECT ||
+        !js_rc(JS_VALUE_GET_PTR(mr->key))->young)
+        return FALSE;
+    switch (JS_VALUE_GET_TAG(mr->value)) {
+    case JS_TAG_OBJECT:
+    case JS_TAG_FUNCTION_BYTECODE:
+    case JS_TAG_MODULE:
+        return js_rc(JS_VALUE_GET_PTR(mr->value))->young;
+    default:
+        return FALSE;
+    }
+}
+
+static JSYoungWeakKey *young_weak_key(JSYoungWeak *s, void *ptr)
+{
+    uintptr_t h = (uintptr_t)ptr >> 3;
+    size_t i;
+
+    h ^= h >> 16;
+    h *= (uintptr_t)0x9e3779b1;
+    h ^= h >> 16;
+    i = h & s->mask;
+    while (s->keys[i].ptr && s->keys[i].ptr != ptr)
+        i = (i + 1) & s->mask;
+    return &s->keys[i];
+}
+
+/* the value of mr waits for its key */
+static void young_weak_wait(JSYoungWeak *s, JSMapState *map, JSMapRecord *mr)
+{
+    JSYoungWeakKey *k = young_weak_key(s, JS_VALUE_GET_PTR(mr->key));
+    JSYoungWeakRecord *r;
+
+    assert(s->used < s->count);
+    r = &s->records[s->used++];
+    k->ptr = JS_VALUE_GET_PTR(mr->key);
+    r->map = map;
+    r->mr = mr;
+    r->next = k->waiting;
+    k->waiting = r;
+}
+
+/* the records of every weak map whose reference to its value holds only once
+   the young collection keeps their key */
+static size_t young_weak_count(JSRuntime *rt)
+{
+    struct list_head *el, *el1;
+    JSWeakRefHeader *wh;
+    JSMapState *map;
+    size_t count = 0;
+
+    list_for_each(el, &rt->weakref_list) {
+        wh = list_entry(el, JSWeakRefHeader, link);
+        if (wh->weakref_type != JS_WEAKREF_TYPE_MAP)
+            continue;
+        map = container_of(wh, JSMapState, weakref_header);
+        list_for_each(el1, &map->records) {
+            if (young_weak_record(list_entry(el1, JSMapRecord, link)))
+                count++;
+        }
+    }
+    return count;
+}
+
+/* Before the decref pass: count the records of every weak map and make the
+   table for them. The young bits young_weak_record reads are those of the
+   pass. The table is made before any count is taken away (JS_GC_WINDOW): its
+   request may run js_heap_drain, which frees the kept shapes, and a kept
+   shape whose other counts the pass took away would be freed while live
+   objects use it. A request can also free an object whose class has a
+   finalizer of the host, which can run code that changes the records: they
+   are counted again after it, and nothing runs code from there to the decref
+   pass. With no such record, with more of them after the request, or with no
+   memory for the table, rt->young_weak stays NULL and every record holds its
+   value, as before. */
+static void young_weak_alloc(JSRuntime *rt)
+{
+    JSYoungWeak *s;
+    size_t count, cap = 1;
+
+    count = young_weak_count(rt);
+    if (!count)
+        return;
+    while (cap < 2 * count)
+        cap *= 2;
+    s = js_mallocz_rt(rt, sizeof(*s) + cap * sizeof(*s->keys) +
+                      count * sizeof(*s->records));
+    if (!s)
+        return;
+    if (young_weak_count(rt) > count) {
+        js_free_rt(rt, s);
+        return;
+    }
+    s->mask = cap - 1;
+    s->count = count;
+    s->keys = (JSYoungWeakKey *)(s + 1);
+    s->records = (JSYoungWeakRecord *)(s->keys + cap);
+    rt->young_weak = s;
+}
+
+/* After the decref pass: take away the references of the records of the old
+   maps (the decref pass took those of the young maps). A record the table has
+   no room for keeps its reference and holds its value, as without the table:
+   the room is checked before the reference is taken away, never after. */
+static void young_weak_start(JSRuntime *rt)
+{
+    JSYoungWeak *s = rt->young_weak;
+    struct list_head *el, *el1;
+    JSWeakRefHeader *wh;
+    JSMapState *map;
+    JSMapRecord *mr;
+
+    list_for_each(el, &rt->weakref_list) {
+        wh = list_entry(el, JSWeakRefHeader, link);
+        if (wh->weakref_type != JS_WEAKREF_TYPE_MAP)
+            continue;
+        map = container_of(wh, JSMapState, weakref_header);
+        if (js_rc(map->obj)->young)
+            continue;
+        list_for_each(el1, &map->records) {
+            mr = list_entry(el1, JSMapRecord, link);
+            if (young_weak_record(mr) && s->used < s->count) {
+                JS_MarkValue(rt, mr->value, young_decref_child);
+                young_weak_wait(s, map, mr);
+            }
+        }
+    }
+}
+
+/* The scan keeps a young weak map (js_map_mark): give back the references of
+   its records, but those whose key the scan has not kept yet wait for it. The
+   scan clears the mark of each object it keeps, and every young object has it
+   set after the decref pass. A record the table has no room for gets its
+   reference back at once, as without the table. */
+static void young_weak_map(JSRuntime *rt, JSMapState *map)
+{
+    JSYoungWeak *s = rt->young_weak;
+    struct list_head *el;
+    JSMapRecord *mr;
+
+    list_for_each(el, &map->records) {
+        mr = list_entry(el, JSMapRecord, link);
+        if (young_weak_record(mr) && js_rc(JS_VALUE_GET_PTR(mr->key))->mark &&
+            s->used < s->count)
+            young_weak_wait(s, map, mr);
+        else
+            JS_MarkValue(rt, mr->value, young_scan_incref_child);
+    }
+}
+
+/* The scan keeps p: give back the references of the records waiting for it
+   as their key. A value whose count was 0 goes back to the young list, and
+   the scan goes on through it. */
+static void young_weak_activate(JSRuntime *rt, JSGCObjectHeader *p)
+{
+    JSYoungWeakKey *k = young_weak_key(rt->young_weak, p);
+    JSYoungWeakRecord *r;
+
+    if (!k->ptr)
+        return;
+    r = k->waiting;
+    k->waiting = NULL;
+    for (; r; r = r->next)
+        JS_MarkValue(rt, r->mr->value, young_scan_incref_child);
+}
+
+/* After the scan, before the survivors lose the young bit that
+   young_scan_incref_child2 reads: the records still waiting have a key that
+   is garbage, and their values get their counts back, as the garbage does,
+   for young_weak_end to take them away again with the record. */
+static void young_weak_restore(JSRuntime *rt)
+{
+    JSYoungWeak *s = rt->young_weak;
+    JSYoungWeakRecord *r;
+    size_t i;
+
+    for (i = 0; i <= s->mask; i++) {
+        for (r = s->keys[i].waiting; r; r = r->next)
+            JS_MarkValue(rt, r->mr->value, young_scan_incref_child2);
+    }
+}
+
+/* Delete the records whose key is garbage, before gc_free_cycles frees it,
+   in its phase: a value that is not garbage and whose count gets to 0 goes to
+   gc_defer, and a key or a value that is garbage keeps its mark and is freed
+   with the rest (as gc_ephemeron_prune). Then free the table. */
+static void young_weak_end(JSRuntime *rt)
+{
+    JSYoungWeak *s = rt->young_weak;
+    JSYoungWeakRecord *r;
+    JSMapRecord *mr1, **pmr;
+    size_t i;
+
+    rt->gc_phase = JS_GC_PHASE_REMOVE_CYCLES;
+    for (i = 0; i <= s->mask; i++) {
+        for (r = s->keys[i].waiting; r; r = r->next) {
+            pmr = &r->map->hash_table[map_hash_key(r->mr->key, r->map->hash_bits)];
+            for (;;) {
+                mr1 = *pmr;
+                assert(mr1 != NULL);
+                if (mr1 == r->mr)
+                    break;
+                pmr = &mr1->hash_next;
+            }
+            *pmr = mr1->hash_next;
+            map_delete_record_internal(rt, r->map, r->mr);
+        }
+    }
+    rt->gc_phase = JS_GC_PHASE_NONE;
+    rt->young_weak = NULL;
+    js_free_rt(rt, s);
+}
+
 /* It does nothing while the engine frees objects, as JS_RunGC. */
 void JS_RunYoungGC(JSRuntime *rt)
 {
@@ -11119,6 +11451,8 @@ void JS_RunYoungGC(JSRuntime *rt)
         return;
     JS_GC_RUN(1);
     init_list_head(&rt->tmp_obj_list);
+    young_weak_alloc(rt);
+    JS_GC_WINDOW(1);
     list_for_each_safe(el, el1, &rt->young_obj_list) {
         p = list_entry(el, JSGCObjectHeader, link);
         assert(js_rc(p)->mark == 0);
@@ -11129,19 +11463,37 @@ void JS_RunYoungGC(JSRuntime *rt)
             list_add_tail(&p->link, &rt->tmp_obj_list);
         }
     }
-    list_for_each(el, &rt->young_obj_list) {
-        p = list_entry(el, JSGCObjectHeader, link);
-        mark_children(rt, p, young_scan_incref_child);
+    if (rt->young_weak) {
+        young_weak_start(rt);
+        list_for_each(el, &rt->young_obj_list) {
+            p = list_entry(el, JSGCObjectHeader, link);
+            js_rc(p)->mark = 0; /* kept: see young_weak_map */
+            mark_children(rt, p, young_scan_incref_child);
+            if (js_rc(p)->gc_obj_type == JS_GC_OBJ_TYPE_JS_OBJECT &&
+                ((JSObject *)p)->weakref_count != 0)
+                young_weak_activate(rt, p);
+        }
+    } else {
+        list_for_each(el, &rt->young_obj_list) {
+            p = list_entry(el, JSGCObjectHeader, link);
+            mark_children(rt, p, young_scan_incref_child);
+        }
     }
     list_for_each(el, &rt->tmp_obj_list) {
         p = list_entry(el, JSGCObjectHeader, link);
         mark_children(rt, p, young_scan_incref_child2);
     }
+    if (rt->young_weak)
+        young_weak_restore(rt);
+    JS_GC_WINDOW(0);
     /* the survivors are old now */
     list_for_each(el, &rt->young_obj_list)
         gc_keep(list_entry(el, JSGCObjectHeader, link));
     young_move(&rt->young_obj_list, &rt->gc_obj_list);
 
+    if (rt->young_weak)
+        young_weak_end(rt);
+    gc_clear_weak(rt);
     gc_free_cycles(rt);
 
     gc_remove_weak_objects(rt);
@@ -66641,6 +66993,17 @@ static BOOL js_weakref_is_live(JSValueConst val)
     return (js_rc(p)->ref_count != 0);
 }
 
+/* Whether weakref_delete_weakref keeps the target of a WeakRef: its count is
+   not 0, but in the pass of gc_clear_weak it is not an object of the garbage,
+   which is the GC objects with their mark set then. */
+static BOOL gc_weak_live(JSRuntime *rt, JSValueConst val)
+{
+    if (!js_weakref_is_live(val))
+        return FALSE;
+    return !(rt->weak_garbage && JS_VALUE_GET_TAG(val) == JS_TAG_OBJECT &&
+             js_rc(JS_VALUE_GET_PTR(val))->mark);
+}
+
 /* 'val' can be JS_UNDEFINED */
 static void js_weakref_free(JSRuntime *rt, JSValue val)
 {
@@ -66705,6 +67068,7 @@ static JSValue js_map_constructor(JSContext *ctx, JSValueConst new_target,
         goto fail;
     init_list_head(&s->records);
     s->is_weak = is_weak;
+    s->obj = JS_VALUE_GET_OBJ(obj);
     if (is_weak) {
         s->weakref_header.weakref_type = JS_WEAKREF_TYPE_MAP;
         list_add_tail(&s->weakref_header.link, &ctx->rt->weakref_list);
@@ -67681,6 +68045,11 @@ static void js_map_mark(JSRuntime *rt, JSValueConst val, JS_MarkFunc *mark_func)
     if (s) {
         if (s->is_weak && rt->ephemeron && rt->ephemeron->phase == 2)
             return;
+        /* the scan of a young collection keeps a young weak map */
+        if (s->is_weak && rt->young_weak && mark_func == young_scan_incref_child) {
+            young_weak_map(rt, s);
+            return;
+        }
         list_for_each(el, &s->records) {
             mr = list_entry(el, JSMapRecord, link);
             if (!s->is_weak)
@@ -76706,7 +77075,7 @@ static void weakref_delete_weakref(JSRuntime *rt, JSWeakRefHeader *wh)
 {
     JSWeakRefData *wrd = container_of(wh, JSWeakRefData, weakref_header);
 
-    if (!js_weakref_is_live(wrd->target)) {
+    if (!gc_weak_live(rt, wrd->target)) {
         js_weakref_free(rt, wrd->target);
         wrd->target = JS_UNDEFINED;
     }

@@ -240,21 +240,20 @@ func TestYoungGCFreesWhatOnlyGarbageHeld(t *testing.T) {
 	}
 }
 
-// Young collections keep the weak map entries a full collection must judge:
-// each case of TestRunGCEphemeron is freed by one full collection after a
-// young one, and the young one alone frees an entry only when its key is
-// garbage on its own.
+// Each case of TestRunGCEphemeron is freed by one full collection after a
+// young one, and the young one alone frees an entry whose key is young and
+// garbage, also when its value holds the key (TestYoungGCWeakRecords).
 func TestYoungGCEphemeron(t *testing.T) {
 	for _, tc := range []struct {
 		name, body string
 		young      bool // the young collection alone frees the payload
 	}{
 		{"no-back-reference", `let key = {}; wm.set(key, {payload});`, true},
-		{"back-reference", `let key = {}; wm.set(key, {key, payload});`, false},
+		{"back-reference", `let key = {}; wm.set(key, {key, payload});`, true},
 		{"key-cycle", `let key = {}; key.self = key; wm.set(key, {payload});`, true},
-		{"chain", `let a = {}, b = {}, c = {}; a.self = a; wm.set(a, b); wm.set(b, c); wm.set(c, {a, payload});`, false},
+		{"chain", `let a = {}, b = {}, c = {}; a.self = a; wm.set(a, b); wm.set(b, c); wm.set(c, {a, payload});`, true},
 		{"dead-map", `let key = {}; globalThis.kept = key; let map = new WeakMap(); map.set(key, {map, payload});`, true},
-		{"young-map", `let m = new WeakMap(); globalThis.held = m; let key = {}; m.set(key, {key, payload});`, false},
+		{"young-map", `let m = new WeakMap(); globalThis.held = m; let key = {}; m.set(key, {key, payload});`, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m := youngVM(t, `globalThis.wm = new WeakMap(); void 0`)
@@ -280,4 +279,135 @@ func TestYoungGCEphemeron(t *testing.T) {
 			}
 		})
 	}
+}
+
+// A weak map record whose key is young and whose value is young holds the
+// value only once the young collection keeps the key, as a full collection
+// does, so a key that only its own value holds goes with the value, whether
+// the map is old or young. Each body runs in a function (its locals are
+// garbage after it unless the case keeps them), then one young collection;
+// the check holds after it and after a full one.
+func TestYoungGCWeakRecords(t *testing.T) {
+	const setup = `globalThis.wm = new WeakMap(); globalThis.wm2 = new WeakMap();
+		globalThis.oldKey = {}; globalThis.calls = []; globalThis.fr = new FinalizationRegistry(x => calls.push(x));
+		globalThis.big = () => 'x'.repeat(2*1024*1024); void 0`
+	for _, tc := range []struct {
+		name, body, check string
+		freed             bool // the young collection frees the payload
+	}{
+		// the shape of a router held through a closure variable of its value
+		{"closure-holds-key", `let router = {data: big()}; const rw = {attach(r) { router = r }, get() { return router }}; rw.attach(router); wm.set(router, rw);`, `true`, true},
+		{"back-reference", `let key = {}; wm.set(key, {key, payload: big()});`, `true`, true},
+		{"no-back-reference", `let key = {}; wm.set(key, {payload: big()});`, `true`, true},
+		{"key-held-by-old", `let key = {}; globalThis.hold = key; wm.set(key, {key, payload: big()});`, `wm.get(hold).key === hold && wm.get(hold).payload.length === 2097152`, false},
+		{"value-held-elsewhere-with-key", `let key = {}; globalThis.v = {key, payload: big()}; wm.set(key, v);`, `wm.get(v.key) === v && v.payload.length === 2097152`, false},
+		{"value-held-elsewhere-no-key", `let key = {}; globalThis.v = {payload: big()}; wm.set(key, v);`, `v.payload.length === 2097152`, false},
+		{"chain-dead", `let a = {}, b = {}, c = {}; a.self = a; wm.set(a, b); wm.set(b, c); wm.set(c, {a, payload: big()});`, `true`, true},
+		{"chain-live", `let a = {}, b = {}, c = {}; globalThis.hold = a; wm.set(c, {a, payload: big()}); wm.set(b, c); wm.set(a, b);`, `wm.get(wm.get(wm.get(hold))).payload.length === 2097152 && wm.get(wm.get(wm.get(hold))).a === hold`, false},
+		{"chain-live-reverse-order", `let a = {}, b = {}, c = {}; globalThis.hold = a; wm.set(a, b); wm.set(b, c); wm.set(c, {a, payload: big()});`, `wm.get(wm.get(wm.get(hold))).payload.length === 2097152`, false},
+		{"same-key-two-old-maps-dead", `let key = {}; wm.set(key, {key, payload: big()}); wm2.set(key, {key});`, `true`, true},
+		{"same-key-two-old-maps-live", `let key = {}; globalThis.hold = key; wm.set(key, {key, payload: big()}); wm2.set(key, {key, n: 2});`, `wm.get(hold).key === hold && wm2.get(hold).n === 2`, false},
+		{"same-key-old-and-young-map-dead", `let key = {}; const m = new WeakMap(); globalThis.ym = m; wm.set(key, {key, payload: big()}); m.set(key, {key});`, `true`, true},
+		{"weakref-to-key", `let key = {}; globalThis.wr = new WeakRef(key); wm.set(key, {key, payload: big()});`, `wr.deref() === undefined`, true},
+		{"registry-on-key", `let key = {}; fr.register(key, 'gone'); wm.set(key, {key, payload: big()});`, `true`, true},
+		{"young-map-young-keys-held", `const m = new WeakMap(); globalThis.ym = m; let key = {}; m.set(key, {key, payload: big()});`, `true`, true},
+		{"young-map-young-keys-live", `const m = new WeakMap(); globalThis.ym = m; let key = {}; globalThis.hold = key; m.set(key, {key, payload: big()});`, `ym.get(hold).payload.length === 2097152`, false},
+		{"young-map-garbage", `const m = new WeakMap(); let key = {}; globalThis.hold = key; m.set(key, {key, m, payload: big()});`, `true`, true},
+		{"young-map-key-seen-before-map", `let key = {}; globalThis.hold = key; const m = new WeakMap(); globalThis.ym = m; m.set(key, {key, payload: big()});`, `ym.get(hold).payload.length === 2097152`, false},
+		{"map-is-its-own-key", `const m = new WeakMap(); globalThis.ym = m; m.set(m, {m, payload: big()});`, `ym.get(ym).m === ym && ym.get(ym).payload.length === 2097152`, false},
+		{"old-key", `wm.set(oldKey, {oldKey, payload: big()});`, `wm.get(oldKey).oldKey === oldKey && wm.get(oldKey).payload.length === 2097152`, false},
+		{"value-is-key", `let key = {payload: big()}; wm.set(key, key);`, `true`, true},
+		{"weakset", `const s = new WeakSet(); globalThis.ws = s; let key = {payload: big()}; key.self = key; s.add(key);`, `true`, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := youngVM(t, setup)
+			base := m.MemorySize()
+			if _, err := m.Eval(`(() => { `+tc.body+` })(); void 0`, EvalGlobal); err != nil {
+				t.Fatal(err)
+			}
+			peak := m.MemorySize()
+			m.RunYoungGC()
+			young := m.MemorySize()
+			if got := youngEval(t, m, "String("+tc.check+")"); got != "true" {
+				t.Fatalf("after the young GC: %s: %s", tc.check, got)
+			}
+			if _, err := m.ExecutePendingJobs(); err != nil {
+				t.Fatal(err)
+			}
+			if tc.name == "registry-on-key" {
+				if got := youngEval(t, m, "calls.join()"); got != "gone" {
+					t.Fatalf("registry callbacks: %q", got)
+				}
+			}
+			m.RunYoungGC()
+			m.RunGC()
+			if got := youngEval(t, m, "String("+tc.check+")"); got != "true" {
+				t.Fatalf("after the full GC: %s: %s", tc.check, got)
+			}
+			full := m.MemorySize()
+			t.Logf("base=%d peak=%d young=%d full=%d", base, peak, young, full)
+			if peak < base+2<<20 {
+				t.Fatal("payload was not allocated")
+			}
+			if freed := young < base+1<<20; freed != tc.freed {
+				t.Errorf("the young collection freed the payload: %v, want %v", freed, tc.freed)
+			}
+			if tc.freed && full > base+128<<10 {
+				t.Errorf("after the full GC %d bytes left", full-base)
+			}
+		})
+	}
+}
+
+// A key held from outside the GC objects stays, with its value: by a frame on
+// the stack (a young collection run from a Go function while javascript
+// runs), by an open closure of a running function, by a suspended async
+// function, and by a Value of the host.
+func TestYoungGCWeakRecordsOutside(t *testing.T) {
+	const setup = `globalThis.wm = new WeakMap(); globalThis.big = () => 'x'.repeat(2*1024*1024); globalThis.ok = false; void 0`
+	for _, tc := range []struct{ name, body string }{
+		{"stack", `(() => { let key = {}; wm.set(key, {key, payload: big()}); youngGC(); globalThis.ok = wm.get(key).key === key && wm.get(key).payload.length === 2097152; })();`},
+		{"open-closure", `(() => { let key = {}; const f = () => key; wm.set(key, {f, payload: big()}); youngGC(); globalThis.ok = wm.get(f()).f === f && wm.get(key).payload.length === 2097152; })();`},
+		{"async", `(async () => { let key = {}; wm.set(key, {key, payload: big()}); await null; youngGC(); globalThis.ok = wm.get(key).key === key && wm.get(key).payload.length === 2097152; })();`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := youngVM(t, setup)
+			if err := m.RegisterFunc("youngGC", func() { m.RunYoungGC() }, false); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := m.Eval(tc.body+` void 0`, EvalGlobal); err != nil {
+				t.Fatal(err)
+			}
+			m.RunYoungGC() // the async function is suspended here, its job queued
+			if _, err := m.ExecutePendingJobs(); err != nil {
+				t.Fatal(err)
+			}
+			if got := youngEval(t, m, "String(ok)"); got != "true" {
+				t.Fatalf("ok: %s", got)
+			}
+		})
+	}
+	t.Run("host-value", func(t *testing.T) {
+		m := youngVM(t, setup)
+		base := m.MemorySize()
+		key, err := m.EvalValue(`(() => { const key = {}; wm.set(key, {key, payload: big()}); return key })()`, EvalGlobal)
+		if err != nil {
+			t.Fatal(err)
+		}
+		m.RunYoungGC()
+		get, err := m.EvalValue(`k => wm.get(k).key === k && wm.get(k).payload.length === 2097152`, EvalGlobal)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r, err := get.Call(UndefinedValue, key); err != nil || r != true {
+			t.Fatalf("the value of the key the host holds: %v %v", r, err)
+		}
+		get.Free()
+		key.Free()
+		m.RunYoungGC()
+		m.RunGC()
+		if after := m.MemorySize(); after > base+128<<10 {
+			t.Errorf("after the host let go and a full GC %d bytes left", after-base)
+		}
+	})
 }
