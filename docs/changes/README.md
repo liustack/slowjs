@@ -69,6 +69,8 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A full collection marks closures and arrays with no call through the class table, and the mark and the finalizer of a closure skip its closure variables when all of them are cells | v0.31.3 | `js_bytecode_function_mark_in` and `js_array_mark_in` in [quickjs.c](../../engine/quickjs.c) |
 | A read of a name (`o.x`, and `o.m` before a call) keeps in its register instruction the slot of the own data property it last found, and looks at that slot of the object's shape first: the same key there with plain flags is the property, with no lookup in the shape's hash. Nothing to invalidate, no reference held. Cost: 4 bytes of register code per read site | v0.31.3 | [c-engine.md](c-engine.md#the-register-interpreter) |
 | A read of a name that finds a data property on the immediate prototype keeps its slot with the id of the object's shape (one id: the same prototype, keys and flags) and takes it while the object has a shape of that id, until the shape ids of the runtime run out once. Cost: 4 more bytes per read site, 8 with the slot, and 0.4% to 1.4% more memory in a VM after tifa's pages | v0.31.3 | [c-engine.md](c-engine.md#the-register-interpreter) |
+| A write of a name (`o.x = v`) keeps in its register instruction the slot of the own key it last set, and for a write that added the key, the ids of the shape before and after the add: an object of the shape before, extensible and not exotic, takes the shape after and the value with no lookup. Such a step holds while the step count of the runtime is the one the write saw. The count moves when a shape a step was kept for is freed or moved, a prototype's keys change in place or it gains a setter or a read-only key, or the shape ids are renumbered. Nothing is held, so nothing to free. Cost: 24 more bytes per write site, and up to 1% more memory in a VM after tifa's pages | v0.31.4 | `js_shape_step_end` in [quickjs.c](../../engine/quickjs.c), `PUTF` in [regvm-ops-basic.h](../../engine/regvm-ops-basic.h) |
+| The branches and `!` of the register loop give the truth of an object in the handler (true, unless it has [[IsHTMLDDA]]), and a temp gives its reference back there when it is not the last one: no call out of the loop. The last reference of a temp still goes to the call, which frees the object | v0.31.4 | `RV_TRUTH_OBJ` in [engine/regvm-ops-basic.h](../../engine/regvm-ops-basic.h) |
 
 ## The generator
 
@@ -145,6 +147,8 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | The start tag function writes img and the void elements as React DOM's `pushSelfClosing` does, and `input` and emotion's inline `style` as `pushStartInstance` does, when its seventh argument, the mode, is 1, 2 or 3 | v0.31.2 | [go-api.md](go-api.md#registerstarttag-and-registerendtag) |
 | NewArray makes an array of fewer than 16,384 values in one call of the engine | v0.31.2 | [builtin.go](../../builtin.go) |
 | NewMurmur2Function: the hash of @emotion/hash in C, which package tifa gives as `__tifa_murmur2__` | v0.31.2 | [murmur2.go](../../murmur2.go) |
+| `VM.MemoryFree`: the bytes of MemorySize no block in use holds, the free slots of the arenas of small blocks and the freed blocks the heap keeps | v0.31.4 | [vm.go](../../vm.go), `JS_GetMemoryFree` in [quickjs.c](../../engine/quickjs.c) |
+| MemoryUsage counts the register code (`RegisterCodeCount`, `RegisterCodeSize`, in MemoryUsedSize too) and has `FreeSize` | v0.31.4 | [memory.go](../../memory.go), `compute_register_code_size` in [quickjs.c](../../engine/quickjs.c) |
 
 ## Limits that hold
 
@@ -193,6 +197,8 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | The copy of a spread, a rest and Object.assign reads the interrupt flag | v0.30.5 | [uncatchable.md](uncatchable.md#the-copy-of-a-spread-a-rest-and-objectassign-reads-the-interrupt-flag) |
 | A VM with a memory limit keeps its block too | v0.30.6 | [uncatchable.md](uncatchable.md#a-vm-with-a-memory-limit-keeps-its-block-too) |
 | The loops over the captures of a match read the interrupt flag: the result of exec, and the captures replace and split read from an exec result, whose length a custom exec sets | v0.31.3 | `js_regexp_exec`, `js_regexp_Symbol_replace` and `js_regexp_Symbol_split` in [quickjs.c](../../engine/quickjs.c) |
+| The matcher reads the interrupt flag in a long run forward and in its long loops: a regexp gets a goto to the next op wherever a run that reads no flag passes 4,096 ticks, and a back reference, the undo of captures and the end of a lookahead read the flag every 4,096 steps | v0.31.4 | `lre_insert_checks` and `lre_exec_backtrack` in [libregexp.c](../../engine/libregexp.c) |
+| The copy of the arguments of a call and of a spread into an array reads the interrupt flag every 4,096 elements: apply, a spread into a call, `new` or an array, `arguments`, a rest parameter and the extra arguments of a call into the register loop | v0.31.4 | `build_arg_list`, `js_append_array` and `js_append_enumerate` in [quickjs.c](../../engine/quickjs.c), `rv_build_arguments`, `rv_build_mapped_arguments` and `rv_build_rest` in [regvm-ops-args.h](../../engine/regvm-ops-args.h), `rv_entry_extra` in [regvm-run.h](../../engine/regvm-run.h) |
 | The scan of a regexp literal reads the interrupt flag at its end, so a stop does not wait for the hash of a long literal | v0.31.3 | `js_parse_regexp` in [quickjs.c](../../engine/quickjs.c) |
 | Intl asks Go for no memory sized by a whole list of locales before its first check of the call: the locales it canonicalizes and their seen set grow with the tags gone through | v0.31.3 | [uncatchable.md](uncatchable.md#intl-reads-the-interrupt-flag-in-loops-over-a-long-list) |
 
@@ -282,12 +288,15 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | `Array.prototype.join` of a fast array of strings, ropes, `undefined` and `null` makes one block of the length and width of the result and reads the elements in place, without a property read for each | v0.31.2 | `js_join_plan` in [engine/quickjs.c](../../engine/quickjs.c) |
 | The search for a needle of more than 8 characters keeps a table of 256 one-byte shifts and moves over a run of windows in one tight loop, checking the step counter as often as before | v0.31.2 | `js_string_two_way` in [engine/quickjs.c](../../engine/quickjs.c) |
 | A string that is no atom, made a key, keeps the atom it found, with a reference, so later keyed reads by that string skip the hash and the search of the atom table | v0.31.3 | `js_string_to_atom` in [engine/quickjs.c](../../engine/quickjs.c) |
+| The register loop adds two flat 8-bit strings into a temp (the left one of 1 to 8192 characters, the right one of 1 to 512) itself: it grows the left one in place or copies both, as `JS_ConcatString` does, without its three calls | v0.31.4 | `rv_concat8` in [engine/regvm-ops-basic.h](../../engine/regvm-ops-basic.h) |
+| A keyed read (`o[k]`) by a string that keeps no atom looks it up in the atom table without making one: found, the string keeps the atom as a key made from it does. Not found, no object has that name, so the read is undefined through a chain of ordinary objects and fast arrays, with no atom made and freed. An exotic object on the chain, an index, a long key and a string that starts with a digit take the generic path | v0.31.4 | `rv_key_lookup` in [engine/regvm-ops-object.h](../../engine/regvm-ops-object.h) |
 
 ## JSON
 
 | Change | Release | Doc |
 | --- | --- | --- |
 | JSON copies runs of plain characters | v0.26.17 | [json.md](json.md#json-copies-runs-of-plain-characters) |
+| A string that `JSON.stringify` wrote with no escape keeps a mark, a bit of its header, so the next write of the same string, as a value or as a key, copies it without looking at its characters. A marked string is copied, not changed in place, when something is appended to it | v0.31.4 | `JSString.plain` in [engine/quickjs.c](../../engine/quickjs.c) |
 | `JSON.stringify` with no replacer and no indent writes plain objects and arrays from their shapes and elements, and leaves every value that may run code to the general path, which takes over the rest of each open object before such code runs. The check of a cycle is a C array, not a JavaScript one | v0.31.3 | `json_walk_object` in [engine/quickjs.c](../../engine/quickjs.c) |
 
 ## Operators
@@ -345,6 +354,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | `new f()` takes the prototype of the object it makes from the own `prototype` of `f` in its shape when that is a plain data property that holds an object, without the generic read, and reads the interrupt flag once, as a call does | v0.31.2 | [objects-and-shapes.md](objects-and-shapes.md#objects-of-a-constructor-find-the-shapes-the-objects-before-them-went-through) |
 | A closure is one block: the function object, its properties and its closure variables, where it took three | v0.31.3 | `js_new_function_object` in [quickjs.c](../../engine/quickjs.c) |
 | `set_name` gives a closure with no name of its own the name in place, without the generic define | v0.31.3 | `js_object_name_in_place` in [quickjs.c](../../engine/quickjs.c) |
+| `Object.getOwnPropertyDescriptor`, Reflect's and `Object.getOwnPropertyDescriptors` make each descriptor at its final shape, which the context keeps for the data form and for the accessor form, and fill its four values, with no define of each key | v0.31.4 | `js_new_desc_object` in [quickjs.c](../../engine/quickjs.c) |
 
 ## Memory
 
@@ -353,6 +363,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | One copy of source text and line tables for every VM, SharedBytecode | v0.28.1 | [memory-and-allocation.md](memory-and-allocation.md#one-copy-of-source-text-and-line-tables-for-every-vm) |
 | Shared bytecode is scanned for the polls on its first load only | v0.29.1 | [memory-and-allocation.md](memory-and-allocation.md#shared-bytecode-is-scanned-for-the-polls-on-its-first-load-only) |
 | A large block of a built-in collects first when it would pass the memory limit | v0.30.5 | [memory-and-allocation.md](memory-and-allocation.md#a-large-block-collects-first-when-it-would-pass-the-memory-limit) |
+| A request the heap refuses lets the kept shapes go before it is tried again, so a VM near its limit fits what it would with the ring empty | v0.31.4 | `js_shape_cache_drop` in [quickjs.c](../../engine/quickjs.c) |
 
 ## Young collection
 

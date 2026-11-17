@@ -12,6 +12,6 @@ result key changes false,false
 result key deletes false
 result every 0:1 1:2 2:3 4:5
 result concat 6 [0,1,"filled",3,null,9] truefalse
-mem-end obj=217 atom=572 shape=154 prop=1008 jsfunc=3 cfunc=136 array=3 fast_array=3 elements=16 binary=0
-mem-gc obj=217 atom=572 shape=154 prop=1008 jsfunc=3 cfunc=136 array=3 fast_array=3 elements=16 binary=0
+mem-end obj=217 atom=572 shape=151 prop=1008 jsfunc=3 cfunc=136 array=3 fast_array=3 elements=16 binary=0
+mem-gc obj=217 atom=572 shape=151 prop=1008 jsfunc=3 cfunc=136 array=3 fast_array=3 elements=16 binary=0
 --- status exit 0

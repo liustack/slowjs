@@ -70,8 +70,14 @@ static void test_dump(void)
             "globalThis.keep = [];"
             "for (let i = 0; i < 200; i++) keep.push({ i, s: 'item' + i, a: [i, i + 1], f() { return i; } });"
             "keep.push(new Map([[1, 2]]), new Set([1]), /re/g, new Date(0), new Error('x'), Promise.resolve(1),"
-            "          new Uint8Array(10), Symbol('s'), 10n ** 30n);");
+            "          new Uint8Array(10), Symbol('s'), 10n ** 30n);"
+            "globalThis.g = function (x) { return x + 1 }; for (let i = 0; i < 3; i++) g(i);");
     JS_ComputeMemoryUsage(rt, &s);
+    CHECK(s.register_code_count > 0 && s.register_code_size > 0, "no register code: %lld functions, %lld bytes",
+          (long long)s.register_code_count, (long long)s.register_code_size);
+    CHECK(s.free_size == (int64_t)JS_GetMemoryFree(rt) && s.free_size <= s.malloc_size,
+          "free_size %lld, JS_GetMemoryFree %zu, malloc_size %lld", (long long)s.free_size, JS_GetMemoryFree(rt),
+          (long long)s.malloc_size);
 
     n = JS_DumpMemoryUsage(NULL, 0, &s, rt);
     CHECK(n > 500, "the report is too short: %zu", n);
@@ -82,6 +88,7 @@ static void test_dump(void)
     CHECK(strstr(full, "JSObject classes") != NULL, "no class counts: the part that names classes did not run");
     CHECK(strstr(full, "Array") && strstr(full, "Map") && strstr(full, "RegExp"), "class names are missing");
     CHECK(strstr(full, "objects") && strstr(full, "shapes") && strstr(full, "bytecode"), "a table row is missing");
+    CHECK(strstr(full, "register code") && strstr(full, "memory free"), "the rows of the register code and the free memory are missing");
     CHECK(strchr(full, '%') == NULL, "a conversion was left in the text");
 
     /* Cut to every size from 0 to past the end. The text before the cut is the

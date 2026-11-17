@@ -38,6 +38,15 @@ type MemoryUsage struct {
 	// What the VM took from the system, its limit (0 for none), in how many
 	// chunks, and the bytes [VM.ReleaseMemory] offered back so far.
 	Footprint, FootprintLimit, Chunks, ReleaseCandidate int64
+
+	// The register code the engine made for the functions that ran, at the
+	// first call of each, kept as long as the function: how many functions
+	// and its bytes. JSFuncCodeSize is the bytecode alone. MemoryUsedSize
+	// counts both.
+	RegisterCodeCount, RegisterCodeSize int64
+	// FreeSize is [VM.MemoryFree]: the bytes of MallocSize no block in use
+	// holds.
+	FreeSize int64
 }
 
 // MemoryUsage returns what m holds, in more detail than [VM.MemorySize]. It

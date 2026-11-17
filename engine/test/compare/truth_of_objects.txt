@@ -1,0 +1,18 @@
+plain if/yes/1/2 prop/elem/closure/call/false/false/false/1/1/3
+array if/yes/1/2 prop/elem/closure/call/false/false/false/1/1/3
+fn if/yes/1/2 prop/elem/closure/call/false/false/false/1/1/3
+arrow if/yes/1/2 prop/elem/closure/call/false/false/false/1/1/3
+klass if/yes/1/2 prop/elem/closure/call/false/false/false/1/1/3
+boolFalse if/yes/1/2 prop/elem/closure/call/false/false/false/1/1/3
+numZero if/yes/1/2 prop/elem/closure/call/false/false/false/1/1/3
+strEmpty if/yes/1/2 prop/elem/closure/call/false/false/false/1/1/3
+proxy if/yes/1/2 prop/elem/closure/call/false/false/false/1/1/3
+revoked if/yes/1/2 prop/elem/closure/call/false/false/false/1/1/3
+date if/yes/1/2 prop/elem/closure/call/false/false/false/1/1/3
+regexp if/yes/1/2 prop/elem/closure/call/false/false/false/1/1/3
+map if/yes/1/2 prop/elem/closure/call/false/false/false/1/1/3
+valueOfFalse if/yes/1/2 prop/elem/closure/call/false/false/false/1/1/3
+nullProto if/yes/1/2 prop/elem/closure/call/false/false/false/1/1/3
+literals false,false,false,true,1,1
+dropped temp 200
+memory after: 0

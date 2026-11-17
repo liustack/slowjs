@@ -86,6 +86,6 @@ result not callable: throws TypeError
 result many binds: length+name length=1 c name="bound many" c proto=Function | length length=1 c name none proto=Function | length+name length=9 c name="bound many" c proto=Function | length+name+extra length=1 c name="bound many" c proto=Function | length+name length=1 c name="bound many" c proto=null | length+name length=1 c name="bound many" c proto=Function | length+name length=2 c name="bound many" c proto=Function
 result binds in a loop of many kinds: bound k1/0 bound /1 bound k3/0 bound k4/0 bound min/1 bound K6/0 bound k1/0 bound /1 bound k3/0 bound k4/0 bound min/1 bound K6/0
 result another realm: length+name length=2 c name="bound realm" c true
-mem-end obj=430 atom=642 shape=283 prop=2063 jsfunc=27 cfunc=270 array=6 fast_array=6 elements=120 binary=0
-mem-gc obj=228 atom=635 shape=158 prop=1094 jsfunc=16 cfunc=149 array=5 fast_array=5 elements=120 binary=0
+mem-end obj=430 atom=642 shape=279 prop=2063 jsfunc=27 cfunc=270 array=6 fast_array=6 elements=120 binary=0
+mem-gc obj=228 atom=635 shape=154 prop=1094 jsfunc=16 cfunc=149 array=5 fast_array=5 elements=120 binary=0
 --- status exit 0

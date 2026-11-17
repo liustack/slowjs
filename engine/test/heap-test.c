@@ -881,6 +881,7 @@ typedef struct RtModel {
     size_t fp_limit;  /* the footprint budget set now, 0 for none */
     int front;        /* the most blocks of a list of the front cache */
     size_t large_hdr; /* what a large block costs on top of its usable size and the 8 byte word of the heap */
+    size_t base_live; /* JS_GetMemorySize less JS_GetMemoryFree while the test holds no block */
 } RtModel;
 
 /* How many freed blocks the two caches hold. A request that fails at the heap
@@ -919,6 +920,19 @@ static void rt_check(RtModel *m)
         nonzero += b->usable != 0;
     }
     CHECK(m->nspans == nonzero, "the set of spans holds %d blocks, the test %d", m->nspans, nonzero);
+    /* what no block in use holds is all the count has past the blocks the
+       test holds, whatever arenas they are in and whatever the caches keep */
+    {
+        size_t size = JS_GetMemorySize(m->rt), free = JS_GetMemoryFree(m->rt), live = m->base_live;
+
+        for (int i = 0; i < m->n; i++) {
+            const Block *b = &m->live[i];
+            if (b->usable)
+                live += b->large ? b->usable + m->large_hdr + 8 : b->usable + 8;
+        }
+        CHECK(free <= size && size - free == live, "JS_GetMemorySize %zu less JS_GetMemoryFree %zu is %zd, the blocks in use %zu",
+              size, free, (ssize_t)(size - free), live);
+    }
     for (int i = 0; i + 1 < m->nspans; i++)
         CHECK(m->spans[i].hi <= m->spans[i + 1].lo, "two blocks overlap");
     CHECK(JS_FrontCacheBlocks(m->rt) <= (size_t)m->front * 32, "the front cache holds more than %d blocks a list", m->front);
@@ -1211,6 +1225,7 @@ static void run_runtime(Src *r, long steps)
     CHECK(JS_GetMemorySize(m->rt) == count, "a large block was freed and the count did not come back");
     m->front = 256;
     JS_SetFrontCache(m->rt, m->front);
+    m->base_live = JS_GetMemorySize(m->rt) - JS_GetMemoryFree(m->rt);
     rt_check(m);
     for (long i = 0; i < steps && !r->done; i++) {
         rt_step(m, r);

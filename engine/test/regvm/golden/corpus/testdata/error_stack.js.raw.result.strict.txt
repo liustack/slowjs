@@ -1,5 +1,5 @@
 exception TypeError: 'stack' is read-only
 stack     at <eval> (<eval>:83:95)
-mem-end obj=243 atom=610 shape=157 prop=1117 jsfunc=19 cfunc=145 array=3 fast_array=3 elements=55 binary=0
-mem-gc obj=241 atom=609 shape=155 prop=1113 jsfunc=18 cfunc=145 array=3 fast_array=3 elements=55 binary=0
+mem-end obj=243 atom=610 shape=155 prop=1117 jsfunc=19 cfunc=145 array=3 fast_array=3 elements=55 binary=0
+mem-gc obj=241 atom=609 shape=153 prop=1113 jsfunc=18 cfunc=145 array=3 fast_array=3 elements=55 binary=0
 --- status exit 0

@@ -483,9 +483,10 @@ static void test_shape_cache_lifetime(void)
     JS_RunGC(rt);
     CHECK(shapes(rt) - base == n, "a collection changed the ring of 4");
 
-    /* Let each allocation fail in turn while objects grow: the shapes kept
-       before are still there after, so the shapes of ten are found again
-       and none is made. */
+    /* Let each allocation fail in turn while objects grow: a refused request
+       lets the kept shapes go (js_shape_cache_drop), and the ring keeps
+       shapes again after it, so that the shapes of ten, made once more, are
+       found the time after and none is made. */
     CHECK(JS_SetShapeCache(ctx, 2048) == 0, "no ring");
     CHECK(eval(ctx, ten), "the script threw");
     for(slack = 0; slack < 1 << 16 && !ok; slack += 16) {
@@ -497,10 +498,11 @@ static void test_shape_cache_lifetime(void)
             JS_FreeValue(ctx, JS_GetException(ctx));
         JS_FreeValue(ctx, v);
         JS_SetMemoryLimit(rt, (size_t)-1);
+        CHECK(eval(ctx, ten), "the script threw");
         n = shapes(rt);
         CHECK(eval(ctx, ten), "the script threw");
         CHECK(shapes(rt) == n, "the shapes of ten were made again after a "
-              "failed allocation at %zu bytes", slack);
+              "failed allocation at %zu bytes and once more", slack);
     }
     CHECK(ok, "the objects never grew");
     JS_SetShapeCache(ctx, 0);
@@ -784,6 +786,82 @@ static void test_class_shape_set_proto(void)
           "an object of the class with q");
     JS_FreeValue(ctx, obj);
     JS_FreeValue(ctx, q);
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
+/* The objects Object.getOwnPropertyDescriptor makes have the prototype of
+   the plain object class, as JS_NewObject gives it. The context keeps the
+   shapes of both forms of descriptor with that prototype, so a host that
+   replaces it with JS_SetClassProto must get descriptors of the new one,
+   of either form whichever was made first, and the one it replaced is
+   freed once the host drops it. The objects the descriptors are of are
+   made here, as an object literal would hold a shape of the prototype. */
+static int desc_proto_is(JSContext *ctx, JSValueConst f, int acc,
+                         JSValueConst want)
+{
+    JSValue obj = JS_NewObject(ctx), d;
+    JSAtom a = JS_NewAtom(ctx, "a");
+    int ok;
+
+    if (acc)
+        ok = JS_DefinePropertyGetSet(ctx, obj, a, JS_DupValue(ctx, f),
+                                     JS_UNDEFINED, JS_PROP_C_W_E) >= 0;
+    else
+        ok = JS_DefinePropertyValue(ctx, obj, a, JS_NewInt32(ctx, 1),
+                                    JS_PROP_C_W_E) >= 0;
+    JS_FreeAtom(ctx, a);
+    d = ok ? JS_Call(ctx, f, JS_UNDEFINED, 1, (JSValueConst *)&obj)
+           : JS_EXCEPTION;
+    ok = JS_IsObject(d) && proto_is(ctx, d, want);
+    JS_FreeValue(ctx, d);
+    JS_FreeValue(ctx, obj);
+    return ok;
+}
+
+static void test_desc_shape_set_proto(void)
+{
+    static const char src[] =
+        "(function (o) { return Object.getOwnPropertyDescriptor(o, 'a'); })";
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    JSClassDef def = { .class_name = "Proto", .finalizer = proto_finalizer };
+    JSClassID pclass = 0, oclass;
+    JSValue f, o, p, q;
+    int acc;
+
+    JS_NewClassID(rt, &pclass);
+    CHECK(JS_NewClass(rt, pclass, &def) == 0, "JS_NewClass failed");
+    f = JS_Eval(ctx, src, sizeof(src) - 1, "<test>", JS_EVAL_TYPE_GLOBAL);
+    CHECK(JS_IsFunction(ctx, f), "the function");
+    /* the class of plain objects, whose id quickjs.h does not name */
+    o = JS_NewObject(ctx);
+    oclass = JS_GetClassID(o);
+    JS_FreeValue(ctx, o);
+    o = JS_GetClassProto(ctx, oclass);
+    /* a data descriptor first: the context keeps its shape with o */
+    CHECK(desc_proto_is(ctx, f, 0, o), "a data descriptor with o");
+
+    p = JS_NewObjectClass(ctx, pclass);
+    q = JS_NewObject(ctx);
+    CHECK(JS_IsObject(p) && JS_IsObject(q), "the prototypes");
+    JS_SetClassProto(ctx, oclass, JS_DupValue(ctx, p));
+    for(acc = 0; acc < 2; acc++)
+        CHECK(desc_proto_is(ctx, f, acc, p),
+              "a descriptor (accessor %d) with p", acc);
+
+    JS_SetClassProto(ctx, oclass, JS_DupValue(ctx, q));
+    proto_freed = 0;
+    JS_FreeValue(ctx, p);
+    JS_RunGC(rt);
+    CHECK(proto_freed == 1, "the prototype replaced was freed %d times, "
+          "want 1", proto_freed);
+    for(acc = 0; acc < 2; acc++)
+        CHECK(desc_proto_is(ctx, f, acc, q),
+              "a descriptor (accessor %d) with q", acc);
+    JS_SetClassProto(ctx, oclass, o);
+    JS_FreeValue(ctx, q);
+    JS_FreeValue(ctx, f);
     JS_FreeContext(ctx);
     host_free_runtime(rt);
 }
@@ -3621,10 +3699,14 @@ static void test_regexp_skip_polls(void)
         /* a way of a chain pushed, after which the walk found none of the
            split ops after it could start, and the machine polled (a loop
            of them over the string), and 4098 alternatives, past the steps
-           of one call of lre_split, measured before the chains too */
-        { "(?:a|b|c|d|e|f|g|h|i|j|k|l|m|n|o|p|aZ)+", "a", CHUNK, 0, 1, 17 * CHUNK + 2 },
-        { zs, "a", 4096, 0, 0, 3 * 4096 + 2 },
-        { zs, "z", 4096, 0, 1, 4097 },
+           of one call of lre_split, measured before the chains too. The
+           way back of x+ reads the flag once more at each position, and
+           the 4098 alternatives, about 28,000 ticks, get 6 gotos that read
+           it (lre_insert_checks), each the end of a chain: 6 reads more on
+           a match, and 12 more at each position where none starts */
+        { "(?:a|b|c|d|e|f|g|h|i|j|k|l|m|n|o|p|aZ)+", "a", CHUNK, 0, 1, 18 * CHUNK + 2 },
+        { zs, "a", 4096, 0, 0, 15 * 4096 + 14 },
+        { zs, "z", 4096, 0, 1, 4103 },
         /* the scan for the literal every match holds (lre_literal): it
            reads the flag after each LRE_SKIP_CHUNK units it looks at or
            compares, and not at the end of the string, where the machine
@@ -5535,6 +5617,7 @@ int main(void)
     test_func_shapes_kept();
     test_class_shapes();
     test_class_shape_set_proto();
+    test_desc_shape_set_proto();
     test_for_in_shape();
     test_object_lit_size();
     test_object_lit_one_block();

@@ -1,0 +1,21 @@
+result plain if/yes/1/2 prop/elem/closure/call/false/false/false/1/1/3
+result array if/yes/1/2 prop/elem/closure/call/false/false/false/1/1/3
+result fn if/yes/1/2 prop/elem/closure/call/false/false/false/1/1/3
+result arrow if/yes/1/2 prop/elem/closure/call/false/false/false/1/1/3
+result klass if/yes/1/2 prop/elem/closure/call/false/false/false/1/1/3
+result boolFalse if/yes/1/2 prop/elem/closure/call/false/false/false/1/1/3
+result numZero if/yes/1/2 prop/elem/closure/call/false/false/false/1/1/3
+result strEmpty if/yes/1/2 prop/elem/closure/call/false/false/false/1/1/3
+result proxy if/yes/1/2 prop/elem/closure/call/false/false/false/1/1/3
+result revoked if/yes/1/2 prop/elem/closure/call/false/false/false/1/1/3
+result date if/yes/1/2 prop/elem/closure/call/false/false/false/1/1/3
+result regexp if/yes/1/2 prop/elem/closure/call/false/false/false/1/1/3
+result map if/yes/1/2 prop/elem/closure/call/false/false/false/1/1/3
+result valueOfFalse if/yes/1/2 prop/elem/closure/call/false/false/false/1/1/3
+result nullProto if/yes/1/2 prop/elem/closure/call/false/false/false/1/1/3
+result literals false,false,false,true,1,1
+result dropped temp 200
+result memory after: 0
+mem-end obj=212 atom=580 shape=134 prop=1011 jsfunc=24 cfunc=130 array=2 fast_array=2 elements=18 binary=0
+mem-gc obj=212 atom=580 shape=134 prop=1011 jsfunc=24 cfunc=130 array=2 fast_array=2 elements=18 binary=0
+--- status exit 0

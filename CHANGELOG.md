@@ -4,6 +4,28 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 
 ## [Unreleased]
 
+## [v0.31.4] - 2026-11-17
+
+### Added
+
+- `VM.MemoryFree` gives the part of `MemorySize` that no block in use holds, mostly the holes collected garbage leaves in the arenas of the objects kept, so `MemorySize() - MemoryFree()` after `RunGC` stays the same while a VM keeps the same objects. `MemoryUsage` has it as `FreeSize` and now counts the register code of the functions that ran (`RegisterCodeCount`, `RegisterCodeSize`, and in `MemoryUsedSize`).
+
+### Changed
+
+- tifa's React page renders in 0.9% less time than with v0.31.3, its MUI pages in 0.7% less and its store pages in 0.6% less, and its workbench pages show no change beyond 1%, with the changes below and a profile trained again on them (against v0.31.3, whose profile was trained the same way, linux/amd64, an AMD EPYC 7B13, the mean of 16 code layouts). The V8 suite scores 1.5% higher, EarleyBoyer 9.3%, and NavierStokes 6.5% lower, though it runs the same instructions as before: a known step back that comes from where the code lies or from the profile ([performance.md](docs/performance.md#v0314-against-v0313)).
+- A write of a property by name keeps, at each place in the code, the slot it last set and, when it added the key, the shape the object moved to, and takes them again without a lookup. On a linux/amd64 machine with an AMD EPYC 7B13 the V8 suite takes 3.3% less time (Boyer 12% less, Richards 5% less, NavierStokes 2% more), and tifa's pages show no change beyond 1%, for up to 1% more memory in a VM.
+- `Object.getOwnPropertyDescriptor` makes each descriptor at once at a shape the context keeps, where it added the four keys one by one: about 580 fewer instructions a call, and 0.1% to 0.2% fewer in a render of tifa's store and workbench pages, whose Radix components call it for each element.
+- `JSON.stringify` remembers which strings it wrote with nothing to escape and copies them the next time without looking at them. Writing a small options object again runs 16% fewer instructions, 300 orders 21% fewer, and the react-intl page 1.9% fewer ([changes](docs/changes/README.md#json)).
+- `a + b` of two short one-byte strings, as class names and keys are built, grows the left one in place or copies both without the three calls of the generic concatenation.
+- `if (o)`, `!o` and the loops on an object take its truth in the register loop, with no call out of it.
+- `o[k]` by a string made while the script runs, such as a class name read from Emotion's registered styles, no longer makes and frees an atom when no object has a property of that name.
+
+### Fixed
+
+- An interrupt or the eval timeout stops a long match wherever it is. A pattern written out many times, a back reference over a long capture and a long `x+` or `x{n,}` did not look at the stop for as long as they ran: about 20 ms for `/^a+/` over a million characters, 40 ms for `\w+` over a million of 16 bits.
+- An interrupt or the eval timeout stops the copy of a long list of arguments (`apply`, a spread into a call or `new`, `arguments`, a rest parameter) and of a spread into an array: a spread of 8 million elements ran about 70 ms without looking at the stop.
+- The shapes a VM keeps for later objects (`SetShapeCache`, up to about 6 MiB) are let go when an allocation would pass the memory limit, so a script close to its limit no longer runs out of memory because of them.
+
 ## [v0.31.3] - 2026-11-16
 
 ### Changed
@@ -799,7 +821,8 @@ The first release of the fork, from modernc.org/quickjs v0.25.0 and libquickjs v
 - A VM that runs out of memory inside `JSON.parse`, or anything else that converts a string with non-ASCII characters to UTF-8, no longer leaks that string.
 - `VM.Call` and `VM.CallValue` report the exception thrown while evaluating the function expression instead of `cannot call a non-function`.
 
-[Unreleased]: https://github.com/liustack/slowjs/compare/v0.31.3...main
+[Unreleased]: https://github.com/liustack/slowjs/compare/v0.31.4...main
+[v0.31.4]: https://github.com/liustack/slowjs/compare/v0.31.3...v0.31.4
 [v0.31.3]: https://github.com/liustack/slowjs/compare/v0.31.2...v0.31.3
 [v0.31.2]: https://github.com/liustack/slowjs/compare/v0.31.1...v0.31.2
 [v0.31.1]: https://github.com/liustack/slowjs/compare/v0.31.0...v0.31.1
