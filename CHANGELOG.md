@@ -8,6 +8,8 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 
 - An interrupt or the eval timeout stops the parse and the compile of a script of many short tokens, and the conversion of a long function to register code, within a few polls: a timeout in the compile of a script of 3 MB or more killed the VM (ErrKilled).
 - A timeout that stops the compile of a script of several MB no longer kills the VM while the engine frees the code the compile made: those polls no longer count toward the kill.
+- A timeout or interrupt in async code that a getter, a setter or `toJSON` starts (an async function before its first await, an async generator, a `for await` over a sync iterator), or in a module before its first top-level await, now fails `GetPropertyValue`, `SetPropertyValue`, `MarshalJSON` and `Eval` with the timeout, where they could return the pending promise or succeed with the error left pending.
+- A throw in the `return` method of the keys iterator that `Set.prototype.isDisjointFrom` and `isSupersetOf` close is now their error, as the specification says.
 
 ## [v0.31.4] - 2026-11-17
 

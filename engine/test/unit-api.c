@@ -3006,6 +3006,153 @@ static void test_entry_stop_returns(void)
     }
 }
 
+/* the module loader of test_api_stop_returns: every module is api_module_src */
+static const char api_module_src[] = "for (;;) {} await 0;";
+
+static JSModuleDef *api_module_loader(JSContext *ctx, const char *name, void *opaque)
+{
+    JSValue f = JS_Eval(ctx, api_module_src, strlen(api_module_src), name,
+                        JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY);
+    JSModuleDef *m;
+
+    (void)opaque;
+    if (JS_IsException(f))
+        return NULL;
+    m = JS_VALUE_GET_PTR(f);
+    JS_FreeValue(ctx, f);
+    return m;
+}
+
+enum {
+    API_GET, API_SET, API_INSTANCEOF, API_TYPED_ARRAY, API_TO_FLOAT64,
+    API_JSON, API_LOAD_MODULE,
+};
+
+/* Every function of the API that runs code fails when a stop ends it,
+   whatever that code returned: a place that catches an exception to settle
+   a promise or to keep it as a result ends with an uncatchable one instead.
+   An async function, an async generator, a for await over a sync iterator,
+   a module with a top-level await and the close of an iterator by Set
+   methods each turned a stop into a value: the getter returned the pending
+   promise of an async function stopped before its first await, the setter
+   succeeded, and so on, with the interrupt left pending. Each case is
+   stopped at each reading of the flag up to ENTRY_STOPS. */
+static void test_api_stop_returns(void)
+{
+    static const char setup[] =
+        "globalThis.spin = async function () { for (;;) {} };\n"
+        "globalThis.o = {};\n"
+        "Object.defineProperty(o, 'get', { get: async function () { for (;;) {} } });\n"
+        "Object.defineProperty(o, 'set', { set: async function (v) { for (;;) {} } });\n"
+        "Object.defineProperty(o, 'gen', { get: function () {\n"
+        "  return (async function* () { for (;;) {} })().next(); } });\n"
+        "Object.defineProperty(o, 'syncIter', { get: function () {\n"
+        "  return (async function () {\n"
+        "    for await (const x of { [Symbol.iterator]() { return { next() { for (;;) {} } }; } }) {}\n"
+        "  })(); } });\n"
+        "Object.defineProperty(o, 'setClose', { get: function () {\n"
+        "  return new Set([1, 2]).isDisjointFrom({ size: 1, has() { return true; }, keys() {\n"
+        "    return { next() { return { value: 1, done: false }; }, return() { for (;;) {} } }; } });\n"
+        "  } });\n"
+        "globalThis.C = { [Symbol.hasInstance]: async function () { for (;;) {} } };\n"
+        "globalThis.iterable = { [Symbol.iterator]() { return { next() {\n"
+        "  const r = { value: 1 };\n"
+        "  Object.defineProperty(r, 'done', { get: async function () { for (;;) {} } });\n"
+        "  return r; } }; } };\n"
+        "globalThis.num = { valueOf() { spin(); return 7; } };\n"
+        "globalThis.j = {};\n"
+        "Object.defineProperty(j, 'toJSON', { get: async function () { for (;;) {} } });\n"
+        "globalThis.j2 = {};\n"
+        "Object.defineProperty(j2, 'a', { get: async function () { for (;;) {} }, enumerable: true });\n";
+    static const struct {
+        const char *what, *prop;
+        int op;
+    } cases[] = {
+        { "async getter", "get", API_GET },
+        { "async generator", "gen", API_GET },
+        { "for await of a sync iterator", "syncIter", API_GET },
+        { "close of Set methods", "setClose", API_GET },
+        { "async setter", "set", API_SET },
+        { "async Symbol.hasInstance", NULL, API_INSTANCEOF },
+        { "async done of an iterator", NULL, API_TYPED_ARRAY },
+        { "valueOf calling an async function", NULL, API_TO_FLOAT64 },
+        { "async toJSON getter", NULL, API_JSON },
+        { "async getter of a property", "j2", API_JSON },
+        { "JS_LoadModule", NULL, API_LOAD_MODULE },
+    };
+    size_t i;
+    long k;
+
+    for (i = 0; i < countof(cases); i++) {
+        for (k = 1; k <= ENTRY_STOPS; k++) {
+            VM v = vm_new();
+            JSValue g, arg, r = JS_UNDEFINED, e;
+            const char *s;
+            int failed = 0;
+            double d;
+
+            JS_SetModuleLoaderFunc(v.rt, NULL, api_module_loader, NULL);
+            r = JS_Eval(v.ctx, setup, strlen(setup), "<setup>", JS_EVAL_TYPE_GLOBAL);
+            CHECK(!JS_IsException(r), "%s: the setup threw", cases[i].what);
+            JS_FreeValue(v.ctx, r);
+            r = JS_UNDEFINED;
+            g = JS_GetGlobalObject(v.ctx);
+            switch (cases[i].op) {
+            case API_GET: case API_SET: arg = JS_GetPropertyStr(v.ctx, g, "o"); break;
+            case API_INSTANCEOF: arg = JS_GetPropertyStr(v.ctx, g, "C"); break;
+            case API_TYPED_ARRAY: arg = JS_GetPropertyStr(v.ctx, g, "iterable"); break;
+            case API_TO_FLOAT64: arg = JS_GetPropertyStr(v.ctx, g, "num"); break;
+            case API_JSON: arg = JS_GetPropertyStr(v.ctx, g, cases[i].prop ? cases[i].prop : "j"); break;
+            default: arg = JS_UNDEFINED; break;
+            }
+            host_poll_reads = 0;
+            host_poll_stop_after(k);
+            switch (cases[i].op) {
+            case API_GET:
+                r = JS_GetPropertyStr(v.ctx, arg, cases[i].prop);
+                failed = JS_IsException(r);
+                break;
+            case API_SET:
+                failed = JS_SetPropertyStr(v.ctx, arg, cases[i].prop, JS_NewInt32(v.ctx, 1)) < 0;
+                break;
+            case API_INSTANCEOF:
+                failed = JS_IsInstanceOf(v.ctx, g, arg) < 0;
+                break;
+            case API_TYPED_ARRAY:
+                r = JS_NewTypedArray(v.ctx, 1, (JSValueConst *)&arg, JS_TYPED_ARRAY_UINT8);
+                failed = JS_IsException(r);
+                break;
+            case API_TO_FLOAT64:
+                failed = JS_ToFloat64(v.ctx, &d, arg) < 0;
+                break;
+            case API_JSON:
+                r = JS_JSONStringify(v.ctx, arg, JS_UNDEFINED, JS_UNDEFINED);
+                failed = JS_IsException(r);
+                break;
+            case API_LOAD_MODULE:
+                r = JS_LoadModule(v.ctx, "", "stop.js");
+                failed = JS_IsException(r);
+                break;
+            }
+            host_poll_stop_after(0);
+            CHECK(failed, "%s, stop at %ld: succeeded with %s pending", cases[i].what, k,
+                  JS_IsUncatchableException(v.ctx) ? "an uncatchable error" : "no error");
+            JS_FreeValue(v.ctx, r);
+            *JS_GetInterruptFlag(v.rt) = 0;
+            e = JS_GetException(v.ctx);
+            s = JS_ToCString(v.ctx, e);
+            CHECK(s && strcmp(s, "InternalError: interrupted") == 0, "%s, stop at %ld: %s",
+                  cases[i].what, k, s ? s : "?");
+            JS_FreeCString(v.ctx, s);
+            JS_FreeValue(v.ctx, e);
+            JS_FreeValue(v.ctx, arg);
+            JS_FreeValue(v.ctx, g);
+            drain_jobs(&v);
+            vm_free(&v);
+        }
+    }
+}
+
 int main(void)
 {
     test_compile_stops();
@@ -3017,6 +3164,7 @@ int main(void)
     test_module_fail_collect();
     test_job_stop_returns();
     test_entry_stop_returns();
+    test_api_stop_returns();
     test_for_in_keeps_shape();
     test_plain_objects();
     test_run_gc_threshold();

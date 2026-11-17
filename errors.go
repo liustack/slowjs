@@ -398,10 +398,10 @@ func (m *VM) uncatchablePending() bool {
 
 // settled returns v, the result of a call into javascript, or the exception
 // value when an uncatchable exception is still pending after the call. A
-// built-in that only records an error, such as a promise resolve function
-// that rejects its promise when reading 'then' throws, returns as if it had
-// not failed, and the code that called it can go on until its next call,
-// which fails. The call that ran it fails all the same.
+// built-in that runs out of memory in a step it does not check, such as a
+// property of an object it makes, returns as if it had not failed, and the
+// code that called it can go on until its next call, which fails. The call
+// that ran it fails all the same.
 func (m *VM) settled(v jsValue) jsValue {
 	if isException(v) || !m.uncatchablePending() {
 		return v
