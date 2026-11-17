@@ -1099,6 +1099,7 @@ var goasmKeep = []any{
 	js_regexp_array_push,
 	js_regexp_cache_entry_free,
 	js_regexp_cache_off,
+	js_regexp_cache_same,
 	js_regexp_compile,
 	js_regexp_constructor,
 	js_regexp_escape,

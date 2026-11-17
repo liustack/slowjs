@@ -76,6 +76,52 @@ static void fill(unsigned char *buf, size_t n, int alphabet)
 #define MAXN 300
 #define PAD 16
 
+/* The byte loop of musl: the value memcmp gives is the difference of the first
+   two bytes that differ, as unsigned char. The engine takes the sign only, but
+   the words version gives the same value, and this holds it to that. */
+static int ref_memcmp(const unsigned char *l, const unsigned char *r, size_t n)
+{
+    for (; n; n--, l++, r++)
+        if (*l != *r)
+            return *l - *r;
+    return 0;
+}
+
+/* Every length from 0 to 40, both sides at every offset from 0 to 8 (so they
+   are unaligned and differently aligned), a difference at every position and
+   in every length (and none), with bytes below and above 0x80 on both sides,
+   and bytes past the end that differ and must not count. */
+static void test_memcmp_words(void)
+{
+    static const unsigned char vals[] = {0x00, 0x01, 0x7f, 0x80, 0x81, 0xfe, 0xff};
+    static unsigned char a[64 + 16], b[64 + 16];
+
+    for (size_t n = 0; n <= 40; n++)
+        for (size_t lo = 0; lo < 9; lo++)
+            for (size_t ro = 0; ro < 9; ro++)
+                for (size_t pos = 0; pos <= n + 1; pos++)
+                    for (size_t va = 0; va < sizeof vals; va++)
+                        for (size_t vb = 0; vb < sizeof vals; vb++) {
+                            for (size_t i = 0; i < sizeof a; i++)
+                                a[i] = b[i] = (unsigned char)(0x80 ^ (i * 37));
+                            /* a second difference after the first, and one past the end */
+                            if (pos < n) {
+                                a[lo + pos] = vals[va];
+                                b[ro + pos] = vals[vb];
+                                if (pos + 1 < n) {
+                                    a[lo + pos + 1] = (unsigned char)~a[lo + pos + 1];
+                                }
+                            } else {
+                                a[lo + n] = vals[va];
+                                b[ro + n] = vals[vb];
+                            }
+                            int want = ref_memcmp(a + lo, b + ro, n);
+                            int got = sl_memcmp(a + lo, b + ro, n);
+                            CHECK(want == got, "memcmp words n=%zu lo=%zu ro=%zu pos=%zu: want %d, got %d", n, lo, ro, pos, want, got);
+                            CHECK((sl_bcmp(a + lo, b + ro, n) != 0) == (want != 0), "bcmp words n=%zu pos=%zu", n, pos);
+                        }
+}
+
 static void test_mem(void)
 {
     static unsigned char a[MAXN + 4 * PAD], b[MAXN + 4 * PAD], c[MAXN + 4 * PAD], d[MAXN + 4 * PAD];
@@ -703,6 +749,7 @@ static void test_snprintf(void)
 int main(int argc, char **argv)
 {
     test_mem();
+    test_memcmp_words();
     test_memcpy_all();
     test_memcpy_borders();
     test_str();

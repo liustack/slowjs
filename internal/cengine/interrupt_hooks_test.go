@@ -151,7 +151,7 @@ func TestInterruptStopsLongBuiltins(t *testing.T) {
 		{"two ropes ===", `var f = function () { var r = 'ab'; for (var i = 0; i < 25; i++) r = r + r; return r }; var r1 = f(), r2 = f()`, `r1 === r2`, "<eval>"},
 		{"two ropes ==", `var f = function () { var r = 'ab'; for (var i = 0; i < 25; i++) r = r + r; return r }; var r1 = f(), r2 = f()`, `r1 == r2`, "<eval>"},
 		{"switch on a rope", `var f = function () { var r = 'ab'; for (var i = 0; i < 25; i++) r = r + r; return r }; var r1 = f(), r2 = f()`, `switch (r1) { case 1: break; case r2: break }`, "<eval>"},
-		{"two flat strings ===", `var a = 'ab'.repeat(1 << 24), b = 'ab'.repeat(1 << 24)`, `a === b`, "<eval>"},
+		{"two flat strings ===", `var a = 'ab'.repeat(1 << 25), b = 'ab'.repeat(1 << 25)`, `a === b`, "<eval>"},
 		// The hash of the key of a Map or Set walks all its characters.
 		{"Set.has, a rope for the key", `var r = 'ab'; for (var i = 0; i < 26; i++) r = r + r; var s = new Set()`, `s.has(r)`, "has"},
 		{"Map.get, a long string for the key", `var f = 'ab'.repeat(1 << 25); var m = new Map()`, `m.get(f)`, "get"},
@@ -167,14 +167,16 @@ func TestInterruptStopsLongBuiltins(t *testing.T) {
 		{"Set isSupersetOf", bigArray + `; var s = new Set([1]), like = { size: 1, has: () => true, keys: () => a.values() }`, `s.isSupersetOf(like)`, "isSupersetOf"},
 		// A search for a string of the length of the one searched, Array.prototype.indexOf, includes and
 		// lastIndexOf and Object.is on equal strings, and JSON.stringify of a long string: the compare and
-		// the loop go a step at a time with the flag read between the steps.
+		// the loop go a step at a time with the flag read between the steps. The compare of two flat
+		// strings is memcmp, which takes 8 bytes to a count of the poll, so those strings are 2^26
+		// characters for a call to take builtinCallPolls.
 		{"indexOf, an equal string", `var a = 'ab'.repeat(1 << 24), b = 'ab'.repeat(1 << 24)`, `a.indexOf(b)`, "indexOf"},
 		{"startsWith, an equal string", `var a = 'ab'.repeat(1 << 24), b = 'ab'.repeat(1 << 24)`, `a.startsWith(b)`, "startsWith"},
 		{"replace, an equal string", `var a = 'ab'.repeat(1 << 24), b = 'ab'.repeat(1 << 24)`, `a.replace(b, 'x')`, "replace"},
-		{"Array indexOf, equal strings", `var a = 'ab'.repeat(1 << 24), b = 'ab'.repeat(1 << 24), arr = [1, a]`, `arr.indexOf(b)`, "indexOf"},
-		{"Array includes, equal strings", `var a = 'ab'.repeat(1 << 24), b = 'ab'.repeat(1 << 24), arr = [1, a]`, `arr.includes(b)`, "includes"},
-		{"Array lastIndexOf, equal strings", `var a = 'ab'.repeat(1 << 24), b = 'ab'.repeat(1 << 24), arr = [a, 1]`, `arr.lastIndexOf(b)`, "lastIndexOf"},
-		{"Object.is, equal strings", `var a = 'ab'.repeat(1 << 24), b = 'ab'.repeat(1 << 24)`, `Object.is(a, b)`, "is"},
+		{"Array indexOf, equal strings", `var a = 'ab'.repeat(1 << 25), b = 'ab'.repeat(1 << 25), arr = [1, a]`, `arr.indexOf(b)`, "indexOf"},
+		{"Array includes, equal strings", `var a = 'ab'.repeat(1 << 25), b = 'ab'.repeat(1 << 25), arr = [1, a]`, `arr.includes(b)`, "includes"},
+		{"Array lastIndexOf, equal strings", `var a = 'ab'.repeat(1 << 25), b = 'ab'.repeat(1 << 25), arr = [a, 1]`, `arr.lastIndexOf(b)`, "lastIndexOf"},
+		{"Object.is, equal strings", `var a = 'ab'.repeat(1 << 25), b = 'ab'.repeat(1 << 25)`, `Object.is(a, b)`, "is"},
 		{"JSON.stringify, a long string", `var s = 'a'.repeat(1 << 26)`, `JSON.stringify(s)`, "stringify"},
 		{"JSON.stringify, escapes", `var s = '\n'.repeat(1 << 24)`, `JSON.stringify(s)`, "stringify"},
 		// BigInts of about a million bits: the conversion to a string and from one, and the operators of the
