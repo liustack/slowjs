@@ -801,6 +801,14 @@ struct JSContext {
 
 
     struct list_head loaded_modules; /* list of JSModuleDef.link */
+    /* the modules of loaded_modules by name: 1 << module_hash_bits lists of
+       JSModuleDef.hash_next, each in the order of loaded_modules, so that
+       of two modules of one name the first loaded is the one found
+       (js_find_loaded_module). NULL until the first module. */
+    JSModuleDef **module_hash;
+    int module_hash_bits;
+    /* the modules added, less those js_free_modules took out */
+    uint32_t module_hash_count;
     /* the modules the resolution under way marked resolved, the latest
        first, linked by JSModuleDef.resolve_prev (see js_resolve_module_top) */
     JSModuleDef *resolve_marked;
@@ -1222,6 +1230,10 @@ struct JSModuleDef {
     JSGCObjectHeader header; /* must come first */
     JSAtom module_name;
     struct list_head link;
+    /* the next module of its list in ctx->module_hash, and the pointer to
+       this one, NULL when it is out of loaded_modules */
+    JSModuleDef *hash_next;
+    JSModuleDef **hash_pprev;
 
     JSReqModuleEntry *req_module_entries;
     int req_module_entries_count;
@@ -2198,10 +2210,10 @@ static BOOL js_front_drain(JSMallocContext *s)
 #endif
 
 /* JS_MODULE_STEP() says that a walk over modules took one step: a parent
-   module the gathering after an await looked at, a mark it cleared. It is
-   nothing in the engine. white.c
-   counts the steps, so that a test sees that the work is linear in the
-   number of modules with no clock. */
+   module the gathering after an await looked at, a mark it cleared, a
+   module a look for a name went past. It is nothing in the engine. white.c
+   counts the steps, so that a test sees how the work grows with the number
+   of modules, with no clock. */
 #ifndef JS_MODULE_STEP
 #define JS_MODULE_STEP() ((void)0)
 #endif
@@ -4054,6 +4066,75 @@ JSValue JS_GetClassProto(JSContext *ctx, JSClassID class_id)
     return JS_DupValue(ctx, ctx->class_proto[class_id]);
 }
 
+/* The look for a module by its name goes through ctx->module_hash, lists of
+   the modules by their name atom, rather than through loaded_modules, whose
+   walk made the load of n modules that import each other take n^2 / 2 steps
+   and each import.meta as many as there were modules. The table has as many
+   lists as modules, or up to twice as many: two pointers of the module and
+   one or two of the table, 24 to 32 bytes a module on 64 bits. */
+#define JS_MODULE_HASH_BITS0 4
+
+static inline uint32_t js_module_hash(JSAtom name, int bits)
+{
+    return (uint32_t)(name * 0x9e3779b1u) >> (32 - bits);
+}
+
+/* m at the end of its list in tab, so that each list keeps the order of
+   loaded_modules */
+static void js_module_hash_link(JSModuleDef **tab, int bits, JSModuleDef *m)
+{
+    JSModuleDef **pp = &tab[js_module_hash(m->module_name, bits)];
+
+    while (*pp)
+        pp = &(*pp)->hash_next;
+    m->hash_next = NULL;
+    m->hash_pprev = pp;
+    *pp = m;
+}
+
+/* m out of its list, with no need of its context */
+static void js_module_hash_unlink(JSModuleDef *m)
+{
+    *m->hash_pprev = m->hash_next;
+    if (m->hash_next)
+        m->hash_next->hash_pprev = m->hash_pprev;
+    m->hash_next = NULL;
+    m->hash_pprev = NULL;
+}
+
+/* Room in ctx->module_hash for one more module: the table is made with the
+   first module and doubled when there are as many modules as lists, its
+   lists made again in the order of loaded_modules. -1 with out of memory
+   thrown when there is no table and none can be made. A table that cannot
+   grow stays as it is, with longer lists. */
+static int js_module_hash_room(JSContext *ctx)
+{
+    JSModuleDef **tab;
+    struct list_head *el;
+    int bits;
+
+    if (ctx->module_hash &&
+        (ctx->module_hash_count < (1U << ctx->module_hash_bits) ||
+         ctx->module_hash_bits >= 30))
+        return 0;
+    bits = ctx->module_hash ? ctx->module_hash_bits + 1 : JS_MODULE_HASH_BITS0;
+    tab = js_mallocz_rt(ctx->rt, sizeof(tab[0]) << bits);
+    if (!tab) {
+        if (ctx->module_hash)
+            return 0;
+        JS_ThrowOutOfMemory(ctx);
+        return -1;
+    }
+    list_for_each(el, &ctx->loaded_modules) {
+        JSModuleDef *m = list_entry(el, JSModuleDef, link);
+        js_module_hash_link(tab, bits, m);
+    }
+    js_free_rt(ctx->rt, ctx->module_hash);
+    ctx->module_hash = tab;
+    ctx->module_hash_bits = bits;
+    return 0;
+}
+
 typedef enum JSFreeModuleEnum {
     JS_FREE_MODULE_ALL,
     JS_FREE_MODULE_NOT_RESOLVED,
@@ -4073,6 +4154,8 @@ static void js_free_modules(JSContext *ctx, JSFreeModuleEnum flag)
             list_del(&m->link);
             m->link.prev = NULL;
             m->link.next = NULL;
+            js_module_hash_unlink(m);
+            ctx->module_hash_count--;
             JS_FreeValue(ctx, JS_MKPTR(JS_TAG_MODULE, m));
         }
     }
@@ -4181,6 +4264,9 @@ void JS_FreeContext(JSContext *ctx)
 #endif
 
     js_free_modules(ctx, JS_FREE_MODULE_ALL);
+    /* every module is out of the table */
+    js_free_rt(ctx->rt, ctx->module_hash);
+    ctx->module_hash = NULL;
 
     JS_FreeValue(ctx, ctx->global_obj);
     JS_FreeValue(ctx, ctx->global_var_obj);
@@ -10964,6 +11050,10 @@ void JS_ComputeMemoryUsage(JSRuntime *rt, JSMemoryUsage *s)
             int hash_size = sh->prop_hash_mask + 1;
             s->shape_count++;
             s->shape_size += get_shape_size(hash_size, sh->prop_size);
+        }
+        if (ctx->module_hash) {
+            s->memory_used_count += 1;
+            s->memory_used_size += sizeof(ctx->module_hash[0]) << ctx->module_hash_bits;
         }
         list_for_each(el1, &ctx->loaded_modules) {
             JSModuleDef *m = list_entry(el1, JSModuleDef, link);
@@ -34943,6 +35033,10 @@ static __exception int js_parse_statement_or_decl(JSParseState *s,
 static JSModuleDef *js_new_module_def(JSContext *ctx, JSAtom name)
 {
     JSModuleDef *m;
+    if (js_module_hash_room(ctx)) {
+        JS_FreeAtom(ctx, name);
+        return NULL;
+    }
     m = js_mallocz(ctx, sizeof(*m));
     if (!m) {
         JS_FreeAtom(ctx, name);
@@ -34960,6 +35054,8 @@ static JSModuleDef *js_new_module_def(JSContext *ctx, JSAtom name)
     m->resolving_funcs[1] = JS_UNDEFINED;
     m->private_value = JS_UNDEFINED;
     list_add_tail(&m->link, &ctx->loaded_modules);
+    js_module_hash_link(ctx->module_hash, ctx->module_hash_bits, m);
+    ctx->module_hash_count++;
     return m;
 }
 
@@ -35034,6 +35130,9 @@ static void js_free_module_def(JSRuntime *rt, JSModuleDef *m)
        order so the module may no longer be referenced by the JSContext list */
     if (m->link.next) {
         list_del(&m->link);
+        /* its context, freed in the same collection, no longer needs the
+           count of its table */
+        js_module_hash_unlink(m);
     }
     remove_gc_object(&m->header);
     if (rt->gc_phase == JS_GC_PHASE_REMOVE_CYCLES && js_rc(m)->ref_count != 0) {
@@ -35277,15 +35376,18 @@ static char *js_default_module_normalize_name(JSContext *ctx,
 
 static JSModuleDef *js_find_loaded_module(JSContext *ctx, JSAtom name)
 {
-    struct list_head *el;
     JSModuleDef *m;
     int n = 0;
 
-    /* first look at the loaded modules, a look for each of them
-       (js_compile_count, read for each import, js_resolve_module1) */
-    list_for_each(el, &ctx->loaded_modules) {
-        m = list_entry(el, JSModuleDef, link);
+    /* the list of name in the table of the loaded modules, a look for each
+       module of it (js_compile_count, read for each import,
+       js_resolve_module1) */
+    if (!ctx->module_hash)
+        return NULL;
+    for (m = ctx->module_hash[js_module_hash(name, ctx->module_hash_bits)];
+         m; m = m->hash_next) {
         n++;
+        JS_MODULE_STEP();
         if (m->module_name == name) {
             js_compile_count(ctx, n);
             return m;

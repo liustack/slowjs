@@ -9455,6 +9455,110 @@ static void test_module_waiters(void)
     vm_free(&v);
 }
 
+/* The modules of test_module_lookup: t starts a count, and each module w<i>
+   imports t and adds one to it. The loader refuses w<lookup_refuse>. */
+static int lookup_refuse = -1;
+
+static JSModuleDef *lookup_loader(JSContext *ctx, const char *name, void *opaque)
+{
+    char src[64];
+    JSValue v;
+    JSModuleDef *m;
+
+    (void)opaque;
+    if (strcmp(name, "t") == 0) {
+        snprintf(src, sizeof(src), "globalThis.n = 0;");
+    } else if (atoi(name + 1) == lookup_refuse) {
+        JS_ThrowReferenceError(ctx, "no module %s", name);
+        return NULL;
+    } else {
+        snprintf(src, sizeof(src), "import \"t\"; n++;");
+    }
+    v = JS_Eval(ctx, src, strlen(src), name, JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY);
+    if (JS_IsException(v))
+        return NULL;
+    m = JS_VALUE_GET_PTR(v);
+    JS_FreeValue(ctx, v);
+    return m;
+}
+
+/* lookup_top makes the source of a module that imports w0 to w<count - 1>
+   (malloc'd). */
+static char *lookup_top(int count)
+{
+    size_t size = (size_t)count * 24 + 64, len = 0;
+    char *src = malloc(size);
+    int i;
+
+    if (!src) {
+        fprintf(stderr, "no memory\n");
+        exit(2);
+    }
+    for (i = 0; i < count; i++)
+        len += snprintf(src + len, size - len, "import \"w%d\";\n", i);
+    src[len] = '\0';
+    return src;
+}
+
+/* The look for a module by its name among the loaded modules takes a few
+   steps whatever their number (JS_MODULE_STEP counts the modules it goes
+   past). A walk of the list of them, as QuickJS did, made the load of
+   LOOKUPS modules that each import one more take about LOOKUPS^2 / 2 steps,
+   and each import.meta as many as there were modules. A module the host
+   refused leaves the modules loaded with it freed, and they load again; of
+   two modules of one name, the first loaded is the one found, as in the
+   list. */
+#define LOOKUPS 2000
+static void test_module_lookup(void)
+{
+    static const char meta[] =
+        "globalThis.metas = 0;\n"
+        "for (let i = 0; i < 1000; i++) metas += typeof import.meta === \"object\";";
+    VM v = vm_new();
+    char *src = lookup_top(LOOKUPS), buf[64];
+    unsigned long steps;
+    JSValue r;
+
+    JS_SetModuleLoaderFunc(v.rt, NULL, lookup_loader, NULL);
+    lookup_refuse = LOOKUPS / 2;
+    r = JS_Eval(v.ctx, src, strlen(src), "top", JS_EVAL_TYPE_MODULE);
+    CHECK(JS_IsException(r), "top ran with w%d refused", LOOKUPS / 2);
+    JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+    lookup_refuse = -1;
+
+    white_module_steps_take();
+    r = JS_Eval(v.ctx, src, strlen(src), "top", JS_EVAL_TYPE_MODULE);
+    steps = white_module_steps_take();
+    CHECK(!JS_IsException(r), "top threw");
+    JS_FreeValue(v.ctx, r);
+    drain_jobs(&v);
+    CHECK(steps <= 4 * LOOKUPS, "the looks for %d modules went past %lu", LOOKUPS, steps);
+    snprintf(buf, sizeof(buf), "%d", LOOKUPS);
+    CHECK(eval_is(v.ctx, "n", buf), "the modules that ran");
+
+    r = JS_Eval(v.ctx, meta, strlen(meta), "meta", JS_EVAL_TYPE_MODULE);
+    steps = white_module_steps_take();
+    CHECK(!JS_IsException(r), "meta threw");
+    JS_FreeValue(v.ctx, r);
+    drain_jobs(&v);
+    CHECK(steps <= 4 * 1000, "1000 import.meta went past %lu modules", steps);
+    CHECK(eval_is(v.ctx, "metas", "1000"), "import.meta");
+
+    compile_module(&v, "d", "export var d = 1;");
+    compile_module(&v, "d", "export var d = 2;");
+    {
+        static const char e[] = "import { d } from \"d\"; globalThis.dv = d;";
+
+        r = JS_Eval(v.ctx, e, strlen(e), "e", JS_EVAL_TYPE_MODULE);
+    }
+    CHECK(!JS_IsException(r), "e threw");
+    JS_FreeValue(v.ctx, r);
+    drain_jobs(&v);
+    CHECK(eval_is(v.ctx, "dv", "1"), "the module d found");
+    free(src);
+    vm_free(&v);
+}
+
 int main(int argc, char **argv)
 {
     /* one case of test_gc_in_free, in a process of its own */
@@ -9602,6 +9706,7 @@ int main(int argc, char **argv)
     test_days_to_date();
     test_module_jobs_oom();
     test_module_waiters();
+    test_module_lookup();
     if (failures) {
         printf("unit-white: %d of %ld checks failed\n", failures, checks);
         return 1;

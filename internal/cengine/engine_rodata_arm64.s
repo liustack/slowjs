@@ -27,7 +27,7 @@ DATA ·engine_rodata+344(SB)/8, $0x0000000a0a646c25
 DATA ·engine_rodata+352(SB)/8, $·engine_rodata+432(SB)
 DATA ·engine_rodata+360(SB)/8, $0x0000000000002c18
 DATA ·engine_rodata+368(SB)/8, $·engine_rodata+442(SB)
-DATA ·engine_rodata+376(SB)/8, $0x0000000000000490
+DATA ·engine_rodata+376(SB)/8, $0x00000000000004a0
 DATA ·engine_rodata+384(SB)/8, $·engine_rodata+452(SB)
 DATA ·engine_rodata+392(SB)/8, $0x0000000000000040
 DATA ·engine_rodata+400(SB)/8, $·engine_rodata+461(SB)
