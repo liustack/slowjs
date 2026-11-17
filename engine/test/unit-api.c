@@ -2843,6 +2843,76 @@ static void test_module_fail_collect(void)
     CHECK(host_leaked_runtimes() == leaked, "blocks left in the runtime");
 }
 
+/* A job that a stop ends fails in the return of JS_ExecutePendingJob, with
+   its error pending, whatever its reaction had to settle. The reaction of
+   an await settles no promise of its own (its capability is undefined), and
+   its job returned 1 with the uncatchable error pending: a host that takes
+   the exception only on a negative return, as the API says, never took it,
+   and a module with a top-level await stayed evaluating for good, as the
+   failure of the modules runs where the host takes the error
+   (js_fail_async_modules). Each case is stopped at each reading of the flag
+   in its jobs, and only the return value decides what the host does. */
+static void test_job_stop_returns(void)
+{
+    static const struct {
+        const char *what, *src;
+        int module;
+    } cases[] = {
+        { "module", "await 0; for (let i = 0; i < 50; i++) globalThis.n = i;", 1 },
+        { "async function",
+          "(async () => { await 0; for (let i = 0; i < 50; i++) globalThis.n = i; })()", 0 },
+        { "then", "Promise.resolve().then(() => { for (let i = 0; i < 50; i++) globalThis.n = i; })", 0 },
+    };
+    size_t i;
+
+    for (i = 0; i < countof(cases); i++) {
+        long k;
+
+        for (k = 1;; k++) {
+            VM v = vm_new();
+            JSValue p = JS_Eval(v.ctx, cases[i].src, strlen(cases[i].src), "<job>",
+                                cases[i].module ? JS_EVAL_TYPE_MODULE : JS_EVAL_TYPE_GLOBAL);
+            JSContext *c;
+            int ret, failed = 0, swallowed = 0;
+
+            CHECK(!JS_IsException(p), "%s: the eval threw", cases[i].what);
+            host_poll_reads = 0;
+            host_poll_stop_after(k);
+            while ((ret = JS_ExecutePendingJob(v.rt, &c)) != 0) {
+                if (ret < 0) {
+                    JSValue e;
+                    const char *s;
+
+                    *JS_GetInterruptFlag(v.rt) = 0;
+                    e = JS_GetException(v.ctx);
+                    s = JS_ToCString(v.ctx, e);
+                    CHECK(s && strcmp(s, "InternalError: interrupted") == 0, "%s, stop at %ld: %s",
+                          cases[i].what, k, s ? s : "?");
+                    JS_FreeCString(v.ctx, s);
+                    JS_FreeValue(v.ctx, e);
+                    failed++;
+                } else if (JS_HasException(v.ctx)) {
+                    swallowed++;
+                    break;
+                }
+            }
+            host_poll_stop_after(0);
+            CHECK(swallowed == 0, "%s, stop at %ld: a job returned 1 with the error pending",
+                  cases[i].what, k);
+            if (swallowed) {
+                *JS_GetInterruptFlag(v.rt) = 0;
+                JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+            }
+            JS_FreeValue(v.ctx, p);
+            drain_jobs(&v);
+            vm_free(&v);
+            if (!failed && !swallowed)
+                break;
+        }
+        CHECK(k > 3, "%s: %ld readings", cases[i].what, k);
+    }
+}
+
 int main(void)
 {
     test_compile_stops();
@@ -2852,6 +2922,7 @@ int main(void)
     test_module_await_stops();
     test_module_await_species();
     test_module_fail_collect();
+    test_job_stop_returns();
     test_for_in_keeps_shape();
     test_plain_objects();
     test_run_gc_threshold();

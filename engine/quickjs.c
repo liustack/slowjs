@@ -1887,6 +1887,7 @@ static JSValue js_array_from_iterator(JSContext *ctx, uint32_t *plen,
                                       JSValueConst obj, JSValueConst method);
 static int js_string_find_invalid_codepoint(JSString *p);
 static inline __exception int js_poll_interrupts(JSContext *ctx);
+static BOOL js_uncatchable_pending(JSRuntime *rt);
 static void js_emit_free(JSContext *ctx);
 static JSValue js_string_to_number(JSContext *ctx, JSValue val);
 static JSValue js_dtoa2(JSContext *ctx,
@@ -3452,7 +3453,12 @@ int JS_ExecutePendingJob(JSRuntime *rt, JSContext **pctx)
     js_call_leave(rt);
     for(i = 0; i < e->argc; i++)
         JS_FreeValue(ctx, e->argv[i]);
-    if (JS_IsException(res))
+    /* a job never hides an uncatchable exception from the host, whatever it
+       returned: the reaction of an await settles no promise of its own (its
+       capability is undefined), and its job returns undefined after a handler
+       that was stopped. The host takes the exception on -1, and with it the
+       modules still evaluating fail (js_fail_async_modules) */
+    if (JS_IsException(res) || js_uncatchable_pending(rt))
         ret = -1;
     else
         ret = 1;
