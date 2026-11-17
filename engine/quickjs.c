@@ -35433,6 +35433,16 @@ static JSModuleDef *js_host_resolve_imported_module(JSContext *ctx,
 
     JS_FreeAtom(ctx, module_name);
 
+    /* a reading of the flag for each module the host loads, so that a stop
+       waits for the load of one module and not of all those left: a module
+       of source reads it in its compile, but the host may make one with no
+       compile (of C, or of bytecode), and the looks for the imports read it
+       only after a count of their work (js_resolve_module1) */
+    if (js_poll_interrupts(ctx)) {
+        js_free(ctx, cname);
+        return NULL;
+    }
+
     /* load the module */
     if (!rt->u.module_loader_func) {
         /* XXX: use a syntax error ? */

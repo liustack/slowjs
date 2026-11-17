@@ -9559,6 +9559,91 @@ static void test_module_lookup(void)
     vm_free(&v);
 }
 
+/* The modules of test_module_load_stops: those of lookup_loader, or with
+   load_c modules of C that the host makes with no compile and that count
+   their runs in load_ran. The load of w<load_stop_at> asks the host to stop
+   the runtime, as a host does from another thread (host_interrupt), and the
+   flag is set at its next reading. load_after counts the modules loaded
+   after that one. */
+static int load_c, load_ran, load_stop_at = -1, load_stopped, load_after;
+
+static int load_c_init(JSContext *ctx, JSModuleDef *m)
+{
+    (void)ctx;
+    (void)m;
+    load_ran++;
+    return 0;
+}
+
+static JSModuleDef *stop_loader(JSContext *ctx, const char *name, void *opaque)
+{
+    if (load_stopped)
+        load_after++;
+    else if (strcmp(name, "t") != 0 && atoi(name + 1) == load_stop_at) {
+        host_interrupt(JS_GetRuntime(ctx));
+        load_stopped = 1;
+    }
+    if (load_c)
+        return JS_NewCModule(ctx, name, load_c_init);
+    return lookup_loader(ctx, name, opaque);
+}
+
+/* A stop asked during the load of a module ends the load before the host
+   loads another one: the engine reads the flag before it asks the host for
+   each module, so that the wait is that of one module, not of the modules
+   left. A module of source reads it in its compile, but one the host makes
+   with no compile, as a module of C or of bytecode, did not, and the look
+   for each import reads it only after a count of its work: a stop waited
+   for the load of every module left. The modules loaded before the stop
+   are freed with the failed resolution, and the same import then loads
+   and runs each of them once. */
+#define LOADS 2000
+static void test_module_load_stops(void)
+{
+    static const int at[] = { 0, 1, LOADS / 2, LOADS - 2 };
+    char *src = lookup_top(LOADS), buf[64];
+    size_t i;
+
+    snprintf(buf, sizeof(buf), "%d", LOADS);
+    for (load_c = 0; load_c < 2; load_c++) {
+        for (i = 0; i < countof(at); i++) {
+            VM v = vm_new();
+            JSValue r;
+            char *e;
+
+            JS_SetModuleLoaderFunc(v.rt, NULL, stop_loader, NULL);
+            load_stop_at = at[i];
+            load_stopped = 0;
+            load_after = 0;
+            load_ran = 0;
+            r = JS_Eval(v.ctx, src, strlen(src), "top", JS_EVAL_TYPE_MODULE);
+            CHECK(JS_IsException(r), "%s, stop at w%d: top ran", load_c ? "C" : "source", at[i]);
+            JS_FreeValue(v.ctx, r);
+            *JS_GetInterruptFlag(v.rt) = 0;
+            e = exception_text(v.ctx);
+            CHECK(e && strcmp(e, "InternalError: interrupted") == 0, "%s, stop at w%d: %s",
+                  load_c ? "C" : "source", at[i], e ? e : "no exception");
+            free(e);
+            CHECK(load_stopped && load_after == 0, "%s, stop at w%d: %d modules loaded after it",
+                  load_c ? "C" : "source", at[i], load_after);
+            load_stop_at = -1;
+            load_stopped = 0;
+
+            r = JS_Eval(v.ctx, src, strlen(src), "top", JS_EVAL_TYPE_MODULE);
+            CHECK(!JS_IsException(r), "%s, stop at w%d: top threw after the stop",
+                  load_c ? "C" : "source", at[i]);
+            JS_FreeValue(v.ctx, r);
+            drain_jobs(&v);
+            if (load_c)
+                CHECK(load_ran == LOADS, "C, stop at w%d: %d modules ran", at[i], load_ran);
+            else
+                CHECK(eval_is(v.ctx, "n", buf), "source, stop at w%d: the modules that ran", at[i]);
+            vm_free(&v);
+        }
+    }
+    free(src);
+}
+
 int main(int argc, char **argv)
 {
     /* one case of test_gc_in_free, in a process of its own */
@@ -9707,6 +9792,7 @@ int main(int argc, char **argv)
     test_module_jobs_oom();
     test_module_waiters();
     test_module_lookup();
+    test_module_load_stops();
     if (failures) {
         printf("unit-white: %d of %ld checks failed\n", failures, checks);
         return 1;
