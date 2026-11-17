@@ -602,6 +602,7 @@ type memoryUsage struct {
 	CFuncCount, ArrayCount, FastArrayCount, FastArrayElements int64
 	BinaryObjectCount, BinaryObjectSize                       int64
 	Footprint, FootprintLimit, ChunkCount, ReleaseCandidate   int64
+	RegisterCodeCount, RegisterCodeSize, FreeSize             int64
 }
 
 // Usage returns what the VM holds now. Like RunGC it panics with ErrClosed

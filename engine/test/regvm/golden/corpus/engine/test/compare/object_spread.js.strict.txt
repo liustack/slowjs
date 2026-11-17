@@ -219,6 +219,6 @@ result same values: true true 2
 result result: true {a=A,x=1,y=2,z=Z,w=3} {a=A,y=2,z=Z} {a=A,x=1,y=2,z=Z}
 result setter on prototype: {a=A,x=0,z=Z}{x=0} {a=A,x=1,z=Z}{x=1} {a=A,x=2,z=Z}{x=2} 0
 result hot: 4009000 {k=1999,x=1,y=2,z=1999}
-mem-end obj=394 atom=703 shape=374 prop=1525 jsfunc=51 cfunc=139 array=2 fast_array=2 elements=221 binary=0
-mem-gc obj=247 atom=703 shape=350 prop=1168 jsfunc=51 cfunc=139 array=2 fast_array=2 elements=221 binary=0
+mem-end obj=394 atom=703 shape=368 prop=1525 jsfunc=51 cfunc=139 array=2 fast_array=2 elements=221 binary=0
+mem-gc obj=247 atom=703 shape=344 prop=1168 jsfunc=51 cfunc=139 array=2 fast_array=2 elements=221 binary=0
 --- status exit 0

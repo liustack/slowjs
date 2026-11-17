@@ -44,6 +44,7 @@ type jsMemoryUsage struct {
 	CFuncCount, ArrayCount, FastArrayCount, FastArrayElements int64
 	BinaryObjectCount, BinaryObjectSize                       int64
 	Footprint, FootprintLimit, ChunkCount, ReleaseCandidate   int64
+	RegisterCodeCount, RegisterCodeSize, FreeSize             int64
 }
 
 // memoryUsage returns what JS_ComputeMemoryUsage counts in the runtime of m.
@@ -88,6 +89,9 @@ func (m *VM) memoryUsage() (u MemoryUsage) {
 		FootprintLimit:     s.FootprintLimit,
 		Chunks:             s.ChunkCount,
 		ReleaseCandidate:   s.ReleaseCandidate,
+		RegisterCodeCount:  s.RegisterCodeCount,
+		RegisterCodeSize:   s.RegisterCodeSize,
+		FreeSize:           s.FreeSize,
 	}
 }
 

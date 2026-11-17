@@ -98,7 +98,7 @@ native_runs quickjs-2026-06-04 "$qjs" --std ../native/ssr-driver.js
 native_runs hermes bash ../native/hermes-run.sh hbc "$nat/hermes" "$out/hbc"
 # Node has its own Intl and URL, and lacks Iterator.concat.
 if want node-jitless; then
-  d=("$nat/node-v24.22.3-linux-x64/bin/node" --jitless ../native/node-ssr.cjs "engine=node-jitless" "html=$out/html")
+  d=("$nat/node-v26.13.1-linux-x64/bin/node" --jitless ../native/node-ssr.cjs "engine=node-jitless" "html=$out/html")
   run "$out/node-jitless-bench" "${d[@]}" bundle=$B/bundles/bench.js inputs=$BENCH prelude=$CORE warm=50 n=200 tag=-bench
   run "$out/node-jitless-native" "${d[@]}" bundle=$B/bundles/shop.js inputs=$SHOP prelude=$CORE warm=20 n=100 tag=-native
   run "$out/node-jitless-mui-native" "${d[@]}" bundle=$B/bundles/mui.js inputs=$MUI prelude=$CORE warm=20 n=100 tag=-mui-native

@@ -238,7 +238,7 @@ func panicked(f func()) (r any) {
 	return nil
 }
 
-// MemorySize and GCThreshold read one counter of the runtime and change
+// MemorySize, MemoryFree and GCThreshold read the runtime and change
 // nothing, so they answer on a killed VM as they do on one that an Interrupt
 // stopped. The methods that collect, which
 // need the engine in a state a kill does not leave, still panic.
@@ -255,11 +255,47 @@ func TestKilledVMReportsItsMemory(t *testing.T) {
 	if got := m.MemorySize(); got == 0 {
 		t.Errorf("MemorySize after a kill is 0, it was %d before", before)
 	}
+	if p := panicked(func() { got := m.MemoryFree(); _ = got }); p != nil {
+		t.Fatalf("MemoryFree after a kill panicked with %v", p)
+	}
+	if free, size := m.MemoryFree(), m.MemorySize(); free > size {
+		t.Errorf("MemoryFree after a kill is %d, over MemorySize %d", free, size)
+	}
 	if p := panicked(func() { got := m.GCThreshold(); _ = got }); p != nil {
 		t.Fatalf("GCThreshold after a kill panicked with %v", p)
 	}
 	if got := m.GCThreshold(); got != threshold {
 		t.Errorf("GCThreshold after a kill is %d, want the %d it had", got, threshold)
+	}
+}
+
+// TestKilledVMReadsMemoryFreeAtPolls: MemoryFree walks the arenas, and the
+// walk polls as any loop of the engine does. After a kill, a poll must not
+// kill again: the read has no call around it to turn the panic into an
+// error. With a poll at every tick, the walk over thousands of arenas polls
+// many times.
+func TestKilledVMReadsMemoryFreeAtPolls(t *testing.T) {
+	m := newTestVM(t)
+	if _, err := m.Eval(`globalThis.kept = []
+for (let i = 0; i < 64000; i++) kept.push({ i, s: 'v' + i }); undefined`, EvalGlobal); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := killedVMWith(t, m, nestedEntries["Eval"]); !errors.Is(err, ErrKilled) {
+		t.Fatalf("the killed call got %v", err)
+	}
+	m.h.SetPollInterval(1)
+	before := m.h.Polls()
+	for i := 0; i < 3; i++ {
+		var free, size uintptr
+		if p := panicked(func() { free, size = m.MemoryFree(), m.MemorySize() }); p != nil {
+			t.Fatalf("MemoryFree after a kill, with a poll at every tick, panicked with %v", p)
+		}
+		if free > size {
+			t.Fatalf("MemoryFree after a kill is %d, over MemorySize %d", free, size)
+		}
+	}
+	if m.h.Polls() == before {
+		t.Fatal("the walk of MemoryFree did not poll: the test proves nothing")
 	}
 }
 

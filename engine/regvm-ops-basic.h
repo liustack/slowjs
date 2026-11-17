@@ -33,7 +33,13 @@ RV_OP(GETFL)                                          /* d o atom slot id: GETF 
    it last found, RV_GETF_NONE before, and 0, or for a key of the prototype
    the id of the shape of the object (RV_GETFIELD) */
 #define RV_GETF_NONE 0xffffffffu
-RV_OP(PUTF)                                           /* o v flags atom */
+RV_OP(PUTF)                                           /* o v flags atom slot id0 id1 epoch step */
+/* slot, id0, id1, epoch: u32 each, step: u64, the cache of the site: the
+   slot of the own key it last set, RV_GETF_NONE before, and the step it last
+   made, the shape step of the id id1 an object of the id id0 took, in the
+   epoch of the runtime, RV_STEP_NONE before (RV_PUTF) */
+#define RV_STEP_NONE 0xffffffffu
+#define RV_PUTF_LEN 31 /* the operands, after the opcode */
 RV_OP(GETVR)                                          /* d idx16 */
 RV_OP(GETVRL)                                         /* d idx16: GETVR into the local d */
 RV_OP(CALL)     /* w argc: func and arguments at w, this undefined */
@@ -593,6 +599,12 @@ static void rv_call(RVPass *s, int argc, int method, int tail)
             rv_byte(s, ev.kind == RV_E_K ? ev.k : ev.slot);
             rv_byte(s, flags);
             rv_u32(s, get_u32(p + 1));
+            rv_u32(s, RV_GETF_NONE);
+            rv_u32(s, 0);
+            rv_u32(s, 0);
+            rv_u32(s, RV_STEP_NONE);
+            rv_u32(s, 0);
+            rv_u32(s, 0);
             rv_throws(s, rv_owned(s, 2));
             s->sp -= 2;
         }
@@ -687,6 +699,52 @@ static void rv_call(RVPass *s, int argc, int method, int tail)
         rv_throws(s, rv_owned(s, 0));
         break;
 #elif RV_PART == RV_PART_RUN_FN
+/* a + b into a temp when both are flat strings of 8 bits, a of 1 to
+   JS_STRING_ROPE_SHORT2_LEN characters and b of 1 to
+   JS_STRING_ROPE_SHORT_LEN: what JS_ConcatString does for such a pair
+   (JS_ConcatString2), without its three calls. a grows in place when it has
+   no other holder, is no atom, keeps no key and has the room
+   (js_concat_string_in_place), else a new string of both is made, as
+   JS_ConcatString1 makes it, with the same out of memory error. These are
+   most of the adds of a page: Emotion's class names, i18next's keys, the
+   strings of tags. Takes a and b and gives 0 with the result in *pa, or -1
+   on an exception. Gives 1 with nothing done for any other pair, an empty
+   or a longer string, a wide one or a rope, which go to JS_ConcatString. */
+static force_inline int rv_concat8(JSContext *ctx, JSValue *pa, JSValue b)
+{
+    JSValue a = *pa;
+    JSString *p1, *p2, *p;
+    uint32_t l1, l2;
+
+    if (JS_VALUE_GET_TAG(a) != JS_TAG_STRING || JS_VALUE_GET_TAG(b) != JS_TAG_STRING)
+        return 1;
+    p1 = JS_VALUE_GET_STRING(a);
+    p2 = JS_VALUE_GET_STRING(b);
+    l1 = p1->len;
+    l2 = p2->len;
+    if ((p1->is_wide_char | p2->is_wide_char) ||
+        l1 - 1u >= (uint32_t)JS_STRING_ROPE_SHORT2_LEN ||
+        l2 - 1u >= (uint32_t)JS_STRING_ROPE_SHORT_LEN)
+        return 1;
+    if (js_concat_string_in_place(ctx, p1, b, 1)) {
+        JS_FreeValue(ctx, b);
+        return 0;
+    }
+    p = js_alloc_string(ctx, l1 + l2, 0);
+    if (unlikely(!p)) {
+        JS_FreeValue(ctx, a);
+        JS_FreeValue(ctx, b);
+        return -1;
+    }
+    memcpy(p->u.str8, p1->u.str8, l1);
+    memcpy(p->u.str8 + l1, p2->u.str8, l2);
+    p->u.str8[l1 + l2] = '\0';
+    JS_FreeValue(ctx, a);
+    JS_FreeValue(ctx, b);
+    *pa = JS_MKPTR(JS_TAG_STRING, p);
+    return 0;
+}
+
 /* add of two strings or ropes, ip at d a b, k as for rv_binop_slow (1 a
    constant b, 2 a constant a): what rv_binop_slow does for them, without
    its decode of the op and the operands. Both are primitive strings, so the
@@ -717,10 +775,15 @@ static force_inline int rv_add_str_k(JSContext *ctx, JSValue *F, const uint8_t *
     }
     /* into a local or an argument, the string of d grows in place when it
        is the left operand (js_add_string_into) */
-    if (!rv_is_temp(F, d))
+    if (!rv_is_temp(F, d)) {
         a = js_add_string_into(ctx, a, b, &F[d]);
-    else
-        a = JS_ConcatString(ctx, a, b);
+    } else {
+        int n = rv_concat8(ctx, &a, b);
+        if (n < 0)
+            return -1;
+        if (n > 0)
+            a = JS_ConcatString(ctx, a, b);
+    }
     if (JS_IsException(a))
         return -1;
     rv_put(ctx, F, d, a);
@@ -828,6 +891,21 @@ static no_inline int rv_tobool_slow(JSContext *ctx, JSValue *F, int slot)
         return JS_ToBoolFree(ctx, F[slot]);
     return JS_ToBool(ctx, F[slot]);
 }
+
+/* The truth of an object operand of a branch or of !, in the handler: true
+   but for an object with [[IsHTMLDDA]], as js_to_bool gives it. A temp
+   gives back its reference when it is not the last one, which frees
+   nothing, so no call is made. The last reference of a temp, and any value
+   that is not an object, go to rv_tobool_slow, which frees what it must.
+   Objects are half to two thirds of the truth tests of a page that are not
+   of an int or a bool. Gives 1 with the truth in res, else 0. */
+#define RV_TRUTH_OBJ(v, slot, res)                                      \
+    (JS_VALUE_GET_TAG(v) == JS_TAG_OBJECT &&                            \
+     (!rv_is_temp(F, slot) ||                                           \
+      __js_rc(JS_VALUE_GET_OBJ(v))->ref_count > 1) &&                   \
+     ((res) = !JS_VALUE_GET_OBJ(v)->is_HTMLDDA,                         \
+      rv_is_temp(F, slot) ?                                             \
+      (void)__js_rc(JS_VALUE_GET_OBJ(v))->ref_count-- : (void)0, 1))
 
 /* the length of a string or a rope, or -1 for any other value */
 static inline int rv_str_length(JSValueConst v)
@@ -958,6 +1036,8 @@ static no_inline int rv_putf_atom(JSContext *ctx, JSValue *F, const uint8_t *ip,
     int flags = ip[2], r;
     JSAtom atom = get_u32(ip + 3);
     JSProperty *pr;
+    JSShape *sh0 = p->shape;
+    uint32_t id0 = sh0->id, ep = ctx->rt->shape_step_epoch;
 
     if (unlikely(p->is_exotic) || p->class_id == JS_CLASS_GLOBAL_OBJECT ||
         __JS_AtomIsTaggedInt(atom))
@@ -966,6 +1046,20 @@ static no_inline int rv_putf_atom(JSContext *ctx, JSValue *F, const uint8_t *ip,
     if (r == 0)
         return 0;
     if (r > 0) {
+        /* the step for the next object of the id of sh0 (RV_PUTF): not a
+           shape that grew in place (the same shape, of another id now), and
+           only shapes of the table, which keep their keys while they have
+           their id. sh0 may be freed: only its address is compared. */
+        JSShape *sh1 = p->shape;
+        if (id0 != 0 && sh1 != sh0 && sh1->is_hashed &&
+            ep == ctx->rt->shape_step_epoch && ep != JS_STEP_EPOCH_DEAD) {
+            uint8_t *w = (uint8_t *)ip;
+            put_u32(w + 11, id0);
+            put_u32(w + 15, sh1->id);
+            put_u32(w + 19, ep);
+            put_u64(w + 23, (uintptr_t)sh1);
+            sh1->step_kept = TRUE;
+        }
         if (flags & RV_PUT_VAL_K)
             pr->u.value = JS_DupValue(ctx, ((RVHeader *)F)->k[ip[1]]);
         else if (flags & RV_PUT_VAL_TEMP)
@@ -978,6 +1072,47 @@ static no_inline int rv_putf_atom(JSContext *ctx, JSValue *F, const uint8_t *ip,
     if (flags & RV_PUT_OBJ_TEMP)
         JS_FreeValue(ctx, F[(int8_t)ip[0]]);
     return r < 0 ? -1 : 1;
+}
+
+/* PUTF, ip at o v flags atom ..., takes the step sh1 the site keeps for the
+   object p in o, whose properties must move: their array is not the size
+   sh1 has room for, or they are in the block of p. This is what the path of
+   add_property that finds sh1 does. 1 when done, with v taken and a temp o
+   freed, -1 when there is no memory for the properties, with v and a temp o
+   freed as when rv_putf_slow fails and p as it was. */
+static no_inline int rv_putf_step(JSContext *ctx, JSValue *F, const uint8_t *ip,
+                                  JSObject *p, JSShape *sh1)
+{
+    int flags = ip[2];
+    JSShape *sh = p->shape;
+    JSProperty *pr;
+
+    if (js_props_inline(p))
+        sh->inline_grew = TRUE;
+    if (sh1->prop_size != sh->prop_size) {
+        JSProperty *new_prop = js_resize_prop(ctx, p, sh->prop_count, sh1->prop_size);
+        if (!new_prop) {
+            if (flags & RV_PUT_VAL_TEMP)
+                JS_FreeValue(ctx, F[(int8_t)ip[1]]);
+            if (flags & RV_PUT_OBJ_TEMP)
+                JS_FreeValue(ctx, F[(int8_t)ip[0]]);
+            return -1;
+        }
+        p->prop = new_prop;
+    }
+    js_shape_found(ctx);
+    p->shape = js_dup_shape(sh1);
+    js_shape_release(ctx, sh1, sh);
+    pr = &p->prop[sh1->prop_count - 1];
+    if (flags & RV_PUT_VAL_K)
+        pr->u.value = JS_DupValue(ctx, ((RVHeader *)F)->k[ip[1]]);
+    else if (flags & RV_PUT_VAL_TEMP)
+        pr->u.value = F[(int8_t)ip[1]];
+    else
+        pr->u.value = JS_DupValue(ctx, F[(int8_t)ip[1]]);
+    if (flags & RV_PUT_OBJ_TEMP)
+        JS_FreeValue(ctx, F[(int8_t)ip[0]]);
+    return 1;
 }
 
 static no_inline int rv_putf_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
@@ -1524,7 +1659,7 @@ static inline BOOL rv_unwrap_in_loop(JSValueConst f)
         int res;                                                        \
         if ((uint32_t)JS_VALUE_GET_TAG(v) <= JS_TAG_UNDEFINED) {        \
             res = JS_VALUE_GET_INT(v) != 0;                             \
-        } else {                                                        \
+        } else if (!RV_TRUTH_OBJ(v, (int8_t)ip[0], res)) {              \
             RV_SYNC_TOP();                                              \
             res = rv_tobool_slow(ctx, F, (int8_t)ip[0]);                \
             RV_JUMP_SLOW(res == (jt), (int16_t)get_u16(ip + 1), 0);     \
@@ -1657,19 +1792,82 @@ static inline BOOL rv_unwrap_in_loop(JSValueConst f)
     RV_GETFIELD(rv_GETFL, FALSE, FALSE)
     RV_GETFIELD(rv_GETFT, TRUE, FALSE)
 
+    /* put_field. The site keeps two things.
+       The slot of the own writable data property it last set (ip + 7): a
+       store first looks at that slot of the shape the object has now, as a
+       read of a name does (RV_GETFIELD). The same key there with these flags
+       is what find_own_property finds, since a shape has a key once, so the
+       slot needs no invalidation and holds no reference.
+       The step it last made for an object without the key (ip + 11, see
+       js_shape_step_end): the id of the shape the object had, the shape
+       add_property gave it, the id of that shape and the epoch of the
+       runtime. An object of the same id has the same prototype, keys and
+       flags, so it has no such key and the same way of prototypes, and while
+       the epoch is the same nothing on that way changed and the shape kept
+       is alive; with its id unchanged it still has those keys and flags. An
+       ordinary extensible object then takes it as add_property takes a shape
+       it finds, without the walk up its prototypes (rv_put_atom_new) or the
+       lookup in the shape hash table. The step holds no reference, so a
+       site keeps no shape and no prototype alive. */
  rv_PUTF:
-    ip = pc; pc += 7;
+    /* a literal step, as TestRegvmJumpsCount reads the moves of pc */
+    ip = pc; pc += 31;
     {
+        _Static_assert(RV_PUTF_LEN == 31, "the step of PUTF is RV_PUTF_LEN");
         int flags = ip[2];
         JSValue obj = RV_R(ip[0]);
         JSProperty *pr;
         JSShapeProperty *prs;
         if (likely(JS_VALUE_GET_TAG(obj) == JS_TAG_OBJECT) && !RV_INJ_ARMED) {
+            JSAtom atom = get_u32(ip + 3);
+            uint32_t i_ = get_u32(ip + 7);
+            JSShape *sh_;
+            JSValue val;
             p = JS_VALUE_GET_OBJ(obj);
-            prs = find_own_property(&pr, p, get_u32(ip + 3));
+            sh_ = p->shape;
+            if (likely(i_ < (uint32_t)sh_->prop_count)) {
+                prs = get_shape_prop(sh_) + i_;
+                if (likely(prs->atom == atom &&
+                           (prs->flags & (JS_PROP_TMASK | JS_PROP_WRITABLE |
+                                          JS_PROP_LENGTH)) == JS_PROP_WRITABLE)) {
+                    pr = &p->prop[i_];
+                    goto rv_PUTF_set;
+                }
+            }
+            if (sh_->id == get_u32(ip + 11) &&
+                get_u32(ip + 19) == ctx->rt->shape_step_epoch) {
+                JSShape *sh1_ = (JSShape *)(uintptr_t)get_u64(ip + 23);
+                if (likely(sh1_->id == get_u32(ip + 15) && p->extensible &&
+                           !p->is_exotic && p->class_id != JS_CLASS_GLOBAL_OBJECT)) {
+                    int r;
+                    if (likely(sh1_->prop_size == sh_->prop_size &&
+                               !js_props_inline(p))) {
+                        js_shape_found(ctx);
+                        p->shape = js_dup_shape(sh1_);
+                        js_shape_release(ctx, sh1_, sh_);
+                        pr = &p->prop[sh1_->prop_count - 1];
+                        if (flags & RV_PUT_VAL_K)
+                            pr->u.value = JS_DupValue(ctx, RV_K(ip[1]));
+                        else if (flags & RV_PUT_VAL_TEMP)
+                            pr->u.value = RV_R(ip[1]);
+                        else
+                            pr->u.value = JS_DupValue(ctx, RV_R(ip[1]));
+                        if (flags & RV_PUT_OBJ_TEMP)
+                            JS_FreeValue(ctx, obj);
+                        RV_NEXT();
+                    }
+                    RV_SYNC_TOP();
+                    r = rv_putf_step(ctx, F, ip, p, sh1_);
+                    if (r < 0)
+                        goto rv_exception;
+                    RV_NEXT();
+                }
+            }
+            prs = find_own_property(&pr, p, atom);
             if (prs && likely((prs->flags & (JS_PROP_TMASK | JS_PROP_WRITABLE |
                                              JS_PROP_LENGTH)) == JS_PROP_WRITABLE)) {
-                JSValue val;
+                put_u32((uint8_t *)ip + 7, prs - get_shape_prop(p->shape));
+            rv_PUTF_set:
                 if (flags & RV_PUT_VAL_K)
                     val = JS_DupValue(ctx, RV_K(ip[1]));
                 else if (flags & RV_PUT_VAL_TEMP)

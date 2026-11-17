@@ -31,6 +31,6 @@ result many keys: 599
 result proxy ownKeys throws: throws RangeError
 result proxy gopd throws: throws RangeError
 result memory after: 0
-mem-end obj=205 atom=593 shape=233 prop=993 jsfunc=5 cfunc=139 array=2 fast_array=2 elements=33 binary=0
-mem-gc obj=205 atom=593 shape=233 prop=993 jsfunc=5 cfunc=139 array=2 fast_array=2 elements=33 binary=0
+mem-end obj=205 atom=593 shape=231 prop=993 jsfunc=5 cfunc=139 array=2 fast_array=2 elements=33 binary=0
+mem-gc obj=205 atom=593 shape=231 prop=993 jsfunc=5 cfunc=139 array=2 fast_array=2 elements=33 binary=0
 --- status exit 0

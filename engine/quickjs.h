@@ -371,6 +371,8 @@ void JS_SetGCThreshold(JSRuntime *rt, size_t gc_threshold);
 void JS_SetFootprintLimit(JSRuntime *rt, size_t limit);
 /* what the memory limit and the GC threshold count, and the threshold */
 size_t JS_GetMemorySize(JSRuntime *rt);
+/* the bytes of JS_GetMemorySize that no block in use holds, see quickjs.c */
+size_t JS_GetMemoryFree(JSRuntime *rt);
 /* The host calls this right after JS_NewRuntime when it can remap a chunk (see
    HOST_CALL_MEMORY_REMAP in host.h). Off by default. */
 void JS_SetHostRemap(JSRuntime *rt, int on);
@@ -554,6 +556,10 @@ typedef struct JSMemoryUsage {
     /* what the runtime took from the host, its limit (0 for none), the
        chunks, and the bytes offered back so far */
     int64_t footprint, footprint_limit, chunk_count, release_candidate;
+    /* the register code of the functions that ran (JS_ComputeMemoryUsage),
+       and what JS_GetMemoryFree gives */
+    int64_t register_code_count, register_code_size;
+    int64_t free_size;
 } JSMemoryUsage;
 
 void JS_ComputeMemoryUsage(JSRuntime *rt, JSMemoryUsage *s);
