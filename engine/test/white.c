@@ -1302,6 +1302,14 @@ unsigned long white_module_steps_take(void)
     return n;
 }
 
+/* The count of names in the table of the loaded modules of ctx, and the
+   log2 of its size in bits, 0 with no table. */
+uint32_t white_module_names(JSContext *ctx, int *bits)
+{
+    *bits = ctx->module_hash ? ctx->module_hash_bits : 0;
+    return ctx->module_hash_count;
+}
+
 /* ---- the ids of shapes (find_hashed_shape_prop) ---- */
 
 /* The shapes find_hashed_shape_prop has found by their parent id. */

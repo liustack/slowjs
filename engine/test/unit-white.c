@@ -144,6 +144,7 @@ long white_call_debt(JSContext *ctx, int direct, int *depth);
 int white_key_atoms_bad(JSRuntime *rt, int *live, int *keys);
 unsigned long white_gc_run_count(int young);
 unsigned long white_module_steps_take(void);
+uint32_t white_module_names(JSContext *ctx, int *bits);
 JSValue white_call_failing(JSContext *ctx, JSValueConst func, JSValueConst this_val, int argc, JSValueConst *argv, int fail, int *nallocs);
 JSValue white_eval_function_failing(JSContext *ctx, JSValue m, int fail, int *nallocs);
 int white_jobs_failing(JSRuntime *rt, JSContext **pctx, int fail, int *nallocs);
@@ -9559,6 +9560,49 @@ static void test_module_lookup(void)
     vm_free(&v);
 }
 
+
+/* A module whose compile fails, or whose bytecode cannot be read, is freed
+   with its name taken out of the table of the loaded modules and of their
+   count: the count of names stayed, with the module gone, and the table
+   doubled for names no module had. 1,000 failed compiles of `export {` and
+   1,000 failed reads of a module leave the one module read whole. */
+#define FAILED_LOADS 1000
+static void test_module_failed_names(void)
+{
+    VM v = vm_new();
+    JSValue r;
+    uint8_t *buf;
+    size_t size;
+    int i, bits;
+    uint32_t names;
+
+    for (i = 0; i < FAILED_LOADS; i++) {
+        r = JS_Eval(v.ctx, "export {", 8, "bad", JS_EVAL_TYPE_MODULE);
+        CHECK(JS_IsException(r), "export { compiled");
+        JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+    }
+    names = white_module_names(v.ctx, &bits);
+    CHECK(names == 0 && bits == 4, "after %d failed compiles: %u names, a table of 2^%d",
+          FAILED_LOADS, names, bits);
+
+    r = JS_Eval(v.ctx, "export var v = 1;", 17, "rb", JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY);
+    CHECK(!JS_IsException(r), "rb threw");
+    buf = JS_WriteObject(v.ctx, &size, r, JS_WRITE_OBJ_BYTECODE);
+    JS_FreeValue(v.ctx, r);
+    CHECK(buf != NULL && size > 8, "no bytecode");
+    for (i = 0; buf && i < FAILED_LOADS; i++) {
+        r = JS_ReadObject(v.ctx, buf, size - 1, JS_READ_OBJ_BYTECODE);
+        CHECK(JS_IsException(r), "a short read of rb worked");
+        JS_FreeValue(v.ctx, r);
+        JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+    }
+    js_free(v.ctx, buf);
+    names = white_module_names(v.ctx, &bits);
+    CHECK(names == 1 && bits == 4, "after %d failed reads: %u names, a table of 2^%d",
+          FAILED_LOADS, names, bits);
+    vm_free(&v);
+}
+
 /* The modules of test_module_load_stops: those of lookup_loader, or with
    load_c modules of C that the host makes with no compile and that count
    their runs in load_ran. The load of w<load_stop_at> asks the host to stop
@@ -9793,6 +9837,7 @@ int main(int argc, char **argv)
     test_module_waiters();
     test_module_lookup();
     test_module_load_stops();
+    test_module_failed_names();
     if (failures) {
         printf("unit-white: %d of %ld checks failed\n", failures, checks);
         return 1;

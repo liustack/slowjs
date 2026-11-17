@@ -4135,6 +4135,19 @@ static int js_module_hash_room(JSContext *ctx)
     return 0;
 }
 
+/* m out of loaded_modules and of the table, with its name out of the count:
+   the reference of the list is then the caller's to free. Every free of a
+   module that is still loaded goes through here, but that of the collector,
+   which frees its context in the same collection. */
+static void js_module_unlink(JSContext *ctx, JSModuleDef *m)
+{
+    list_del(&m->link);
+    m->link.prev = NULL;
+    m->link.next = NULL;
+    js_module_hash_unlink(m);
+    ctx->module_hash_count--;
+}
+
 typedef enum JSFreeModuleEnum {
     JS_FREE_MODULE_ALL,
     JS_FREE_MODULE_NOT_RESOLVED,
@@ -4151,11 +4164,7 @@ static void js_free_modules(JSContext *ctx, JSFreeModuleEnum flag)
             /* warning: the module may be referenced elsewhere. It
                could be simpler to use an array instead of a list for
                'ctx->loaded_modules' */
-            list_del(&m->link);
-            m->link.prev = NULL;
-            m->link.next = NULL;
-            js_module_hash_unlink(m);
-            ctx->module_hash_count--;
+            js_module_unlink(ctx, m);
             JS_FreeValue(ctx, JS_MKPTR(JS_TAG_MODULE, m));
         }
     }
@@ -45766,6 +45775,7 @@ static JSValue __JS_EvalInternal(JSContext *ctx, JSValueConst this_obj,
         /* a stop in the resolution, after the compile ended, frees the
            module too */
         js_freeing_start(ctx->rt);
+        js_module_unlink(ctx, m);
         JS_FreeValue(ctx, JS_MKPTR(JS_TAG_MODULE, m));
     }
     /* after the module, whose tables a stopped compile also made: on a
@@ -47616,7 +47626,7 @@ static JSValue JS_ReadFunctionTag(BCReaderState *s, BOOL cpool_entry)
 static JSValue JS_ReadModule(BCReaderState *s)
 {
     JSContext *ctx = s->ctx;
-    JSValue obj;
+    JSValue obj = JS_UNDEFINED;
     JSModuleDef *m = NULL;
     JSAtom module_name;
     int i;
@@ -47722,6 +47732,10 @@ static JSValue JS_ReadModule(BCReaderState *s)
     return obj;
  fail:
     if (m) {
+        /* a module read in part is not left loaded: a later import of its
+           name would find it */
+        js_module_unlink(ctx, m);
+        JS_FreeValue(ctx, obj);
         JS_FreeValue(ctx, JS_MKPTR(JS_TAG_MODULE, m));
     }
     return JS_EXCEPTION;
