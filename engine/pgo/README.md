@@ -55,11 +55,11 @@ An input is the JSON text tifa hands to `startRender` for a page: `buildId`, `la
 
 ### Make them again
 
-The bundles and inputs came from tifa at commit `63a2099e0e3ad2457350ce5b142fd945ab0bd03e` (v0.0.10), built on linux/amd64 with Go 1.27.4, Node 24.13.0 and pnpm 10.33.0 after a fresh `pnpm install --frozen-lockfile`, so with the packages of each app's `pnpm-lock.yaml`: React and React DOM 19.3.1 in both, react-i18next 18.0.1 and i18next 27.1.2 in the shop, MUI 9.5.0 and emotion 11.14.0 in the MUI app (every package and version is in `pages/THIRD_PARTY_NOTICES.md`). The files here are the reference: the training reads them and the SHA-256 below names them. The steps below are how they were made.
+The bundles and inputs came from tifa at commit `d668f2d911bb8ea24e7e9660f0cdd9f601fdaefc` (main after v0.0.16), built on linux/amd64 with Go 1.27.4, Node 24.13.0 and pnpm 10.33.0 after a fresh `pnpm install --frozen-lockfile`, so with the packages of each app's `pnpm-lock.yaml`: React and React DOM 19.3.1 in both, react-i18next 18.0.1 and i18next 27.1.2 in the shop, MUI 9.5.0 and emotion 11.14.0 in the MUI app (every package and version is in `pages/THIRD_PARTY_NOTICES.md`). The files here are the reference: the training reads them and the SHA-256 below names them. The steps below are how they were made.
 
 ```sh
 # 1. a clean copy of tifa at the commit, with the packages installed
-git clone https://github.com/liustack/tifa && cd tifa && git checkout 63a2099e0e3ad2457350ce5b142fd945ab0bd03e
+git clone https://github.com/liustack/tifa && cd tifa && git checkout d668f2d911bb8ea24e7e9660f0cdd9f601fdaefc
 (cd examples/shop && pnpm install --frozen-lockfile)
 (cd test/apps/mui && pnpm install --frozen-lockfile)
 
@@ -74,7 +74,7 @@ git clone https://github.com/liustack/tifa && cd tifa && git checkout 63a2099e0e
 (cd /path/to/slowjs/compare/engines && go run ./cmd/notices /path/to/tifa ../../engine/pgo/pages)
 ```
 
-The SHA-256 of `shop.js` is `656886554a87dae25a2ced650fe8fbf47b83b8eefaecb0d8ff1a8c327576c3a9` and that of `mui.js` is `881a59600aca99c1f5ac00775cf150a807d054bc893fff419461e7be85f5a586`. The notices tool stops when a bundle is not the one in `pages/`.
+The SHA-256 of `shop.js` is `62063f81d6cb6145bf31117bd03d95e78e1922d1f98b7673dfaaec1dcf55d165` and that of `mui.js` is `d075f9293197a0f1410cd71e77b4d687186805d84526b2312cac86c2860ce65c`. The notices tool stops when a bundle is not the one in `pages/`.
 
 To record the inputs, put this file in tifa's `internal/ssr/` as `zz_dump.go` and add `dumpInput(input, in.Texts)` after the input is encoded in `internal/ssr/pool.go` (`renderInVM`, right after the `encode input` error check):
 
