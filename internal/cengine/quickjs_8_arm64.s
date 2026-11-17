@@ -214,7 +214,7 @@ TEXT ·js_proxy_prevent_extensions(SB), $120-32
 	CALL (R9)
 	WORD $0xf9403fe9
 	WORD $0x17ffff52
-	MOVD $·engine_rodata+12688(SB), R9
+	MOVD $·engine_rodata+12672(SB), R9
 	WORD $0xeb09011f
 	WORD $0x54ffef81
 	WORD $0xf9403fe8
@@ -6918,7 +6918,7 @@ TEXT ·json_stack_push(SB), $120-32
 	WORD $0xaa1303e0
 	BL ·memcpy(SB)
 	WORD $0x17ffffe9
-	MOVD $·engine_rodata+13106(SB), R22
+	MOVD $·engine_rodata+13109(SB), R22
 	WORD $0xaa1403f7
 	WORD $0x91004294
 	WORD $0xf90007f4
@@ -22617,7 +22617,7 @@ TEXT ·JS_RegExpExec(SB), $136-48
 	WORD $0xf90013f7
 	BL ·__JS_FreeValueRT(SB)
 	WORD $0x17ffffe8
-	MOVD $·engine_rodata+12688(SB), R9
+	MOVD $·engine_rodata+12672(SB), R9
 	WORD $0xeb09011f
 	WORD $0x54000181
 	WORD $0xf955b2a8

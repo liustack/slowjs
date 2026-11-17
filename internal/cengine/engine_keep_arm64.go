@@ -784,6 +784,7 @@ var goasmKeep = []any{
 	js_escape_text,
 	js_execute_async_module,
 	js_execute_sync_module,
+	js_fail_async_modules,
 	js_fast_array_find,
 	js_find_index_atom,
 	js_finrec_constructor,

@@ -1122,9 +1122,6 @@ typedef struct JSAsyncFunctionState {
     BOOL is_completed; /* TRUE if the function has returned. The stack
                           frame is no longer valid */
     JSValue resolving_funcs[2]; /* only used in JS async functions */
-    /* the module whose top-level await this function runs
-       (js_execute_async_module), or undefined */
-    JSValue module;
     JSStackFrame frame;
     /* arg_buf, var_buf, stack_buf and var_refs follow */
 } JSAsyncFunctionState;
@@ -10247,7 +10244,6 @@ static void mark_children(JSRuntime *rt, JSGCObjectHeader *gp,
             }
             JS_MarkValue(rt, s->resolving_funcs[0], mark_func);
             JS_MarkValue(rt, s->resolving_funcs[1], mark_func);
-            JS_MarkValue(rt, s->module, mark_func);
         }
         break;
     case JS_GC_OBJ_TYPE_SHAPE:
@@ -11476,17 +11472,35 @@ JSValue JS_Throw(JSContext *ctx, JSValue obj)
     return JS_EXCEPTION;
 }
 
-/* return the pending exception (cannot be called twice). */
-JSValue JS_GetException(JSContext *ctx)
+/* take the pending exception, for the engine's own use: it puts it back
+   or handles it, and the host has not given up the call */
+static inline JSValue js_take_exception(JSRuntime *rt)
 {
     JSValue val;
-    JSRuntime *rt = ctx->rt;
     val = rt->current_exception;
     rt->current_exception = JS_UNINITIALIZED;
     /* nothing is pending now: the clear of js_uncatchable_mark, inline, so
        that this stays a leaf with no frame */
     if (unlikely(rt->interrupt_flag & JS_INTERRUPT_UNCATCHABLE))
         rt->interrupt_flag &= ~JS_INTERRUPT_UNCATCHABLE;
+    return val;
+}
+
+static void js_fail_async_modules(JSRuntime *rt, JSValueConst error);
+
+/* return the pending exception (cannot be called twice). When it is
+   uncatchable, the host gives up the call with it (js_fail_async_modules). */
+JSValue JS_GetException(JSContext *ctx)
+{
+    JSValue val;
+    JSRuntime *rt = ctx->rt;
+    BOOL uncatchable = js_uncatchable_pending(rt);
+
+    val = js_take_exception(rt);
+    /* the state of the exception, not the bit of the flag, which a host
+       may have cleared with its stop */
+    if (unlikely(uncatchable))
+        js_fail_async_modules(rt, val);
     return val;
 }
 
@@ -11499,7 +11513,7 @@ static JSValue js_get_exception(JSContext *ctx)
     JSRuntime *rt = ctx->rt;
     if (js_uncatchable_pending(rt))
         return JS_DupValue(ctx, rt->current_exception);
-    return JS_GetException(ctx);
+    return js_take_exception(rt);
 }
 
 JS_BOOL JS_IsUncatchableException(JSContext *ctx)
@@ -12001,7 +12015,7 @@ static const char *js_backtrace_prop_string(JSContext *ctx, JSObject *p,
             return str;
         }
     }
-    JS_FreeValue(ctx, JS_GetException(ctx));
+    JS_FreeValue(ctx, js_take_exception(rt));
     JS_Throw(ctx, exception);
     JS_SetUncatchableException(ctx, uncatchable);
     return NULL;
@@ -12196,7 +12210,7 @@ static void js_backtrace_restore(JSContext *ctx, JSValueConst error_obj,
     if (ok) {
         JS_FreeValue(ctx, saved->exception);
     } else {
-        JS_FreeValue(ctx, JS_GetException(ctx));
+        JS_FreeValue(ctx, js_take_exception(ctx->rt));
         JS_Throw(ctx, saved->exception);
         JS_SetUncatchableException(ctx, saved->uncatchable);
     }
@@ -25312,7 +25326,6 @@ static JSAsyncFunctionState *async_func_init(JSContext *ctx,
         sf->arg_buf[i] = JS_UNDEFINED;
     s->resolving_funcs[0] = JS_UNDEFINED;
     s->resolving_funcs[1] = JS_UNDEFINED;
-    s->module = JS_UNDEFINED;
     s->is_completed = FALSE;
     return s;
 }
@@ -25347,7 +25360,6 @@ static void __async_func_free(JSRuntime *rt, JSAsyncFunctionState *s)
 
     JS_FreeValueRT(rt, s->resolving_funcs[0]);
     JS_FreeValueRT(rt, s->resolving_funcs[1]);
-    JS_FreeValueRT(rt, s->module);
 
     remove_gc_object(&s->header);
     if (rt->gc_phase == JS_GC_PHASE_REMOVE_CYCLES && js_rc(s)->ref_count != 0) {
@@ -25590,32 +25602,6 @@ static int js_async_function_resolve_create(JSContext *ctx,
     return 0;
 }
 
-static JSValue js_async_module_execution_rejected(JSContext *ctx, JSValueConst this_val,
-                                                  int argc, JSValueConst *argv, int magic, JSValue *func_data);
-
-/* The async function of a module with a top-level await ended, or failed
-   to wait, while an uncatchable exception was pending: the call that
-   settles its promise fails then, so the handlers of the module on that
-   promise (js_execute_async_module) never run, and the module and those
-   that wait for it stayed evaluating for good. The module is recorded as
-   failed with the error here, as its handler would, and an import of it
-   settles with the error at the next call (js_evaluate_module). A module
-   still evaluating (js_inner_module_evaluation1) is left to
-   js_execute_async_module, which reports the failure. */
-static void js_async_module_stopped(JSContext *ctx, JSAsyncFunctionState *s,
-                                    JSValueConst error)
-{
-    JSModuleDef *m;
-
-    if (JS_IsUndefined(s->module) || !js_uncatchable_pending(ctx->rt))
-        return;
-    m = JS_VALUE_GET_PTR(s->module);
-    if (m->status != JS_MODULE_STATUS_EVALUATING_ASYNC)
-        return;
-    js_async_module_execution_rejected(ctx, JS_UNDEFINED, 1, &error, 0,
-                                       &s->module);
-}
-
 static void js_async_function_resume(JSContext *ctx, JSAsyncFunctionState *s)
 {
     JSValue func_ret, ret2;
@@ -25628,7 +25614,6 @@ static void js_async_function_resume(JSContext *ctx, JSAsyncFunctionState *s)
             error = js_get_exception(ctx);
             ret2 = js_call(ctx, s->resolving_funcs[1], JS_UNDEFINED,
                            1, (JSValueConst *)&error);
-            js_async_module_stopped(ctx, s, error);
             JS_FreeValue(ctx, error);
             JS_FreeValue(ctx, ret2); /* XXX: what to do if exception ? */
         } else {
@@ -25637,13 +25622,6 @@ static void js_async_function_resume(JSContext *ctx, JSAsyncFunctionState *s)
                            1, (JSValueConst *)&func_ret);
             JS_FreeValue(ctx, func_ret);
             JS_FreeValue(ctx, ret2); /* XXX: what to do if exception ? */
-            if (!JS_IsUndefined(s->module) && js_uncatchable_pending(ctx->rt)) {
-                /* the body ran to its end, and the call that settles
-                   its promise failed */
-                JSValue error = js_get_exception(ctx);
-                js_async_module_stopped(ctx, s, error);
-                JS_FreeValue(ctx, error);
-            }
         }
     } else {
         JSValue value, promise, resolving_funcs[2], resolving_funcs1[2];
@@ -25705,11 +25683,9 @@ static JSValue js_async_function_resolve_call(JSContext *ctx,
     return JS_UNDEFINED;
 }
 
-/* m: the module whose top-level await the function runs, or NULL */
-static JSValue js_async_function_start(JSContext *ctx, JSValueConst func_obj,
-                                       JSValueConst this_obj,
-                                       int argc, JSValueConst *argv,
-                                       JSModuleDef *m)
+static JSValue js_async_function_call(JSContext *ctx, JSValueConst func_obj,
+                                      JSValueConst this_obj,
+                                      int argc, JSValueConst *argv, int flags)
 {
     JSValue promise;
     JSAsyncFunctionState *s;
@@ -25717,8 +25693,6 @@ static JSValue js_async_function_start(JSContext *ctx, JSValueConst func_obj,
     s = async_func_init(ctx, func_obj, this_obj, argc, argv);
     if (!s)
         return JS_EXCEPTION;
-    if (m)
-        s->module = JS_DupValue(ctx, JS_MKPTR(JS_TAG_MODULE, m));
 
     promise = JS_NewPromiseCapability(ctx, s->resolving_funcs);
     if (JS_IsException(promise)) {
@@ -25731,13 +25705,6 @@ static JSValue js_async_function_start(JSContext *ctx, JSValueConst func_obj,
     async_func_free(ctx->rt, s);
 
     return promise;
-}
-
-static JSValue js_async_function_call(JSContext *ctx, JSValueConst func_obj,
-                                      JSValueConst this_obj,
-                                      int argc, JSValueConst *argv, int flags)
-{
-    return js_async_function_start(ctx, func_obj, this_obj, argc, argv, NULL);
 }
 
 /* AsyncGenerator */
@@ -36913,15 +36880,7 @@ static JSValue js_async_module_execution_fulfilled(JSContext *ctx, JSValueConst 
         if (m->status == JS_MODULE_STATUS_EVALUATED) {
             assert(m->eval_has_exception);
         } else if (m->has_tla) {
-            if (js_execute_async_module(ctx, m) < 0) {
-                JSValue error = js_get_exception(ctx);
-                JSValue m_obj = JS_NewModuleValue(ctx, m);
-                js_async_module_execution_rejected(ctx, JS_UNDEFINED,
-                                                   1, (JSValueConst *)&error, 0,
-                                                   &m_obj);
-                JS_FreeValue(ctx, m_obj);
-                JS_FreeValue(ctx, error);
-            }
+            js_execute_async_module(ctx, m);
         } else {
             JSValue error;
             if (js_execute_sync_module(ctx, m, &error) < 0) {
@@ -36941,9 +36900,6 @@ static JSValue js_async_module_execution_fulfilled(JSContext *ctx, JSValueConst 
     return JS_UNDEFINED;
 }
 
-/* Start the evaluation of m, which has a top-level await. Return -1 with
-   the exception pending when it failed: the caller records m as failed,
-   as nothing else will. */
 static int js_execute_async_module(JSContext *ctx, JSModuleDef *m)
 {
     JSValue promise, m_obj;
@@ -36951,27 +36907,18 @@ static int js_execute_async_module(JSContext *ctx, JSModuleDef *m)
 #ifdef DUMP_MODULE_EXEC
     js_dump_module(ctx, __func__, m);
 #endif
-    promise = js_async_function_start(ctx, m->func_obj, JS_UNDEFINED, 0, NULL, m);
+    promise = js_async_function_call(ctx, m->func_obj, JS_UNDEFINED, 0, NULL, 0);
     if (JS_IsException(promise))
         return -1;
-    /* the run up to the first await ended while an uncatchable exception
-       was pending: the promise cannot settle (js_async_module_stopped) */
-    if (js_uncatchable_pending(ctx->rt)) {
-        JS_FreeValue(ctx, promise);
-        return -1;
-    }
     m_obj = JS_NewModuleValue(ctx, m);
     resolve_funcs[0] = JS_NewCFunctionData(ctx, js_async_module_execution_fulfilled, 0, 0, 1, (JSValueConst *)&m_obj);
     resolve_funcs[1] = JS_NewCFunctionData(ctx, js_async_module_execution_rejected, 0, 0, 1, (JSValueConst *)&m_obj);
     ret_val = js_promise_then(ctx, promise, 2, (JSValueConst *)resolve_funcs);
+    JS_FreeValue(ctx, ret_val);
     JS_FreeValue(ctx, m_obj);
     JS_FreeValue(ctx, resolve_funcs[0]);
     JS_FreeValue(ctx, resolve_funcs[1]);
     JS_FreeValue(ctx, promise);
-    /* with no handlers, nothing would end the evaluation of m */
-    if (JS_IsException(ret_val))
-        return -1;
-    JS_FreeValue(ctx, ret_val);
     return 0;
 }
 
@@ -37101,13 +37048,7 @@ static int js_inner_module_evaluation1(JSContext *ctx, JSModuleDef *m,
         m->async_evaluation = TRUE;
         m->async_evaluation_timestamp =
             ctx->rt->module_async_evaluation_next_timestamp++;
-        if (js_execute_async_module(ctx, m) < 0) {
-            /* an error of the evaluation of m, which js_evaluate_module
-               records on each module on the stack */
-            m->async_evaluation = FALSE;
-            *pvalue = js_get_exception(ctx);
-            return -1;
-        }
+        js_execute_async_module(ctx, m);
     } else {
         if (js_execute_sync_module(ctx, m, pvalue) < 0)
             return -1;
@@ -68638,40 +68579,6 @@ static void promise_reaction_data_free(JSRuntime *rt,
     js_free_rt(rt, rd);
 }
 
-/* A reaction job whose handler failed with an uncatchable exception
-   pending, which may have stopped it before it ran: when the handler goes
-   on with the evaluation of a module with a top-level await (the resume of
-   its async function after an await, or the handlers of
-   js_execute_async_module), nothing else would end that evaluation, and the
-   module and those that wait for it stayed evaluating for good. The module
-   is recorded as failed with the error. A handler that ran and ended the
-   evaluation itself left the module evaluated, which this leaves as it is. */
-static void js_module_reaction_stopped(JSContext *ctx, JSValueConst handler,
-                                       JSValueConst error)
-{
-    JSObject *p;
-
-    if (JS_VALUE_GET_TAG(handler) != JS_TAG_OBJECT ||
-        !js_uncatchable_pending(ctx->rt))
-        return;
-    p = JS_VALUE_GET_OBJ(handler);
-    if (p->class_id == JS_CLASS_ASYNC_FUNCTION_RESOLVE ||
-        p->class_id == JS_CLASS_ASYNC_FUNCTION_REJECT) {
-        js_async_module_stopped(ctx, p->u.async_function_data, error);
-    } else if (p->class_id == JS_CLASS_C_FUNCTION_DATA) {
-        JSCFunctionDataRecord *s = p->u.c_function_data_record;
-        JSModuleDef *m;
-
-        if (s->func != js_async_module_execution_fulfilled &&
-            s->func != js_async_module_execution_rejected)
-            return;
-        m = JS_VALUE_GET_PTR(s->data[0]);
-        if (m->status == JS_MODULE_STATUS_EVALUATING_ASYNC)
-            js_async_module_execution_rejected(ctx, JS_UNDEFINED, 1, &error,
-                                               0, s->data);
-    }
-}
-
 static JSValue promise_reaction_job(JSContext *ctx, int argc,
                                     JSValueConst *argv)
 {
@@ -68697,10 +68604,8 @@ static JSValue promise_reaction_job(JSContext *ctx, int argc,
         res = js_call(ctx, handler, JS_UNDEFINED, 1, &arg);
     }
     is_reject = JS_IsException(res);
-    if (is_reject) {
+    if (is_reject)
         res = js_get_exception(ctx);
-        js_module_reaction_stopped(ctx, handler, res);
-    }
     func = argv[is_reject];
     /* as an extension, we support undefined as value to avoid
        creating a dummy promise in the 'await' implementation of async
@@ -68922,6 +68827,52 @@ static void reject_promise(JSContext *ctx, JSValueConst promise,
                            JSValueConst value)
 {
     fulfill_or_reject_promise(ctx, promise, value, TRUE);
+}
+
+/* An uncatchable exception (an interrupt, running out of memory, a panic of
+   a Go function called from javascript) reached the host, which gives up
+   the call with it (JS_GetException). A job it stopped, of a module with a
+   top-level await or of a function such a module awaits, never runs again,
+   and the module and those that wait for it stayed evaluating for good, an
+   import of them never settling. So every module still in its asynchronous
+   evaluation is recorded as failed with error, as its handler would, and
+   the promise of each that is the root of a cycle is rejected with it,
+   with no call: the interrupt may still be set. With no memory for the
+   jobs of its reactions, those are lost, as for any promise, and the
+   error is dropped: the host has one already. A module that is not
+   evaluating, or that ended, is left as it is. Runs once for each such end
+   of a call, over the modules of the runtime. */
+static no_inline void js_fail_async_modules(JSRuntime *rt, JSValueConst error)
+{
+    struct list_head *el, *el1;
+
+    list_for_each(el, &rt->context_list) {
+        JSContext *ctx = list_entry(el, JSContext, link);
+
+        list_for_each(el1, &ctx->loaded_modules) {
+            JSModuleDef *m = list_entry(el1, JSModuleDef, link);
+            JSObject *p;
+            JSPromiseFunctionData *fd;
+
+            if (m->status != JS_MODULE_STATUS_EVALUATING_ASYNC)
+                continue;
+            assert(!m->eval_has_exception);
+            m->eval_has_exception = TRUE;
+            m->eval_exception = JS_DupValue(ctx, error);
+            m->status = JS_MODULE_STATUS_EVALUATED;
+            m->async_evaluation = FALSE;
+            if (JS_VALUE_GET_TAG(m->resolving_funcs[1]) != JS_TAG_OBJECT)
+                continue;
+            p = JS_VALUE_GET_OBJ(m->resolving_funcs[1]);
+            fd = p->u.promise_function_data;
+            if (!fd || fd->presolved->already_resolved)
+                continue;
+            fd->presolved->already_resolved = TRUE;
+            reject_promise(ctx, fd->promise, error);
+            if (!JS_IsUninitialized(rt->current_exception))
+                JS_FreeValue(ctx, js_take_exception(rt));
+        }
+    }
 }
 
 static JSValue js_promise_resolve_thenable_job(JSContext *ctx,

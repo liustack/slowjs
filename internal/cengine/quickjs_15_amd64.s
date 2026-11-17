@@ -4,6 +4,57 @@
 #include "textflag.h"
 #include "funcdata.h"
 
+TEXT ·js_parse_unary(SB), $64-24
+	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
+	PCALIGN $16
+	MOVQ a0+0(FP), R12
+	MOVQ a1+8(FP), R13
+	MOVQ a2+16(FP), R14
+	QUAD $0x8b4de7894dee894c
+	QUAD $0xb88110458b49006d
+	QUAD $0x000007cf000009ac
+	QUAD $0xe181104f8d415e7f
+	QUAD $0x8088034801ffffff
+	QUAD $0x01fffff0ba000009
+	QUAD $0xfffffa8148ca2948
+	QUAD $0x09ac80ff3c7e0000
+	QUAD $0x894d10c783490000
+	QUAD $0x24748948f58949fc
+	QUAD $0x6c894c2424894c30
+	BYTE $0x24
+	BYTE $0x08
+	BYTE $0x4c
+	BYTE $0x89
+	BYTE $0x74
+	BYTE $0x24
+	BYTE $0x10
+	CALL ·js_parse_unary1(SB)
+	QUAD $0x098b4830244c8b48
+	QUAD $0x09ac89ff10498b48
+	QUAD $0x10678d4d2aeb0000
+	LEAQ ·engine_rodata+6632(SB), R14
+	QUAD $0x246c894c2424894c
+	QUAD $0x894c102474894c08
+	BYTE $0x7c
+	BYTE $0x24
+	BYTE $0x18
+	CALL ·JS_ThrowRangeError(SB)
+	BYTE $0xb8
+	BYTE $0xff
+	BYTE $0xff
+	BYTE $0xff
+	BYTE $0xff
+	BYTE $0xeb
+	BYTE $0xd4
+	RET
+
 TEXT ·js_parse_postfix_expr1(SB), $192-24
 	NO_LOCAL_POINTERS
 #ifdef GOOS_windows
@@ -16394,7 +16445,7 @@ TEXT ·js_date_toJSON(SB), $144-48
 	BYTE $0xfb
 	BYTE $0xff
 	BYTE $0xff
-	LEAQ ·engine_rodata+12728(SB), CX
+	LEAQ ·engine_rodata+12704(SB), CX
 	QUAD $0xb5394d4f75c83948
 	QUAD $0x8b48467400002b60
 	QUAD $0x8d4c000000802484
