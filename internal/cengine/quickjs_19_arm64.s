@@ -1875,7 +1875,7 @@ TEXT ·js_json_check(SB), $152-16
 	MOVD $·engine_rodata+12672(SB), R9
 	WORD $0xeb09011f
 	WORD $0x54000c01
-	WORD $0xf955aea8
+	WORD $0xf955aaa8
 	WORD $0xeb16011f
 	WORD $0x54000ba0
 	WORD $0xf94043e8
@@ -2023,7 +2023,7 @@ TEXT ·js_json_check(SB), $152-16
 	WORD $0x54fff141
 	WORD $0xf94047e8
 	WORD $0xf9400915
-	WORD $0xf955aea8
+	WORD $0xf955aaa8
 	WORD $0xeb16011f
 	WORD $0x54fff0a0
 	WORD $0xf94043e8

@@ -4345,7 +4345,7 @@ TEXT ·js_async_generator_resolve_or_reject(SB), $88-48
 	WORD $0xeb09011f
 	WORD $0x54ffe661
 	WORD $0xf94009b5
-	WORD $0xf955aea8
+	WORD $0xf955aaa8
 	WORD $0xeb16011f
 	WORD $0x54ffe5e0
 	WORD $0x91018174
@@ -4560,7 +4560,7 @@ TEXT ·js_promise_catch(SB), $104-48
 	WORD $0x54fff7a1
 	WORD $0xf94037e8
 	WORD $0xf9400915
-	WORD $0xf955aea8
+	WORD $0xf955aaa8
 	WORD $0xeb16011f
 	WORD $0x54fff700
 	WORD $0xf9402fe8
@@ -4869,7 +4869,7 @@ TEXT ·js_promise_finally(SB), $152-48
 	WORD $0x54fff061
 	WORD $0xf94047e8
 	WORD $0xf9400915
-	WORD $0xf955aea8
+	WORD $0xf955aaa8
 	WORD $0xeb16011f
 	WORD $0x54ffefc0
 	WORD $0xf9404fe8
@@ -5011,7 +5011,7 @@ TEXT ·js_promise_try(SB), $136-48
 	WORD $0xeb09011f
 	WORD $0x54fff301
 	WORD $0xf9400955
-	WORD $0xf955aea8
+	WORD $0xf955aaa8
 	WORD $0xeb16011f
 	WORD $0x54fff280
 	WORD $0x9101c174
@@ -5543,7 +5543,7 @@ TEXT ·js_promise_race(SB), $184-48
 	WORD $0xeb09011f
 	WORD $0x54ffcac1
 	WORD $0xf9400995
-	WORD $0xf955aea8
+	WORD $0xf955aaa8
 	WORD $0xeb16011f
 	WORD $0x54ffca40
 	WORD $0x910281b4
@@ -5561,7 +5561,7 @@ TEXT ·js_promise_race(SB), $184-48
 	WORD $0xeb09011f
 	WORD $0x54ffe381
 	WORD $0xf9400955
-	WORD $0xf955aea8
+	WORD $0xf955aaa8
 	WORD $0xeb16011f
 	WORD $0x54ffe300
 	WORD $0x91028174
@@ -7092,7 +7092,7 @@ TEXT ·js_promise_resolve_thenable_job(SB), $120-32
 	WORD $0x54ffeac1
 	WORD $0xf94037e8
 	WORD $0xf9400915
-	WORD $0xf955aea8
+	WORD $0xf955aaa8
 	WORD $0xeb16011f
 	WORD $0x54ffea20
 	WORD $0xf9403fe8
@@ -7113,7 +7113,7 @@ TEXT ·js_promise_resolve_thenable_job(SB), $120-32
 	WORD $0x54fff581
 	WORD $0xf94037e8
 	WORD $0xf9400915
-	WORD $0xf955aea8
+	WORD $0xf955aaa8
 	WORD $0xeb16011f
 	WORD $0x54fff4e0
 	WORD $0x91020194
@@ -18020,7 +18020,7 @@ TEXT ·js_TA_cmp_generic(SB), $120-32
 	WORD $0x54fff241
 	WORD $0xf94033e8
 	WORD $0xf9400915
-	WORD $0xf955aea8
+	WORD $0xf955aaa8
 	WORD $0xeb16011f
 	WORD $0x54fff1a0
 	WORD $0x9101c154
@@ -19431,7 +19431,7 @@ TEXT ·js_typed_array_from(SB), $248-48
 	WORD $0x54ffe981
 	WORD $0xf9407fe8
 	WORD $0xf9400915
-	WORD $0xf955aea8
+	WORD $0xf955aaa8
 	WORD $0xeb16011f
 	WORD $0x54ffe8e0
 	WORD $0x91020154
@@ -21760,7 +21760,7 @@ TEXT ·js_set_isDisjointFrom(SB), $152-48
 	WORD $0x54ffd8e1
 	WORD $0xf9404fe8
 	WORD $0xf9400915
-	WORD $0xf955aea8
+	WORD $0xf955aaa8
 	WORD $0xeb16011f
 	WORD $0x54ffd840
 	WORD $0x91038154
@@ -21779,7 +21779,7 @@ TEXT ·js_set_isDisjointFrom(SB), $152-48
 	WORD $0x54ffc501
 	WORD $0xf9404fe8
 	WORD $0xf9400915
-	WORD $0xf955aea8
+	WORD $0xf955aaa8
 	WORD $0xeb16011f
 	WORD $0x54ffc460
 	WORD $0x91038154
@@ -22104,7 +22104,7 @@ TEXT ·js_set_isSubsetOf(SB), $152-48
 	WORD $0x54ffeb41
 	WORD $0xf9404fe8
 	WORD $0xf9400915
-	WORD $0xf955aea8
+	WORD $0xf955aaa8
 	WORD $0xeb16011f
 	WORD $0x54ffeaa0
 	WORD $0x91038154
@@ -22478,7 +22478,7 @@ TEXT ·js_set_isSupersetOf(SB), $136-48
 	WORD $0x54ffe021
 	WORD $0xf94047e8
 	WORD $0xf9400915
-	WORD $0xf955aea8
+	WORD $0xf955aaa8
 	WORD $0xeb16011f
 	WORD $0x54ffdf80
 	WORD $0x91034154
@@ -23263,7 +23263,7 @@ TEXT ·js_set_intersection(SB), $200-48
 	WORD $0xeb09011f
 	WORD $0x54ffc981
 	WORD $0xf9400955
-	WORD $0xf955aea8
+	WORD $0xf955aaa8
 	WORD $0xeb16011f
 	WORD $0x54ffc900
 	WORD $0x91038174
@@ -23283,7 +23283,7 @@ TEXT ·js_set_intersection(SB), $200-48
 	WORD $0xeb09011f
 	WORD $0x54ffa481
 	WORD $0xf9400955
-	WORD $0xf955aea8
+	WORD $0xf955aaa8
 	WORD $0xeb16011f
 	WORD $0x54ffa400
 	WORD $0x91038174
@@ -23914,7 +23914,7 @@ TEXT ·js_set_difference(SB), $168-48
 	WORD $0xeb09011f
 	WORD $0x54ffdd01
 	WORD $0xf9400955
-	WORD $0xf955aea8
+	WORD $0xf955aaa8
 	WORD $0xeb16011f
 	WORD $0x54ffdc80
 	WORD $0x91038174
@@ -23934,7 +23934,7 @@ TEXT ·js_set_difference(SB), $168-48
 	WORD $0xeb09011f
 	WORD $0x54ffc2a1
 	WORD $0xf9400955
-	WORD $0xf955aea8
+	WORD $0xf955aaa8
 	WORD $0xeb16011f
 	WORD $0x54ffc220
 	WORD $0x91038174
@@ -24459,7 +24459,7 @@ TEXT ·js_set_symmetricDifference(SB), $200-48
 	WORD $0xeb09011f
 	WORD $0x54ffc9e1
 	WORD $0xf9400955
-	WORD $0xf955aea8
+	WORD $0xf955aaa8
 	WORD $0xeb16011f
 	WORD $0x54ffc960
 	WORD $0x91034174
@@ -24781,7 +24781,7 @@ TEXT ·js_set_union(SB), $168-48
 	WORD $0xeb09011f
 	WORD $0x54ffe2e1
 	WORD $0xf9400955
-	WORD $0xf955aea8
+	WORD $0xf955aaa8
 	WORD $0xeb16011f
 	WORD $0x54ffe260
 	WORD $0x91038174
@@ -26214,7 +26214,7 @@ TEXT ·js_proxy_get_own_property(SB), $168-48
 	WORD $0x54ffd0c1
 	WORD $0xf94057e8
 	WORD $0xf9400915
-	WORD $0xf955aea8
+	WORD $0xf955aaa8
 	WORD $0xeb16011f
 	WORD $0x54ffd020
 	WORD $0x9103c154
@@ -26644,7 +26644,7 @@ TEXT ·js_proxy_get_own_property_names(SB), $216-48
 	WORD $0xeb09011f
 	WORD $0x54ffd7c1
 	WORD $0xf9400955
-	WORD $0xf955aea8
+	WORD $0xf955aaa8
 	WORD $0xeb16011f
 	WORD $0x54ffd740
 	WORD $0x91028174
@@ -27304,7 +27304,7 @@ TEXT ·js_proxy_delete_property(SB), $152-40
 	WORD $0x54ffea01
 	WORD $0xf9404fe8
 	WORD $0xf9400915
-	WORD $0xf955aea8
+	WORD $0xf955aaa8
 	WORD $0xeb16011f
 	WORD $0x54ffe960
 	WORD $0x9102c154
@@ -27699,7 +27699,7 @@ TEXT ·js_proxy_has(SB), $152-40
 	WORD $0x54ffebc1
 	WORD $0xf9404fe8
 	WORD $0xf9400915
-	WORD $0xf955aea8
+	WORD $0xf955aaa8
 	WORD $0xeb16011f
 	WORD $0x54ffeb20
 	WORD $0x9102c154
@@ -27980,7 +27980,7 @@ TEXT ·js_proxy_set_prototype(SB), $136-48
 	WORD $0xeb09011f
 	WORD $0x54ffeb41
 	WORD $0xf9400955
-	WORD $0xf955aea8
+	WORD $0xf955aaa8
 	WORD $0xeb16011f
 	WORD $0x54ffeac0
 	WORD $0x91020174
@@ -28244,7 +28244,7 @@ TEXT ·js_proxy_is_extensible(SB), $120-32
 	WORD $0xeb09011f
 	WORD $0x54ffee01
 	WORD $0xf9400955
-	WORD $0xf955aea8
+	WORD $0xf955aaa8
 	WORD $0xeb16011f
 	WORD $0x54ffed80
 	WORD $0xf94033e8

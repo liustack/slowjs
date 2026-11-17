@@ -1667,7 +1667,6 @@ var goasmKeep = []any{
 	var_object_test,
 	vsnprintf,
 	young_decref_child,
-	young_defer,
 	young_scan_incref_child,
 	young_scan_incref_child2,
 }

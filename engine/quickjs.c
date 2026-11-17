@@ -523,9 +523,9 @@ struct JSRuntime {
     struct JSGCEphemeron *ephemeron;
     /* the GC objects made since the last collection (see JS_RunYoungGC) */
     struct list_head young_obj_list;
-    /* the objects that only the garbage of a young collection held */
-    struct list_head young_dead_list;
-    BOOL young_sweep; /* a young collection is freeing its garbage */
+    /* the objects outside the garbage whose count got to 0 while a
+       collection freed it (gc_defer) */
+    struct list_head gc_dead_list;
     /* the register stack (engine/regvm.h), allocated by JS_NewRuntime and
        counted as the heap is: rv_seg the segment of it in use, rv_top and
        rv_end in it */
@@ -1867,7 +1867,7 @@ static void weakref_delete_weakref(JSRuntime *rt, JSWeakRefHeader *wh);
 static void finrec_delete_weakref(JSRuntime *rt, JSWeakRefHeader *wh);
 static void JS_RunGCInternal(JSRuntime *rt, BOOL remove_weak_objects);
 static void young_splice(JSRuntime *rt);
-static void young_defer(JSRuntime *rt, JSGCObjectHeader *p);
+static void gc_defer(JSRuntime *rt, JSGCObjectHeader *p);
 static JSValue js_array_from_iterator(JSContext *ctx, uint32_t *plen,
                                       JSValueConst obj, JSValueConst method);
 static int js_string_find_invalid_codepoint(JSString *p);
@@ -3210,6 +3210,7 @@ JSRuntime *JS_NewRuntime(uint32_t vm, uint64_t seed)
     init_list_head(&rt->young_obj_list);
     init_list_head(&rt->gc_zero_ref_count_list);
     rt->gc_phase = JS_GC_PHASE_NONE;
+    init_list_head(&rt->gc_dead_list);
     init_list_head(&rt->weakref_list);
 
 #ifdef DUMP_LEAKS
@@ -9997,7 +9998,7 @@ void __JS_FreeValueRT(JSRuntime *rt, JSValue v)
                     free_zero_refcount(rt);
                 }
             } else {
-                young_defer(rt, p);
+                gc_defer(rt, p);
             }
         }
         break;
@@ -10376,6 +10377,36 @@ static void gc_free_cycles(JSRuntime *rt)
     }
 
     init_list_head(&rt->gc_zero_ref_count_list);
+
+    /* the objects gc_defer put aside, freed as outside a collection */
+    if (list_empty(&rt->gc_dead_list))
+        return;
+    while (!list_empty(&rt->gc_dead_list)) {
+        el = rt->gc_dead_list.next;
+        list_del(el);
+        list_add_tail(el, &rt->gc_zero_ref_count_list);
+    }
+    free_zero_refcount(rt);
+}
+
+/* An object outside the garbage whose count got to 0 while a collection
+   frees it (the phase JS_GC_PHASE_REMOVE_CYCLES): its mark is 0, as the
+   garbage keeps its mark of 1 and the rest have it cleared. It goes to
+   gc_dead_list and gc_free_cycles frees it after the garbage, as outside a
+   collection, rather than leave it on its list with a count of 0, where
+   js_weakref_free would free its block while it is still listed and its
+   children would keep their counts. In a young collection such an object is
+   an old one only the garbage held. In a full one, every reference the
+   garbage holds is reported by a gc_mark, so such an object is one whose
+   last reference a finalizer of the host let go of, a reference no gc_mark
+   reports (test_finalizer_frees_a_root in engine/test/unit-white.c). */
+static void gc_defer(JSRuntime *rt, JSGCObjectHeader *p)
+{
+    if (js_rc(p)->mark)
+        return;
+    list_del(&p->link);
+    list_add_tail(&p->link, &rt->gc_dead_list);
+    js_rc(p)->mark = 1;
 }
 
 /* Conditional edges of WeakMap, with a work list indexed by key. */
@@ -10698,19 +10729,6 @@ static void young_splice(JSRuntime *rt)
     young_move(&rt->young_obj_list, &rt->gc_obj_list);
 }
 
-/* An object outside the garbage of a young collection whose count got to 0
-   while the garbage is freed: free it afterwards, as outside a collection,
-   rather than leave it on gc_obj_list with a count of 0, where
-   js_weakref_free could free it. */
-static void young_defer(JSRuntime *rt, JSGCObjectHeader *p)
-{
-    if (!rt->young_sweep || js_rc(p)->mark)
-        return;
-    list_del(&p->link);
-    list_add_tail(&p->link, &rt->young_dead_list);
-    js_rc(p)->mark = 1;
-}
-
 static void young_decref_child(JSRuntime *rt, JSGCObjectHeader *p)
 {
     if (js_rc(p)->mark)
@@ -10774,12 +10792,7 @@ void JS_RunYoungGC(JSRuntime *rt)
     }
     young_splice(rt);
 
-    init_list_head(&rt->young_dead_list);
-    rt->young_sweep = TRUE;
     gc_free_cycles(rt);
-    rt->young_sweep = FALSE;
-    young_move(&rt->young_dead_list, &rt->gc_zero_ref_count_list);
-    free_zero_refcount(rt);
 
     gc_remove_weak_objects(rt);
     js_front_drain(&rt->malloc_ctx);
@@ -25215,7 +25228,7 @@ static void async_func_free(JSRuntime *rt, JSAsyncFunctionState *s)
                 free_zero_refcount(rt);
             }
         } else {
-            young_defer(rt, &s->header);
+            gc_defer(rt, &s->header);
         }
     }
 }

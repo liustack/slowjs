@@ -219,7 +219,7 @@ TEXT ·js_proxy_prevent_extensions(SB), $120-32
 	WORD $0x54ffef81
 	WORD $0xf9403fe8
 	WORD $0xf9400915
-	WORD $0xf955aea8
+	WORD $0xf955aaa8
 	WORD $0xeb16011f
 	WORD $0x54ffeee0
 	WORD $0xf94033e8
@@ -22608,7 +22608,7 @@ TEXT ·JS_RegExpExec(SB), $136-48
 	MOVD $·engine_rodata+12672(SB), R9
 	WORD $0xeb09011f
 	WORD $0x54000181
-	WORD $0xf955aea8
+	WORD $0xf955aaa8
 	WORD $0xeb16011f
 	WORD $0x54000160
 	WORD $0xf9403fe8

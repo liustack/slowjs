@@ -4050,7 +4050,7 @@ TEXT ·js_regexp_Symbol_replace(SB), $376-48
 	WORD $0x54000281
 	WORD $0xf940b7e8
 	WORD $0xf9400915
-	WORD $0xf955aea8
+	WORD $0xf955aaa8
 	WORD $0xeb16011f
 	WORD $0x540001e0
 	WORD $0xf940bfe8

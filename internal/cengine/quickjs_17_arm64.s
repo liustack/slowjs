@@ -13656,7 +13656,7 @@ TEXT ·call_setter(SB), $104-16
 	WORD $0x54fff0c1
 	WORD $0xf94037e8
 	WORD $0xf9400915
-	WORD $0xf955aea8
+	WORD $0xf955aaa8
 	WORD $0xeb16011f
 	WORD $0x54fff020
 	WORD $0x9101c154
@@ -16510,7 +16510,7 @@ TEXT ·js_closure(SB), $216-16
 	WORD $0xf94009b5
 	WORD $0xb900bbf4
 	WORD $0xf94016a8
-	WORD $0xf955a6a9
+	WORD $0xf955a2a9
 	WORD $0xcb090108
 	WORD $0xf944a6a9
 	WORD $0x91010108
@@ -17633,7 +17633,7 @@ TEXT ·JS_LoadModuleInternal(SB), $152-16
 	WORD $0xeb09011f
 	WORD $0x54ffdac1
 	WORD $0xf9400995
-	WORD $0xf955aea8
+	WORD $0xf955aaa8
 	WORD $0xeb16011f
 	WORD $0x54ffda40
 	WORD $0x9102c1b4
@@ -18175,7 +18175,7 @@ TEXT ·JS_EvalFunctionInternal(SB), $120-16
 	WORD $0x54ffc561
 	WORD $0xf9403fe8
 	WORD $0xf9400915
-	WORD $0xf955aea8
+	WORD $0xf955aaa8
 	WORD $0xeb16011f
 	WORD $0x54ffc4c0
 	WORD $0xf94037e8
@@ -18219,7 +18219,7 @@ TEXT ·JS_EvalFunctionInternal(SB), $120-16
 	WORD $0xeb09011f
 	WORD $0x54ffef01
 	WORD $0xf9400995
-	WORD $0xf955aea8
+	WORD $0xf955aaa8
 	WORD $0xeb16011f
 	WORD $0x54ffee80
 	WORD $0x91024174
@@ -18239,7 +18239,7 @@ TEXT ·JS_EvalFunctionInternal(SB), $120-16
 	WORD $0xeb09011f
 	WORD $0x54ffdf81
 	WORD $0xf9400975
-	WORD $0xf955aea8
+	WORD $0xf955aaa8
 	WORD $0xeb16011f
 	WORD $0x54ffdf00
 	WORD $0x91024154
@@ -18453,7 +18453,7 @@ TEXT ·js_load_module_fulfilled(SB), $88-16
 	WORD $0xeb09011f
 	WORD $0x54ffee41
 	WORD $0xf94009b5
-	WORD $0xf955aea8
+	WORD $0xf955aaa8
 	WORD $0xeb16011f
 	WORD $0x54ffedc0
 	WORD $0x9101c194
@@ -18472,7 +18472,7 @@ TEXT ·js_load_module_fulfilled(SB), $88-16
 	WORD $0x54ffeee1
 	WORD $0xf94027e8
 	WORD $0xf9400915
-	WORD $0xf955aea8
+	WORD $0xf955aaa8
 	WORD $0xeb16011f
 	WORD $0x54ffee40
 	WORD $0x9101c194
@@ -18923,7 +18923,7 @@ TEXT ·js_load_module_rejected(SB), $88-16
 	WORD $0xeb09011f
 	WORD $0x54fff841
 	WORD $0xf9400955
-	WORD $0xf955aea8
+	WORD $0xf955aaa8
 	WORD $0xeb16011f
 	WORD $0x54fff7c0
 	WORD $0x91018174
@@ -19040,7 +19040,7 @@ TEXT ·js_async_context_call(SB), $120-16
 	WORD $0xeb09011f
 	WORD $0x54fff821
 	WORD $0xf94009b5
-	WORD $0xf955aea8
+	WORD $0xf955aaa8
 	WORD $0xeb16011f
 	WORD $0x54fff7a0
 	WORD $0x91018194
@@ -19811,7 +19811,7 @@ TEXT ·js_promise_resolve(SB), $136-16
 	WORD $0x54ffed21
 	WORD $0xf94047e8
 	WORD $0xf9400915
-	WORD $0xf955aea8
+	WORD $0xf955aaa8
 	WORD $0xeb16011f
 	WORD $0x54ffec80
 	WORD $0x91020154
@@ -20992,7 +20992,7 @@ TEXT ·js_async_module_execution_rejected(SB), $104-16
 	WORD $0x54ffee41
 	WORD $0xf9402be8
 	WORD $0xf9400915
-	WORD $0xf955aea8
+	WORD $0xf955aaa8
 	WORD $0xeb16011f
 	WORD $0x54ffeda0
 	WORD $0x91020294
@@ -21294,7 +21294,7 @@ TEXT ·JS_CallConstructorInternal(SB), $152-16
 	WORD $0xeb09011f
 	WORD $0x54ffe921
 	WORD $0xf9400955
-	WORD $0xf955aea8
+	WORD $0xf955aaa8
 	WORD $0xeb16011f
 	WORD $0x54ffe8a0
 	WORD $0xf94047e8
@@ -21327,7 +21327,7 @@ TEXT ·JS_CallConstructorInternal(SB), $152-16
 	MOVD $·engine_rodata+12672(SB), R9
 	WORD $0xeb09011f
 	WORD $0x540003e1
-	WORD $0xf955aea8
+	WORD $0xf955aaa8
 	WORD $0xeb16011f
 	WORD $0x54000380
 	WORD $0xf94047e8
@@ -21544,7 +21544,7 @@ TEXT ·js_function_apply(SB), $136-16
 	WORD $0xeb09011f
 	WORD $0x54000261
 	WORD $0xf9400975
-	WORD $0xf955aea8
+	WORD $0xf955aaa8
 	WORD $0xeb16011f
 	WORD $0x540001e0
 	WORD $0x91018154
@@ -21583,7 +21583,7 @@ TEXT ·js_function_apply(SB), $136-16
 	WORD $0xeb09011f
 	WORD $0x54fff6a1
 	WORD $0xf94009b5
-	WORD $0xf955aea8
+	WORD $0xf955aaa8
 	WORD $0xeb16011f
 	WORD $0x54fff620
 	WORD $0x91018194
@@ -24679,7 +24679,7 @@ TEXT ·JS_IteratorNext2(SB), $152-16
 	MOVD $·engine_rodata+12672(SB), R9
 	WORD $0xeb09011f
 	WORD $0x54fff421
-	WORD $0xf955aea8
+	WORD $0xf955aaa8
 	WORD $0xeb16011f
 	WORD $0x54fff3c0
 	WORD $0xf94043e8
@@ -26777,7 +26777,7 @@ TEXT ·js_call_bound_function(SB), $200-16
 	WORD $0xeb09011f
 	WORD $0x54000301
 	WORD $0xf94009b5
-	WORD $0xf955aea8
+	WORD $0xf955aaa8
 	WORD $0xeb16011f
 	WORD $0x54000280
 	WORD $0xf94002f4
@@ -27139,11 +27139,11 @@ TEXT ·js_track_rejection(SB), $104-16
 	WORD $0x11000529
 	WORD $0xb81fc209
 	WORD $0xa9023d10
-	WORD $0xf95605a9
+	WORD $0xf95601a9
 	WORD $0xf94002ca
 	WORD $0xf9001909
 	WORD $0x91000529
-	WORD $0xf91605a9
+	WORD $0xf91601a9
 	WORD $0xb94016c9
 	WORD $0xf9000548
 	WORD $0xa900590a
