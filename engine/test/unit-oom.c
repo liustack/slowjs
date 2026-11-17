@@ -1841,6 +1841,10 @@ static void sweep(const char *what, const char *file, const char *setup,
             CHECK(unc && t && (strstr(t, "out of memory") || strcmp(t, "null") == 0),
                   "%s: room %zu: not the uncatchable out of memory error: %s", what, k, t ? t : "?");
         } else {
+            /* a value, and no error left pending behind it */
+            t = exception_text(v.ctx);
+            CHECK(!t, "%s: room %zu: a value with %s pending", what, k, t);
+            free(t);
             t = value_text(v.ctx, r);
             for (i = 0; want[i] && !(t && strcmp(t, want[i]) == 0); i++)
                 ;
@@ -3068,6 +3072,85 @@ static void test_finrec_job_full_heap(void)
     }
 }
 
+/* Built-ins and steps of the interpreter that define a property on the
+   object they made, with too little memory: each fails with the out of
+   memory error. They went on with the error pending and returned the object
+   without the property: the prototype of a generator function or of a
+   function, the length of a class, the length of a String object, the
+   message, cause and errors of an error, the result of Proxy.revocable and
+   the descriptor a defineProperty trap gets. f is called from C, made and
+   converted with memory, so that its first allocations are the ones of the
+   step and no compile before it takes more memory than the step needs. */
+static void test_define_after_make_oom(void)
+{
+    static const struct {
+        const char *what, *expr, *want;
+    } cases[] = {
+        { "generator function", "function* () {}", "function* () {}" },
+        { "function", "function () {}", "function () {}" },
+        { "class", "class { constructor(a, b) {} }", "class { constructor(a, b) {} }" },
+        { "Object of a string", "Object('abc')", "abc" },
+        { "String", "new String('xy')", "xy" },
+        { "Error", "new Error('m', { cause: 1 })", "Error: m" },
+        { "AggregateError", "new AggregateError([1, 2], 'n')", "AggregateError: n" },
+        { "Proxy.revocable", "Proxy.revocable({}, {})", "[object Object]" },
+        { "defineProperty trap",
+          "(Object.defineProperty(p, 'x', { value: 1, writable: true, enumerable: true, configurable: true }), got)",
+          "value,writable,enumerable,configurable" },
+    };
+    FillRoom rm[FILL_ROOMS];
+    size_t nfill = fill_rooms(rm), nbytes = 4096 / 8 + 1, i, k;
+    char setup[512];
+
+    for (i = 0; i < countof(cases); i++) {
+        int failed = 0, worked = 0;
+
+        snprintf(setup, sizeof setup,
+                 "var go = 0, got, p = new Proxy({}, { defineProperty(t, k, d) { got = Object.keys(d).join(); return true; } });\n"
+                 "Object.defineProperty(p, 'y', { value: 0 });\n"
+                 "var f = () => go ? (%s) : 0;\n"
+                 "f(); go = 1;\n", cases[i].expr);
+        for (k = 0; k < nbytes + nfill; k++) {
+            VM v = vm_new();
+            JSValue r;
+            char *t;
+
+            CHECK(eval_ok(v.ctx, setup), "%s: the setup failed", cases[i].what);
+            if (k < nbytes) {
+                room(&v, k * 8);
+            } else {
+                fill_memory(&v);
+                free_blocks(&v, rm[k - nbytes].min, rm[k - nbytes].max, rm[k - nbytes].n);
+            }
+            r = call_global(v.ctx, "f");
+            if (k < nbytes)
+                unlimit(&v);
+            else
+                release_blocks(&v);
+            if (JS_IsException(r)) {
+                failed++;
+                CHECK(JS_IsUncatchableException(v.ctx), "%s: room %zu: a catchable error", cases[i].what, k);
+                t = exception_text(v.ctx);
+                CHECK(t && (strstr(t, "out of memory") || strcmp(t, "null") == 0),
+                      "%s: room %zu: not the out of memory error: %s", cases[i].what, k, t ? t : "?");
+            } else {
+                t = exception_text(v.ctx);
+                CHECK(!t, "%s: room %zu: a value with %s pending", cases[i].what, k, t);
+                free(t);
+                t = value_text(v.ctx, r);
+                CHECK(t && strcmp(t, cases[i].want) == 0, "%s: room %zu: got %s", cases[i].what, k, t ? t : "(no text)");
+                if (t && strcmp(t, cases[i].want) == 0)
+                    worked++;
+            }
+            free(t);
+            JS_FreeValue(v.ctx, r);
+            vm_free(&v);
+        }
+        CHECK(failed > 0, "%s: no room made it fail", cases[i].what);
+        CHECK(worked > 0, "%s: no room let it work", cases[i].what);
+    }
+}
+
 /* ---- the rejections kept for the host ---- */
 
 /* The two allocations of keeping rejections, each with no memory: the list,
@@ -3510,6 +3593,7 @@ int main(void)
     test_syntax_error_stack_oom();
     test_empty_string_full_heap();
     test_finrec_job_full_heap();
+    test_define_after_make_oom();
     test_rejections_oom();
     test_split_paths_oom();
     test_compile_names_oom();

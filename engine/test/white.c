@@ -2538,7 +2538,10 @@ static int white_by_value_run(JSContext *ctx, const char *src, const char *name,
                     c->closure_var[k].by_value = 0;
             }
         }
-        capture_by_value(ctx, f);
+        if (capture_by_value(ctx, f) < 0) {
+            JS_FreeValue(ctx, v);
+            return -1;
+        }
     }
     for (i = 0; i < f->arg_count + f->var_count; i++) {
         char buf[ATOM_GET_STR_BUF_SIZE];

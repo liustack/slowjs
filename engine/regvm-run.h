@@ -408,7 +408,7 @@ static no_inline const uint8_t *rv_unwind(JSContext *ctx, JSStackFrame *sf,
                     if (!js_dst_has_return(ctx) || js_dst_iter(ctx, &F[rf->temp0 + i - 2]))
                         continue;
                 }
-                JS_IteratorClose(ctx, F[rf->temp0 + i - 2], TRUE);
+                js_iterator_close_throw(ctx, F[rf->temp0 + i - 2]);
                 continue;
             }
             /* the jump to the catch counts a poll and reads the interrupt

@@ -94,7 +94,7 @@ static void rv_with_op(RVPass *s, const uint8_t *p, int pos)
    window under the slot w. 1 when it found the name (the jump), 0 when not,
    -1 with the operands freed when it throws. A store and a missing name
    throw by the mode of the frame's function. */
-static no_inline int rv_with_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
+static no_inline __exception int rv_with_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
 {
     JSFunctionBytecode *b = ((RVHeader *)F)->rf->b;
     JSValue *sp = F + (int8_t)ip[0], *base;

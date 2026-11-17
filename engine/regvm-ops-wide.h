@@ -153,7 +153,7 @@ static no_inline void rv_chklw_throw(JSContext *ctx, JSValue *F, const uint8_t *
 /* CLW 0: the closure state of the frame F as rv_clinit makes it, with its
    var_refs on the heap. Until they are, sf->var_refs is NULL, which the
    unwinding of a failure here reads as nothing to close. */
-static no_inline int rv_clw_init(JSContext *ctx, JSValue *F)
+static no_inline __exception int rv_clw_init(JSContext *ctx, JSValue *F)
 {
     RVFunc *rf = ((RVHeader *)F)->rf;
     JSStackFrame *sf = RV_SF(F);

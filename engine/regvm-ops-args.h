@@ -451,7 +451,7 @@ static JSValue rv_build_lazy(JSContext *ctx, JSValue *F, RVHeader *h)
 
 /* the slow side of ARGLEN, ip at d a: the length of the object built in
    the local, which a script may have redefined, else the count */
-static no_inline int rv_arglen_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
+static no_inline __exception int rv_arglen_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
 {
     JSValue v;
     if (RV_INJ_HIT(ctx))
@@ -473,7 +473,7 @@ static no_inline int rv_arglen_slow(JSContext *ctx, JSValue *F, const uint8_t *i
    values of entry (rv_lazy_args), and stored only whole: a getter the get
    runs may keep it and change it, and every later read of the call sees
    that. */
-static no_inline int rv_argget_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
+static no_inline __exception int rv_argget_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
 {
     RVHeader *h = (RVHeader *)F;
     JSValue *pa = &F[(int8_t)ip[1]], key, v;
@@ -506,7 +506,7 @@ static no_inline int rv_argget_slow(JSContext *ctx, JSValue *F, const uint8_t *i
 /* ARGMAT, ip at d a: the object of the local, built there first if it is
    not there, with the values of entry (rv_lazy_args). Nothing here runs
    JS. */
-static no_inline int rv_argmat_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
+static no_inline __exception int rv_argmat_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
 {
     RVHeader *h = (RVHeader *)F;
     JSValue *pa = &F[(int8_t)ip[1]], v;
@@ -523,7 +523,7 @@ static no_inline int rv_argmat_slow(JSContext *ctx, JSValue *F, const uint8_t *i
 }
 
 /* ARGS, ip at d kind first16. Nothing here runs JS. */
-static no_inline int rv_args(JSContext *ctx, JSValue *F, const uint8_t *ip)
+static no_inline __exception int rv_args(JSContext *ctx, JSValue *F, const uint8_t *ip)
 {
     RVHeader *h = (RVHeader *)F;
     JSValue v;
