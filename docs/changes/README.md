@@ -74,6 +74,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | `TypedArray.prototype.slice` of a source whose resizable buffer shrank below the start while `slice` ran copies nothing and forms no pointer from the source, which then has no data (NULL): UndefinedBehaviorSanitizer reports nothing over test262 | v0.31.5 | `js_typed_array_slice` in [quickjs.c](../../engine/quickjs.c) |
 | An array or an arguments object with fast elements takes the slot kept for a key of the prototype too (`a.push`, `a.map` before a call), where an exotic object never did. No more bytes per read site | v0.31.5 | `rv_getf_keep` in [regvm-ops-basic.h](../../engine/regvm-ops-basic.h) |
 | A call of the register loop takes the register code of the function from the function object (`JSFuncObject.rv`), not from its bytecode, and finds what a call and a return read in the 48 bytes right before the code. Object literals, closures and the closure state read the constants of the bytecode from the register code | v0.31.5 | `RV_CALL_BODY` in [engine/regvm-ops-basic.h](../../engine/regvm-ops-basic.h), `RVFunc` in [engine/regvm-func.h](../../engine/regvm-func.h) |
+| `memcmp` of the small libc compares 8 bytes at a time while 8 or more are left, where musl's loop took one, and gives the same value | Unreleased | [libc README](../../engine/libc/README.md) |
 
 ## The generator
 

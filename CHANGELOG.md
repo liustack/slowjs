@@ -4,6 +4,10 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 
 ## [Unreleased]
 
+### Changed
+
+- Comparing strings and finding keys by name takes fewer instructions: the small libc's `memcmp` compares 8 bytes at a time. tifa's store pages run 0.2% fewer instructions and its workbench pages 0.4% fewer (counted, not timed, against v0.31.5 with the same profile).
+
 ### Fixed
 
 - A timeout or interrupt while an array grows to tens of MB, the result of a `split` into millions of parts or a long loop of pushes, stops at the next MB the engine copies, where it waited for the whole copy.
