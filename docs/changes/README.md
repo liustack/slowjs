@@ -375,6 +375,8 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A full collection frees after its garbage an object whose last reference a finalizer of a class of the host let go of, as a young collection does, where it left the object listed with a count of 0 and a WeakRef to it freed its block while it was still listed | Unreleased | [young-collection.md](young-collection.md) |
 | A full collection moves the young list to the old one after its weak pass, so an object that a finalizer of a host class makes there is counted like any other, where held by an old object it left a count on its children that kept the runtime from being freed | Unreleased | [young-collection.md](young-collection.md) |
 | Young objects carry a young bit of their own, so the young collection needs no pass to mark them and takes away the counts and finds the candidates in one pass over the young list, where it took three | Unreleased | `JS_RunYoungGC` in [quickjs.c](../../engine/quickjs.c) |
+| A collection clears the WeakRefs to its garbage before it frees any of it, so a finalizer of a class of the host that calls `deref` while the garbage is freed gets `undefined`, where it could get an object being freed | Unreleased | `gc_clear_weak` in [quickjs.c](../../engine/quickjs.c) |
+| A weak map record whose key and value are young holds its value in a young collection only once the scan keeps its key, as in a full one, so a key that only its value holds goes in the next young collection, where it stayed until a full one | Unreleased | `young_weak_alloc` in [quickjs.c](../../engine/quickjs.c) |
 
 ## Weak collections
 

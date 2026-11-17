@@ -13,6 +13,8 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 
 - A full collection now frees an object whose last reference the finalizer of a host class lets go of while the collection frees its garbage. It used to leave the object listed with a count of 0, and a WeakRef to it then freed its memory while it was still listed.
 - An object that the finalizer of a host class makes while a full collection removes dead weak entries, held by an old object, no longer leaves extra counts on its children, which kept them and the runtime from ever being freed.
+- A finalizer of a host class that calls `deref` on a WeakRef while a collection frees its garbage now gets `undefined` for a target in that garbage, where it got an object that was being freed.
+- A young collection now frees a weak map key that only its value holds, which it kept until the next full collection. With the shop bundle of tifa 63a2099e, which keeps such a record for every render, tifa's pool ran a full collection every 192 renders for its memory, and now runs one every 256 renders with 24% less memory after it (19.4 MB where it held 25.6 MB).
 
 ## [v0.31.4] - 2026-11-17
 
