@@ -1841,6 +1841,10 @@ static void sweep(const char *what, const char *file, const char *setup,
             CHECK(unc && t && (strstr(t, "out of memory") || strcmp(t, "null") == 0),
                   "%s: room %zu: not the uncatchable out of memory error: %s", what, k, t ? t : "?");
         } else {
+            /* a value, and no error left pending behind it */
+            t = exception_text(v.ctx);
+            CHECK(!t, "%s: room %zu: a value with %s pending", what, k, t);
+            free(t);
             t = value_text(v.ctx, r);
             for (i = 0; want[i] && !(t && strcmp(t, want[i]) == 0); i++)
                 ;
@@ -3068,6 +3072,93 @@ static void test_finrec_job_full_heap(void)
     }
 }
 
+/* The jobs of promises with too little memory, the resolving functions of a
+   promise called from C as a host calls them, with a reaction waiting on
+   the promise: a resolve with a thenable, a resolve and a reject each
+   queue a job, and a job with no memory fails the call with the out of
+   memory error, with the promise pending or settled with its reaction
+   lost. A call that works
+   settles the promise and leaves no error pending. The resolve with a
+   thenable dropped the failure: it returned undefined, with the error
+   pending and the promise pending for good. */
+static void test_promise_jobs_oom(void)
+{
+    static const char setup[] =
+        "var r = 0, t = { then(f) { f(1); } };\n"
+        "function watch(p) { p.then(v => { r = v; }, e => { r = -e; }); }\n";
+    static const struct {
+        const char *what;
+        int reject, thenable;
+        const char *want;
+    } cases[] = {
+        { "resolve with a thenable", 0, 1, "1" },
+        { "resolve with reactions", 0, 0, "5" },
+        { "reject with reactions", 1, 0, "-5" },
+    };
+    FillRoom rm[FILL_ROOMS];
+    size_t nfill = fill_rooms(rm), nbytes = 4096 / 8 + 1, i, k;
+
+    for (i = 0; i < countof(cases); i++) {
+        int failed = 0, worked = 0;
+
+        for (k = 0; k < nbytes + nfill; k++) {
+            VM v = vm_new();
+            JSValue funcs[2], p, g, w, arg, r;
+            char *t;
+
+            eval_ok(v.ctx, setup);
+            p = JS_NewPromiseCapability(v.ctx, funcs);
+            CHECK(!JS_IsException(p), "%s: no promise", cases[i].what);
+            g = JS_GetGlobalObject(v.ctx);
+            w = JS_GetPropertyStr(v.ctx, g, "watch");
+            JS_FreeValue(v.ctx, JS_Call(v.ctx, w, JS_UNDEFINED, 1, (JSValueConst *)&p));
+            JS_FreeValue(v.ctx, w);
+            if (cases[i].thenable)
+                arg = JS_GetPropertyStr(v.ctx, g, "t");
+            else
+                arg = JS_NewInt32(v.ctx, 5);
+            if (k < nbytes) {
+                room(&v, k * 8);
+            } else {
+                fill_memory(&v);
+                free_blocks(&v, rm[k - nbytes].min, rm[k - nbytes].max, rm[k - nbytes].n);
+            }
+            r = JS_Call(v.ctx, funcs[cases[i].reject], JS_UNDEFINED, 1, (JSValueConst *)&arg);
+            if (k < nbytes)
+                unlimit(&v);
+            else
+                release_blocks(&v);
+            if (JS_IsException(r)) {
+                failed++;
+                CHECK(JS_IsUncatchableException(v.ctx), "%s: room %zu: a catchable error", cases[i].what, k);
+                t = exception_text(v.ctx);
+                CHECK(t && (strstr(t, "out of memory") || strcmp(t, "null") == 0),
+                      "%s: room %zu: not the out of memory error: %s", cases[i].what, k, t ? t : "?");
+                free(t);
+            } else {
+                t = exception_text(v.ctx);
+                CHECK(!t, "%s: room %zu: the call worked with %s pending", cases[i].what, k, t);
+                free(t);
+                drain_jobs(&v);
+                if (eval_is(v.ctx, "String(r)", cases[i].want))
+                    worked++;
+                else
+                    CHECK(0, "%s: room %zu: the reaction did not run", cases[i].what, k);
+            }
+            JS_FreeValue(v.ctx, r);
+            JS_FreeValue(v.ctx, arg);
+            JS_FreeValue(v.ctx, g);
+            JS_FreeValue(v.ctx, p);
+            JS_FreeValue(v.ctx, funcs[0]);
+            JS_FreeValue(v.ctx, funcs[1]);
+            drain_jobs(&v);
+            vm_free(&v);
+        }
+        CHECK(failed > 0, "%s: no room made it fail", cases[i].what);
+        CHECK(worked > 0, "%s: no room let it work", cases[i].what);
+    }
+}
+
 /* ---- the rejections kept for the host ---- */
 
 /* The two allocations of keeping rejections, each with no memory: the list,
@@ -3510,6 +3601,7 @@ int main(void)
     test_syntax_error_stack_oom();
     test_empty_string_full_heap();
     test_finrec_job_full_heap();
+    test_promise_jobs_oom();
     test_rejections_oom();
     test_split_paths_oom();
     test_compile_names_oom();
