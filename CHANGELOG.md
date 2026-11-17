@@ -6,6 +6,7 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 
 ### Fixed
 
+- Reading the bytecode of a module with EvalBytecode under a memory limit that runs out at its list of imports or exports returns the out of memory error, where it crashed the process.
 - An interrupt or the eval timeout stops the parse and the compile of a script of many short tokens, and the conversion of a long function to register code, within a few polls: a timeout in the compile of a script of 3 MB or more killed the VM (ErrKilled).
 - A timeout that stops the compile of a script of several MB no longer kills the VM while the engine frees the code the compile made: those polls no longer count toward the kill.
 

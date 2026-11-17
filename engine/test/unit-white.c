@@ -9918,6 +9918,63 @@ static void test_module_failed_names(void)
     vm_free(&v);
 }
 
+/* The modules m imports, for test_module_read_oom. */
+static JSModuleDef *read_loader(JSContext *ctx, const char *name, void *opaque)
+{
+    static const char src[] = "export var a = 1, q = 2;";
+    JSValue v = JS_Eval(ctx, src, strlen(src), name, JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY);
+    JSModuleDef *m;
+
+    (void)opaque;
+    if (JS_IsException(v))
+        return NULL;
+    m = JS_VALUE_GET_PTR(v);
+    JS_FreeValue(ctx, v);
+    return m;
+}
+
+/* A module read from bytecode that gets no memory for its list of the
+   modules it requests, of its exports or of its imports fails with out of
+   memory. The count of each list was set before its array was made, and
+   the free of the module read the entries of the array it did not get.
+   Each allocation of the read of a module with every list fails in turn. */
+static void test_module_read_oom(void)
+{
+    static const char src[] =
+        "import { a } from \"x\"; export * from \"y\"; export { q as r } from \"z\";\n"
+        "export var v = a; export function f() { return v; }";
+    VM v = vm_new(), w;
+    JSValue c, obj;
+    uint8_t *buf;
+    size_t len;
+    char *t;
+    int fail, n, failed = 0;
+
+    JS_SetModuleLoaderFunc(v.rt, NULL, read_loader, NULL);
+    c = JS_Eval(v.ctx, src, strlen(src), "m", JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY);
+    CHECK(!JS_IsException(c), "m threw");
+    buf = JS_WriteObject(v.ctx, &len, c, JS_WRITE_OBJ_BYTECODE);
+    CHECK(buf != NULL, "m cannot be written");
+    JS_FreeValue(v.ctx, c);
+    for (fail = 1; buf; fail++) {
+        w = vm_new();
+        obj = white_read_failing(w.ctx, buf, len, fail, &n);
+        if (JS_IsException(obj)) {
+            t = exception_text(w.ctx);
+            CHECK(t && strstr(t, "out of memory"), "allocation %d failing: %s", fail, t ? t : "no exception");
+            free(t);
+            failed++;
+        }
+        JS_FreeValue(w.ctx, obj);
+        vm_free(&w);
+        if (fail > n)
+            break;
+    }
+    CHECK(failed >= 3, "%d reads failed", failed);
+    js_free(v.ctx, buf);
+    vm_free(&v);
+}
+
 /* The modules of test_module_same_name: the load of t makes a module named
    s too, loaded after the one being compiled, and missing is refused. */
 static JSModuleDef *same_loader(JSContext *ctx, const char *name, void *opaque)
@@ -10224,6 +10281,7 @@ int main(int argc, char **argv)
     test_module_load_stops();
     test_module_failed_names();
     test_module_same_name();
+    test_module_read_oom();
     if (failures) {
         printf("unit-white: %d of %ld checks failed\n", failures, checks);
         return 1;
