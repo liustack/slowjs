@@ -646,6 +646,7 @@ var goasmKeep = []any{
 	js_async_generator_function_call,
 	js_async_generator_mark,
 	js_async_generator_next,
+	js_async_generator_request_free,
 	js_async_generator_resolve_function,
 	js_async_generator_resolve_or_reject,
 	js_async_generator_resume_next,

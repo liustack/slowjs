@@ -1592,6 +1592,7 @@ static no_inline JSValue JS_RegvmRun(JSContext *caller_ctx, JSValueConst func_ob
                                      JSValueConst this_obj, JSValue new_target,
                                      int argc, JSValueConst *argv);
 static JSValue rv_gen_resume(JSContext *ctx, JSAsyncFunctionState *s);
+static void rv_gen_fail(JSRuntime *rt, JSAsyncFunctionState *s);
 /* the call of a function the pass refused (regvm.h) */
 static no_inline JSValue rv_refused(JSContext *ctx, struct JSFunctionBytecode *b);
 /* counts for the measurements of design 6.2, in a native build with
@@ -25942,8 +25943,14 @@ static int js_async_function_resume(JSContext *ctx, JSAsyncFunctionState *s)
         if (JS_IsException(func_ret)) {
             JSValue error;
         fail:
-            if (js_catch_ends(ctx))
+            if (js_catch_ends(ctx)) {
+                /* stopped in a step of an await: it ends as a failure of
+                   its body ends it, its var_refs closed and its frame
+                   freed */
+                if (!s->is_completed)
+                    rv_gen_fail(ctx->rt, s);
                 return -1;
+            }
             error = js_get_exception(ctx);
             ret2 = js_call(ctx, s->resolving_funcs[1], JS_UNDEFINED,
                            1, (JSValueConst *)&error);
@@ -26074,6 +26081,16 @@ typedef struct JSAsyncGeneratorData {
     struct list_head queue; /* list of JSAsyncGeneratorRequest.link */
 } JSAsyncGeneratorData;
 
+static void js_async_generator_request_free(JSRuntime *rt,
+                                            JSAsyncGeneratorRequest *req)
+{
+    JS_FreeValueRT(rt, req->result);
+    JS_FreeValueRT(rt, req->promise);
+    JS_FreeValueRT(rt, req->resolving_funcs[0]);
+    JS_FreeValueRT(rt, req->resolving_funcs[1]);
+    js_free_rt(rt, req);
+}
+
 static void js_async_generator_free(JSRuntime *rt,
                                     JSAsyncGeneratorData *s)
 {
@@ -26082,11 +26099,7 @@ static void js_async_generator_free(JSRuntime *rt,
 
     list_for_each_safe(el, el1, &s->queue) {
         req = list_entry(el, JSAsyncGeneratorRequest, link);
-        JS_FreeValueRT(rt, req->result);
-        JS_FreeValueRT(rt, req->promise);
-        JS_FreeValueRT(rt, req->resolving_funcs[0]);
-        JS_FreeValueRT(rt, req->resolving_funcs[1]);
-        js_free_rt(rt, req);
+        js_async_generator_request_free(rt, req);
     }
     if (s->func_state)
         async_func_free(rt, s->func_state);
@@ -26197,11 +26210,7 @@ static int js_async_generator_resolve_or_reject(JSContext *ctx,
     list_del(&next->link);
     ret = js_call(ctx, next->resolving_funcs[is_reject], JS_UNDEFINED, 1,
                   &result);
-    JS_FreeValue(ctx, next->result);
-    JS_FreeValue(ctx, next->promise);
-    JS_FreeValue(ctx, next->resolving_funcs[0]);
-    JS_FreeValue(ctx, next->resolving_funcs[1]);
-    js_free(ctx, next);
+    js_async_generator_request_free(ctx->rt, next);
     return js_settle_result(ctx, ret);
 }
 
@@ -26234,6 +26243,24 @@ static void js_async_generator_complete(JSContext *ctx,
         async_func_free(ctx->rt, s->func_state);
         s->func_state = NULL;
     }
+}
+
+/* The end of a run of s that a stop left (js_catch_ends): s ends as a
+   failure of its body ends it, its var_refs closed and its frame freed
+   (rv_gen_fail) also when the stop came in a step of an await, and the
+   request it ran for leaves the queue unsettled, as no promise may hold the
+   exception. The requests behind it settle at the next drain. Returns -1. */
+static int js_async_generator_stop(JSContext *ctx, JSAsyncGeneratorData *s)
+{
+    JSAsyncGeneratorRequest *next;
+
+    if (!s->func_state->is_completed)
+        rv_gen_fail(ctx->rt, s->func_state);
+    js_async_generator_complete(ctx, s);
+    next = list_entry(s->queue.next, JSAsyncGeneratorRequest, link);
+    list_del(&next->link);
+    js_async_generator_request_free(ctx->rt, next);
+    return -1;
 }
 
 static int js_async_generator_completed_return(JSContext *ctx,
@@ -26277,9 +26304,9 @@ static int js_async_generator_completed_return(JSContext *ctx,
     return res;
 }
 
-/* -1 when an uncatchable exception is pending: the body stopped, or a step
-   of a settle did, and the call ends with it (js_catch_ends). The request
-   stays in the queue, with its promise pending. 0 otherwise. */
+/* -1 when an uncatchable exception is pending: the body stopped
+   (js_async_generator_stop), or a step of a settle did, and the call ends
+   with it (js_catch_ends). 0 otherwise. */
 static int js_async_generator_resume_next(JSContext *ctx,
                                           JSAsyncGeneratorData *s)
 {
@@ -26344,10 +26371,8 @@ static int js_async_generator_resume_next(JSContext *ctx,
             func_ret = async_func_resume(ctx, s->func_state);
             if (s->func_state->is_completed) {
                 if (JS_IsException(func_ret)) {
-                    if (js_catch_ends(ctx)) {
-                        js_async_generator_complete(ctx, s);
-                        return -1;
-                    }
+                    if (js_catch_ends(ctx))
+                        return js_async_generator_stop(ctx, s);
                     value = js_get_exception(ctx);
                     js_async_generator_complete(ctx, s);
                     ret = js_async_generator_reject(ctx, s, value);
@@ -26382,10 +26407,8 @@ static int js_async_generator_resume_next(JSContext *ctx,
                     ret = js_async_generator_await(ctx, s, value);
                     JS_FreeValue(ctx, value);
                     if (ret < 0) {
-                        if (js_catch_ends(ctx)) {
-                            js_async_generator_complete(ctx, s);
-                            return -1;
-                        }
+                        if (js_catch_ends(ctx))
+                            return js_async_generator_stop(ctx, s);
                         ret = 0;
                         /* exception: throw it */
                         s->func_state->throw_flag = TRUE;

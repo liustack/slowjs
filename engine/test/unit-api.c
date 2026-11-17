@@ -3153,6 +3153,32 @@ static void test_api_stop_returns(void)
     }
 }
 
+/* take_stop clears the flag and frees the exception a stop left, which must
+   be the interrupt. */
+static void take_stop(VM *v, const char *what, long k)
+{
+    JSValue e;
+    const char *s;
+
+    *JS_GetInterruptFlag(v->rt) = 0;
+    e = JS_GetException(v->ctx);
+    s = JS_ToCString(v->ctx, e);
+    CHECK(s && strcmp(s, "InternalError: interrupted") == 0, "%s, stop at %ld: %s",
+          what, k, s ? s : "?");
+    JS_FreeCString(v->ctx, s);
+    JS_FreeValue(v->ctx, e);
+}
+
+/* call_next calls next of the generator g from C */
+static JSValue call_next(JSContext *ctx, JSValueConst g)
+{
+    JSValue f = JS_GetPropertyStr(ctx, g, "next");
+    JSValue r = JS_Call(ctx, f, g, 0, NULL);
+
+    JS_FreeValue(ctx, f);
+    return r;
+}
+
 /* The requests queued on an async generator that finished all settle, as
    the drain of the spec settles them (AsyncGeneratorDrainQueue): after a
    failure of its body, and behind a return. Only the first after the end
@@ -3192,6 +3218,143 @@ static void test_async_gen_drain(void)
     }
 }
 
+/* A stop in the run of an async generator ends it, and the request it ran
+   for leaves the queue unsettled (the stop cannot become its rejection):
+   every later request settles. The stopped request was left at the head of
+   the queue, where the next call of next settled it in place of its own,
+   whose promise stayed pending for good. A request queued behind the
+   stopped one (from a job) settles at the next call too, as all those
+   queued on a finished generator do. Each case is stopped at each reading
+   of the flag until a run ends with no stop. A stop in the job of the
+   await before it reached the generator loses the rest of the await, as it
+   does for an async function, and the generator waits for good. */
+static void test_async_gen_stop_queue(void)
+{
+    static const char setup[] =
+        "globalThis.make = () => (async function* () {\n"
+        "  for (let i = 0; i < 50; i++) globalThis.n = i;\n"
+        "})();\n"
+        "globalThis.makeAwait = () => (async function* () {\n"
+        "  await 0;\n"
+        "  for (let i = 0; i < 50; i++) globalThis.n = i;\n"
+        "})();\n";
+    int job;
+    long k;
+
+    for (job = 0; job < 2; job++) {
+        const char *what = job ? "stop in a job" : "stop in next";
+
+        for (k = 1;; k++) {
+            VM v = vm_new();
+            JSValue g, p1, p2 = JS_UNDEFINED, p3;
+            int stopped = 0, ret;
+            char *t;
+
+            eval_ok(v.ctx, setup);
+            g = call_global(v.ctx, job ? "makeAwait" : "make");
+            CHECK(JS_IsObject(g), "%s: no generator", what);
+            if (job) {
+                p1 = call_next(v.ctx, g);
+                p2 = call_next(v.ctx, g);
+                host_poll_reads = 0;
+                host_poll_stop_after(k);
+                while ((ret = JS_ExecutePendingJob(v.rt, NULL)) > 0)
+                    ;
+                stopped = ret < 0;
+            } else {
+                host_poll_reads = 0;
+                host_poll_stop_after(k);
+                p1 = call_next(v.ctx, g);
+                stopped = JS_IsException(p1);
+            }
+            host_poll_stop_after(0);
+            if (stopped)
+                take_stop(&v, what, k);
+            t = eval_text(v.ctx, "String(globalThis.n)");
+            p3 = call_next(v.ctx, g);
+            drain_jobs(&v);
+            /* a stop in the job before it called the generator lost the
+               end of the await, as for an async function: the generator
+               waits for good. A stop in the body leaves both requests to
+               settle, and one in the settle of a request at the end (n is
+               49) may leave that request pending */
+            if (!(job && t && strcmp(t, "undefined") == 0)) {
+                if (job && !(t && strcmp(t, "49") == 0))
+                    CHECK(JS_PromiseState(v.ctx, p2) == JS_PROMISE_FULFILLED,
+                          "%s, stop at %ld: the second request is in state %d", what, k,
+                          JS_PromiseState(v.ctx, p2));
+                CHECK(JS_PromiseState(v.ctx, p3) == JS_PROMISE_FULFILLED,
+                      "%s, stop at %ld: the request after the stop is in state %d", what, k,
+                      JS_PromiseState(v.ctx, p3));
+            }
+            free(t);
+            JS_FreeValue(v.ctx, p1);
+            JS_FreeValue(v.ctx, p2);
+            JS_FreeValue(v.ctx, p3);
+            JS_FreeValue(v.ctx, g);
+            vm_free(&v);
+            if (!stopped)
+                break;
+        }
+        CHECK(k > 3, "%s: %ld readings", what, k);
+    }
+}
+
+/* A stop in a step of an await (a getter of then that loops) ends an async
+   generator or an async function as a failure of its body ends it: its
+   variables closed and its frame freed, so that a closure it made keeps
+   only what it captured. They were left with the frame suspended and the
+   variables open: keep held the frame, and the buffer of 16 MiB in it, for
+   as long as it lived. Each case is stopped at each reading of the flag up
+   to ENTRY_STOPS. */
+static void test_await_stop_frees_frame(void)
+{
+    static const struct {
+        const char *what, *src;
+    } cases[] = {
+        { "async generator",
+          "globalThis.run = () => (async function* () {\n"
+          "  let buf = new ArrayBuffer(16 << 20), x = 0;\n"
+          "  globalThis.keep = () => ++x;\n"
+          "  await { get then() { for (;;) {} } };\n"
+          "  return buf.byteLength;\n"
+          "})().next();\n" },
+        { "async function",
+          "globalThis.run = () => (async function () {\n"
+          "  let buf = new ArrayBuffer(16 << 20), x = 0;\n"
+          "  globalThis.keep = () => ++x;\n"
+          "  await { get then() { for (;;) {} } };\n"
+          "  return buf.byteLength;\n"
+          "})();\n" },
+    };
+    size_t i;
+    long k;
+
+    for (i = 0; i < countof(cases); i++) {
+        for (k = 1; k <= ENTRY_STOPS; k++) {
+            VM v = vm_new();
+            JSMemoryUsage base, after;
+            JSValue r;
+
+            eval_ok(v.ctx, cases[i].src);
+            base = usage(&v);
+            host_poll_reads = 0;
+            host_poll_stop_after(k);
+            r = call_global(v.ctx, "run");
+            host_poll_stop_after(0);
+            CHECK(JS_IsException(r), "%s, stop at %ld: the call returned a value", cases[i].what, k);
+            JS_FreeValue(v.ctx, r);
+            take_stop(&v, cases[i].what, k);
+            drain_jobs(&v);
+            after = usage(&v);
+            CHECK(after.malloc_size < base.malloc_size + (1 << 20),
+                  "%s, stop at %ld: %lld bytes kept by the closure", cases[i].what, k,
+                  (long long)(after.malloc_size - base.malloc_size));
+            vm_free(&v);
+        }
+    }
+}
+
 int main(void)
 {
     test_compile_stops();
@@ -3205,6 +3368,8 @@ int main(void)
     test_entry_stop_returns();
     test_api_stop_returns();
     test_async_gen_drain();
+    test_async_gen_stop_queue();
+    test_await_stop_frees_frame();
     test_for_in_keeps_shape();
     test_plain_objects();
     test_run_gc_threshold();
