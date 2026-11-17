@@ -2924,3 +2924,12 @@ size_t white_found_resize(JSContext *ctx, JSValueConst obj, const char *key)
         return 0;
     return size;
 }
+
+/* ---- the growth of a fast array (expand_fast_array) ---- */
+
+/* Room for new_len elements in the fast array arr: 0, or -1 with the
+   exception. */
+int white_array_grow(JSContext *ctx, JSValueConst arr, uint32_t new_len)
+{
+    return expand_fast_array(ctx, JS_VALUE_GET_OBJ(arr), new_len);
+}

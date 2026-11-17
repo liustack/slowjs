@@ -19869,7 +19869,7 @@ TEXT ·js_array_buffer_resize(SB), $104-16
 	WORD $0xf9000bf5
 	WORD $0xf9000ff6
 	WORD $0xf90013f7
-	BL ·js_array_buffer_realloc(SB)
+	BL ·js_realloc_stop(SB)
 	WORD $0xb4fff3e0
 	WORD $0xa944b7ee
 	WORD $0xb98001a8
@@ -20762,7 +20762,7 @@ TEXT ·js_array_buffer_transfer(SB), $136-16
 	WORD $0xf9000bf5
 	WORD $0xf9000ff6
 	WORD $0xf90013f7
-	BL ·js_array_buffer_realloc(SB)
+	BL ·js_realloc_stop(SB)
 	WORD $0xb4000300
 	WORD $0xa94523e9
 	WORD $0xaa0003ea
