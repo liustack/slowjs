@@ -249,11 +249,12 @@ static no_inline void rv_clinit(JSValue *F)
     sf->prev_frame = NULL;
     sf->cur_func = F[-rf->fofs];
     sf->arg_buf = F - rf->fofs + 1;
-    sf->var_buf = F - rf->b->var_count;
+    /* b->var_count and b->js_mode, from rf: the bytecode is not read */
+    sf->var_buf = F - (rf->var_count - rf->nt);
     sf->var_refs = (JSVarRef **)(sf + 1);
     sf->cur_pc = NULL;
     sf->arg_count = rf->arg_count;
-    sf->js_mode = rf->b->js_mode;
+    sf->js_mode = rf->js_mode;
     sf->cur_sp = NULL;
     for (i = 0; i < rf->var_ref_count; i++)
         sf->var_refs[i] = NULL;
@@ -274,12 +275,11 @@ static no_inline void rv_close_frame(JSRuntime *rt, JSValue *F)
 static no_inline int rv_fclosure(JSContext *ctx, JSValue *F, const uint8_t *ip)
 {
     RVHeader *h = (RVHeader *)F;
-    JSFunctionBytecode *b = h->rf->b;
     JSValue v;
 
     if (RV_INJ_HIT(ctx))
         return -1;
-    v = js_closure(ctx, JS_DupValue(ctx, b->cpool[get_u16(ip + 1)]), h->var_refs,
+    v = js_closure(ctx, JS_DupValue(ctx, h->rf->cpool[get_u16(ip + 1)]), h->var_refs,
                    h->rf->var_ref_count ? RV_SF(F) : NULL, FALSE);
     if (JS_IsException(v))
         return -1;

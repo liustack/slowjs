@@ -336,7 +336,9 @@ typedef struct JSMallocBlockHeader {
         uint16_t free_next; /* FREE_NIL if none */
     } u;
     uint8_t block_size_idx;
-    uint8_t gc_obj_type : 7;
+    uint8_t gc_obj_type : 6;
+    /* a GC object on the young list (JS_RunYoungGC) */
+    uint8_t young : 1;
     uint8_t mark : 1;
     int ref_count;
     __attribute__((aligned(JS_MALLOC_ALIGN))) uint8_t user_data[];
@@ -528,9 +530,9 @@ struct JSRuntime {
     struct JSGCEphemeron *ephemeron;
     /* the GC objects made since the last collection (see JS_RunYoungGC) */
     struct list_head young_obj_list;
-    /* the objects that only the garbage of a young collection held */
-    struct list_head young_dead_list;
-    BOOL young_sweep; /* a young collection is freeing its garbage */
+    /* the objects outside the garbage whose count got to 0 while a
+       collection freed it (gc_defer) */
+    struct list_head gc_dead_list;
     /* the register stack (engine/regvm.h), allocated by JS_NewRuntime and
        counted as the heap is: rv_seg the segment of it in use, rv_top and
        rv_end in it */
@@ -625,7 +627,12 @@ typedef enum {
     JS_GC_OBJ_TYPE_ASYNC_FUNCTION,
     JS_GC_OBJ_TYPE_JS_CONTEXT,
     JS_GC_OBJ_TYPE_MODULE,
+    JS_GC_OBJ_TYPE_COUNT, /* not a type: how many there are */
 } JSGCObjectTypeEnum;
+
+/* gc_obj_type has 6 bits of the block header, next to the young bit and the
+   mark */
+_Static_assert(JS_GC_OBJ_TYPE_COUNT <= (1 << 6), "every gc_obj_type fits its 6 bits");
 
 /* header for GC objects. GC objects are C data structures with a
    reference count that can reference other GC objects. JS Objects are
@@ -1448,7 +1455,7 @@ struct JSObject {
         struct JSAsyncFunctionState *async_function_data; /* JS_CLASS_ASYNC_FUNCTION_RESOLVE, JS_CLASS_ASYNC_FUNCTION_REJECT */
         struct JSAsyncFromSyncIteratorData *async_from_sync_iterator_data; /* JS_CLASS_ASYNC_FROM_SYNC_ITERATOR */
         struct JSAsyncGeneratorData *async_generator_data; /* JS_CLASS_ASYNC_GENERATOR */
-        struct { /* JS_CLASS_BYTECODE_FUNCTION: 12/24 bytes */
+        struct { /* JS_CLASS_BYTECODE_FUNCTION: 16/32 bytes */
             /* also used by JS_CLASS_GENERATOR_FUNCTION, JS_CLASS_ASYNC_FUNCTION and JS_CLASS_ASYNC_GENERATOR_FUNCTION */
             struct JSFunctionBytecode *function_bytecode;
             JSVarRef **var_refs;
@@ -1491,6 +1498,44 @@ struct JSObject {
         JSGlobalObject global_object;
     } u;
 };
+
+/* The block of an object of the classes of JS_FUNC_BLOCK_CLASSES, the
+   functions of bytecode: the object, then rv, then, for one
+   js_new_function_object makes, its properties and closure variables.
+   JS_NewObjectFromShape makes the same block for these classes, which an
+   embedder may ask JS_NewObjectProtoClass for, with rv NULL.
+   rv is function_bytecode->rv as js_closure2 found it, for the call ops of
+   the register loop, which then read neither function_bytecode nor its
+   record: RV_UNCONVERTED while the bytecode is not converted, and then
+   until a call op finds the record of the bytecode and copies it here
+   (engine/regvm-ops-basic.h). It holds nothing: the record lives as long
+   as function_bytecode. It is not in u, where it would make every object
+   of another class 8 bytes larger. */
+typedef struct JSFuncObject {
+    JSObject obj;
+    struct RVFunc *rv;
+} JSFuncObject;
+
+#define js_func_rv(p) (((JSFuncObject *)(p))->rv)
+
+#define JS_FUNC_BLOCK_CLASSES ((1ULL << JS_CLASS_BYTECODE_FUNCTION) |       \
+                               (1ULL << JS_CLASS_GENERATOR_FUNCTION) |      \
+                               (1ULL << JS_CLASS_ASYNC_FUNCTION) |          \
+                               (1ULL << JS_CLASS_ASYNC_GENERATOR_FUNCTION))
+_Static_assert(JS_CLASS_ASYNC_GENERATOR_FUNCTION < 64 &&
+               JS_CLASS_ASYNC_FUNCTION < 64 &&
+               JS_CLASS_GENERATOR_FUNCTION < 64 &&
+               JS_CLASS_BYTECODE_FUNCTION < 64,
+               "JS_FUNC_BLOCK_CLASSES is a mask of 64 bits");
+/* a JSObject is one line of cache, and rv the first word after it */
+_Static_assert(sizeof(void *) != 8 || sizeof(JSObject) == 64, "a JSObject of 64 bytes");
+_Static_assert(offsetof(JSFuncObject, rv) == sizeof(JSObject), "rv right after the JSObject");
+
+/* whether an object of class_id has the block of a JSFuncObject */
+static inline BOOL js_class_func_block(JSClassID class_id)
+{
+    return class_id < 64 && ((JS_FUNC_BLOCK_CLASSES >> class_id) & 1);
+}
 
 typedef struct JSMapRecord {
     int ref_count; /* used during enumeration to avoid freeing the record */
@@ -1865,6 +1910,7 @@ static JSAtom js_symbol_to_atom(JSContext *ctx, JSValue val);
 static void add_gc_object(JSRuntime *rt, JSGCObjectHeader *h,
                           JSGCObjectTypeEnum type);
 static void remove_gc_object(JSGCObjectHeader *h);
+static inline void gc_keep(JSGCObjectHeader *p);
 static JSValue js_instantiate_prototype(JSContext *ctx, JSObject *p, JSAtom atom, void *opaque);
 static JSValue js_module_ns_autoinit(JSContext *ctx, JSObject *p, JSAtom atom,
                                  void *opaque);
@@ -1893,7 +1939,8 @@ static void weakref_delete_weakref(JSRuntime *rt, JSWeakRefHeader *wh);
 static void finrec_delete_weakref(JSRuntime *rt, JSWeakRefHeader *wh);
 static void JS_RunGCInternal(JSRuntime *rt, BOOL remove_weak_objects);
 static void young_splice(JSRuntime *rt);
-static void young_defer(JSRuntime *rt, JSGCObjectHeader *p);
+static void young_splice_clear(JSRuntime *rt);
+static void gc_defer(JSRuntime *rt, JSGCObjectHeader *p);
 static JSValue js_array_from_iterator(JSContext *ctx, uint32_t *plen,
                                       JSValueConst obj, JSValueConst method);
 static int js_string_find_invalid_codepoint(JSString *p);
@@ -2525,6 +2572,7 @@ static void *__js_realloc(JSMallocContext *s, void *ptr, size_t size)
         new_b = container_of(new_ptr, JSMallocBlockHeader, user_data);
         /* copy the GC data */
         new_b->gc_obj_type = b->gc_obj_type;
+        new_b->young = b->young;
         new_b->mark = b->mark;
         new_b->ref_count = b->ref_count;
         /* copy the data */
@@ -3247,6 +3295,7 @@ JSRuntime *JS_NewRuntime(uint32_t vm, uint64_t seed)
     init_list_head(&rt->young_obj_list);
     init_list_head(&rt->gc_zero_ref_count_list);
     rt->gc_phase = JS_GC_PHASE_NONE;
+    init_list_head(&rt->gc_dead_list);
     init_list_head(&rt->weakref_list);
 
 #ifdef DUMP_LEAKS
@@ -8303,18 +8352,16 @@ static void js_shape_drop_parent(JSRuntime *rt, JSShape *sh)
 #define JS_OBJ_INLINE_PROPS(p) ((JSProperty *)((uint8_t *)(p) + offsetof(JSObject, u)))
 
 /* The properties of a function object made by js_new_function_object sit
-   right after the object, with the same rules. The block of an object of
-   any class but JS_CLASS_OBJECT is at least sizeof(JSObject), so this
-   address lies inside it or at its end, and no block of its own starts at
-   the end of another: every block has its header, with its count, before
-   it (JS_BLOCK_REF_COUNT_OFFSET). The block of an ordinary object may end
-   before it, so the test leaves ordinary objects out. */
-#define JS_FUNC_INLINE_PROPS(p) ((JSProperty *)((JSObject *)(p) + 1))
-
+   right after its JSFuncObject, with the same rules. Only the classes of
+   js_class_func_block have a block of sizeof(JSFuncObject) or more: the
+   block of an object of another class may end before this address, and a
+   block of its own may start there (past the header of the next block),
+   so the test leaves every other class out. */
+#define JS_FUNC_INLINE_PROPS(p) ((JSProperty *)((JSFuncObject *)(p) + 1))
 static inline BOOL js_props_inline(const JSObject *p)
 {
     return p->prop == JS_OBJ_INLINE_PROPS(p) ||
-        (p->prop == JS_FUNC_INLINE_PROPS(p) && p->class_id != JS_CLASS_OBJECT);
+        (p->prop == JS_FUNC_INLINE_PROPS(p) && js_class_func_block(p->class_id));
 }
 
 /* Return an array of new_size properties for p that starts with the first
@@ -8647,7 +8694,8 @@ static JSValue JS_NewObjectFromShape(JSContext *ctx, JSShape *sh, JSClassID clas
     int i;
     
     js_trigger_gc(ctx->rt, sizeof(JSObject));
-    p = js_malloc(ctx, class_id == JS_CLASS_OBJECT ? offsetof(JSObject, u) : sizeof(JSObject));
+    p = js_malloc(ctx, class_id == JS_CLASS_OBJECT ? offsetof(JSObject, u) :
+                  js_class_func_block(class_id) ? sizeof(JSFuncObject) : sizeof(JSObject));
     if (unlikely(!p))
         goto fail;
     p->class_id = class_id;
@@ -8665,6 +8713,13 @@ static JSValue JS_NewObjectFromShape(JSContext *ctx, JSShape *sh, JSClassID clas
     p->weakref_count = 0;
     if (class_id != JS_CLASS_OBJECT) /* the block of an ordinary object ends before u */
         p->u.opaque = NULL;
+    if (js_class_func_block(class_id)) {
+        /* no function yet, as js_new_function_object leaves it: the
+           finalizer and the mark do nothing with it */
+        p->u.func.var_refs = NULL;
+        p->u.func.home_object = NULL;
+        js_func_rv(p) = NULL;
+    }
     p->shape = sh;
     p->prop = js_malloc(ctx, sizeof(JSProperty) * sh->prop_size);
     if (unlikely(!p->prop)) {
@@ -10002,6 +10057,8 @@ static void free_object(JSRuntime *rt, JSObject *p)
         p->u.func.var_refs = NULL;
         p->u.func.home_object = NULL;
     }
+    if (js_class_func_block(p->class_id))
+        js_func_rv(p) = NULL;
     p->class_id = 0;
 
     remove_gc_object(&p->header);
@@ -10018,7 +10075,8 @@ static void free_object(JSRuntime *rt, JSObject *p)
         if (p->weakref_count == 0) {
             js_free_rt(rt, p);
         } else {
-            js_rc(p)->mark = 0; /* reset the mark so that the weakref can be freed */
+            /* reset the mark so that the weakref can be freed */
+            gc_keep(&p->header);
         }
     }
 }
@@ -10209,7 +10267,7 @@ void __JS_FreeValueRT(JSRuntime *rt, JSValue v)
                     free_zero_refcount(rt);
                 }
             } else {
-                young_defer(rt, p);
+                gc_defer(rt, p);
             }
         }
         break;
@@ -10276,6 +10334,7 @@ static void add_gc_object(JSRuntime *rt, JSGCObjectHeader *h,
 {
     js_rc(h)->mark = 0;
     js_rc(h)->gc_obj_type = type;
+    js_rc(h)->young = 1;
     list_add_tail(&h->link, &rt->young_obj_list);
 }
 
@@ -10462,6 +10521,20 @@ static void mark_children(JSRuntime *rt, JSGCObjectHeader *gp,
     }
 }
 
+/* An object a collection leaves alive (or keeps for its weak references):
+   the mark is reset for the next collection, and the object is old from now
+   on. Every pass that leaves objects on gc_obj_list goes through it: the
+   scan of a full collection (gc_scan, gc_ephemeron) over every object it
+   keeps and the restore that moves one there (gc_scan_incref_child), the
+   survivors of JS_RunYoungGC and young_splice_clear. A young bit left on an
+   old object would let a young collection take a count from it that it
+   never gives back (white_gc_lists checks the bit). */
+static inline void gc_keep(JSGCObjectHeader *p)
+{
+    js_rc(p)->mark = 0;
+    js_rc(p)->young = 0;
+}
+
 static void gc_decref_child(JSRuntime *rt, JSGCObjectHeader *p)
 {
     assert(js_rc(p)->ref_count > 0);
@@ -10502,7 +10575,7 @@ static void gc_scan_incref_child(JSRuntime *rt, JSGCObjectHeader *p)
            end of gc_obj_list */
         list_del(&p->link);
         list_add_tail(&p->link, &rt->gc_obj_list);
-        js_rc(p)->mark = 0; /* reset the mark for the next GC call */
+        gc_keep(p);
     }
 }
 
@@ -10520,7 +10593,7 @@ static void gc_scan(JSRuntime *rt)
     list_for_each(el, &rt->gc_obj_list) {
         p = list_entry(el, JSGCObjectHeader, link);
         assert(js_rc(p)->ref_count > 0);
-        js_rc(p)->mark = 0; /* reset the mark for the next GC call */
+        gc_keep(p);
         mark_children(rt, p, gc_scan_incref_child);
     }
 
@@ -10581,13 +10654,43 @@ static void gc_free_cycles(JSRuntime *rt)
         if (js_rc(p)->gc_obj_type == JS_GC_OBJ_TYPE_JS_OBJECT &&
             ((JSObject *)p)->weakref_count != 0) {
             /* keep the object because there are weak references to it */
-            js_rc(p)->mark = 0;
+            gc_keep(p);
         } else {
             js_free_rt(rt, p);
         }
     }
 
     init_list_head(&rt->gc_zero_ref_count_list);
+
+    /* the objects gc_defer put aside, freed as outside a collection */
+    if (list_empty(&rt->gc_dead_list))
+        return;
+    while (!list_empty(&rt->gc_dead_list)) {
+        el = rt->gc_dead_list.next;
+        list_del(el);
+        list_add_tail(el, &rt->gc_zero_ref_count_list);
+    }
+    free_zero_refcount(rt);
+}
+
+/* An object outside the garbage whose count got to 0 while a collection
+   frees it (the phase JS_GC_PHASE_REMOVE_CYCLES): its mark is 0, as the
+   garbage keeps its mark of 1 and the rest have it cleared. It goes to
+   gc_dead_list and gc_free_cycles frees it after the garbage, as outside a
+   collection, rather than leave it on its list with a count of 0, where
+   js_weakref_free would free its block while it is still listed and its
+   children would keep their counts. In a young collection such an object is
+   an old one only the garbage held. In a full one, every reference the
+   garbage holds is reported by a gc_mark, so such an object is one whose
+   last reference a finalizer of the host let go of, a reference no gc_mark
+   reports (test_finalizer_frees_a_root in engine/test/unit-white.c). */
+static void gc_defer(JSRuntime *rt, JSGCObjectHeader *p)
+{
+    if (js_rc(p)->mark)
+        return;
+    list_del(&p->link);
+    list_add_tail(&p->link, &rt->gc_dead_list);
+    js_rc(p)->mark = 1;
 }
 
 /* Conditional edges of WeakMap, with a work list indexed by key. */
@@ -10718,6 +10821,9 @@ static BOOL gc_ephemeron(JSRuntime *rt, BOOL remove_weak_objects)
     if (!remove_weak_objects || list_empty(&rt->weakref_list))
         return FALSE;
     gc_remove_weak_objects(rt);
+    /* after the weak pass, which runs finalizers that can make objects
+       (JS_RunGCInternal) */
+    young_splice(rt);
     list_for_each(el, &rt->weakref_list) {
         wh = list_entry(el, JSWeakRefHeader, link);
         if (wh->weakref_type == JS_WEAKREF_TYPE_MAP) {
@@ -10774,7 +10880,7 @@ static BOOL gc_ephemeron(JSRuntime *rt, BOOL remove_weak_objects)
     s->phase = 2;
     list_for_each(el, &rt->gc_obj_list) {
         p = list_entry(el, JSGCObjectHeader, link);
-        js_rc(p)->mark = 0;
+        gc_keep(p);
         mark_children(rt, p, gc_scan_incref_child);
         if (s->has_symbols)
             gc_ephemeron_atoms(rt, p);
@@ -10830,9 +10936,16 @@ static BOOL gc_ephemeron(JSRuntime *rt, BOOL remove_weak_objects)
     return TRUE;
 }
 
+/* The young objects join gc_obj_list after the weak pass (here and in
+   gc_ephemeron), right before gc_decref. The weak pass frees the values of
+   dead keys, and the finalizer of a class of the host can make objects
+   there, which go to the young list. Spliced before it, such an object would
+   stay on the young list, which gc_decref does not walk, and the scan could
+   still reach it through an object that holds it, move it to gc_obj_list and
+   add a count to each of its children that was never taken away: they would
+   never be freed. */
 static void JS_RunGCInternal(JSRuntime *rt, BOOL remove_weak_objects)
 {
-    young_splice(rt);
     if (gc_ephemeron(rt, remove_weak_objects))
         return;
     if (remove_weak_objects) {
@@ -10841,7 +10954,8 @@ static void JS_RunGCInternal(JSRuntime *rt, BOOL remove_weak_objects)
            registry callbacks. */
         gc_remove_weak_objects(rt);
     }
-    
+    young_splice(rt);
+
     /* decrement the reference of the children of each object. mark =
        1 after this pass. */
     gc_decref(rt);
@@ -10888,8 +11002,15 @@ void JS_RunGC(JSRuntime *rt)
    reaches, and the rest are cycles of garbage. Old objects are never
    visited and their counts never change. A cycle through an old object and
    a weak map value, with what it holds, while its map is reachable or old,
-   stay until the next full collection. The mark tells the young objects
-   during the collection. */
+   stay until the next full collection. The young bit of the header tells
+   the young objects: add_gc_object sets it, and an object loses it when it
+   becomes old or is kept for its weak references after its free (gc_keep). So
+   the collection needs no pass to mark them, and one pass over the young list
+   takes away the counts and finds the objects whose count got to 0 (the
+   decref and the split of gc_decref), where it took three. A young bit left
+   on an old object would let a scan move it to the young list with a count
+   its children never gave back: white_gc_lists checks the bit of every
+   object on both lists. */
 
 /* move the objects of 'from' to the end of 'to' */
 static void young_move(struct list_head *from, struct list_head *to)
@@ -10904,34 +11025,42 @@ static void young_move(struct list_head *from, struct list_head *to)
     init_list_head(from);
 }
 
-/* make every young object old */
+/* make every young object old, for a full collection: its scan clears the
+   young bit of every object it keeps (gc_keep), so that a program that never
+   runs a young collection walks its objects no more than before */
 static void young_splice(JSRuntime *rt)
 {
     young_move(&rt->young_obj_list, &rt->gc_obj_list);
 }
 
-/* An object outside the garbage of a young collection whose count got to 0
-   while the garbage is freed: free it afterwards, as outside a collection,
-   rather than leave it on gc_obj_list with a count of 0, where
-   js_weakref_free could free it. */
-static void young_defer(JSRuntime *rt, JSGCObjectHeader *p)
+/* make every young object old, outside a collection */
+static void young_splice_clear(JSRuntime *rt)
 {
-    if (!rt->young_sweep || js_rc(p)->mark)
-        return;
-    list_del(&p->link);
-    list_add_tail(&p->link, &rt->young_dead_list);
-    js_rc(p)->mark = 1;
+    struct list_head *el;
+
+    list_for_each(el, &rt->young_obj_list)
+        gc_keep(list_entry(el, JSGCObjectHeader, link));
+    young_move(&rt->young_obj_list, &rt->gc_obj_list);
 }
 
+/* The young bit tells the objects of the collection, and the mark those of
+   them the pass over the young list has visited, as in gc_decref: a visited
+   object whose count gets to 0 goes to tmp_obj_list at once, and one not
+   visited yet goes there when it is visited with a count of 0. */
 static void young_decref_child(JSRuntime *rt, JSGCObjectHeader *p)
 {
-    if (js_rc(p)->mark)
-        js_rc(p)->ref_count--;
+    if (!js_rc(p)->young)
+        return;
+    js_rc(p)->ref_count--;
+    if (js_rc(p)->ref_count == 0 && js_rc(p)->mark) {
+        list_del(&p->link);
+        list_add_tail(&p->link, &rt->tmp_obj_list);
+    }
 }
 
 static void young_scan_incref_child(JSRuntime *rt, JSGCObjectHeader *p)
 {
-    if (!js_rc(p)->mark)
+    if (!js_rc(p)->young)
         return;
     js_rc(p)->ref_count++;
     if (js_rc(p)->ref_count == 1) {
@@ -10943,7 +11072,7 @@ static void young_scan_incref_child(JSRuntime *rt, JSGCObjectHeader *p)
 
 static void young_scan_incref_child2(JSRuntime *rt, JSGCObjectHeader *p)
 {
-    if (js_rc(p)->mark)
+    if (js_rc(p)->young)
         js_rc(p)->ref_count++;
 }
 
@@ -10956,17 +11085,12 @@ void JS_RunYoungGC(JSRuntime *rt)
     if (rt->gc_phase != JS_GC_PHASE_NONE)
         return;
     JS_GC_RUN(1);
-    list_for_each(el, &rt->young_obj_list) {
-        p = list_entry(el, JSGCObjectHeader, link);
-        js_rc(p)->mark = 1;
-    }
-    list_for_each(el, &rt->young_obj_list) {
-        p = list_entry(el, JSGCObjectHeader, link);
-        mark_children(rt, p, young_decref_child);
-    }
     init_list_head(&rt->tmp_obj_list);
     list_for_each_safe(el, el1, &rt->young_obj_list) {
         p = list_entry(el, JSGCObjectHeader, link);
+        assert(js_rc(p)->mark == 0);
+        mark_children(rt, p, young_decref_child);
+        js_rc(p)->mark = 1;
         if (js_rc(p)->ref_count == 0) {
             list_del(&p->link);
             list_add_tail(&p->link, &rt->tmp_obj_list);
@@ -10980,18 +11104,12 @@ void JS_RunYoungGC(JSRuntime *rt)
         p = list_entry(el, JSGCObjectHeader, link);
         mark_children(rt, p, young_scan_incref_child2);
     }
-    list_for_each(el, &rt->young_obj_list) {
-        p = list_entry(el, JSGCObjectHeader, link);
-        js_rc(p)->mark = 0;
-    }
-    young_splice(rt);
+    /* the survivors are old now */
+    list_for_each(el, &rt->young_obj_list)
+        gc_keep(list_entry(el, JSGCObjectHeader, link));
+    young_move(&rt->young_obj_list, &rt->gc_obj_list);
 
-    init_list_head(&rt->young_dead_list);
-    rt->young_sweep = TRUE;
     gc_free_cycles(rt);
-    rt->young_sweep = FALSE;
-    young_move(&rt->young_dead_list, &rt->gc_zero_ref_count_list);
-    free_zero_refcount(rt);
 
     gc_remove_weak_objects(rt);
     js_front_drain(&rt->malloc_ctx);
@@ -11129,7 +11247,7 @@ void JS_ComputeMemoryUsage(JSRuntime *rt, JSMemoryUsage *s)
     int i;
     JSMemoryUsage_helper mem = { 0 }, *hp = &mem;
 
-    young_splice(rt);
+    young_splice_clear(rt);
     memset(s, 0, sizeof(*s));
     s->malloc_count = rt->malloc_ctx.heap.blocks + 1; /* the blocks and the runtime */
     s->malloc_size = rt->malloc_ctx.heap.count;
@@ -11231,6 +11349,8 @@ void JS_ComputeMemoryUsage(JSRuntime *rt, JSMemoryUsage *s)
             s->shape_size += get_shape_size(hash_size, sh->prop_size);
         }
 
+        if (js_class_func_block(p->class_id))
+            s->obj_size += sizeof(JSFuncObject) - sizeof(JSObject); /* rv */
         switch(p->class_id) {
         case JS_CLASS_OBJECT:
             /* the block of an ordinary object ends before u */
@@ -11514,7 +11634,7 @@ size_t JS_DumpMemoryUsage(char *buf, size_t size, const JSMemoryUsage *s, JSRunt
     JSDumpOut out = { buf, size, 0 };
     char t[24];
     if (rt)
-        young_splice(rt);
+        young_splice_clear(rt);
     dump_printf(&out, "QuickJS memory usage -- " CONFIG_VERSION " version, %d-bit, malloc limit: %"PRId64"\n\n",
             (int)sizeof(void *) * 8, s->malloc_limit);
 #if 1
@@ -23840,6 +23960,7 @@ static JSValue js_closure2(JSContext *ctx, JSValue func_obj,
     /* the room js_new_function_object left for the closure variables */
     var_refs = p->u.func.var_refs;
     p->u.func.function_bytecode = b;
+    js_func_rv(p) = b->rv;
     p->u.func.home_object = NULL;
     p->u.func.var_refs = NULL;
     if (b->closure_var_count) {
@@ -23976,7 +24097,7 @@ static force_inline JSValue js_new_function_object(JSContext *ctx, JSShape *sh,
     JSObject *p;
     size_t size;
 
-    size = sizeof(JSObject) + sizeof(JSProperty) * (size_t)sh->prop_size;
+    size = sizeof(JSFuncObject) + sizeof(JSProperty) * (size_t)sh->prop_size;
     if (b->closure_var_count)
         size += sizeof(JSVarRef *) * (size_t)b->closure_var_count +
             sizeof(JSValueCell) * (size_t)b->by_value_count;
@@ -24004,6 +24125,7 @@ static force_inline JSValue js_new_function_object(JSContext *ctx, JSShape *sh,
     p->u.func.function_bytecode = NULL;
     p->u.func.var_refs = b->closure_var_count ?
         (JSVarRef **)(p->prop + sh->prop_size) : NULL;
+    js_func_rv(p) = NULL;
     p->u.func.home_object = NULL;
     js_rc(p)->ref_count = 1;
     add_gc_object(ctx->rt, &p->header, JS_GC_OBJ_TYPE_JS_OBJECT);
@@ -25506,7 +25628,7 @@ static void async_func_free(JSRuntime *rt, JSAsyncFunctionState *s)
                 free_zero_refcount(rt);
             }
         } else {
-            young_defer(rt, &s->header);
+            gc_defer(rt, &s->header);
         }
     }
 }
@@ -74095,7 +74217,10 @@ static JSValue js_typed_array_slice(JSContext *ctx, JSValueConst this_val,
         p1 = get_typed_array(ctx, arr);
         space = max_int(0, p->u.array.count - start);
         count = min_int(count, space);
-        if (p1 != NULL && p->class_id == p1->class_id) {
+        /* count is 0 when the buffer shrank below start in the valueOf of
+           start or in the species constructor, and a source with no
+           element has no data (NULL): form no pointer from it */
+        if (count > 0 && p1 != NULL && p->class_id == p1->class_id) {
             slice_memcpy(p1->u.array.u.uint8_ptr,
                          p->u.array.u.uint8_ptr + (start << shift),
                          count << shift);

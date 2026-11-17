@@ -157,6 +157,8 @@ int white_regvm_getf_slots(JSValueConst f, uint32_t *slots, uint32_t *ids, int m
 int white_regvm_putf_sites(JSValueConst f, uint32_t *s, int max);
 uint32_t white_shape_step_epoch(JSRuntime *rt);
 void white_shape_step_epoch_set(JSRuntime *rt, uint32_t e);
+int white_regvm_call_record(JSValueConst f);
+int white_func_class_objects(JSContext *ctx);
 int white_regvm_stack(JSContext *ctx, long out[7]);
 int white_set_code(JSContext *ctx, JSValueConst f, const uint8_t *code, int len, int stack_size, int undo);
 uint32_t white_array_fake_count(JSContext *ctx, JSValueConst a, uint32_t count);
@@ -2392,7 +2394,7 @@ static void lists(VM *v, int *old, int *young, const char *when)
     int bad;
 
     white_gc_lists(v->rt, old, young, &bad);
-    CHECK(bad == 0, "%s: a GC object on a list has a count of 0 or less (%d) or its mark set (%d)", when, bad & 1, (bad >> 1) & 1);
+    CHECK(bad == 0, "%s: a GC object on a list has a count of 0 or less (%d), its mark set (%d) or the young bit of the other list (%d)", when, bad & 1, (bad >> 1) & 1, (bad >> 2) & 1);
 }
 
 /* The ids of the shapes in the shape hash table follow their rule
@@ -3112,6 +3114,263 @@ static void test_young_leaves_no_zero_count(void)
     }
 }
 
+/* A finalizer that a collection runs as it frees its garbage can drop the
+   last reference to an object outside the garbage: here the host holds the
+   only strong reference to q, which no gc_mark reports, and the finalizer of
+   a dead self cycle d lets it go. q is then freed after the garbage, as
+   outside a collection (gc_defer), with its children, and leaves no object
+   with a count of 0 on a list. The cases:
+   RF_WEAK     a WeakRef to q: the weak pass after the garbage must not free
+               the block of q while q is still on a list, and clears the
+               WeakRef in that same collection
+   RF_OLD      q made old by a full collection before d is made
+   RF_YOUNG_GC the collection that frees d is JS_RunYoungGC
+   RF_CHAIN    q is of a class whose finalizer drops the only reference to
+               r, another root of the host, with a child of its own
+   RF_FR_Q     a FinalizationRegistry watches q itself: its callback is
+               queued once
+   RF_MAP      a WeakMap with an entry whose key lives, so that a full
+               collection judges its entries (gc_ephemeron), where without
+               it the weak pass leaves none
+   What a program sees, the callbacks of the registry (in the order of the
+   registrations) and the WeakRef, is checked right after the collection
+   that freed d, and the lists after it and after a full collection more.
+   The leak check of these tests sees what is not freed. */
+enum {
+    RF_WEAK = 1, RF_OLD = 2, RF_YOUNG_GC = 4, RF_CHAIN = 8, RF_FR_Q = 16, RF_MAP = 32, RF_CASES = 64,
+};
+
+static struct {
+    JSClassID class_id, chain_id;
+    JSValue q, r;
+    int finalized, chained;
+} root_freed;
+
+static void root_freed_finalizer(JSRuntime *rt, JSValue val)
+{
+    JS_FreeValueRT(rt, root_freed.q);
+    root_freed.q = JS_UNDEFINED;
+    root_freed.finalized++;
+}
+
+/* the finalizer of q in RF_CHAIN */
+static void root_freed_chain_finalizer(JSRuntime *rt, JSValue val)
+{
+    JS_FreeValueRT(rt, root_freed.r);
+    root_freed.r = JS_UNDEFINED;
+    root_freed.chained++;
+}
+
+static JSValue root_freed_new(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+    return JS_NewObjectClass(ctx, root_freed.class_id);
+}
+
+static JSValue root_freed_get(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+    return JS_DupValue(ctx, argc > 0 && JS_ToBool(ctx, argv[0]) ? root_freed.r : root_freed.q);
+}
+
+static void root_freed_case(int f)
+{
+    JSClassDef def = { "RootFreed", root_freed_finalizer };
+    JSClassDef chain = { "RootFreedChain", root_freed_chain_finalizer };
+    VM v = vm_new();
+    JSContext *jctx;
+    JSValue g;
+    char want[16];
+    int old, nyoung;
+
+    memset(&root_freed, 0, sizeof(root_freed));
+    root_freed.q = root_freed.r = JS_UNDEFINED;
+    JS_SetGCThreshold(v.rt, (size_t)-1);
+    JS_NewClassID(v.rt, &root_freed.class_id);
+    CHECK(JS_NewClass(v.rt, root_freed.class_id, &def) == 0, "JS_NewClass");
+    JS_NewClassID(v.rt, &root_freed.chain_id);
+    CHECK(JS_NewClass(v.rt, root_freed.chain_id, &chain) == 0, "JS_NewClass");
+    g = JS_GetGlobalObject(v.ctx);
+    JS_SetPropertyStr(v.ctx, g, "rootFreed", JS_NewCFunction(v.ctx, root_freed_new, "rootFreed", 0));
+    JS_SetPropertyStr(v.ctx, g, "rootGet", JS_NewCFunction(v.ctx, root_freed_get, "rootGet", 1));
+    JS_FreeValue(v.ctx, g);
+    CHECK(eval_ok(v.ctx, "var got = [], fr = new FinalizationRegistry((v) => got.push(v)), wr = null, keep = {}, wm = new WeakMap(); void 0"), "the setup");
+    if (f & RF_MAP)
+        CHECK(eval_ok(v.ctx, "wm.set(keep, {}); void 0"), "the entry of a live key");
+    root_freed.q = f & RF_CHAIN ? JS_NewObjectClass(v.ctx, root_freed.chain_id) : JS_NewObject(v.ctx);
+    CHECK(!JS_IsException(root_freed.q), "q");
+    CHECK(eval_ok(v.ctx, "(() => { const q = rootGet(); q.c = {}; fr.register(q.c, 'c') })(); void 0"), "q's child");
+    snprintf(want, sizeof(want), "c");
+    if (f & RF_CHAIN) {
+        root_freed.r = JS_NewObject(v.ctx);
+        CHECK(!JS_IsException(root_freed.r), "r");
+        CHECK(eval_ok(v.ctx, "(() => { const r = rootGet(true); r.c = {}; fr.register(r.c, 'r') })(); void 0"), "r's child");
+        strcat(want, ",r");
+    }
+    if (f & RF_FR_Q) {
+        CHECK(eval_ok(v.ctx, "fr.register(rootGet(), 'q'); void 0"), "q in the registry");
+        strcat(want, ",q");
+    }
+    if (f & RF_WEAK)
+        CHECK(eval_ok(v.ctx, "wr = new WeakRef(rootGet()); void 0"), "the WeakRef");
+    /* the job ends, and with it the hold of the target of a new WeakRef */
+    JS_ClearKeptObjects(v.rt);
+    if (f & RF_OLD)
+        JS_RunGC(v.rt);
+    CHECK(eval_ok(v.ctx, "(() => { const d = rootFreed(); d.self = d })(); void 0"), "the cycle");
+    if (f & RF_YOUNG_GC)
+        JS_RunYoungGC(v.rt);
+    else
+        JS_RunGC(v.rt);
+    CHECK(root_freed.finalized == 1, "case %d: the cycle was finalized %d times", f, root_freed.finalized);
+    CHECK(root_freed.chained == !!(f & RF_CHAIN), "case %d: q was finalized %d times", f, root_freed.chained);
+    lists(&v, &old, &nyoung, "after the collection whose finalizer dropped q");
+    while (JS_ExecutePendingJob(v.rt, &jctx) > 0)
+        ;
+    CHECK(eval_is(v.ctx, "got.join()", want), "case %d: the callbacks after the collection that freed q are not %s", f, want);
+    if (f & RF_WEAK)
+        CHECK(eval_is(v.ctx, "String(wr.deref())", "undefined"), "case %d: the WeakRef still gives q", f);
+    if (f & RF_MAP)
+        CHECK(eval_is(v.ctx, "String(wm.has(keep))", "true"), "case %d: the entry of the live key is gone", f);
+    JS_RunGC(v.rt);
+    lists(&v, &old, &nyoung, "after the next full collection");
+    while (JS_ExecutePendingJob(v.rt, &jctx) > 0)
+        ;
+    CHECK(eval_is(v.ctx, "got.join()", want), "case %d: the callbacks after the next collection are not %s", f, want);
+    vm_free(&v);
+}
+
+static void test_finalizer_frees_a_root(void)
+{
+    int f;
+
+    for (f = 0; f < RF_CASES; f++) {
+        /* the weak map only changes the path of a full collection */
+        if ((f & RF_MAP) && (f & RF_YOUNG_GC))
+            continue;
+        root_freed_case(f);
+    }
+}
+
+
+/* An object that a finalizer makes while a full collection deletes the
+   entries of dead WeakMap keys (gc_remove_weak_objects) goes to the young
+   list. The collection splices the young list after that pass, so gc_decref
+   walks the object like any other: held by an old object of the host, it
+   stays, with counts that add up, and the runtime is freed whole at vm_free
+   (the leak check of these tests). Spliced before the pass, the object stayed
+   on the young list, the scan reached it through its holder, moved it to
+   gc_obj_list and added a count to each of its children, its prototype among
+   them, that gc_decref never took away. Then a child given to it and dropped
+   with it, after a young collection, is freed. The holder (holder()) is an
+   object of the host whose gc_mark reports the object it holds, held() gives
+   that object and drop() lets it go. */
+static struct {
+    JSContext *ctx;
+    JSClassID holder_id, maker_id;
+    JSValue held;
+    int made;
+} made_in_gc;
+
+static void made_in_gc_mark(JSRuntime *rt, JSValueConst val, JS_MarkFunc *mark_func)
+{
+    JS_MarkValue(rt, made_in_gc.held, mark_func);
+}
+
+static void made_in_gc_holder_finalizer(JSRuntime *rt, JSValue val)
+{
+    JS_FreeValueRT(rt, made_in_gc.held);
+    made_in_gc.held = JS_UNDEFINED;
+}
+
+/* a maker, freed with the entry of its WeakMap, gives the holder a new object */
+static void made_in_gc_maker_finalizer(JSRuntime *rt, JSValue val)
+{
+    JSValue x = JS_NewObject(made_in_gc.ctx);
+
+    CHECK(!JS_IsException(x), "no object made in the finalizer");
+    JS_FreeValueRT(rt, made_in_gc.held);
+    made_in_gc.held = x;
+    made_in_gc.made++;
+}
+
+static JSValue made_in_gc_holder(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+    return JS_NewObjectClass(ctx, made_in_gc.holder_id);
+}
+
+static JSValue made_in_gc_maker(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+    return JS_NewObjectClass(ctx, made_in_gc.maker_id);
+}
+
+static JSValue made_in_gc_held(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+    return JS_DupValue(ctx, made_in_gc.held);
+}
+
+static JSValue made_in_gc_drop(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+    JS_FreeValue(ctx, made_in_gc.held);
+    made_in_gc.held = JS_UNDEFINED;
+    return JS_UNDEFINED;
+}
+
+/* other = 1 keeps a second entry, whose key lives, in the weak map: the
+   full collection then takes the path of gc_ephemeron with entries, and
+   with other = 0 the one where the weak pass left none. */
+static void made_in_gc_case(int other)
+{
+    JSClassDef holder = { "MadeInGCHolder", made_in_gc_holder_finalizer, made_in_gc_mark };
+    JSClassDef maker = { "MadeInGCMaker", made_in_gc_maker_finalizer };
+    VM v = vm_new();
+    JSContext *jctx;
+    JSValue g;
+    int old, young;
+
+    memset(&made_in_gc, 0, sizeof(made_in_gc));
+    made_in_gc.ctx = v.ctx;
+    made_in_gc.held = JS_UNDEFINED;
+    JS_SetGCThreshold(v.rt, (size_t)-1);
+    JS_NewClassID(v.rt, &made_in_gc.holder_id);
+    CHECK(JS_NewClass(v.rt, made_in_gc.holder_id, &holder) == 0, "JS_NewClass");
+    JS_NewClassID(v.rt, &made_in_gc.maker_id);
+    CHECK(JS_NewClass(v.rt, made_in_gc.maker_id, &maker) == 0, "JS_NewClass");
+    g = JS_GetGlobalObject(v.ctx);
+    JS_SetPropertyStr(v.ctx, g, "holder", JS_NewCFunction(v.ctx, made_in_gc_holder, "holder", 0));
+    JS_SetPropertyStr(v.ctx, g, "maker", JS_NewCFunction(v.ctx, made_in_gc_maker, "maker", 0));
+    JS_SetPropertyStr(v.ctx, g, "held", JS_NewCFunction(v.ctx, made_in_gc_held, "held", 0));
+    JS_SetPropertyStr(v.ctx, g, "drop", JS_NewCFunction(v.ctx, made_in_gc_drop, "drop", 0));
+    JS_FreeValue(v.ctx, g);
+    CHECK(eval_ok(v.ctx, "var h = holder(), got = [], fr = new FinalizationRegistry((v) => got.push(v)), y = null; void 0"), "the setup");
+    JS_RunGC(v.rt);
+    /* the key dies at once, and its entry waits for the next collection */
+    CHECK(eval_ok(v.ctx, "var wm = new WeakMap(); (function () { wm.set({}, maker()) })(); void 0"), "a weak map");
+    if (other)
+        CHECK(eval_ok(v.ctx, "var keep = {}; wm.set(keep, {}); void 0"), "a second entry");
+    JS_RunGC(v.rt);
+    CHECK(made_in_gc.made == 1, "other %d: the maker made %d objects in the collection", other, made_in_gc.made);
+    lists(&v, &old, &young, "after the full collection whose weak pass made an object");
+    /* the object gets a child only it holds, and its only reference moves from
+       the old holder to a young object the global holds */
+    CHECK(eval_ok(v.ctx, "(function () { const x = held(); x.c = {}; fr.register(x.c, 'c'); y = { x }; drop() })(); void 0"),
+          "the child");
+    JS_RunYoungGC(v.rt);
+    lists(&v, &old, &young, "after the young collection");
+    CHECK(eval_ok(v.ctx, "y = null; void 0"), "the drop");
+    JS_RunGC(v.rt);
+    while (JS_ExecutePendingJob(v.rt, &jctx) > 0)
+        ;
+    CHECK(eval_is(v.ctx, "got.join()", "c"), "other %d: the child of the object made in the collection is still held", other);
+    if (other)
+        CHECK(eval_is(v.ctx, "String(wm.has(keep))", "true"), "other %d: the entry of the live key is gone", other);
+    vm_free(&v);
+}
+
+static void test_object_made_in_the_weak_pass(void)
+{
+    made_in_gc_case(0);
+    made_in_gc_case(1);
+}
+
 /* ---- a collection asked for while objects are freed ----
 
    The host runs code while the engine frees objects: the finalizer of a class
@@ -3150,7 +3409,7 @@ enum {
     IN_FREE_YOUNG,      /* JS_RunYoungGC frees a young cycle: gc_free_cycles */
     IN_FREE_DEFERRED,   /* JS_RunYoungGC frees a young cycle that held the last
                            reference to an old array: the array waits on
-                           young_dead_list and goes in free_zero_refcount */
+                           gc_dead_list and goes in free_zero_refcount */
     IN_FREE_WEAK,       /* JS_RunGC deletes the entry of a WeakMap whose key
                            died: gc_remove_weak_objects */
     IN_FREE_EPHEMERON,  /* JS_RunGC deletes the entry of a WeakMap whose key is
@@ -8769,6 +9028,82 @@ static void test_regvm_putf_step(void)
     vm_free(&v);
 }
 
+static int call_record_of(JSContext *ctx, const char *name)
+{
+    JSValue g = JS_GetGlobalObject(ctx), f = JS_GetPropertyStr(ctx, g, name);
+    int r = white_regvm_call_record(f);
+
+    JS_FreeValue(ctx, f);
+    JS_FreeValue(ctx, g);
+    return r;
+}
+
+/* The record of register code a function object keeps for the call ops of
+   the loop (JSFuncObject.rv, engine/regvm-ops-basic.h): a closure made
+   before its bytecode is converted keeps the mark of none until a call op
+   finds the record of its bytecode, also when another closure of the same
+   bytecode was converted first, and a closure made after has it at once.
+   Every call gives what it gave before: with fewer and more arguments than
+   parameters, to a function that reads its arguments, and to a function
+   of another realm, which the call op leaves to JS_CallInternal, so that
+   it runs in its own realm. */
+static void test_regvm_call_record(void)
+{
+    VM v = vm_new();
+    JSContext *ctx2;
+    JSValue g, g2, f2, arr2;
+
+    CHECK(eval_ok(v.ctx,
+        "function mk(k) { return function (x, y) { return x + k; }; }"
+        "function mka() { return function () { return arguments.length; }; }"
+        "globalThis.call1 = function (f, x) { return f(x); };"
+        "globalThis.call3 = function (f) { return f(1, 2, 3); };"
+        "globalThis.a = mk(1); globalThis.b = mk(2); globalThis.d = mka(); globalThis.e = mka(); 0"),
+          "the setup threw");
+    CHECK(call_record_of(v.ctx, "a") == 1, "a: %d, want not converted", call_record_of(v.ctx, "a"));
+    CHECK(call_record_of(v.ctx, "b") == 1, "b: %d, want not converted", call_record_of(v.ctx, "b"));
+    CHECK(eval_is(v.ctx, "call1(b, 40)", "42"), "the first call of b");
+    CHECK(call_record_of(v.ctx, "b") == 0, "b after its call: %d", call_record_of(v.ctx, "b"));
+    CHECK(call_record_of(v.ctx, "a") == 2, "a after the call of b: %d", call_record_of(v.ctx, "a"));
+    CHECK(eval_is(v.ctx, "call1(a, 40)", "41"), "the first call of a");
+    CHECK(call_record_of(v.ctx, "a") == 0, "a after its call: %d", call_record_of(v.ctx, "a"));
+    CHECK(eval_is(v.ctx, "globalThis.c = mk(3); 0", "0"), "c");
+    CHECK(call_record_of(v.ctx, "c") == 0, "c, made after: %d", call_record_of(v.ctx, "c"));
+    CHECK(eval_is(v.ctx, "call1(c, 1) + call3(c) + String(call1(c))", "8NaN"), "the calls of c");
+    CHECK(eval_is(v.ctx, "call3(d) + call1(e, 1) + call1(d)", "5"), "the calls of d and e");
+    CHECK(call_record_of(v.ctx, "e") == 0, "e after its call: %d", call_record_of(v.ctx, "e"));
+
+    /* a function of another realm runs in its realm: the array it makes
+       has the Array.prototype of that realm, not of the caller's */
+    ctx2 = JS_NewContext(v.rt);
+    CHECK(ctx2 != NULL, "no second context");
+    CHECK(eval_ok(ctx2, "globalThis.f2 = function (x) { return [x * 2]; }; 0"), "the second realm threw");
+    g2 = JS_GetGlobalObject(ctx2);
+    f2 = JS_GetPropertyStr(ctx2, g2, "f2");
+    g = JS_GetGlobalObject(v.ctx);
+    JS_SetPropertyStr(v.ctx, g, "f2", f2);
+    arr2 = JS_GetPropertyStr(ctx2, g2, "Array");
+    JS_SetPropertyStr(v.ctx, g, "proto2", JS_GetPropertyStr(ctx2, arr2, "prototype"));
+    JS_FreeValue(ctx2, arr2);
+    CHECK(eval_is(v.ctx,
+        "var r = [call1(f2, 21), call1(f2, 1)];"
+        "r[0][0] + r[1][0] + ':' + (Object.getPrototypeOf(r[0]) === proto2) +"
+        "(Object.getPrototypeOf(r[1]) === proto2) + (r[0] instanceof Array)",
+        "44:truetruefalse"), "the calls of f2");
+    CHECK(call_record_of(v.ctx, "f2") == 0, "f2 after its calls: %d", call_record_of(v.ctx, "f2"));
+    CHECK(eval_ok(v.ctx, "delete globalThis.f2; delete globalThis.proto2; 0"), "the delete threw");
+    JS_FreeValue(v.ctx, g);
+    JS_FreeValue(ctx2, g2);
+    JS_FreeContext(ctx2);
+
+    /* a function object an embedder makes with JS_NewObjectProtoClass has
+       the block of one js_new_function_object makes (under AddressSanitizer
+       its free writes nothing past it) */
+    CHECK(white_func_class_objects(v.ctx) == 0, "the objects of JS_NewObjectProtoClass: %d",
+          white_func_class_objects(v.ctx));
+    vm_free(&v);
+}
+
 /* Array destructuring with no iterator (engine/regvm-ops-dst.h): the pass
    makes DSTART for the for_of_start of a destructuring, and not for a
    for-of loop, yield* or a destructuring with a yield in a default (its
@@ -9690,6 +10025,8 @@ int main(int argc, char **argv)
     test_json_plain();
     test_young_lists();
     test_young_leaves_no_zero_count();
+    test_finalizer_frees_a_root();
+    test_object_made_in_the_weak_pass();
     test_gc_in_free();
     test_error_nest();
     test_function_properties_oom();
@@ -9763,6 +10100,7 @@ int main(int argc, char **argv)
     test_regvm_forin();
     test_regvm_getf_slot();
     test_regvm_putf_step();
+    test_regvm_call_record();
     test_spread_alloc();
     test_spread_refs();
     test_days_to_date();

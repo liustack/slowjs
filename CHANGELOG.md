@@ -4,6 +4,20 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 
 ## [Unreleased]
 
+## [v0.31.5] - 2026-11-17
+
+### Changed
+
+- tifa's React page renders in 2.0% less time than with v0.31.4, its MUI pages and its store pages in 1.5% less and its workbench pages in 1.1% less, with the changes below and a profile trained again on them (against v0.31.4, whose profile was trained the same way, linux/amd64, an AMD EPYC 7B13, the mean of 16 code layouts). The V8 suite scores 0.8% lower: NavierStokes is back up by 4.6%, and Crypto and DeltaBlue score about 5% lower though they run fewer or the same instructions, a known step back ([performance.md](docs/performance.md#v0315-against-v0314)).
+- A read of a method of `Array.prototype` from an array or an arguments object (`a.push(x)`, `a.map(f)`) keeps where it found the method, as a read of a method of a class already did, and costs about a fifth fewer instructions.
+- The young collection after a render tells young objects by a bit of their own and walks them once where it walked them three times. The store's post page, which leaves 32,000 objects in cycles each render, takes 1.6% less time counting that collection (against v0.31.3 trained the same way, linux/amd64, an AMD EPYC 7B13, the mean of 16 code layouts).
+- A call of a JavaScript function in the register loop finds the code of the function through the function object, in one or two lines of cache next to the code. It is most of this release's gain on tifa's pages, for 0.5% to 0.8% more memory in a VM.
+
+### Fixed
+
+- A full collection now frees an object whose last reference the finalizer of a host class lets go of while the collection frees its garbage. It used to leave the object listed with a count of 0, and a WeakRef to it then freed its memory while it was still listed.
+- An object that the finalizer of a host class makes while a full collection removes dead weak entries, held by an old object, no longer leaves extra counts on its children, which kept them and the runtime from ever being freed.
+
 ## [v0.31.4] - 2026-11-17
 
 ### Added
@@ -821,7 +835,8 @@ The first release of the fork, from modernc.org/quickjs v0.25.0 and libquickjs v
 - A VM that runs out of memory inside `JSON.parse`, or anything else that converts a string with non-ASCII characters to UTF-8, no longer leaks that string.
 - `VM.Call` and `VM.CallValue` report the exception thrown while evaluating the function expression instead of `cannot call a non-function`.
 
-[Unreleased]: https://github.com/liustack/slowjs/compare/v0.31.4...main
+[Unreleased]: https://github.com/liustack/slowjs/compare/v0.31.5...main
+[v0.31.5]: https://github.com/liustack/slowjs/compare/v0.31.4...v0.31.5
 [v0.31.4]: https://github.com/liustack/slowjs/compare/v0.31.3...v0.31.4
 [v0.31.3]: https://github.com/liustack/slowjs/compare/v0.31.2...v0.31.3
 [v0.31.2]: https://github.com/liustack/slowjs/compare/v0.31.1...v0.31.2

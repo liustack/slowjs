@@ -389,7 +389,8 @@ int64_t white_backtrace_frame_size(void)
 /* Check the GC objects of rt outside a collection: each is on gc_obj_list or
    on the young list, with a count above 0 and no mark, which js_weakref_free
    and the collectors rely on. Returns how many there are on each list, and a
-   bit in *bad for a count of 0 or less (1) or a mark that is set (2). */
+   bit in *bad for a count of 0 or less (1), a mark that is set (2), or a
+   young bit that is not that of its list (4): set on the young list only. */
 void white_gc_lists(JSRuntime *rt, int *old, int *young, int *bad)
 {
     struct list_head *heads[2] = { &rt->gc_obj_list, &rt->young_obj_list };
@@ -407,6 +408,8 @@ void white_gc_lists(JSRuntime *rt, int *old, int *young, int *bad)
                 *bad |= 1;
             if (js_rc(p)->mark)
                 *bad |= 2;
+            if (js_rc(p)->young != k)
+                *bad |= 4;
             counts[k]++;
         }
     }
@@ -1685,6 +1688,63 @@ const uint8_t *white_regvm_code(JSValueConst f, int *code_len)
         return NULL;
     *code_len = rf->code_len;
     return rf->code;
+}
+
+/* the record of register code the function object f keeps for the call ops
+   of the loop (JSFuncObject.rv, engine/regvm-ops-basic.h) against the one
+   of its bytecode: 0 the same converted record, 1 both not converted yet,
+   2 not converted in f while its bytecode is, 3 both refused, -1 anything else
+   and for an f that is not a function of bytecode */
+int white_regvm_call_record(JSValueConst f)
+{
+    JSObject *p;
+    const RVFunc *mine, *rf;
+
+    if (JS_VALUE_GET_TAG(f) != JS_TAG_OBJECT ||
+        JS_VALUE_GET_OBJ(f)->class_id != JS_CLASS_BYTECODE_FUNCTION)
+        return -1;
+    p = JS_VALUE_GET_OBJ(f);
+    mine = js_func_rv(p);
+    rf = p->u.func.function_bytecode->rv;
+    if (mine == rf)
+        return rf == RV_UNCONVERTED ? 1 : rf == RV_REFUSED ? 3 : 0;
+    return mine == RV_UNCONVERTED ? 2 : -1;
+}
+
+/* an object of each class of JS_FUNC_BLOCK_CLASSES made by the generic
+   JS_NewObjectProtoClass, as an embedder may, then marked by a collection
+   and freed: 0 when every one has a block that holds a JSFuncObject, rv
+   NULL and its properties in a block of their own, else 10 times what
+   failed (1 the block, 2 rv, 3 the properties, 4 no object) plus the index
+   of the class */
+int white_func_class_objects(JSContext *ctx)
+{
+    static const JSClassID classes[4] = {
+        JS_CLASS_BYTECODE_FUNCTION, JS_CLASS_GENERATOR_FUNCTION,
+        JS_CLASS_ASYNC_FUNCTION, JS_CLASS_ASYNC_GENERATOR_FUNCTION,
+    };
+    int i, r;
+
+    for (i = 0; i < 4; i++) {
+        JSValue v = JS_NewObjectProtoClass(ctx, JS_NULL, classes[i]);
+        JSObject *p;
+
+        if (JS_IsException(v))
+            return 40 + i;
+        p = JS_VALUE_GET_OBJ(v);
+        r = 0;
+        if (js_malloc_usable_size(ctx, p) < sizeof(JSFuncObject))
+            r = 1;
+        else if (js_func_rv(p) != NULL)
+            r = 2;
+        else if (js_props_inline(p))
+            r = 3;
+        JS_RunGC(JS_GetRuntime(ctx)); /* marks it */
+        JS_FreeValue(ctx, v);
+        if (r)
+            return r * 10 + i;
+    }
+    return 0;
 }
 
 /* the reads of a name of the function f, converted (GETF, GETFL and GETFT,

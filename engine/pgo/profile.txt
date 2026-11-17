@@ -256,10 +256,11 @@ JS_ClearKeptObjects
 
 JS_ComputeMemoryUsage
 # Func Hash:
-606964233864401346
+347085842651549654
 # Num Counters:
-98
+99
 # Counter Values:
+0
 0
 0
 0
@@ -1872,7 +1873,7 @@ JS_ReleaseNextRange
 # Num Counters:
 1
 # Counter Values:
-235
+232
 
 JS_ReleaseStart
 # Func Hash:
@@ -1904,16 +1905,16 @@ JS_RunGC
 
 JS_RunYoungGC
 # Func Hash:
-540085602043174042
+1009111104321444222
 # Num Counters:
 9
 # Counter Values:
 121
 0
 661815
-661815
-661815
-660030
+0
+0
+339286
 37158
 624657
 37158
@@ -1957,10 +1958,12 @@ JS_SetCallDepth
 
 JS_SetClassProto
 # Func Hash:
-16561845393
+780321944068311182
 # Num Counters:
-4
+6
 # Counter Values:
+0
+0
 0
 0
 0
@@ -2647,7 +2650,7 @@ __JS_FreeValue
 # Num Counters:
 1
 # Counter Values:
-3863853
+3863878
 
 __JS_FreeValueRT
 # Func Hash:
@@ -2655,9 +2658,9 @@ __JS_FreeValueRT
 # Num Counters:
 15
 # Counter Values:
-6739573
-6739573
-1681286
+6739598
+6739598
+1681311
 5855
 5023699
 9842
@@ -3284,9 +3287,9 @@ cutils.c:exchange_func
 # Counter Values:
 1036
 0
-944
+894
 0
-92
+142
 34
 0
 0
@@ -3305,8 +3308,8 @@ cutils.c:exchange_int128s
 # Num Counters:
 2
 # Counter Values:
-441
-588
+210
+280
 
 cutils.c:exchange_int16s
 # Func Hash:
@@ -3332,8 +3335,8 @@ cutils.c:exchange_int64s
 # Num Counters:
 2
 # Counter Values:
-1352
-793
+1583
+1409
 
 cutils.c:exchange_one_byte
 # Func Hash:
@@ -4296,7 +4299,7 @@ heap.c:heap_block_cost
 # Num Counters:
 1
 # Counter Values:
-99371
+100387
 
 heap.c:heap_copy
 # Func Hash:
@@ -4304,8 +4307,8 @@ heap.c:heap_copy
 # Num Counters:
 7
 # Counter Values:
-22529
-22529
+22683
+22683
 0
 0
 0
@@ -4338,7 +4341,7 @@ heap.c:heap_dedicated_of
 # Num Counters:
 4
 # Counter Values:
-83322
+83772
 0
 0
 0
@@ -4420,9 +4423,9 @@ heap.c:heap_over
 # Num Counters:
 3
 # Counter Values:
-73085
-73085
-73085
+73497
+73497
+73497
 
 heap.c:heap_over_held
 # Func Hash:
@@ -4473,8 +4476,8 @@ heap.c:heap_take
 # Num Counters:
 2
 # Counter Values:
-67096
-67088
+67739
+67731
 
 heap.c:heap_untake
 # Func Hash:
@@ -4491,11 +4494,11 @@ heap_alloc
 # Num Counters:
 8
 # Counter Values:
-44567
+45056
 0
-44567
-44567
-44567
+45056
+45056
+45056
 0
 0
 0
@@ -4528,12 +4531,12 @@ heap_free
 # Num Counters:
 7
 # Counter Values:
-54804
+55331
 0
 0
 0
-54804
-54804
+55331
+55331
 0
 
 heap_realloc
@@ -4542,7 +4545,7 @@ heap_realloc
 # Num Counters:
 25
 # Counter Values:
-28518
+28441
 0
 0
 0
@@ -4560,12 +4563,12 @@ heap_realloc
 0
 0
 0
-5989
-4374
-1415
+5758
+4143
+1423
 0
 0
-22529
+22683
 0
 
 heap_release_next_chunk
@@ -4589,10 +4592,10 @@ heap_release_next_range
 # Num Counters:
 4
 # Counter Values:
-235
-2555
+232
+2574
 1
-2320
+2342
 
 heap_release_start
 # Func Hash:
@@ -4601,7 +4604,7 @@ heap_release_start
 3
 # Counter Values:
 1
-2554
+2573
 1
 
 heap_set_remap
@@ -4618,7 +4621,7 @@ heap_usable_size
 # Num Counters:
 1
 # Counter Values:
-156457
+156484
 
 heap_would_pass
 # Func Hash:
@@ -4801,7 +4804,7 @@ js_free
 # Num Counters:
 1
 # Counter Values:
-607345
+607361
 
 js_free_rt
 # Func Hash:
@@ -4809,7 +4812,7 @@ js_free_rt
 # Num Counters:
 1
 # Counter Values:
-11936074
+11936114
 
 js_malloc
 # Func Hash:
@@ -4826,7 +4829,7 @@ js_malloc_rt
 # Num Counters:
 2
 # Counter Values:
-10437795
+10437835
 0
 
 js_malloc_usable_size
@@ -4843,7 +4846,7 @@ js_malloc_usable_size_rt
 # Num Counters:
 1
 # Counter Values:
-1746312
+1746284
 
 js_mallocz
 # Func Hash:
@@ -4880,12 +4883,12 @@ js_realloc2
 # Num Counters:
 6
 # Counter Values:
-1158756
+1158728
 0
 0
 0
-1158756
-305800
+1158728
+305856
 
 js_realloc_rt
 # Func Hash:
@@ -4893,7 +4896,7 @@ js_realloc_rt
 # Num Counters:
 2
 # Counter Values:
-2073555
+2073527
 0
 
 js_strdup
@@ -8902,9 +8905,9 @@ memcmp
 5
 # Counter Values:
 460108
-6416165
-6504235
-6416165
+6416162
+6504232
+6416162
 88070
 
 memcpy
@@ -8913,7 +8916,7 @@ memcpy
 # Num Counters:
 11
 # Counter Values:
-9312059
+9312286
 7111211
 3483346
 1107228
@@ -8921,7 +8924,7 @@ memcpy
 1158592
 555204
 205501
-1704660
+1702978
 0
 0
 
@@ -8959,7 +8962,7 @@ memset
 32
 6432
 46040
-128292
+128291
 
 modf
 # Func Hash:
@@ -9903,9 +9906,9 @@ quickjs.c:JS_FreeValue
 # Num Counters:
 3
 # Counter Values:
-118981769
-71095129
-3863609
+118981793
+71095153
+3863634
 
 quickjs.c:JS_FreeValueRT
 # Func Hash:
@@ -10388,7 +10391,7 @@ quickjs.c:JS_IsUndefined
 # Num Counters:
 1
 # Counter Values:
-3458565
+3443202
 
 quickjs.c:JS_IsUninitialized
 # Func Hash:
@@ -10635,14 +10638,16 @@ quickjs.c:JS_NewModuleValue
 
 quickjs.c:JS_NewObjectFromShape
 # Func Hash:
-911764297369758680
+122440540746790616
 # Num Counters:
-43
+45
 # Counter Values:
 2416039
 790349
 0
+0
 1625690
+0
 0
 0
 0
@@ -11253,9 +11258,9 @@ quickjs.c:JS_RegExpExec
 
 quickjs.c:JS_RegvmRun
 # Func Hash:
-214227908145615189
+997801309985910770
 # Num Counters:
-2204
+2223
 # Counter Values:
 428234
 3597
@@ -11436,26 +11441,27 @@ quickjs.c:JS_RegvmRun
 13940098
 13940098
 0
-1368969
-29526
-1339443
-1339443
-1339443
-1339443
-12259558
-11965562
-11965562
-11965562
-1974536
-3843785
-970989
+2030470
+26842
+2003628
+2003628
+2003628
+664603
+0
+12923743
+12629747
+12629747
+12629747
+1310351
+2515415
+306804
 145913
 36322
 36322
 36322
-788754
+124569
 156636
-972190
+307587
 156636
 846911
 13601227
@@ -11478,7 +11484,8 @@ quickjs.c:JS_RegvmRun
 253
 253
 253
-253
+0
+0
 7184909
 6882935
 6882935
@@ -11515,7 +11522,8 @@ quickjs.c:JS_RegvmRun
 4147
 4147
 4147
-4147
+0
+0
 6090095
 6001948
 6001948
@@ -11590,8 +11598,10 @@ quickjs.c:JS_RegvmRun
 2436837
 0
 256386
+2180451
 120385
 120363
+0
 0
 0
 0
@@ -11610,8 +11620,10 @@ quickjs.c:JS_RegvmRun
 2378416
 0
 1718306
+660110
 61358
 61358
+0
 0
 0
 0
@@ -11630,8 +11642,10 @@ quickjs.c:JS_RegvmRun
 873240
 0
 746124
+127116
 6336
 6336
+0
 0
 0
 0
@@ -11650,8 +11664,10 @@ quickjs.c:JS_RegvmRun
 763667
 0
 242
+763425
 17964
 17963
+0
 0
 0
 0
@@ -11670,8 +11686,10 @@ quickjs.c:JS_RegvmRun
 754975
 0
 365256
+389719
 34045
 34045
+0
 0
 0
 0
@@ -11690,8 +11708,10 @@ quickjs.c:JS_RegvmRun
 207210
 0
 191117
+16093
 11
 11
+0
 0
 0
 0
@@ -11711,8 +11731,10 @@ quickjs.c:JS_RegvmRun
 3026534
 0
 756018
+2270516
 149751
 149751
+0
 0
 0
 0
@@ -11732,8 +11754,10 @@ quickjs.c:JS_RegvmRun
 1136093
 0
 0
+1136093
 11
 11
+0
 0
 0
 0
@@ -14655,7 +14679,7 @@ quickjs.c:__JS_AtomIsTaggedInt
 # Num Counters:
 1
 # Counter Values:
-8295188
+8309699
 
 quickjs.c:__JS_AtomToUInt32
 # Func Hash:
@@ -14663,7 +14687,7 @@ quickjs.c:__JS_AtomToUInt32
 # Num Counters:
 1
 # Counter Values:
-969455
+969388
 
 quickjs.c:__JS_AtomToValue
 # Func Hash:
@@ -14744,7 +14768,7 @@ quickjs.c:__JS_FreeAtom
 2
 # Counter Values:
 1133667
-1114263
+1114264
 
 quickjs.c:__JS_NewAtom
 # Func Hash:
@@ -14864,9 +14888,9 @@ quickjs.c:__js_free
 # Num Counters:
 3
 # Counter Values:
-12843573
+12843662
 250233
-11326432
+11326959
 
 quickjs.c:__js_free_block
 # Func Hash:
@@ -14874,11 +14898,11 @@ quickjs.c:__js_free_block
 # Num Counters:
 5
 # Counter Values:
-1722865
-29199
+1723142
+29205
 0
-58267
-25605
+57299
+26126
 
 quickjs.c:__js_malloc
 # Func Hash:
@@ -14886,15 +14910,15 @@ quickjs.c:__js_malloc
 # Num Counters:
 9
 # Counter Values:
-12381639
-10828862
-65523
-1552777
-1487254
+12381728
+10828635
+65563
+1553093
+1487530
 22
-20679
+21167
 0
-54161
+53148
 
 quickjs.c:__js_malloc_usable_size
 # Func Hash:
@@ -14902,9 +14926,9 @@ quickjs.c:__js_malloc_usable_size
 # Num Counters:
 4
 # Counter Values:
-1746312
+1746284
 0
-39794
+39733
 0
 
 quickjs.c:__js_poll_interrupts
@@ -14921,7 +14945,7 @@ quickjs.c:__js_rc
 # Num Counters:
 1
 # Counter Values:
-160957728
+160957752
 
 quickjs.c:__js_realloc
 # Func Hash:
@@ -14929,16 +14953,16 @@ quickjs.c:__js_realloc
 # Num Counters:
 10
 # Counter Values:
-2073555
+2073527
 1058378
 22033
-28518
+28441
 0
 0
 0
 79160
 0
-885466
+885515
 
 quickjs.c:__list_add
 # Func Hash:
@@ -14946,7 +14970,7 @@ quickjs.c:__list_add
 # Num Counters:
 1
 # Counter Values:
-11352089
+11438227
 
 quickjs.c:add_arg
 # Func Hash:
@@ -15899,7 +15923,7 @@ quickjs.c:can_extend_fast_array
 # Num Counters:
 3
 # Counter Values:
-655125
+655012
 0
 0
 
@@ -16888,7 +16912,7 @@ quickjs.c:copy_str16
 # Counter Values:
 3488
 1803
-18012
+18061
 
 quickjs.c:count_ascii
 # Func Hash:
@@ -17439,7 +17463,7 @@ quickjs.c:expand_fast_array
 # Num Counters:
 3
 # Counter Values:
-1063451
+1063448
 0
 0
 
@@ -17449,7 +17473,7 @@ quickjs.c:expand_fast_array_append
 # Num Counters:
 5
 # Counter Values:
-223873
+223760
 0
 195815
 197762
@@ -17553,8 +17577,8 @@ quickjs.c:find_hashed_shape_keys
 # Counter Values:
 63820
 438744
-72429
-8712
+69350
+5633
 63717
 63717
 63717
@@ -17572,7 +17596,7 @@ quickjs.c:find_hashed_shape_prop
 15
 # Counter Values:
 1405821
-1519233
+1323743
 1199365
 1199365
 1199365
@@ -17585,7 +17609,7 @@ quickjs.c:find_hashed_shape_prop
 1199365
 1199365
 1195630
-319868
+124378
 
 quickjs.c:find_hashed_shape_proto
 # Func Hash:
@@ -17594,7 +17618,7 @@ quickjs.c:find_hashed_shape_proto
 7
 # Counter Values:
 1810115
-2872900
+1808423
 1790876
 1790876
 1790876
@@ -17702,9 +17726,9 @@ quickjs.c:find_own_property
 # Num Counters:
 3
 # Counter Values:
-16203742
-11835418
-5065375
+14875372
+11140126
+4401190
 
 quickjs.c:find_own_property1
 # Func Hash:
@@ -17908,19 +17932,20 @@ quickjs.c:free_generator_stack_rt
 
 quickjs.c:free_object
 # Func Hash:
-718095293640213250
+40999476447856080
 # Num Counters:
-10
+11
 # Counter Values:
 5023699
 12239517
 2456246
 2449140
 2449170
+809379
 518660
-267573
-267644
-267573
+208074
+208145
+208074
 4504973
 
 quickjs.c:free_property
@@ -17978,9 +18003,9 @@ quickjs.c:free_zero_refcount
 # Num Counters:
 5
 # Counter Values:
-328731
-2087142
-328731
+328610
+2087021
+328610
 0
 0
 
@@ -18235,6 +18260,15 @@ quickjs.c:gc_decref_child
 143956
 19281
 
+quickjs.c:gc_defer
+# Func Hash:
+2696721
+# Num Counters:
+2
+# Counter Values:
+528476
+528476
+
 quickjs.c:gc_ephemeron
 # Func Hash:
 673588953438710840
@@ -18319,9 +18353,9 @@ quickjs.c:gc_ephemeron_key
 4
 # Counter Values:
 41591
-15202
-16444
-15202
+15473
+16715
+15473
 
 quickjs.c:gc_ephemeron_prune
 # Func Hash:
@@ -18356,20 +18390,20 @@ quickjs.c:gc_ephemeron_symbol
 
 quickjs.c:gc_free_cycles
 # Func Hash:
-939890178625655443
+970983173280946296
 # Num Counters:
-21
+23
 # Counter Values:
 129
-631194
+657825
 129
-631065
+657696
 518660
 9816
 0
 0
-102589
-252331
+129220
+311830
 0
 0
 0
@@ -18379,8 +18413,18 @@ quickjs.c:gc_free_cycles
 1244
 0
 22
-251087
+310586
 22
+129
+0
+
+quickjs.c:gc_keep
+# Func Hash:
+0
+# Num Counters:
+1
+# Counter Values:
+115837
 
 quickjs.c:gc_remove_weak_objects
 # Func Hash:
@@ -18439,7 +18483,7 @@ quickjs.c:get_arena_block
 # Num Counters:
 1
 # Counter Values:
-2414437
+2421542
 
 quickjs.c:get_block_size_index
 # Func Hash:
@@ -18447,11 +18491,11 @@ quickjs.c:get_block_size_index
 # Num Counters:
 5
 # Counter Values:
-1487254
+1487530
 2884
-1242846
-174119
-67405
+1239929
+175803
+68914
 
 quickjs.c:get_closure_var
 # Func Hash:
@@ -18840,7 +18884,7 @@ quickjs.c:get_shape_prop
 # Num Counters:
 1
 # Counter Values:
-60267991
+59607165
 
 quickjs.c:get_shape_size
 # Func Hash:
@@ -18946,7 +18990,7 @@ quickjs.c:get_zero_size_block
 # Num Counters:
 1
 # Counter Values:
-162764
+162672
 
 quickjs.c:goasm_atom_to_value
 # Func Hash:
@@ -19093,10 +19137,10 @@ quickjs.c:goasm_field_goes_on
 # Num Counters:
 6
 # Counter Values:
-972222
-930436
-930436
-930436
+972714
+930928
+930928
+930928
 114860
 114860
 
@@ -19280,7 +19324,7 @@ quickjs.c:init_list_head
 # Num Counters:
 1
 # Counter Values:
-40499
+40379
 
 quickjs.c:init_shape_hash
 # Func Hash:
@@ -19588,8 +19632,8 @@ quickjs.c:is_num
 # Num Counters:
 3
 # Counter Values:
-657487
-653824
+667359
+663701
 40663
 
 quickjs.c:is_num_string
@@ -19598,10 +19642,10 @@ quickjs.c:is_num_string
 # Num Counters:
 10
 # Counter Values:
-704983
-189111
-704756
-515872
+719069
+193325
+718842
+525744
 22169
 496
 1
@@ -20066,7 +20110,7 @@ quickjs.c:js_alloc_string
 # Num Counters:
 2
 # Counter Values:
-1706781
+1706821
 0
 
 quickjs.c:js_alloc_string_rt
@@ -20075,7 +20119,7 @@ quickjs.c:js_alloc_string_rt
 # Num Counters:
 2
 # Counter Values:
-1707022
+1707062
 0
 
 quickjs.c:js_allocate_fast_array
@@ -21004,25 +21048,25 @@ quickjs.c:js_array_push
 # Num Counters:
 29
 # Counter Values:
-65589
-60771
-65589
-60771
-60771
-60771
-60771
-60771
-60771
-60771
-60771
-60771
-60771
-60771
-60771
-60771
-56228
+65476
+60658
+65476
+60658
+60658
+60658
+60658
+60658
+60658
+60658
+60658
+60658
+60658
+60658
+60658
+60658
+56115
 0
-125231
+125118
 0
 0
 4818
@@ -21040,8 +21084,8 @@ quickjs.c:js_array_push_add
 # Num Counters:
 2
 # Counter Values:
-359530
-364854
+359643
+364967
 
 quickjs.c:js_array_push_grow
 # Func Hash:
@@ -21049,7 +21093,7 @@ quickjs.c:js_array_push_grow
 # Num Counters:
 1
 # Counter Values:
-56228
+56115
 
 quickjs.c:js_array_push_room
 # Func Hash:
@@ -23387,12 +23431,12 @@ quickjs.c:js_call_c_body
 # Num Counters:
 32
 # Counter Values:
-2201726
+2201613
 2
 252123
 897376
 284206
-2201724
+2201611
 16238
 63594
 42084
@@ -23403,7 +23447,7 @@ quickjs.c:js_call_c_body
 22
 0
 0
-728656
+728543
 0
 182685
 0
@@ -23426,7 +23470,7 @@ quickjs.c:js_call_c_counted
 # Num Counters:
 1
 # Counter Values:
-1593422
+1593309
 
 quickjs.c:js_call_c_direct
 # Func Hash:
@@ -23479,7 +23523,7 @@ quickjs.c:js_call_c_plain
 # Num Counters:
 1
 # Counter Values:
-1604346
+1604233
 
 quickjs.c:js_call_checks
 # Func Hash:
@@ -23570,7 +23614,17 @@ quickjs.c:js_call_leave
 # Num Counters:
 1
 # Counter Values:
-2406291
+2406178
+
+quickjs.c:js_class_func_block
+# Func Hash:
+99227
+# Num Counters:
+3
+# Counter Values:
+9904230
+9903966
+1629444
 
 quickjs.c:js_class_has_bytecode
 # Func Hash:
@@ -23844,9 +23898,9 @@ quickjs.c:js_concat_string_in_place
 1234
 877
 398
-2049
+2000
 585857
-332515
+332491
 
 quickjs.c:js_copy_data
 # Func Hash:
@@ -25083,9 +25137,9 @@ quickjs.c:js_emit_buf_end
 0
 145596
 145596
-140135
+140119
 144342
-140135
+140119
 145596
 144342
 
@@ -25096,7 +25150,7 @@ quickjs.c:js_emit_buf_take
 2
 # Counter Values:
 145596
-5461
+5477
 
 quickjs.c:js_emit_c8
 # Func Hash:
@@ -25852,9 +25906,9 @@ quickjs.c:js_emit_w8
 4
 # Counter Values:
 1800216
-1780779
+1780801
 1800128
-1780779
+1780801
 
 quickjs.c:js_emit_wstr
 # Func Hash:
@@ -25874,7 +25928,7 @@ quickjs.c:js_end_tag
 # Counter Values:
 139579
 0
-147609
+164076
 0
 139579
 
@@ -26714,9 +26768,9 @@ quickjs.c:js_free_string_rt
 # Num Counters:
 3
 # Counter Values:
-1688398
-64145
-7081
+1688423
+64146
+7082
 
 quickjs.c:js_front_drain
 # Func Hash:
@@ -26726,9 +26780,9 @@ quickjs.c:js_front_drain
 # Counter Values:
 130
 4160
-446137
+446843
 7410
-9820
+9829
 
 quickjs.c:js_front_give
 # Func Hash:
@@ -26736,9 +26790,9 @@ quickjs.c:js_front_give
 # Num Counters:
 3
 # Counter Values:
-12593340
-70812
-1247529
+12593429
+70857
+1247094
 
 quickjs.c:js_front_take
 # Func Hash:
@@ -26746,11 +26800,11 @@ quickjs.c:js_front_take
 # Num Counters:
 5
 # Counter Values:
-12381639
-65523
-12381639
-12316116
-1487254
+12381728
+65563
+12381728
+12316165
+1487530
 
 quickjs.c:js_function_apply
 # Func Hash:
@@ -27512,7 +27566,7 @@ quickjs.c:js_heap_alloc
 # Num Counters:
 5
 # Counter Values:
-44567
+45056
 0
 0
 0
@@ -27534,7 +27588,7 @@ quickjs.c:js_heap_realloc
 # Num Counters:
 7
 # Counter Values:
-28518
+28441
 0
 0
 0
@@ -28492,7 +28546,7 @@ quickjs.c:js_large_class
 # Num Counters:
 1
 # Counter Values:
-86239
+86280
 
 quickjs.c:js_large_give
 # Func Hash:
@@ -28500,18 +28554,18 @@ quickjs.c:js_large_give
 # Num Counters:
 12
 # Counter Values:
-70812
-5582
-65230
-65230
-70812
-65230
-2583
-64903
-62647
-11214
-51433
-51433
+70857
+5587
+65270
+65270
+70857
+65270
+2594
+64943
+62676
+11195
+51481
+51481
 
 quickjs.c:js_large_next
 # Func Hash:
@@ -28519,7 +28573,7 @@ quickjs.c:js_large_next
 # Num Counters:
 1
 # Counter Values:
-51433
+51481
 
 quickjs.c:js_large_set_next
 # Func Hash:
@@ -28527,7 +28581,7 @@ quickjs.c:js_large_set_next
 # Num Counters:
 1
 # Counter Values:
-51433
+51481
 
 quickjs.c:js_large_take
 # Func Hash:
@@ -28535,8 +28589,8 @@ quickjs.c:js_large_take
 # Num Counters:
 2
 # Counter Values:
-63926
-22313
+63966
+22314
 
 quickjs.c:js_limb_clz
 # Func Hash:
@@ -28643,14 +28697,14 @@ quickjs.c:js_malloc_large
 # Num Counters:
 9
 # Counter Values:
-65501
+65541
 0
-63926
-63926
-63926
-65501
-63926
-41613
+63966
+63966
+63966
+65541
+63966
+41652
 0
 
 quickjs.c:js_malloc_moving
@@ -28677,10 +28731,10 @@ quickjs.c:js_malloc_new_arena
 # Num Counters:
 4
 # Counter Values:
-20679
+21167
 0
 0
-906504
+912845
 
 quickjs.c:js_map_clear
 # Func Hash:
@@ -29142,7 +29196,7 @@ quickjs.c:js_nest_enter
 # Num Counters:
 2
 # Counter Values:
-3077024
+3076903
 0
 
 quickjs.c:js_nest_leave
@@ -29151,7 +29205,7 @@ quickjs.c:js_nest_leave
 # Num Counters:
 1
 # Counter Values:
-3077024
+3076903
 
 quickjs.c:js_new_desc_object
 # Func Hash:
@@ -30397,11 +30451,11 @@ quickjs.c:js_own_key_kind
 # Num Counters:
 12
 # Counter Values:
-617762
+631781
 7170
-3432
+3365
 0
-607160
+621246
 0
 0
 0
@@ -30419,9 +30473,9 @@ quickjs.c:js_own_key_kinds
 379899
 55
 376133
-356637
-121082
-19496
+354075
+135101
+22058
 
 quickjs.c:js_own_key_pair
 # Func Hash:
@@ -33579,13 +33633,13 @@ quickjs.c:js_promise_withResolvers
 
 quickjs.c:js_props_inline
 # Func Hash:
-26029647840
+406713247
 # Num Counters:
 4
 # Counter Values:
 7368448
 5598662
-820065
+838802
 820065
 
 quickjs.c:js_proxy_call
@@ -34111,7 +34165,7 @@ quickjs.c:js_rc
 # Num Counters:
 1
 # Counter Values:
-68505292
+76759082
 
 quickjs.c:js_realloc_array
 # Func Hash:
@@ -35442,7 +35496,7 @@ quickjs.c:js_same_value_zero
 # Num Counters:
 1
 # Counter Values:
-126463
+108849
 
 quickjs.c:js_scratch_drain
 # Func Hash:
@@ -35779,8 +35833,8 @@ quickjs.c:js_shape_hash_unlink
 3
 # Counter Values:
 265140
-798
-767
+786
+810
 
 quickjs.c:js_shape_keep
 # Func Hash:
@@ -35995,7 +36049,7 @@ quickjs.c:js_short_eq_budget
 # Num Counters:
 9
 # Counter Values:
-7795
+7690
 1751
 1751
 1751
@@ -36097,7 +36151,7 @@ quickjs.c:js_start_tag
 0
 0
 0
-1433
+1543
 0
 31669
 113927
@@ -36118,26 +36172,26 @@ quickjs.c:js_strict_eq2
 # Num Counters:
 36
 # Counter Values:
-308570
-308570
+290956
+290956
 0
 0
 11
 0
-84368
+83969
 0
-65804
+65405
 18564
 18564
 18564
 0
 0
-179036
-1422
+161988
+1140
 15845
 8667
 5638
-19905
+19738
 8458
 8386
 31149
@@ -36276,9 +36330,9 @@ quickjs.c:js_string_atom_or_key
 # Num Counters:
 3
 # Counter Values:
-1692509
-1628364
-1628364
+1692534
+1628388
+1628388
 
 quickjs.c:js_string_charAt
 # Func Hash:
@@ -36442,7 +36496,7 @@ quickjs.c:js_string_eq_polls
 # Num Counters:
 12
 # Counter Values:
-102721
+102616
 18564
 82124
 18564
@@ -36452,8 +36506,8 @@ quickjs.c:js_string_eq_polls
 220
 220
 220
-83937
-83937
+83832
+83832
 
 quickjs.c:js_string_find
 # Func Hash:
@@ -37733,12 +37787,12 @@ quickjs.c:js_trigger_gc_block
 # Num Counters:
 6
 # Counter Values:
-93471
+93358
 0
-93471
-93471
-93471
-93471
+93358
+93358
+93358
+93358
 
 quickjs.c:js_trigger_gc_block_run
 # Func Hash:
@@ -38375,9 +38429,9 @@ quickjs.c:js_typed_array_set_internal
 
 quickjs.c:js_typed_array_slice
 # Func Hash:
-637121845876383216
+909988682536121279
 # Num Counters:
-18
+20
 # Counter Values:
 10
 0
@@ -38388,6 +38442,8 @@ quickjs.c:js_typed_array_slice
 0
 10
 0
+10
+10
 10
 10
 10
@@ -38816,7 +38872,7 @@ quickjs.c:js_weakref_is_live
 # Num Counters:
 2
 # Counter Values:
-143564
+128201
 0
 
 quickjs.c:js_weakref_is_target
@@ -39778,7 +39834,7 @@ quickjs.c:list_add
 # Num Counters:
 1
 # Counter Values:
-4606329
+4606337
 
 quickjs.c:list_add_tail
 # Func Hash:
@@ -39786,7 +39842,7 @@ quickjs.c:list_add_tail
 # Num Counters:
 1
 # Counter Values:
-6745760
+6831890
 
 quickjs.c:list_del
 # Func Hash:
@@ -39794,7 +39850,7 @@ quickjs.c:list_del
 # Num Counters:
 1
 # Counter Values:
-11163164
+11189824
 
 quickjs.c:list_empty
 # Func Hash:
@@ -39802,7 +39858,7 @@ quickjs.c:list_empty
 # Num Counters:
 1
 # Counter Values:
-2754234
+2754363
 
 quickjs.c:lre_is_id_continue_byte
 # Func Hash:
@@ -39891,13 +39947,13 @@ quickjs.c:map_delete_record
 0
 6121
 4621
-10411
+9736
 0
 0
-10411
+9736
 0
 0
-2460
+2355
 0
 6121
 
@@ -39921,7 +39977,7 @@ quickjs.c:map_delete_weakrefs
 8902
 47575
 88
-109
+116
 0
 88
 88
@@ -39936,11 +39992,11 @@ quickjs.c:map_find_record
 0
 0
 10436
-17505
-8
-17505
-3097
-8
+16100
+11
+16100
+2993
+11
 0
 
 quickjs.c:map_find_record_long
@@ -39970,12 +40026,12 @@ quickjs.c:map_find_record_quiet
 565998
 0
 66898
-98555
+83024
 58065
-98555
+83024
 58065
-98555
-89592
+83024
+74333
 0
 972826
 0
@@ -39996,9 +40052,9 @@ quickjs.c:map_find_record_short
 15
 # Counter Values:
 10436
-7219
+7100
 0
-7219
+7100
 0
 0
 5809
@@ -40111,7 +40167,7 @@ quickjs.c:map_key_eq
 # Num Counters:
 4
 # Counter Values:
-2460
+2355
 0
 0
 0
@@ -40224,8 +40280,8 @@ quickjs.c:max_int
 # Num Counters:
 2
 # Counter Values:
-492292
-163549
+492278
+163565
 
 quickjs.c:max_int64
 # Func Hash:
@@ -40242,7 +40298,7 @@ quickjs.c:max_uint32
 # Num Counters:
 2
 # Counter Values:
-1320947
+1320831
 1125460
 
 quickjs.c:memcmp16
@@ -40271,8 +40327,8 @@ quickjs.c:min_int
 # Num Counters:
 2
 # Counter Values:
-767925
-471067
+767886
+471028
 
 quickjs.c:min_int64
 # Func Hash:
@@ -41082,7 +41138,7 @@ quickjs.c:put_u32
 # Num Counters:
 1
 # Counter Values:
-1029262
+1031082
 
 quickjs.c:put_u64
 # Func Hash:
@@ -43024,7 +43080,7 @@ quickjs.c:rv_concat8
 674376
 846834
 769669
-186250
+186226
 0
 
 quickjs.c:rv_convert
@@ -43698,7 +43754,7 @@ quickjs.c:rv_fast_builtin
 0
 0
 0
-54952
+54839
 1531952
 1531952
 0
@@ -44613,17 +44669,18 @@ quickjs.c:rv_getel_slow
 
 quickjs.c:rv_getf_keep
 # Func Hash:
-1029768358673379291
+298885242229152915
 # Num Counters:
-8
+9
 # Counter Values:
-969597
+305412
 263274
-674654
-31669
-31669
-696764
-31669
+9559
+32579
+32579
+32579
+492
+0
 1067
 
 quickjs.c:rv_getf_slow
@@ -44868,7 +44925,7 @@ quickjs.c:rv_k
 8
 # Counter Values:
 759
-373
+377
 372
 372
 372
@@ -48516,7 +48573,7 @@ quickjs.c:string_buffer_init
 # Num Counters:
 1
 # Counter Values:
-229619
+229635
 
 quickjs.c:string_buffer_init2
 # Func Hash:
@@ -48524,7 +48581,7 @@ quickjs.c:string_buffer_init2
 # Num Counters:
 2
 # Counter Values:
-288542
+288558
 0
 
 quickjs.c:string_buffer_putc
@@ -48534,11 +48591,11 @@ quickjs.c:string_buffer_putc
 6
 # Counter Values:
 537108
-536455
-42097
-42097
+536518
+42098
+42098
 0
-494204
+494266
 
 quickjs.c:string_buffer_putc16
 # Func Hash:
@@ -48546,7 +48603,7 @@ quickjs.c:string_buffer_putc16
 # Num Counters:
 4
 # Counter Values:
-241843
+241780
 241190
 3
 241033
@@ -48557,11 +48614,11 @@ quickjs.c:string_buffer_putc16_slow
 # Num Counters:
 6
 # Counter Values:
-807
-653
+744
+590
 0
-110
-543
+109
+481
 0
 
 quickjs.c:string_buffer_putc8
@@ -48571,7 +48628,7 @@ quickjs.c:string_buffer_putc8
 4
 # Counter Values:
 519759
-28198
+28189
 0
 73920
 
@@ -48581,7 +48638,7 @@ quickjs.c:string_buffer_putc_slow
 # Num Counters:
 3
 # Counter Values:
-807
+744
 3
 0
 
@@ -48599,13 +48656,13 @@ quickjs.c:string_buffer_realloc
 # Num Counters:
 8
 # Counter Values:
-91645
+91631
 0
 0
 0
-250
-88927
-250
+261
+88913
+261
 0
 
 quickjs.c:string_buffer_realloc2
@@ -48614,8 +48671,8 @@ quickjs.c:string_buffer_realloc2
 # Num Counters:
 8
 # Counter Values:
-94733
-94733
+94708
+94708
 0
 0
 0
@@ -48640,7 +48697,7 @@ quickjs.c:string_buffer_widen
 3338
 0
 0
-3088
+3077
 0
 0
 0
@@ -48661,11 +48718,11 @@ quickjs.c:string_buffer_write16
 67046
 363
 24351803
-2820
+2830
 0
-2934
-14443
-2934
+2923
+14438
+2923
 0
 54398
 81734
@@ -48697,8 +48754,8 @@ quickjs.c:string_buffer_write8
 # Num Counters:
 7
 # Counter Values:
-960423
-56608
+960401
+56656
 0
 363504
 0
@@ -48734,7 +48791,7 @@ quickjs.c:string_get
 # Num Counters:
 2
 # Counter Values:
-2102133
+2112005
 17115
 
 quickjs.c:string_get_digits
@@ -49101,9 +49158,9 @@ quickjs.c:tag_is_string
 # Num Counters:
 3
 # Counter Values:
-439609
-195955
-195713
+439210
+195556
+195314
 
 quickjs.c:tdz_checks
 # Func Hash:
@@ -49491,23 +49548,15 @@ quickjs.c:xorshift64star
 
 quickjs.c:young_decref_child
 # Func Hash:
-42129
+187543167019119761
 # Num Counters:
-2
+5
 # Counter Values:
 2054088
-1120376
-
-quickjs.c:young_defer
-# Func Hash:
-10995967505
-# Num Counters:
-4
-# Counter Values:
-528476
-528476
-434720
-0
+933712
+320744
+660030
+320744
 
 quickjs.c:young_move
 # Func Hash:
@@ -49515,8 +49564,8 @@ quickjs.c:young_move
 # Num Counters:
 2
 # Counter Values:
-250
-124
+129
+3
 
 quickjs.c:young_scan_incref_child
 # Func Hash:
@@ -49543,7 +49592,16 @@ quickjs.c:young_splice
 # Num Counters:
 1
 # Counter Values:
-129
+8
+
+quickjs.c:young_splice_clear
+# Func Hash:
+18449
+# Num Counters:
+2
+# Counter Values:
+0
+0
 
 rint
 # Func Hash:
@@ -49780,10 +49838,10 @@ strlen
 5
 # Counter Values:
 66528
-167102
+167104
 32115
-955
-159146
+957
+159128
 
 strrchr
 # Func Hash:
@@ -49838,12 +49896,12 @@ tlsf.c:adjust_request_size
 # Num Counters:
 6
 # Counter Values:
-95622
-95622
-95622
-95622
-95622
-95622
+96188
+96188
+96188
+96188
+96188
+96188
 
 tlsf.c:align_down
 # Func Hash:
@@ -49863,11 +49921,11 @@ tlsf.c:align_ptr
 # Num Counters:
 5
 # Counter Values:
-202886
+199561
 0
 0
-202886
-202886
+199561
+199561
 
 tlsf.c:align_up
 # Func Hash:
@@ -49875,11 +49933,11 @@ tlsf.c:align_up
 # Num Counters:
 5
 # Counter Values:
-95622
+96188
 0
 0
-95622
-95622
+96188
+96188
 
 tlsf.c:block_absorb
 # Func Hash:
@@ -49887,11 +49945,11 @@ tlsf.c:block_absorb
 # Num Counters:
 5
 # Counter Values:
-76447
+74522
 0
 0
-76447
-76447
+74522
+74522
 
 tlsf.c:block_can_split
 # Func Hash:
@@ -49899,7 +49957,7 @@ tlsf.c:block_can_split
 # Num Counters:
 1
 # Counter Values:
-73085
+73497
 
 tlsf.c:block_from_ptr
 # Func Hash:
@@ -49907,7 +49965,7 @@ tlsf.c:block_from_ptr
 # Num Counters:
 1
 # Counter Values:
-423823
+425354
 
 tlsf.c:block_insert
 # Func Hash:
@@ -49915,7 +49973,7 @@ tlsf.c:block_insert
 # Num Counters:
 1
 # Counter Values:
-140114
+138792
 
 tlsf.c:block_is_free
 # Func Hash:
@@ -49923,7 +49981,7 @@ tlsf.c:block_is_free
 # Num Counters:
 1
 # Counter Values:
-312895
+314043
 
 tlsf.c:block_is_last
 # Func Hash:
@@ -49931,7 +49989,7 @@ tlsf.c:block_is_last
 # Num Counters:
 1
 # Counter Values:
-594187
+585856
 
 tlsf.c:block_is_prev_free
 # Func Hash:
@@ -49939,7 +49997,7 @@ tlsf.c:block_is_prev_free
 # Num Counters:
 1
 # Counter Values:
-97072
+97771
 
 tlsf.c:block_link_next
 # Func Hash:
@@ -49947,7 +50005,7 @@ tlsf.c:block_link_next
 # Num Counters:
 1
 # Counter Values:
-273746
+268755
 
 tlsf.c:block_locate_free
 # Func Hash:
@@ -49955,10 +50013,10 @@ tlsf.c:block_locate_free
 # Num Counters:
 6
 # Counter Values:
-67104
-67104
-67104
-67096
+67747
+67747
+67747
+67739
 0
 0
 
@@ -49968,7 +50026,7 @@ tlsf.c:block_mark_as_free
 # Num Counters:
 1
 # Counter Values:
-140105
+138783
 
 tlsf.c:block_mark_as_used
 # Func Hash:
@@ -49976,7 +50034,7 @@ tlsf.c:block_mark_as_used
 # Num Counters:
 1
 # Counter Values:
-71470
+71882
 
 tlsf.c:block_merge_next
 # Func Hash:
@@ -49984,16 +50042,16 @@ tlsf.c:block_merge_next
 # Num Counters:
 10
 # Counter Values:
-87294
+87485
 0
 0
-87294
-87294
-56708
+87485
+87485
+54765
 0
 0
-56708
-56708
+54765
+54765
 
 tlsf.c:block_merge_prev
 # Func Hash:
@@ -50001,16 +50059,16 @@ tlsf.c:block_merge_prev
 # Num Counters:
 10
 # Counter Values:
-77333
-19739
+78014
+19757
 0
 0
-19739
-19739
+19757
+19757
 0
 0
-19739
-19739
+19757
+19757
 
 tlsf.c:block_next
 # Func Hash:
@@ -50018,7 +50076,7 @@ tlsf.c:block_next
 # Num Counters:
 3
 # Counter Values:
-461030
+456566
 0
 0
 
@@ -50028,12 +50086,12 @@ tlsf.c:block_prepare_used
 # Num Counters:
 6
 # Counter Values:
-67104
-67096
+67747
+67739
 0
 0
-67096
-67096
+67739
+67739
 
 tlsf.c:block_prev
 # Func Hash:
@@ -50041,11 +50099,11 @@ tlsf.c:block_prev
 # Num Counters:
 5
 # Counter Values:
-19739
+19757
 0
 0
-19739
-19739
+19757
+19757
 
 tlsf.c:block_remove
 # Func Hash:
@@ -50053,7 +50111,7 @@ tlsf.c:block_remove
 # Num Counters:
 1
 # Counter Values:
-76447
+74522
 
 tlsf.c:block_set_free
 # Func Hash:
@@ -50061,7 +50119,7 @@ tlsf.c:block_set_free
 # Num Counters:
 1
 # Counter Values:
-140114
+138792
 
 tlsf.c:block_set_prev_free
 # Func Hash:
@@ -50069,7 +50127,7 @@ tlsf.c:block_set_prev_free
 # Num Counters:
 1
 # Counter Values:
-197299
+194233
 
 tlsf.c:block_set_prev_used
 # Func Hash:
@@ -50077,7 +50135,7 @@ tlsf.c:block_set_prev_used
 # Num Counters:
 1
 # Counter Values:
-77066
+77219
 
 tlsf.c:block_set_size
 # Func Hash:
@@ -50085,7 +50143,7 @@ tlsf.c:block_set_size
 # Num Counters:
 1
 # Counter Values:
-125562
+121556
 
 tlsf.c:block_set_used
 # Func Hash:
@@ -50093,7 +50151,7 @@ tlsf.c:block_set_used
 # Num Counters:
 1
 # Counter Values:
-71479
+71891
 
 tlsf.c:block_size
 # Func Hash:
@@ -50101,7 +50159,7 @@ tlsf.c:block_size
 # Num Counters:
 1
 # Counter Values:
-2052196
+2030032
 
 tlsf.c:block_split
 # Func Hash:
@@ -50109,17 +50167,17 @@ tlsf.c:block_split
 # Num Counters:
 11
 # Counter Values:
-62772
+60769
 0
 0
-62772
-62772
+60769
+60769
 0
 0
 0
 0
-62772
-62772
+60769
+60769
 
 tlsf.c:block_to_ptr
 # Func Hash:
@@ -50127,7 +50185,7 @@ tlsf.c:block_to_ptr
 # Num Counters:
 1
 # Counter Values:
-1001778
+989342
 
 tlsf.c:block_trim_free
 # Func Hash:
@@ -50135,12 +50193,12 @@ tlsf.c:block_trim_free
 # Num Counters:
 6
 # Counter Values:
-67096
+67739
 0
 0
-67096
-67096
-57185
+67739
+67739
+55441
 
 tlsf.c:block_trim_used
 # Func Hash:
@@ -50148,12 +50206,12 @@ tlsf.c:block_trim_used
 # Num Counters:
 6
 # Counter Values:
-5989
+5758
 0
 0
-5989
-5989
-5587
+5758
+5758
+5328
 
 tlsf.c:control_construct
 # Func Hash:
@@ -50171,19 +50229,19 @@ tlsf.c:insert_free_block
 # Num Counters:
 13
 # Counter Values:
-140114
+138792
 0
 0
-140114
-140114
+138792
+138792
 0
 0
-140114
-140114
+138792
+138792
 0
 0
-140114
-140114
+138792
+138792
 
 tlsf.c:integrity_walker
 # Func Hash:
@@ -50215,8 +50273,8 @@ tlsf.c:mapping_insert
 # Num Counters:
 2
 # Counter Values:
-284131
-44730
+281511
+41885
 
 tlsf.c:mapping_search
 # Func Hash:
@@ -50224,8 +50282,8 @@ tlsf.c:mapping_search
 # Num Counters:
 2
 # Counter Values:
-67104
-67104
+67747
+67747
 
 tlsf.c:offset_to_block
 # Func Hash:
@@ -50233,7 +50291,7 @@ tlsf.c:offset_to_block
 # Num Counters:
 1
 # Counter Values:
-523834
+517367
 
 tlsf.c:remove_free_block
 # Func Hash:
@@ -50241,18 +50299,18 @@ tlsf.c:remove_free_block
 # Num Counters:
 12
 # Counter Values:
-143543
+142261
 0
 0
-143543
-143543
+142261
+142261
 0
 0
-143543
-143543
-116858
-61683
-21635
+142261
+142261
+114811
+61364
+21025
 
 tlsf.c:search_suitable_block
 # Func Hash:
@@ -50260,13 +50318,13 @@ tlsf.c:search_suitable_block
 # Num Counters:
 7
 # Counter Values:
-67104
-32012
+67747
+30832
 8
 0
 0
-67096
-67096
+67739
+67739
 
 tlsf.c:tlsf_ffs
 # Func Hash:
@@ -50274,7 +50332,7 @@ tlsf.c:tlsf_ffs
 # Num Counters:
 1
 # Counter Values:
-99100
+98563
 
 tlsf.c:tlsf_fls
 # Func Hash:
@@ -50282,8 +50340,8 @@ tlsf.c:tlsf_fls
 # Num Counters:
 2
 # Counter Values:
-306995
-306995
+307847
+307847
 
 tlsf.c:tlsf_fls_sizet
 # Func Hash:
@@ -50291,7 +50349,7 @@ tlsf.c:tlsf_fls_sizet
 # Num Counters:
 2
 # Counter Values:
-306505
+307373
 0
 
 tlsf_add_pool
@@ -50322,7 +50380,7 @@ tlsf_alloc_overhead
 # Num Counters:
 1
 # Counter Values:
-99371
+100387
 
 tlsf_block_size
 # Func Hash:
@@ -50330,8 +50388,8 @@ tlsf_block_size
 # Num Counters:
 2
 # Counter Values:
-312864
-312864
+313753
+313753
 
 tlsf_block_size_max
 # Func Hash:
@@ -50479,12 +50537,12 @@ tlsf_free
 # Num Counters:
 6
 # Counter Values:
-77333
-77333
+78014
+78014
 0
 0
-77333
-77333
+78014
+78014
 
 tlsf_free_inside
 # Func Hash:
@@ -50492,7 +50550,7 @@ tlsf_free_inside
 # Num Counters:
 2
 # Counter Values:
-2554
+2573
 0
 
 tlsf_get_pool
@@ -50509,7 +50567,7 @@ tlsf_malloc
 # Num Counters:
 1
 # Counter Values:
-67104
+67747
 
 tlsf_next_free
 # Func Hash:
@@ -50517,10 +50575,10 @@ tlsf_next_free
 # Num Counters:
 6
 # Counter Values:
-5110
-5108
-4642
-442
+5148
+5146
+4696
+426
 2
 0
 
@@ -50531,7 +50589,7 @@ tlsf_pool_is_free
 3
 # Counter Values:
 23
-2
+3
 0
 
 tlsf_pool_overhead
@@ -50564,21 +50622,21 @@ tlsf_realloc_inplace
 # Num Counters:
 15
 # Counter Values:
-28518
+28441
 0
-28518
-28518
-28518
-28518
+28441
+28441
+28441
+28441
 0
 0
-28518
-28518
-22529
-26903
-17821
-4374
-4374
+28441
+28441
+22683
+26826
+15220
+4143
+4143
 
 tlsf_remove_pool
 # Func Hash:
