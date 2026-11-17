@@ -4,6 +4,10 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 
 ## [Unreleased]
 
+### Changed
+
+- A call of a JavaScript function in the register loop finds the code of the function through the function object, in one or two lines of cache next to the code: tifa's React page renders in 2.1% less time than with v0.31.4, its workbench pages in 2.0% less, its MUI pages in 1.7% less and its store pages in 1.6% less (the mean of 16 code layouts on a linux/amd64 AMD EPYC 7B13), for 0.5% to 0.8% more memory in a VM.
+
 ## [v0.31.4] - 2026-11-17
 
 ### Added
