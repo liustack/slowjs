@@ -37109,7 +37109,11 @@ static JSValue js_dynamic_import(JSContext *ctx, JSValueConst specifier, JSValue
     
     /* cannot run JS_LoadModuleInternal synchronously because it would
        cause an unexpected recursion in js_evaluate_module() */
-    JS_EnqueueJob(ctx, js_dynamic_import_job, 5, args);
+    if (JS_EnqueueJob(ctx, js_dynamic_import_job, 5, args) < 0) {
+        /* no memory: an error that cannot be caught (js_catch_ends) */
+        JS_FreeValue(ctx, promise);
+        promise = JS_EXCEPTION;
+    }
  done:
     JS_FreeValue(ctx, basename_val);
     JS_FreeValue(ctx, resolving_funcs[0]);
@@ -37135,16 +37139,18 @@ static JSValue js_dynamic_import(JSContext *ctx, JSValueConst specifier, JSValue
     goto done;
 }
 
-static void js_module_settle(JSContext *ctx, JSModuleDef *m, BOOL is_reject,
-                             JSValueConst value);
+static __exception int js_module_settle(JSContext *ctx, JSModuleDef *m, BOOL is_reject,
+                                        JSValueConst value);
 
-static void js_set_module_evaluated(JSContext *ctx, JSModuleDef *m)
+/* -1 when the settle of the promise of m got no memory (js_module_settle) */
+static __exception int js_set_module_evaluated(JSContext *ctx, JSModuleDef *m)
 {
     m->status = JS_MODULE_STATUS_EVALUATED;
     if (!JS_IsUndefined(m->promise)) {
         assert(m->cycle_root == m);
-        js_module_settle(ctx, m, FALSE, JS_UNDEFINED);
+        return js_module_settle(ctx, m, FALSE, JS_UNDEFINED);
     }
+    return 0;
 }
 
 typedef struct {
@@ -37254,17 +37260,22 @@ static JSValue js_async_module_execution_rejected1(JSContext *ctx, JSValueConst 
     module->status = JS_MODULE_STATUS_EVALUATED;
     module->async_evaluation = FALSE;
 
+    /* a failure (no memory) ends the job, and the host taking its
+       exception fails the modules still evaluating (js_fail_async_modules) */
     if (!JS_IsUndefined(module->promise)) {
         assert(module->cycle_root == module);
-        js_module_settle(ctx, module, TRUE, error);
+        if (js_module_settle(ctx, module, TRUE, error) < 0)
+            return JS_EXCEPTION;
     }
 
     for(i = 0; i < module->async_parent_modules_count; i++) {
         JSModuleDef *m = module->async_parent_modules[i];
         JSValue m_obj = JS_NewModuleValue(ctx, m);
-        js_async_module_execution_rejected(ctx, JS_UNDEFINED, 1, &error, 0,
-                                           &m_obj);
+        JSValue ret = js_async_module_execution_rejected(ctx, JS_UNDEFINED, 1, &error, 0,
+                                                         &m_obj);
         JS_FreeValue(ctx, m_obj);
+        if (JS_IsException(ret))
+            return JS_EXCEPTION;
     }
     return JS_UNDEFINED;
 }
@@ -37299,7 +37310,9 @@ static JSValue js_async_module_execution_fulfilled(JSContext *ctx, JSValueConst 
     assert(!module->eval_has_exception);
     assert(module->async_evaluation);
     module->async_evaluation = FALSE;
-    js_set_module_evaluated(ctx, module);
+    /* no memory for the settle: as a failure of an ancestor below */
+    if (js_set_module_evaluated(ctx, module) < 0)
+        return JS_EXCEPTION;
 
     exec_list->tab = NULL;
     exec_list->count = 0;
@@ -37331,18 +37344,20 @@ static JSValue js_async_module_execution_fulfilled(JSContext *ctx, JSValueConst 
             JSValue error;
             if (js_execute_sync_module(ctx, m, &error) < 0) {
                 JSValue m_obj = JS_NewModuleValue(ctx, m);
-                js_async_module_execution_rejected(ctx, JS_UNDEFINED,
-                                                   1, (JSValueConst *)&error, 0,
-                                                   &m_obj);
+                JSValue ret = js_async_module_execution_rejected(ctx, JS_UNDEFINED,
+                                                                 1, (JSValueConst *)&error, 0,
+                                                                 &m_obj);
                 JS_FreeValue(ctx, m_obj);
                 JS_FreeValue(ctx, error);
                 /* m is recorded as failed, and an uncatchable exception
-                   ends the job too (js_catch_ends) */
-                if (js_catch_ends(ctx))
+                   ends the job too (js_catch_ends), as does a failure of
+                   the rejection */
+                if (JS_IsException(ret) || js_catch_ends(ctx))
                     goto fail;
             } else {
                 m->async_evaluation = FALSE;
-                js_set_module_evaluated(ctx, m);
+                if (js_set_module_evaluated(ctx, m) < 0)
+                    goto fail;
             }
         }
     }
@@ -37603,11 +37618,12 @@ static JSValue js_evaluate_module(JSContext *ctx, JSModuleDef *m)
         JS_FreeValue(ctx, result);
         assert(m->status == JS_MODULE_STATUS_EVALUATED);
         assert(m->eval_has_exception);
-        js_module_settle(ctx, m, TRUE, m->eval_exception);
         /* the modules record an uncatchable exception too, so that an
            import of them fails, but the call ends with it, and no promise
-           it returns holds it (js_catch_ends) */
-        if (js_catch_ends(ctx))
+           it returns holds it (js_catch_ends), as it ends when the settle
+           of the promise got no memory */
+        if (js_module_settle(ctx, m, TRUE, m->eval_exception) < 0 ||
+            js_catch_ends(ctx))
             return JS_EXCEPTION;
     } else {
 #ifdef DUMP_MODULE_EXEC
@@ -37618,7 +37634,8 @@ static JSValue js_evaluate_module(JSContext *ctx, JSModuleDef *m)
         assert(!m->eval_has_exception);
         if (!m->async_evaluation) {
             assert(m->status == JS_MODULE_STATUS_EVALUATED);
-            js_module_settle(ctx, m, FALSE, JS_UNDEFINED);
+            if (js_module_settle(ctx, m, FALSE, JS_UNDEFINED) < 0)
+                return JS_EXCEPTION;
         }
         assert(stack_top == NULL);
     }
@@ -69316,16 +69333,21 @@ uint32_t JS_TakeDroppedRejections(JSRuntime *rt)
     return n;
 }
 
-static void fulfill_or_reject_promise(JSContext *ctx, JSValueConst promise,
-                                      JSValueConst value, BOOL is_reject)
+/* -1 when the job of a reaction got no memory: the promise is settled all
+   the same, the reaction whose job is missing is lost, and the out of
+   memory error, which cannot be caught, is pending for the caller to pass
+   on. 0 otherwise. */
+static __exception int fulfill_or_reject_promise(JSContext *ctx, JSValueConst promise,
+                                                 JSValueConst value, BOOL is_reject)
 {
     JSPromiseData *s = JS_GetOpaque(promise, JS_CLASS_PROMISE);
     struct list_head *el, *el1;
     JSPromiseReactionData *rd;
     JSValueConst args[5];
+    int ret = 0;
 
     if (!s || s->promise_state != JS_PROMISE_PENDING)
-        return; /* should never happen */
+        return 0; /* should never happen */
     set_value(ctx, &s->promise_result, JS_DupValue(ctx, value));
     s->promise_state = JS_PROMISE_FULFILLED + is_reject;
 #ifdef DUMP_PROMISE
@@ -69346,7 +69368,8 @@ static void fulfill_or_reject_promise(JSContext *ctx, JSValueConst promise,
         args[2] = rd->handler;
         args[3] = JS_NewBool(ctx, is_reject);
         args[4] = value;
-        JS_EnqueueJob(ctx, promise_reaction_job, 5, args);
+        if (JS_EnqueueJob(ctx, promise_reaction_job, 5, args) < 0)
+            ret = -1;
         list_del(&rd->link);
         promise_reaction_data_free(ctx->rt, rd);
     }
@@ -69356,12 +69379,13 @@ static void fulfill_or_reject_promise(JSContext *ctx, JSValueConst promise,
         list_del(&rd->link);
         promise_reaction_data_free(ctx->rt, rd);
     }
+    return ret;
 }
 
-static void reject_promise(JSContext *ctx, JSValueConst promise,
-                           JSValueConst value)
+static __exception int reject_promise(JSContext *ctx, JSValueConst promise,
+                                      JSValueConst value)
 {
-    fulfill_or_reject_promise(ctx, promise, value, TRUE);
+    return fulfill_or_reject_promise(ctx, promise, value, TRUE);
 }
 
 /* The promise of m, the root of its cycle, settles with no call of its
@@ -69370,19 +69394,19 @@ static void reject_promise(JSContext *ctx, JSValueConst promise,
    for good, the module evaluated. The function is the engine's own, and
    the call did no more than this: fulfilled with undefined, or rejected
    with value. A promise settled already stays as it is. */
-static void js_module_settle(JSContext *ctx, JSModuleDef *m, BOOL is_reject,
-                             JSValueConst value)
+static __exception int js_module_settle(JSContext *ctx, JSModuleDef *m, BOOL is_reject,
+                                        JSValueConst value)
 {
     JSPromiseFunctionData *fd;
 
     if (JS_VALUE_GET_TAG(m->resolving_funcs[is_reject]) != JS_TAG_OBJECT)
-        return;
+        return 0;
     fd = JS_VALUE_GET_OBJ(m->resolving_funcs[is_reject])->u.promise_function_data;
     if (!fd || fd->presolved->already_resolved)
-        return;
+        return 0;
     fd->presolved->already_resolved = TRUE;
-    fulfill_or_reject_promise(ctx, fd->promise, is_reject ? value : JS_UNDEFINED,
-                              is_reject);
+    return fulfill_or_reject_promise(ctx, fd->promise, is_reject ? value : JS_UNDEFINED,
+                                     is_reject);
 }
 
 /* An uncatchable exception (an interrupt, running out of memory, a panic of
@@ -69453,7 +69477,9 @@ static no_inline void js_fail_async_modules(JSRuntime *rt, JSValueConst error)
         s = JS_GetOpaque(promise, JS_CLASS_PROMISE);
         if (s)
             s->is_handled = TRUE;
-        reject_promise(ctx, promise, error);
+        /* no memory for the jobs of its reactions: the error of that is
+           dropped below */
+        (void)reject_promise(ctx, promise, error);
         if (!JS_IsUninitialized(rt->current_exception))
             JS_FreeValue(ctx, js_take_exception(rt));
         JS_FreeValue(ctx, promise);
@@ -69618,9 +69644,8 @@ static JSValue js_async_context_call(JSContext *ctx, JSValueConst this_val,
 /* js_async_context_wrap takes the reference to handler and returns the
    handler of a reaction or a job: with an async context and a function
    handler, a new function of js_async_context_call that holds both, else
-   handler itself. When the function cannot be made (out of memory) the
-   handler runs without the context, and the exception, which cannot be
-   caught, is left for the caller of the engine. */
+   handler itself. JS_EXCEPTION, with handler freed, when the function
+   cannot be made (out of memory). */
 static JSValue js_async_context_wrap(JSContext *ctx, JSValue handler)
 {
     JSValueConst data[2];
@@ -69632,8 +69657,6 @@ static JSValue js_async_context_wrap(JSContext *ctx, JSValue handler)
         return handler;
     data[1] = handler;
     wrapped = JS_NewCFunctionData(ctx, js_async_context_call, 1, 0, 2, data);
-    if (JS_IsException(wrapped))
-        return handler;
     JS_FreeValue(ctx, handler);
     return wrapped;
 }
@@ -69649,6 +69672,7 @@ static JSValue js_promise_resolve_function_call(JSContext *ctx,
     JSValueConst resolution, args[3];
     JSValue then;
     BOOL is_reject;
+    int ret;
 
     s = p->u.promise_function_data;
     if (!s || s->presolved->already_resolved)
@@ -69679,20 +69703,26 @@ static JSValue js_promise_resolve_function_call(JSContext *ctx,
         if (js_catch_ends(ctx))
             return JS_EXCEPTION;
         error = js_get_exception(ctx);
-        reject_promise(ctx, s->promise, error);
+        ret = reject_promise(ctx, s->promise, error);
         JS_FreeValue(ctx, error);
     } else if (!JS_IsFunction(ctx, then)) {
         JS_FreeValue(ctx, then);
     done:
-        fulfill_or_reject_promise(ctx, s->promise, resolution, is_reject);
+        ret = fulfill_or_reject_promise(ctx, s->promise, resolution, is_reject);
     } else {
         then = js_async_context_wrap(ctx, then);
+        if (JS_IsException(then))
+            return JS_EXCEPTION;
         args[0] = s->promise;
         args[1] = resolution;
         args[2] = then;
-        JS_EnqueueJob(ctx, js_promise_resolve_thenable_job, 3, args);
+        ret = JS_EnqueueJob(ctx, js_promise_resolve_thenable_job, 3, args);
         JS_FreeValue(ctx, then);
     }
+    /* with no memory for a job, the promise stays pending, and the call
+       ends with the error, which cannot be caught */
+    if (ret < 0)
+        return JS_EXCEPTION;
     return JS_UNDEFINED;
 }
 
@@ -70264,18 +70294,15 @@ static __exception int perform_promise_then(JSContext *ctx,
 {
     JSPromiseData *s = JS_GetOpaque(promise, JS_CLASS_PROMISE);
     JSPromiseReactionData *rd_array[2], *rd;
-    int i, j;
+    int i, j, ret = 0;
 
     rd_array[0] = NULL;
     rd_array[1] = NULL;
     for(i = 0; i < 2; i++) {
         JSValueConst handler;
         rd = js_mallocz(ctx, sizeof(*rd));
-        if (!rd) {
-            if (i == 1)
-                promise_reaction_data_free(ctx->rt, rd_array[0]);
-            return -1;
-        }
+        if (!rd)
+            goto fail;
         for(j = 0; j < 2; j++)
             rd->resolving_funcs[j] = JS_DupValue(ctx, cap_resolving_funcs[j]);
         handler = resolve_reject[i];
@@ -70283,6 +70310,10 @@ static __exception int perform_promise_then(JSContext *ctx,
             handler = JS_UNDEFINED;
         rd->handler = js_async_context_wrap(ctx, JS_DupValue(ctx, handler));
         rd_array[i] = rd;
+        if (JS_IsException(rd->handler)) {
+            rd->handler = JS_UNDEFINED;
+            goto fail;
+        }
     }
 
     if (s->promise_state == JS_PROMISE_PENDING) {
@@ -70304,12 +70335,21 @@ static __exception int perform_promise_then(JSContext *ctx,
         args[2] = rd->handler;
         args[3] = JS_NewBool(ctx, i);
         args[4] = s->promise_result;
-        JS_EnqueueJob(ctx, promise_reaction_job, 5, args);
+        /* with no memory for the job, the reaction is lost and the error,
+           which cannot be caught, is pending */
+        if (JS_EnqueueJob(ctx, promise_reaction_job, 5, args) < 0)
+            ret = -1;
         for(i = 0; i < 2; i++)
             promise_reaction_data_free(ctx->rt, rd_array[i]);
     }
     s->is_handled = TRUE;
-    return 0;
+    return ret;
+ fail:
+    for(i = 0; i < 2; i++) {
+        if (rd_array[i])
+            promise_reaction_data_free(ctx->rt, rd_array[i]);
+    }
+    return -1;
 }
 
 static JSValue js_promise_then(JSContext *ctx, JSValueConst this_val,
