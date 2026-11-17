@@ -229,7 +229,11 @@ typedef struct {
     int next; /* the slot of ring for the next kept shape */
     int count; /* the number of shapes in ring */
     int credit; /* the copies add_property may make to keep shapes */
-    struct JSObject *proto; /* the Object.prototype whose shapes are kept */
+    /* the context given to JS_SetShapeCache, NULL once it is freed */
+    struct JSContext *owner;
+    /* the prototype whose shapes are kept, the Object.prototype of owner
+       when the cache was set, or NULL: the cache holds a reference to it */
+    struct JSObject *proto;
     /* the number of times the cache was turned off, which JS_SetShapeCache
        does first: js_shape_cache_drop sees by it whether that happened
        while it let shapes go */
@@ -1745,6 +1749,7 @@ static JSValue js_compile_regexp(JSContext *ctx, JSValueConst pattern,
 static void js_regexp_cache_off(JSRuntime *rt);
 static void js_shape_cache_off(JSRuntime *rt);
 static BOOL js_shape_cache_drop(JSRuntime *rt);
+static void js_shape_cache_proto(JSContext *ctx);
 static JSValue JS_NewRegexp(JSContext *ctx, JSValue pattern, JSValue bc);
 static void gc_decref(JSRuntime *rt);
 static int JS_NewClass1(JSRuntime *rt, JSClassID class_id,
@@ -4126,6 +4131,8 @@ void JS_SetClassProto(JSContext *ctx, JSClassID class_id, JSValue obj)
             ctx->desc_shape[i] = NULL;
             js_free_shape_null(rt, sh);
         }
+        /* and the shape cache, when it keeps the shapes of ctx */
+        js_shape_cache_proto(ctx);
     }
 }
 
@@ -4311,6 +4318,10 @@ void JS_FreeContext(JSContext *ctx)
     js_free_shape_null(ctx->rt, ctx->regexp_result_shape);
     js_free_shape_null(ctx->rt, ctx->desc_shape[0]);
     js_free_shape_null(ctx->rt, ctx->desc_shape[1]);
+    /* the shape cache keeps its shapes and the prototype it holds, and no
+       context replaces that prototype any more (js_shape_cache_proto) */
+    if (rt->shape_cache.owner == ctx)
+        rt->shape_cache.owner = NULL;
 
     list_del(&ctx->link);
     remove_gc_object(&ctx->header);
@@ -8054,22 +8065,27 @@ static JSShape *js_dup_shape(JSShape *sh)
    between are still kept, only later: an object grows its shape in place
    until it finds the next one kept, and the shape it leaves then is kept.
 
-   Only shapes whose prototype is the Object.prototype of the context given to
-   JS_SetShapeCache, with at most JS_SHAPE_MAX_PROPS keys, none of them a
-   symbol that is not registered, are kept. So a kept shape holds alive
-   nothing but that prototype, which its context holds anyway, and the atoms
-   of its keys. The cache keeps the last n shapes in a ring: when the ring is
-   full, the oldest shape is let go. Kept shapes count against the memory
-   limit, and a request the heap refuses lets them all go before it is tried
-   again (js_shape_cache_drop), so that with the cache on a script runs out of
+   Only shapes whose prototype is the one the cache holds, the
+   Object.prototype of the context given to JS_SetShapeCache, with at most
+   JS_SHAPE_MAX_PROPS keys, none of them a symbol that is not registered, are
+   kept. So a kept shape holds alive nothing but that prototype and the atoms
+   of its keys, and the cache holds the prototype itself: letting a kept
+   shape go never frees it, whatever the context does with its
+   Object.prototype. When the context replaces it (JS_SetClassProto), the
+   cache lets its shapes go and holds the new one (js_shape_cache_proto). The
+   cache keeps the last n shapes in a ring: when the ring is full, the oldest
+   shape is let go. Kept shapes count against the memory limit, and a
+   request the heap refuses lets them all go before it is tried again
+   (js_shape_cache_drop), so that with the cache on a script runs out of
    memory where it would with the ring empty. */
 #define JS_SHAPE_MAX_PROPS 32
 #define JS_SHAPE_CREDIT_MAX 64
 
-/* Let go of the shapes the shape cache keeps and turn it off. The cache is
-   off before the first shape is let go: what that runs, the finalizer of a
-   prototype a shape held, sees no ring, and may set the cache again, which
-   is then let go too, so that the cache is off on return. */
+/* Let go of the shapes the shape cache keeps, then of the prototype it
+   holds, and turn it off. The cache is off before the first of them is let
+   go: what that runs, the finalizer of the prototype, sees no ring, and may
+   set the cache again, which is then let go too, so that the cache is off on
+   return. */
 static void js_shape_cache_off(JSRuntime *rt)
 {
     JSShapeCache *sc = &rt->shape_cache;
@@ -8081,13 +8097,17 @@ static void js_shape_cache_off(JSRuntime *rt)
         /* with the cache off, js_free_shape0 frees the shapes let go here */
         memset(sc, 0, sizeof(*sc));
         sc->offs = off.offs + 1;
-        if (!off.ring)
+        if (!off.ring && !off.proto)
             return;
-        for(i = 0; i < off.n; i++) {
-            if (off.ring[i])
-                js_free_shape(rt, off.ring[i]);
+        if (off.ring) {
+            for(i = 0; i < off.n; i++) {
+                if (off.ring[i])
+                    js_free_shape(rt, off.ring[i]);
+            }
+            js_free_rt(rt, off.ring);
         }
-        js_free_rt(rt, off.ring);
+        if (off.proto)
+            JS_FreeValueRT(rt, JS_MKPTR(JS_TAG_OBJECT, off.proto));
     }
 }
 
@@ -8098,10 +8118,10 @@ static void js_shape_cache_off(JSRuntime *rt)
    without a reference: a kept shape is held by the ring alone, which
    add_property, the one place that takes a kept shape and allocates before
    it has its own reference, does not rely on (it takes its reference
-   first). A kept shape has no parent, and its prototype is the
-   Object.prototype its context holds, so only the shape and the atoms of its
-   keys go. Nothing goes while the collector frees objects (gc_phase), when
-   it walks the lists a shape is on.
+   first). A kept shape has no parent, and its prototype is the one the cache
+   holds, so only the shape and the atoms of its keys go, and no finalizer
+   runs. Nothing goes while the collector frees objects (gc_phase), when it
+   walks the lists a shape is on.
 
    The ring is taken out of the cache before the first shape goes, and the
    shapes are let go from it: whatever runs meanwhile sees an empty cache
@@ -8136,12 +8156,48 @@ static BOOL js_shape_cache_drop(JSRuntime *rt)
     return TRUE;
 }
 
+/* the prototype of the plain objects of ctx, NULL when it is not an object */
+static JSObject *js_object_proto_of(JSContext *ctx)
+{
+    JSValueConst proto = ctx->class_proto[JS_CLASS_OBJECT];
+
+    return JS_VALUE_GET_TAG(proto) == JS_TAG_OBJECT ? JS_VALUE_GET_OBJ(proto) : NULL;
+}
+
+/* JS_SetClassProto replaced the prototype of the plain objects of ctx. When
+   the shape cache is that of ctx, let its shapes go, which hold the old
+   prototype, and hold the new one, whose shapes it keeps from now on. The
+   shapes go while the cache still holds the old prototype, so they free
+   nothing but themselves and the atoms of their keys, and the old prototype
+   goes last, once the cache is whole again: its finalizer may set the cache.
+   While the collector frees objects (a finalizer replaced the prototype),
+   the shapes cannot go, and the cache stays as it is, with the old prototype
+   and its shapes, which no new object has: it keeps no shape until
+   JS_SetShapeCache is called again. */
+static void js_shape_cache_proto(JSContext *ctx)
+{
+    JSRuntime *rt = ctx->rt;
+    JSShapeCache *sc = &rt->shape_cache;
+    JSObject *proto = js_object_proto_of(ctx), *old = sc->proto;
+
+    if (sc->owner != ctx || !sc->ring || old == proto ||
+        rt->gc_phase != JS_GC_PHASE_NONE)
+        return;
+    js_shape_cache_drop(rt);
+    sc->proto = proto;
+    if (proto)
+        JS_DupValueRT(rt, JS_MKPTR(JS_TAG_OBJECT, proto));
+    if (old)
+        JS_FreeValueRT(rt, JS_MKPTR(JS_TAG_OBJECT, old));
+}
+
 /* Set the shape cache of the runtime of ctx to keep the last n shapes of
    plain objects of ctx, letting go of the shapes it kept before. 0 turns the
    cache off. Return 0, or -1 when there is no memory for the ring, which
-   leaves the cache off. The kept shapes hold the Object.prototype of ctx, and
-   with it ctx: before ctx is freed while the runtime lives on, turn the cache
-   off or set it to another context. JS_FreeRuntime turns it off. */
+   leaves the cache off. The cache holds the Object.prototype of ctx, and with
+   it, through its functions, ctx: turn the cache off or set it to another
+   context to let them go while the runtime lives on. JS_FreeRuntime turns it
+   off. */
 int JS_SetShapeCache(JSContext *ctx, int n)
 {
     JSRuntime *rt = ctx->rt;
@@ -8155,13 +8211,17 @@ int JS_SetShapeCache(JSContext *ctx, int n)
        size_t */
     if ((uint64_t)n * sizeof(ring[0]) > SIZE_MAX / 2)
         return -1;
+    /* the cache is off: this request runs no finalizer that sets it */
     ring = js_mallocz_rt(rt, (size_t)n * sizeof(ring[0]));
     if (!ring)
         return -1;
     sc->ring = ring;
     sc->n = n;
     sc->credit = JS_SHAPE_CREDIT_MAX;
-    sc->proto = JS_VALUE_GET_PTR(ctx->class_proto[JS_CLASS_OBJECT]);
+    sc->owner = ctx;
+    sc->proto = js_object_proto_of(ctx);
+    if (sc->proto)
+        JS_DupValueRT(rt, JS_MKPTR(JS_TAG_OBJECT, sc->proto));
     return 0;
 }
 

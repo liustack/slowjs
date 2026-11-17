@@ -1133,6 +1133,7 @@ var goasmKeep = []any{
 	js_set_module_evaluated,
 	js_set_symmetricDifference,
 	js_set_union,
+	js_shape_cache_drop,
 	js_shape_cache_off,
 	js_shape_leave,
 	js_shape_of_keys,

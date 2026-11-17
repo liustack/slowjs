@@ -1143,8 +1143,9 @@ void JS_SetAsyncContext(JSContext *ctx, JSValueConst v);
 void JS_SetRegExpCache(JSRuntime *rt, int n, size_t bytes);
 /* the shape cache of the runtime of ctx keeps the last n shapes of plain
    objects of ctx after their objects are gone, 0 for none, the default.
-   Return -1 when there is no memory for it. Turn it off before freeing ctx
-   while the runtime lives on. */
+   Return -1 when there is no memory for it. It holds the Object.prototype
+   of ctx, and follows JS_SetClassProto of ctx alone: turn it off or set it
+   to another context to let them go while the runtime lives on. */
 int JS_SetShapeCache(JSContext *ctx, int n);
 
 /* The interrupt flag of rt. The host sets it to a value other than 0 to

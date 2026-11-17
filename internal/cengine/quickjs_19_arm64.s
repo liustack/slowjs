@@ -233,7 +233,7 @@ TEXT ·js_map_getOrInsert(SB), $136-16
 	WORD $0xeb09011f
 	WORD $0x54fff021
 	WORD $0xf9400955
-	WORD $0xf955b2a8
+	WORD $0xf955b6a8
 	WORD $0xeb16011f
 	WORD $0x54ffefa0
 	WORD $0xf9403fe8
@@ -839,7 +839,7 @@ TEXT ·js_map_forEach(SB), $200-16
 	WORD $0xeb09011f
 	WORD $0x54ffe7a1
 	WORD $0xf9400995
-	WORD $0xf955b2a8
+	WORD $0xf955b6a8
 	WORD $0xeb16011f
 	WORD $0x54ffe720
 	WORD $0x91034294
@@ -1919,7 +1919,7 @@ TEXT ·js_proxy_call(SB), $152-16
 	WORD $0xeb09011f
 	WORD $0x54ffcc01
 	WORD $0xf9400975
-	WORD $0xf955b2a8
+	WORD $0xf955b6a8
 	WORD $0xeb16011f
 	WORD $0x54ffcb80
 	WORD $0x91030154
@@ -1939,7 +1939,7 @@ TEXT ·js_proxy_call(SB), $152-16
 	WORD $0x54ffde41
 	WORD $0xf9404fe8
 	WORD $0xf9400915
-	WORD $0xf955b2a8
+	WORD $0xf955b6a8
 	WORD $0xeb16011f
 	WORD $0x54ffdda0
 	WORD $0x91030154
@@ -1959,7 +1959,7 @@ TEXT ·js_proxy_call(SB), $152-16
 	WORD $0x54ffe261
 	WORD $0xf9404fe8
 	WORD $0xf9400915
-	WORD $0xf955b2a8
+	WORD $0xf955b6a8
 	WORD $0xeb16011f
 	WORD $0x54ffe1c0
 	WORD $0x91030154
@@ -3178,7 +3178,7 @@ TEXT ·js_proxy_define_own_property(SB), $248-16
 	WORD $0xeb09011f
 	WORD $0x54ffd8a1
 	WORD $0xf9400955
-	WORD $0xf955b2a8
+	WORD $0xf955b6a8
 	WORD $0xeb16011f
 	WORD $0x54ffd820
 	WORD $0x91034174
@@ -3566,7 +3566,7 @@ TEXT ·js_proxy_get(SB), $152-16
 	WORD $0xeb09011f
 	WORD $0x54ffe541
 	WORD $0xf9400955
-	WORD $0xf955b2a8
+	WORD $0xf955b6a8
 	WORD $0xeb16011f
 	WORD $0x54ffe4c0
 	WORD $0x91030174
@@ -3946,7 +3946,7 @@ TEXT ·js_proxy_set(SB), $168-16
 	WORD $0xeb09011f
 	WORD $0x54ffe681
 	WORD $0xf9400955
-	WORD $0xf955b2a8
+	WORD $0xf955b6a8
 	WORD $0xeb16011f
 	WORD $0x54ffe600
 	WORD $0x91034174
@@ -5938,7 +5938,7 @@ TEXT ·js_json_check(SB), $152-16
 	MOVD $·engine_rodata+12752(SB), R9
 	WORD $0xeb09011f
 	WORD $0x54000c01
-	WORD $0xf955b2a8
+	WORD $0xf955b6a8
 	WORD $0xeb16011f
 	WORD $0x54000ba0
 	WORD $0xf94043e8
@@ -6086,7 +6086,7 @@ TEXT ·js_json_check(SB), $152-16
 	WORD $0x54fff141
 	WORD $0xf94047e8
 	WORD $0xf9400915
-	WORD $0xf955b2a8
+	WORD $0xf955b6a8
 	WORD $0xeb16011f
 	WORD $0x54fff0a0
 	WORD $0xf94043e8
