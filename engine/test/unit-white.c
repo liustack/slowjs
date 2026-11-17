@@ -9603,6 +9603,72 @@ static void test_module_failed_names(void)
     vm_free(&v);
 }
 
+/* The modules of test_module_same_name: the load of t makes a module named
+   s too, loaded after the one being compiled, and missing is refused. */
+static JSModuleDef *same_loader(JSContext *ctx, const char *name, void *opaque)
+{
+    static const char s2[] = "export var v = 2;", t[] = "export var w = 1;";
+    JSValue v;
+    JSModuleDef *m;
+
+    (void)opaque;
+    if (strcmp(name, "t") != 0) {
+        JS_ThrowReferenceError(ctx, "no module %s", name);
+        return NULL;
+    }
+    v = JS_Eval(ctx, s2, strlen(s2), "s", JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY);
+    if (JS_IsException(v))
+        return NULL;
+    JS_FreeValue(ctx, v);
+    v = JS_Eval(ctx, t, strlen(t), "t", JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY);
+    if (JS_IsException(v))
+        return NULL;
+    m = JS_VALUE_GET_PTR(v);
+    JS_FreeValue(ctx, v);
+    return m;
+}
+
+/* Many modules of one name, as an <eval> made a module again and again,
+   are added to the table of the loaded modules in a few steps each: only
+   the first of a name is in its list, and the others follow it. Each was
+   put at the end of the list of its bucket, which all of them shared, and
+   a grow did that again for each: about SAME^2 / 2 steps. The first loaded
+   of a name is the one found, and when it goes, the next loaded of its
+   name takes its place: s fails in its resolution after its load of t
+   made another s, which is then the one found. */
+#define SAME 4000
+static void test_module_same_name(void)
+{
+    static const char first[] = "import \"t\"; import \"missing\"; export var v = 1;";
+    static const char e[] = "import { v } from \"s\"; globalThis.sv = v;";
+    VM v = vm_new();
+    unsigned long steps;
+    char src[64];
+    JSValue r;
+    int i;
+
+    JS_SetModuleLoaderFunc(v.rt, NULL, same_loader, NULL);
+    r = JS_Eval(v.ctx, first, strlen(first), "s", JS_EVAL_TYPE_MODULE);
+    CHECK(JS_IsException(r), "the first s ran");
+    JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+    white_module_steps_take();
+    for (i = 3; i < SAME + 3; i++) {
+        snprintf(src, sizeof(src), "export var v = %d;", i);
+        r = JS_Eval(v.ctx, src, strlen(src), "s", JS_EVAL_TYPE_MODULE);
+        CHECK(!JS_IsException(r), "s %d threw", i);
+        JS_FreeValue(v.ctx, r);
+    }
+    steps = white_module_steps_take();
+    CHECK(steps <= 2 * SAME, "%d modules of one name took %lu steps", SAME, steps);
+    drain_jobs(&v);
+    r = JS_Eval(v.ctx, e, strlen(e), "e", JS_EVAL_TYPE_MODULE);
+    CHECK(!JS_IsException(r), "e threw");
+    JS_FreeValue(v.ctx, r);
+    drain_jobs(&v);
+    CHECK(eval_is(v.ctx, "sv", "2"), "the s found");
+    vm_free(&v);
+}
+
 /* The modules of test_module_load_stops: those of lookup_loader, or with
    load_c modules of C that the host makes with no compile and that count
    their runs in load_ran. The load of w<load_stop_at> asks the host to stop
@@ -9838,6 +9904,7 @@ int main(int argc, char **argv)
     test_module_lookup();
     test_module_load_stops();
     test_module_failed_names();
+    test_module_same_name();
     if (failures) {
         printf("unit-white: %d of %ld checks failed\n", failures, checks);
         return 1;
