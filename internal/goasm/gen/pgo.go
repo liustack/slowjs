@@ -85,13 +85,19 @@ func MisexpectLines(stderr string) []string {
 	return out
 }
 
+// reRemark is the start of a remark: clang's place then "remark: ", or opt's
+// "remark: " then the place. A source line that clang prints under a remark
+// starts with its number and "|", so it never matches, whatever the C holds.
+var reRemark = regexp.MustCompile(`^(\S+:\d+:\d+: remark: |remark: \S+:\d+:\d+: )`)
+
 // InlineRemarks keeps the lines of remarks that say a call was inlined: the
-// input of -cgscc-inline-replay. The rest (the remarks of calls not inlined,
-// the source lines clang prints under each remark, warnings) goes.
+// input of -cgscc-inline-replay, which refuses any other line. The rest (the
+// remarks of calls not inlined, the source lines clang prints under each
+// remark, warnings) goes.
 func InlineRemarks(stderr string) string {
 	var b strings.Builder
 	for _, l := range strings.Split(stderr, "\n") {
-		if strings.Contains(l, "' inlined into '") {
+		if reRemark.MatchString(l) && strings.Contains(l, "' inlined into '") {
 			b.WriteString(l)
 			b.WriteByte('\n')
 		}

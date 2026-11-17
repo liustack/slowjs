@@ -46,13 +46,24 @@ func TestStripCGProfile(t *testing.T) {
 }
 
 func TestInlineRemarks(t *testing.T) {
+	// clang's remarks start with the place, opt's with "remark: ". The source
+	// lines clang prints under a remark go, also when the C holds the text of
+	// a remark: the replay refuses a line that is not one.
 	in := `engine/quickjs.c:10:5: remark: 'f' inlined into 'g' with (cost=5, threshold=400) at callsite g:2:5; [-Rpass=inline]
    10 |     f();
       |     ^
 engine/quickjs.c:12:5: remark: 'h' not inlined into 'g' because too costly to inline [-Rpass-missed=inline]
+engine/quickjs.c:14:9: remark: 'k' inlined into 'g' with (cost=always): always inline attribute at callsite g:4:9; [-Rpass=inline]
+   14 |     /* 'k' inlined into 'g' */ k();
+      |         ^
+   15 |     /* remark: 'k' inlined into 'g' */
+remark: engine/quickjs.c:20:3: 'm' inlined into 'n' with (cost=10, threshold=225) at callsite n:1:3;
+remark: engine/quickjs.c:21:3: 'm' not inlined into 'n' because too costly to inline (cost=900, threshold=225)
 warning: something else
 `
-	want := "engine/quickjs.c:10:5: remark: 'f' inlined into 'g' with (cost=5, threshold=400) at callsite g:2:5; [-Rpass=inline]\n"
+	want := "engine/quickjs.c:10:5: remark: 'f' inlined into 'g' with (cost=5, threshold=400) at callsite g:2:5; [-Rpass=inline]\n" +
+		"engine/quickjs.c:14:9: remark: 'k' inlined into 'g' with (cost=always): always inline attribute at callsite g:4:9; [-Rpass=inline]\n" +
+		"remark: engine/quickjs.c:20:3: 'm' inlined into 'n' with (cost=10, threshold=225) at callsite n:1:3;\n"
 	if got := InlineRemarks(in); got != want {
 		t.Fatalf("InlineRemarks = %q, want %q", got, want)
 	}
