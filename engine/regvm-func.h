@@ -124,41 +124,57 @@ typedef struct RVCopySite {
     uint32_t swaps;  /* entries a miss replaced, at most RV_COPY_SWAPS */
 } RVCopySite;
 
+/* The fields are in three runs, by who reads them. The first is read when
+   a function throws, uses a cache of COPYR or COPYS, or is converted. The
+   second by the ops of a running function that would otherwise read its
+   bytecode: the closure state, closures and object literals. The third,
+   48 bytes, is all a call of the register loop and a return read, and the
+   code follows it at once, so that a call of a small function finds them in
+   one or two lines of 64 bytes, and not in the bytecode and three or four
+   lines of this record. */
 typedef struct RVFunc {
+    uint32_t runs;  /* the frames set up for it, counted with -DRV_STATS only */
+    int stack_size;
+    int k_count, pcmap_count, code_len;
+    int ret_count;  /* the GOSUBs: four rets each, the end of the old gosub
+                       (the return address), the end of the GOSUB, and the
+                       depth and the catchpos of the pass there, by the
+                       first (regvm-ops-except.h rv_ret_target) */
+    int copy_count; /* the sites of COPYR and COPYS, each with its cache
+                       in copy */
+    RVPcMask *pcmap;
+    uint32_t *rets;
+    RVPcHi *pcmap_hi; /* NULL when no entry owns a temp past T[31] */
+    RVCopySite *copy;
+    /* read by the ops of a running function */
     struct JSFunctionBytecode *b;
-    int arg_count, var_count, stack_size;
-    int fofs;       /* arg_count + 2 + var_count: func to the last local */
-    int fsize;      /* temp0 + stack_size: slots from F to the end */
+    JSObjectLit *lits; /* b->object_lits */
+    JSValue *cpool;    /* b->cpool */
     int temp0;      /* the slot of T[0]: RV_HDR, or above the closure state */
     int var_ref_count; /* b->var_ref_count: the frame has a closure state */
-    int vr_heap;    /* its var_refs are on the heap, as too many for the room
-                       under the temps (regvm-ops-wide.h) */
-    int args;       /* the code reads its arguments: arguments or rest */
-    int argmax;     /* the most arguments a call can pass on the fast entry
-                       of the call op: arg_count, or -1 when args is set (and
-                       in the markers), so that such a call takes the slow
-                       entry, which stores argc (regvm-ops-basic.h) */
+    uint8_t vr_heap; /* its var_refs are on the heap, as too many for the
+                        room under the temps (regvm-ops-wide.h) */
+    uint8_t args;   /* the code reads its arguments: arguments or rest */
     /* new.target has a slot, the first local F[-var_count], below the
        locals of b (var_count is then b->var_count + 1): a call writes
        undefined there with the other locals, a construct call new.target
        (regvm-ops-ctor.h) */
     uint8_t nt;
+    uint8_t js_mode; /* b->js_mode */
+    /* read by a call and a return */
+    JSContext *realm; /* b->realm, which a call of the loop compares with its
+                         own */
+    JSValue *k;
+    int arg_count, var_count;
+    int argmax;     /* the most arguments a call can pass on the fast entry
+                       of the call op: arg_count, or -1 when args is set (and
+                       in the markers), so that such a call takes the slow
+                       entry, which stores argc (regvm-ops-basic.h) */
+    int fofs;       /* arg_count + 2 + var_count: func to the last local */
+    int fsize;      /* temp0 + stack_size: slots from F to the end */
     /* in bytes from the first slot of the frame, func: F, its this, and
        the end of the frame, for the call */
-    intptr_t fofs_b, this_b, room_b;
-    int k_count, pcmap_count, code_len;
-    uint32_t runs;  /* the frames set up for it, counted with -DRV_STATS only */
-    JSValue *k;
-    RVPcMask *pcmap;
-    int ret_count;  /* the GOSUBs: four rets each, the end of the old gosub
-                       (the return address), the end of the GOSUB, and the
-                       depth and the catchpos of the pass there, by the
-                       first (regvm-ops-except.h rv_ret_target) */
-    uint32_t *rets;
-    RVPcHi *pcmap_hi; /* NULL when no entry owns a temp past T[31] */
-    int copy_count;   /* the sites of COPYR and COPYS, each with its cache
-                         in copy */
-    RVCopySite *copy;
+    int32_t fofs_b, this_b, room_b;
     uint8_t code[0];
 } RVFunc;
 

@@ -1524,10 +1524,10 @@ DATA ·engine_rodata+12752(SB)/8, $0x6e20646c756f6300
 DATA ·engine_rodata+12760(SB)/8, $0x2064616f6c20746f
 DATA ·engine_rodata+12768(SB)/8, $0x2720656c75646f6d
 DATA ·engine_rodata+12776(SB)/8, $0x00002e2e00277325
-DATA ·engine_rodata+12792(SB)/8, $0x00000000ffffffff
-DATA ·engine_rodata+12824(SB)/8, $0xffffffff00000000
-DATA ·engine_rodata+12944(SB)/8, $0x00000000ffffffff
-DATA ·engine_rodata+12976(SB)/8, $0xffffffff00000000
+DATA ·engine_rodata+12904(SB)/8, $0x00000000ffffffff
+DATA ·engine_rodata+12912(SB)/8, $0x00000000ffffffff
+DATA ·engine_rodata+13056(SB)/8, $0x00000000ffffffff
+DATA ·engine_rodata+13064(SB)/8, $0x00000000ffffffff
 DATA ·engine_rodata+13088(SB)/8, $0x0100010001010000
 DATA ·engine_rodata+13096(SB)/8, $0x0202000102010002
 DATA ·engine_rodata+13104(SB)/8, $0x0001000100000100

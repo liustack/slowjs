@@ -1687,6 +1687,27 @@ const uint8_t *white_regvm_code(JSValueConst f, int *code_len)
     return rf->code;
 }
 
+/* the record of register code the function object f keeps for the call ops
+   of the loop (JSFuncObject.rv, engine/regvm-ops-basic.h) against the one
+   of its bytecode: 0 the same converted record, 1 both not converted yet,
+   2 not converted in f while its bytecode is, 3 both refused, -1 anything else
+   and for an f that is not a function of bytecode */
+int white_regvm_call_record(JSValueConst f)
+{
+    JSObject *p;
+    const RVFunc *mine, *rf;
+
+    if (JS_VALUE_GET_TAG(f) != JS_TAG_OBJECT ||
+        JS_VALUE_GET_OBJ(f)->class_id != JS_CLASS_BYTECODE_FUNCTION)
+        return -1;
+    p = JS_VALUE_GET_OBJ(f);
+    mine = js_func_rv(p);
+    rf = p->u.func.function_bytecode->rv;
+    if (mine == rf)
+        return rf == RV_UNCONVERTED ? 1 : rf == RV_REFUSED ? 3 : 0;
+    return mine == RV_UNCONVERTED ? 2 : -1;
+}
+
 /* the reads of a name of the function f, converted (GETF, GETFL and GETFT,
    found by their pcmap entries, which end the 15 bytes of the
    instruction): the slot each site keeps (engine/regvm-ops-basic.h), in

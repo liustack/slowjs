@@ -21034,7 +21034,7 @@ TEXT ·mark_children_specialized_1(SB), $152-24
 	WORD $0x54001dc2
 	WORD $0xf9403ad8
 	WORD $0xb4000078
-	WORD $0xb9400b08
+	WORD $0xb9407b08
 	WORD $0x36f80328
 	WORD $0xf94026c8
 	WORD $0xb4ff0da8
@@ -21060,7 +21060,7 @@ TEXT ·mark_children_specialized_1(SB), $152-24
 	WORD $0x92679a89
 	WORD $0xf900c128
 	WORD $0x17fffd37
-	WORD $0xb9408b08
+	WORD $0xb9401b08
 	WORD $0x7100051f
 	WORD $0x54fffccb
 	WORD $0xaa1f03e0
@@ -21068,7 +21068,7 @@ TEXT ·mark_children_specialized_1(SB), $152-24
 	WORD $0x92679a88
 	WORD $0xf940c108
 	WORD $0xd37df129
-	WORD $0xf9404b0a
+	WORD $0xf9401f0a
 	WORD $0xf869694b
 	WORD $0xb4000c2b
 	WORD $0xf940016c
@@ -21112,7 +21112,7 @@ TEXT ·mark_children_specialized_1(SB), $152-24
 	WORD $0xf900056a
 	WORD $0x1200198c
 	WORD $0x381fb16c
-	WORD $0xf9404b0b
+	WORD $0xf9401f0b
 	WORD $0x8b09016b
 	WORD $0xf940056b
 	WORD $0xb400068b
@@ -21137,7 +21137,7 @@ TEXT ·mark_children_specialized_1(SB), $152-24
 	WORD $0x1100058d
 	WORD $0xb81fc16d
 	WORD $0x3400724c
-	WORD $0xf9404aeb
+	WORD $0xf9401eeb
 	WORD $0xaa1703f8
 	WORD $0xaa1003f4
 	WORD $0xaa1103f5
@@ -21158,7 +21158,7 @@ TEXT ·mark_children_specialized_1(SB), $152-24
 	WORD $0x1100058d
 	WORD $0xb81fc16d
 	WORD $0x3400a6cc
-	WORD $0xf9404aeb
+	WORD $0xf9401eeb
 	WORD $0xaa1703f8
 	WORD $0xaa1003f4
 	WORD $0xaa1103f5
@@ -21167,7 +21167,7 @@ TEXT ·mark_children_specialized_1(SB), $152-24
 	WORD $0x8b09016b
 	WORD $0xf9400d6b
 	WORD $0xb500702b
-	WORD $0xb9808b0a
+	WORD $0xb9801b0a
 	WORD $0x91000400
 	WORD $0xeb0a001f
 	WORD $0x5400e6eb
@@ -25501,7 +25501,7 @@ TEXT ·mark_children_specialized_4(SB), $168-24
 	WORD $0x54001e61
 	WORD $0xf9403ad7
 	WORD $0xb4000077
-	WORD $0xb9400ae8
+	WORD $0xb9407ae8
 	WORD $0x36f802e8
 	WORD $0xf94026c8
 	WORD $0xb4ff4088
@@ -25525,10 +25525,10 @@ TEXT ·mark_children_specialized_4(SB), $168-24
 	WORD $0x92679a89
 	WORD $0xf900c128
 	WORD $0x17fffd57
-	WORD $0xb9408ae8
+	WORD $0xb9401ae8
 	WORD $0x7100051f
 	WORD $0x54fffd0b
-	WORD $0xf9404ae8
+	WORD $0xf9401ee8
 	WORD $0x52856009
 	WORD $0xaa1f03f9
 	WORD $0x5280050a
@@ -25615,7 +25615,7 @@ TEXT ·mark_children_specialized_4(SB), $168-24
 	WORD $0xaa1803f9
 	WORD $0xaa0103e0
 	WORD $0xb50066aa
-	WORD $0xb9808aea
+	WORD $0xb9801aea
 	WORD $0x91000739
 	WORD $0xeb0a033f
 	WORD $0x5400548a
