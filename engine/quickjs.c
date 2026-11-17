@@ -11879,6 +11879,26 @@ static BOOL js_uncatchable_pending(JSRuntime *rt)
         !JS_IsUninitialized(rt->current_exception);
 }
 
+/* ret, what an entry of the host (JS_Call, JS_Eval and the like) returns,
+   or the exception when an uncatchable one is pending: the call ends with
+   it, whatever the code it ran returned. A built-in can record such an
+   exception and return as if it had not failed (see
+   JS_INTERRUPT_UNCATCHABLE), and nothing may read the flag after it before
+   the call returns: an async function stopped before its first await could
+   not reject its promise and returned it, pending, so JS_Eval of a module
+   with a top-level await returned the promise of the module, and a host
+   that takes the exception only when a call fails never failed the module
+   (js_fail_async_modules). One left pending by an earlier call, which the
+   host did not take, fails the call too, as it fails every call of code. */
+static JSValue js_host_return(JSContext *ctx, JSValue ret)
+{
+    if (unlikely(js_uncatchable_pending(ctx->rt)) && !JS_IsException(ret)) {
+        JS_FreeValue(ctx, ret);
+        return JS_EXCEPTION;
+    }
+    return ret;
+}
+
 /* The bit of the interrupt flag the engine keeps set while an uncatchable
    exception is pending. A built-in can record such an exception (in a
    promise it rejects) and return as if it had not failed, and the script
@@ -25519,7 +25539,7 @@ JSValue JS_Call(JSContext *ctx, JSValueConst func_obj, JSValueConst this_obj,
         return JS_EXCEPTION;
     ret = js_call(ctx, func_obj, this_obj, argc, argv);
     js_call_leave(ctx->rt);
-    return ret;
+    return js_host_return(ctx, ret);
 }
 
 static JSValue JS_CallFree(JSContext *ctx, JSValue func_obj, JSValueConst this_obj,
@@ -25737,7 +25757,7 @@ JSValue JS_CallConstructor2(JSContext *ctx, JSValueConst func_obj,
         return JS_EXCEPTION;
     ret = js_call_constructor2(ctx, func_obj, new_target, argc, argv);
     js_call_leave(ctx->rt);
-    return ret;
+    return js_host_return(ctx, ret);
 }
 
 JSValue JS_CallConstructor(JSContext *ctx, JSValueConst func_obj,
@@ -25749,7 +25769,7 @@ JSValue JS_CallConstructor(JSContext *ctx, JSValueConst func_obj,
         return JS_EXCEPTION;
     ret = js_call_constructor(ctx, func_obj, argc, argv);
     js_call_leave(ctx->rt);
-    return ret;
+    return js_host_return(ctx, ret);
 }
 
 JSValue JS_Invoke(JSContext *ctx, JSValueConst this_val, JSAtom atom,
@@ -25761,7 +25781,7 @@ JSValue JS_Invoke(JSContext *ctx, JSValueConst this_val, JSAtom atom,
         return JS_EXCEPTION;
     ret = js_invoke(ctx, this_val, atom, argc, argv);
     js_call_leave(ctx->rt);
-    return ret;
+    return js_host_return(ctx, ret);
 }
 
 static JSValue JS_InvokeFree(JSContext *ctx, JSValue this_val, JSAtom atom,
@@ -45997,7 +46017,7 @@ JSValue JS_EvalFunction(JSContext *ctx, JSValue fun_obj)
     }
     ret = JS_EvalFunctionInternal(ctx, fun_obj, ctx->global_obj, NULL, NULL);
     js_call_leave(ctx->rt);
-    return ret;
+    return js_host_return(ctx, ret);
 }
 
 /* the end of a compile (__JS_EvalInternal): the freeing of what a stop left
@@ -46196,7 +46216,7 @@ JSValue JS_EvalThis(JSContext *ctx, JSValueConst this_obj,
     ret = JS_EvalInternal(ctx, this_obj, input, input_len, filename,
                           eval_flags, -1);
     js_call_leave(ctx->rt);
-    return ret;
+    return js_host_return(ctx, ret);
 }
 
 JSValue JS_Eval(JSContext *ctx, const char *input, size_t input_len,
