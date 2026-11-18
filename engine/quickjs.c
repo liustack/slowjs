@@ -603,6 +603,12 @@ struct JSRuntime {
        it has 64 bits, so that it never wraps. At the end, so that the
        fields before it keep their offsets. */
     uint64_t rejection_seq;
+    /* the wait of the collections of js_trigger_gc_block_run: the block
+       requests the next one lets pass (gc_block_skip), and the length of
+       the last wait (gc_block_wait). At the end, so that the fields before
+       them keep their offsets. */
+    uint32_t gc_block_skip;
+    uint32_t gc_block_wait;
 #ifdef RV_STATS
     /* the dispatches of each register op (JS_RegvmStat 1000 + op) */
     uint32_t rv_opcount[256];
@@ -2919,8 +2925,26 @@ static void js_trigger_gc(JSRuntime *rt, size_t size)
    holds for the VM (held in engine/heap.h). A block that fits once the host
    gives that back has it given back, as the allocation would, and runs no
    collection: a collection only when the block does not fit even so, or the
-   host keeps it (heap_would_pass). */
+   host keeps it (heap_would_pass).
+
+   A collection that leaves the heap near the limit makes the next ones
+   wait. A render whose memory stays within JS_GC_BLOCK_SLACK of the limit,
+   its garbage freed by the counts, collected at every block, at each push
+   that grew an array, each time to free next to nothing: a page of tifa
+   took forty times its time and ended at the eval timeout, not at the limit
+   (test_block_gc_near_limit). Now, when a collection leaves less than
+   another JS_GC_BLOCK_SLACK of room above what the block needs, the next
+   requests that would pass let 1, then 2, 4 and up to
+   JS_GC_BLOCK_WAIT_MAX of them go by with no collection, each one asked for
+   as it is and failing at the limit when it does not fit. A collection that
+   leaves room ends the wait, and so does a full collection started for
+   another reason: the host's, or the threshold's (JS_RunGC). So a VM at the
+   edge runs a few collections where it ran one per block, the wait is
+   bounded, and garbage in cycles that piles up meanwhile is collected at
+   its end at the latest. Inside it, a block that would fit only once the
+   cycles are freed fails as if they were live (test_block_gc_wait). */
 #define JS_GC_BLOCK_SLACK 8192
+#define JS_GC_BLOCK_WAIT_MAX 1024
 _Static_assert(JS_GC_BLOCK_SLACK >=
                (JS_MALLOC_ARENA_SIZE + sizeof(size_t)) +       /* a new arena */
                JS_MALLOC_MAX_SMALL_SIZE +                      /* a small block that moves */
@@ -2931,11 +2955,27 @@ _Static_assert(JS_GC_BLOCK_SLACK >=
 
 static no_inline void js_trigger_gc_block_run(JSRuntime *rt, size_t size)
 {
+    JSHeap *h = &rt->malloc_ctx.heap;
+    size_t need = size > SIZE_MAX - JS_GC_BLOCK_SLACK ? SIZE_MAX : size + JS_GC_BLOCK_SLACK;
+    size_t room;
+    uint32_t wait;
+
     if (rt->malloc_gc_threshold == (size_t)-1)
         return;
-    if (heap_would_pass(&rt->malloc_ctx.heap, size > SIZE_MAX - JS_GC_BLOCK_SLACK ?
-                        SIZE_MAX : size + JS_GC_BLOCK_SLACK))
-        JS_RunGC(rt);
+    if (!heap_would_pass(h, need))
+        return;
+    if (rt->gc_block_skip > 0) {
+        rt->gc_block_skip--;
+        return;
+    }
+    wait = rt->gc_block_wait;
+    JS_RunGC(rt);
+    room = h->count < h->limit ? h->limit - h->count : 0;
+    if (room > need && room - need >= JS_GC_BLOCK_SLACK)
+        return;
+    wait = wait ? min_uint32(wait * 2, JS_GC_BLOCK_WAIT_MAX) : 1;
+    rt->gc_block_wait = wait;
+    rt->gc_block_skip = wait;
 }
 
 static force_inline void js_trigger_gc_block(JSRuntime *rt, size_t size)
@@ -11403,6 +11443,10 @@ void JS_RunGC(JSRuntime *rt)
     /* the scratch of the pass goes back with what the front keeps */
     rv_scratch_free(rt);
     js_front_drain(&rt->malloc_ctx);
+    /* a full collection ends a wait of js_trigger_gc_block_run, which
+       starts a new one after it when it is the one that runs it */
+    rt->gc_block_skip = 0;
+    rt->gc_block_wait = 0;
     /* the register stack is not garbage: the threshold is over the rest */
     if (rt->malloc_gc_threshold != (size_t)-1) {
         size_t n = rt->malloc_ctx.heap.count - rt->rv_stack_bytes;
