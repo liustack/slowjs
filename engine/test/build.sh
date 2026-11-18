@@ -25,7 +25,8 @@
 #               still there and must keep building and working)
 #   ubsan       UndefinedBehaviorSanitizer
 #   asan-ubsan  both, on the system malloc
-#   fuzz        the libFuzzer target of the allocator (heap-fuzz), with
+#   fuzz        the libFuzzer targets of the allocator (heap-fuzz) and of the
+#               engine (js-fuzz, see js-fuzz.c), with
 #               AddressSanitizer (poisoning) and UndefinedBehaviorSanitizer
 #   tsan        ThreadSanitizer, for host-test alone (the host with stubs in
 #               place of the engine): the engine itself runs in one thread
@@ -37,7 +38,7 @@
 # compare.sh), unit, unit-oom, unit-api, unit-white and dtoa-test (see compare.sh), render, mathdump and libmath (see math.sh), api-test (see api-test.sh), host-test (see
 # host-test.sh), heap-test and, in asan-heap mode, poison-test (see heap.sh), and
 # the object files: those of the engine here, and those of its
-# libc in libc/ (heap-fuzz for fuzz), and engine.stamp, what they were built
+# libc in libc/ (heap-fuzz and js-fuzz for fuzz), and engine.stamp, what they were built
 # from (see stamp.sh). CC picks another compiler. A sanitizer
 # reports a finding and goes on, so that a run over test262 lists them all: run
 # with ASAN_OPTIONS=halt_on_error=0 to keep AddressSanitizer going too. compare.sh and
@@ -177,6 +178,13 @@ build_heap_test() { # PROGRAM EXTRA-FLAGS EXTRA-LINK-FLAGS
 
 if [ "$mode" = fuzz ]; then
 	build_heap_test heap-fuzz -DHEAP_FUZZ "$fuzzflags"
+	# js-fuzz: the engine itself, as the other modes build it
+	build_engine "$out" ""
+	$cc $hostflags -c "$here/host.c" -o "$out/host.o"
+	$cc $hostflags -c "$here/js-fuzz.c" -o "$out/js-fuzz.o"
+	# shellcheck disable=SC2086
+	$cc $san $fuzzflags $objs $libcobjs "$out/host.o" "$out/js-fuzz.o" -o "$out/js-fuzz" -lpthread
+	echo "$out/js-fuzz"
 	write_stamp
 	exit 0
 fi

@@ -44,6 +44,7 @@ binary() {
 	assets/*.png | assets/brand/*.png) return 0 ;;
 	internal/gointl/qjsdata/*.bin) return 0 ;;
 	intl/testdata/chromium/*.json.gz) return 0 ;;
+	engine/test/js-fuzz-seeds/*) return 0 ;;
 	esac
 	return 1
 }
