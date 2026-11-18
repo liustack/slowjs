@@ -6,6 +6,7 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 
 ### Changed
 
+- A release of fixes: timeouts, interrupts and running out of memory in the compile, in async functions and generators, in modules and in the jobs of promises, what a VM is good for after a stop, and the load of many modules in time linear in their number.
 - After a timeout, an interrupt or running out of memory that is no kill, async work that was in flight may never settle: the VM still works and `Close` frees all it held, but do not wait on its promises. docs/api.md says what each method does after a stop, out of memory and a kill ([api.md](docs/api.md#errors)).
 
 ### Fixed
