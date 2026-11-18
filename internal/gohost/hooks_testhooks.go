@@ -45,3 +45,13 @@ func stopHook(v *VM) {
 // stack, so it can tell where the engine polled. It must not call into the
 // engine. nil turns it off.
 func (v *VM) SetStopTrace(f func()) { v.hooks.stopTrace = f }
+
+// FreeingCode is the word after the engine's interrupt flag, which the engine
+// sets from the stop of a compile to its return (SetInterruptFlag), or 0 when
+// v has no flag. Call it between calls into the engine.
+func (v *VM) FreeingCode() int32 {
+	if v.flag == 0 {
+		return 0
+	}
+	return *(*int32)(addr(v.flag + 4))
+}

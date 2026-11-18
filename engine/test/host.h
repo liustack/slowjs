@@ -52,7 +52,9 @@ extern _Thread_local long host_poll_reads;
 
 /* host_poll_stop_after(n) sets the interrupt flag at the n-th reading from now
    in this thread, as a host that was asked to stop in the middle of a run
-   does (0 cancels it). The reading that sets it returns 1. */
+   does (0 cancels it). The reading that sets it returns 1. When the n-th
+   reading is of another flag, the stop of rqsort_stop, it sets the interrupt
+   flag at the next reading of one. */
 void host_poll_stop_after(long n);
 
 /* The VM host_now was last asked about for the wall clock in this thread, and
@@ -98,6 +100,9 @@ void host_release_memory(JSRuntime *rt, size_t keep, size_t *candidate, size_t *
    thread that makes a runtime maps its chunks without the lock of the list,
    so call these when no other thread is making or freeing one. */
 size_t host_live_vms(void);
+/* The runtimes freed so far with blocks still in use (host_free_runtime): a
+   test that checks for a leak at each step reads it before and after. */
+int host_leaked_runtimes(void);
 /* When set, host_call passes the calls of the functions of
    JS_NewHostFunction (a magic of 0 or more) to it. */
 extern JSValue (*host_function_call)(uint32_t vm, const JSValue *this_val, int argc, JSValueConst *argv, int id);

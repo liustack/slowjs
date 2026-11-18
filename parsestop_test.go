@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/liustack/slowjs/internal/gohost"
 )
 
 // The eval timeout stops the parse of a script or a JSON text of millions of
@@ -102,6 +104,63 @@ func TestParseStops(t *testing.T) {
 					t.Fatalf("the VM after the stop: 1+1 got %v, %v", v, err)
 				}
 			}
+		})
+	}
+}
+
+// The eval timeout stops the parse and the compile of a script of millions of
+// short tokens with the interrupt, wherever in the call it comes, and the VM
+// goes on. The parser read the flag only in the scans of long tokens and the
+// compile passes read none, so a timeout in the compile of these sources saw
+// more than 1000 polls and killed the VM (ErrKilled). Where in the call the
+// clock stops it depends on the machine, and so do the polls counted: few in
+// the compile, whose freeing does not count (TestStoppedCompileFreeNotKilled
+// asserts that number), and more in the run of the code made, where the
+// freeing of that code and of the array the run made, and of the result of
+// the turn before, count as any freeing after a stop does: at most 787 of
+// the 1000 that kill, for the array literal, over 80 places of the stop on
+// darwin/arm64. So the test asserts that no stop kills.
+func TestCompileStops(t *testing.T) {
+	for _, c := range []struct{ name, setup string }{
+		{"an array literal", `var s = '[' + '1,'.repeat(1 << 21) + '1]'`},
+		{"statements at the top level", `var a = 0, s = 'a=a+1;'.repeat(1 << 19)`},
+		{"statements in a function", `var a = 0, s = '(function(){' + 'a=a+1;'.repeat(1 << 19) + '})()'`},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			m := newTestVM(t)
+			if _, err := m.Eval(c.setup+`; 0`, EvalGlobal); err != nil {
+				t.Fatal(err)
+			}
+			const call = `(0, eval)(s); 0`
+			start := time.Now()
+			if _, err := m.Eval(call, EvalGlobal); err != nil {
+				t.Fatal(err)
+			}
+			whole := time.Since(start)
+			var worst int64
+			for k := 1; k <= 5; k++ {
+				if err := m.SetEvalTimeout(max(whole*time.Duration(k)/6, time.Millisecond)); err != nil {
+					t.Fatal(err)
+				}
+				start := time.Now()
+				_, err := m.Eval(`for (;;) `+call, EvalGlobal)
+				took := time.Since(start)
+				if errors.Is(err, ErrKilled) {
+					t.Fatalf("killed after %v of a call of %v, want the interrupt", took, whole)
+				}
+				var e *Error
+				if !errors.As(err, &e) || !e.Interrupted || !e.Uncatchable {
+					t.Fatalf("got %v after %v, want interrupted", err, took)
+				}
+				worst = max(worst, m.h.StopPolls())
+				if err := m.SetEvalTimeout(0); err != nil {
+					t.Fatal(err)
+				}
+				if v, err := m.Eval(`1+1`, EvalGlobal); err != nil || v != 2 {
+					t.Fatalf("the VM after the stop: 1+1 got %v, %v", v, err)
+				}
+			}
+			t.Logf("a call of %v: at most %d polls saw the request, of the %d after which a poll kills", whole, worst, gohost.KillPolls)
 		})
 	}
 }

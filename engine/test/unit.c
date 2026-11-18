@@ -3302,6 +3302,59 @@ static int test_module_retry(void *unused)
     return 0;
 }
 
+/* The modules of test_module_waiter_order: t awaits, a and b import t, and x
+   imports a. Each but t writes down its name when it runs. */
+static JSModuleDef *order_loader(JSContext *ctx, const char *name, void *opaque)
+{
+    static const struct { const char *name, *src; } mods[] = {
+        { "t", "globalThis.order = []; await 0;" },
+        { "a", "import \"t\"; order.push(\"a\");" },
+        { "b", "import \"t\"; order.push(\"b\");" },
+        { "x", "import \"a\"; order.push(\"x\");" },
+    };
+    JSValue v;
+    JSModuleDef *m;
+    size_t i;
+
+    for (i = 0; i < sizeof(mods) / sizeof(mods[0]); i++) {
+        if (strcmp(name, mods[i].name) == 0)
+            break;
+    }
+    if (i == sizeof(mods) / sizeof(mods[0])) {
+        JS_ThrowReferenceError(ctx, "no module %s", name);
+        return NULL;
+    }
+    v = JS_Eval(ctx, mods[i].src, strlen(mods[i].src), name,
+                JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY);
+    if (JS_IsException(v))
+        return NULL;
+    m = JS_VALUE_GET_PTR(v);
+    JS_FreeValue(ctx, v);
+    return m;
+}
+
+/* A module imports a, b and x, in that order, where a and b wait for the
+   await of t and x waits for a. When the await ends, the modules that
+   waited are found from t up: a, then x, which waits for a, then b, then the
+   module on top. They run in the order the evaluation reached them, a, b, x
+   and the top, which the sort of what was found gives. */
+static void test_module_waiter_order(void)
+{
+    static const char top[] =
+        "import \"a\"; import \"b\"; import \"x\"; order.push(\"top\");";
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    char buf[64];
+
+    JS_SetModuleLoaderFunc(rt, NULL, order_loader, NULL);
+    module_eval(ctx, "top", top, 0, buf, sizeof(buf));
+    CHECK(strcmp(buf, "ok") == 0, "top: %s", buf);
+    CHECK(run_jobs(rt), "jobs");
+    CHECK(eval_is(ctx, "order.join()", "a,b,x,top"), "the order");
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
 /* stack_fail_sweep runs src with the stack short at the first count of the
    engine, then at the second, and so on until it runs whole. Each time it
    fails with a RangeError, or runs to want with no exception left behind. */
@@ -5756,6 +5809,7 @@ int main(void)
     host_run_thread(test_json_records, NULL);
     host_run_thread(test_module_chains, NULL);
     host_run_thread(test_module_retry, NULL);
+    test_module_waiter_order();
     test_ropes();
     test_free_nesting();
     test_free_order();

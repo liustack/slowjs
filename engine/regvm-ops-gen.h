@@ -416,7 +416,7 @@ static JSValue rv_gen_resume(JSContext *ctx, JSAsyncFunctionState *s)
             /* out of memory: the state ends with the error, and another
                call of the function tries the conversion again */
             rt->rv_oom_b = NULL;
-            JS_ThrowOutOfMemory(ctx);
+            rv_convert_error(ctx);
             rv_gen_fail(rt, s);
             return JS_EXCEPTION;
         }

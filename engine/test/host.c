@@ -275,8 +275,21 @@ int host_poll(const volatile int *flag)
         }
         pthread_mutex_unlock(&host_lock);
     }
-    if (host_poll_left > 0 && --host_poll_left == 0)
-        *(volatile int *)flag = 1;
+    if (host_poll_left > 0 && --host_poll_left == 0) {
+        /* only an interrupt flag: the stop of rqsort_stop, set with no
+           exception, would end a sort as no host can, so the stop goes on
+           to the next reading of an interrupt flag */
+        pthread_mutex_lock(&host_lock);
+        for (vm = host_vms; vm; vm = vm->next) {
+            if (vm->rt && JS_GetInterruptFlag(vm->rt) == flag)
+                break;
+        }
+        pthread_mutex_unlock(&host_lock);
+        if (vm)
+            *(volatile int *)flag = 1;
+        else
+            host_poll_left = 1;
+    }
     return *flag;
 }
 
@@ -485,6 +498,16 @@ size_t host_live_vms(void)
     pthread_mutex_lock(&host_lock);
     for (vm = host_vms; vm; vm = vm->next)
         n++;
+    pthread_mutex_unlock(&host_lock);
+    return n;
+}
+
+int host_leaked_runtimes(void)
+{
+    int n;
+
+    pthread_mutex_lock(&host_lock);
+    n = host_leaks;
     pthread_mutex_unlock(&host_lock);
     return n;
 }

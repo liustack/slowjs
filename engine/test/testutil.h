@@ -197,4 +197,62 @@ static char *stack_text(JSContext *ctx, JSValueConst e)
     return r;
 }
 
+/* drain_jobs runs the jobs of v until none is left, each failure its own,
+   with its exception taken. */
+static void drain_jobs(VM *v)
+{
+    JSContext *ctx;
+    int r;
+
+    while ((r = JS_ExecutePendingJob(v->rt, &ctx)) != 0) {
+        if (r < 0)
+            JS_FreeValue(ctx, JS_GetException(ctx));
+    }
+}
+
+/* import_state imports name with no stop, runs the jobs, and puts in buf
+   what the promise of that import became: "ok", the text of its error, or
+   "pending". */
+static const char *import_state(VM *v, const char *name, char *buf, size_t size)
+{
+    char src[64];
+    JSValue p, e;
+    const char *s;
+
+    snprintf(src, sizeof(src), "import(\"%s\")", name);
+    p = JS_Eval(v->ctx, src, strlen(src), "<again>", JS_EVAL_TYPE_GLOBAL);
+    if (JS_IsException(p)) {
+        JS_FreeValue(v->ctx, JS_GetException(v->ctx));
+        snprintf(buf, size, "threw");
+        return buf;
+    }
+    drain_jobs(v);
+    switch (JS_PromiseState(v->ctx, p)) {
+    case JS_PROMISE_FULFILLED:
+        snprintf(buf, size, "ok");
+        break;
+    case JS_PROMISE_REJECTED:
+        e = JS_PromiseResult(v->ctx, p);
+        s = JS_ToCString(v->ctx, e);
+        snprintf(buf, size, "%s", s ? s : "?");
+        JS_FreeCString(v->ctx, s);
+        JS_FreeValue(v->ctx, e);
+        break;
+    default:
+        snprintf(buf, size, "pending");
+        break;
+    }
+    JS_FreeValue(v->ctx, p);
+    return buf;
+}
+
+/* compile_module compiles src as the module name, not run. */
+static void compile_module(VM *v, const char *name, const char *src)
+{
+    JSValue r = JS_Eval(v->ctx, src, strlen(src), name, JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY);
+
+    CHECK(!JS_IsException(r), "%s does not compile", name);
+    JS_FreeValue(v->ctx, r);
+}
+
 #endif

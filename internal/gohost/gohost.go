@@ -474,7 +474,10 @@ func (v *VM) Leave() {
 // JS_GetInterruptFlag in engine/quickjs.h): Poll sets it to 1 once Interrupt
 // asked to stop, and the outermost Enter clears it, when no exception is
 // pending. The engine itself keeps 2 in it while an uncatchable exception is
-// pending. The engine keeps the flag where it is for as long as it lives.
+// pending. The int32 after it is not 0 from the stop of a compile to its
+// return, while it frees the code and the module it made: Poll reads it and
+// leaves that poll out of StopPolls and the kill. The engine keeps the flag where it is
+// for as long as it lives.
 func (v *VM) SetInterruptFlag(a uintptr) {
 	if a == 0 || a%4 != 0 {
 		panic(fmt.Sprintf("gohost: an interrupt flag at %#x", a))
@@ -523,7 +526,8 @@ func (v *VM) KillGrace() time.Duration { return v.grace }
 // deadline, since the outermost entry began: 0 when there was none, 1 when
 // the engine stopped before the poll after the one that set the flag. After
 // the entry it holds until the next outermost one. It tells how much work
-// the engine did before it stopped, whatever the clock says.
+// the engine did before it stopped, whatever the clock says, less the
+// freeing of the code of a compile that stopped (SetInterruptFlag).
 func (v *VM) StopPolls() int64 { return v.seen }
 
 // Killed reports whether a poll killed the script.
@@ -693,6 +697,13 @@ func Poll(sp uintptr) {
 	}
 	t := v.stopAt()
 	if t == 0 {
+		return
+	}
+	if v.flag != 0 && *(*int32)(addr(v.flag + 4)) != 0 {
+		// A compile that stopped frees the code and the module it made,
+		// and a resolution that stopped frees the modules it leaves, which
+		// is bounded by what the compiles did (JS_GetInterruptFlag in
+		// engine/quickjs.h): the poll is left out of StopPolls and the kill.
 		return
 	}
 	v.seen++

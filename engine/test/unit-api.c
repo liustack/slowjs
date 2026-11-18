@@ -2362,8 +2362,1230 @@ static void test_rv_nesting_limits(void)
     }
 }
 
+/* A compile stopped at a reading of the interrupt flag frees what it made,
+   the code of each pass included, by its opcodes: compile_stops compiles src
+   in a VM of its own once to count its readings, then stops it at each of
+   them. Each stop ends with the error interrupted, or, at a reading of the
+   conversion to the register code, which leaves the function to convert at
+   its call, with the compile done and the flag still set, and the word after
+   the flag is 0 again (the mark of a stopped compile, JS_GetInterruptFlag in
+   engine/quickjs.h). Run under AddressSanitizer, it shows that no stop leaves
+   code that the freeing reads past its opcodes, and the VM, freed at the end,
+   that no stop leaks. */
+static void compile_stops(const char *what, const char *src, int flags)
+{
+    VM v = vm_new();
+    volatile int *flag = JS_GetInterruptFlag(v.rt);
+    long reads, k;
+    JSValue r;
+    char *t;
+    int set;
+
+    reads = host_poll_reads;
+    r = JS_Eval(v.ctx, src, strlen(src), "stops.js", flags | JS_EVAL_FLAG_COMPILE_ONLY);
+    reads = host_poll_reads - reads;
+    CHECK(!JS_IsException(r), "%s does not compile", what);
+    JS_FreeValue(v.ctx, r);
+    for (k = 1; k <= reads && !failures; k++) {
+        host_poll_stop_after(k);
+        r = JS_Eval(v.ctx, src, strlen(src), "stops.js", flags | JS_EVAL_FLAG_COMPILE_ONLY);
+        host_poll_stop_after(0);
+        set = *flag;
+        *flag = 0;
+        if (JS_IsException(r)) {
+            t = exception_text(v.ctx);
+            CHECK(t && strcmp(t, "InternalError: interrupted") == 0, "%s: the stop at reading %ld of %ld: %s", what,
+                  k, reads, t ? t : "no exception");
+            free(t);
+        } else {
+            CHECK(set, "%s: the stop at reading %ld of %ld did not stop the compile", what, k, reads);
+            JS_FreeValue(v.ctx, r);
+        }
+        CHECK(flag[1] == 0, "%s: the stop at reading %ld of %ld left the mark at %d", what, k, reads, flag[1]);
+    }
+    vm_free(&v);
+}
+
+/* Loops whose jumps back resolve_labels makes shorter after the jump out of
+   each is: it did so by changing the opcode, then taking the bytes it no
+   longer needs out, and a jump back keeps a negative offset in them, whose
+   0xff a free in between read as an opcode past the table. Each loop is one
+   statement longer than the one before, so that some of them end where the
+   jump back fits in a byte only after the jump out is short. The 8,192 ifs
+   after them make the work of each shrink more than a step of the count, so
+   that the flag is read at each. Their statements start with no name, which
+   the parse would look past (peek_token), reading the flag each time.
+   Then the closure variables of an eval in five functions around the locals
+   of a sixth, which the compile collects (add_eval_variables), and a module
+   with a table of exports. */
+static void test_compile_stops(void)
+{
+    static char src[1 << 20];
+    size_t n = 0;
+    int i, k;
+
+#define ADD(...) (n += (size_t)snprintf(src + n, sizeof(src) - n, __VA_ARGS__))
+    ADD("(function(){var a = 0, b = 0;");
+    for (k = 40; k <= 80; k++) {
+        ADD("while(!a){");
+        for (i = 0; i < k; i++)
+            ADD("++a;");
+        ADD("}");
+    }
+    for (i = 0; i < 8192; i++)
+        ADD("if(!a)++b;");
+    ADD("})");
+    compile_stops("loops with jumps back", src, JS_EVAL_TYPE_GLOBAL);
+
+    n = 0;
+    ADD("(function(){var x0");
+    for (i = 1; i < 300; i++)
+        ADD(",x%d", i);
+    ADD(";return function(){return function(){return function(){return function(){"
+        "return function(){return eval('x0')}}}}}})");
+    compile_stops("an eval in five functions", src, JS_EVAL_TYPE_GLOBAL);
+
+    n = 0;
+    ADD("var a0");
+    for (i = 1; i < 2000; i++)
+        ADD(",a%d", i);
+    ADD(";export {a0 as e0");
+    for (i = 1; i < 2000; i++)
+        ADD(",a%d as e%d", i, i);
+    ADD("}");
+    compile_stops("a module of 2,000 exports", src, JS_EVAL_TYPE_MODULE);
+#undef ADD
+}
+
+/* A module that imports each of 300 names of another one, then all of them
+   as a namespace, then the module 300 times more, stopped at each reading of
+   its eval, in a VM of its own each time, the other module evaluated first:
+   the resolution of the imports, the making of the namespace and the walks
+   of the link and of the evaluation read the flag. Each stop ends the eval
+   with the error interrupted, or the promise of the module rejected with it
+   (a stop in the evaluation), or the eval done with the flag still set.
+   Run under AddressSanitizer, it shows that what each failure frees is
+   whole, and the VM, freed at the end, that no stop leaks. */
+static void test_link_stops(void)
+{
+    static char a[1 << 14], b[1 << 15];
+    size_t n;
+    long reads = 0, k, before;
+    JSValue r, e;
+    char *t;
+    int i, set;
+
+#define ADD(s, ...) (n += (size_t)snprintf(s + n, sizeof(s) - n, __VA_ARGS__))
+    n = 0;
+    ADD(a, "export var e0");
+    for (i = 1; i < 300; i++)
+        ADD(a, ",e%d", i);
+    ADD(a, ";");
+    n = 0;
+    ADD(b, "import {e0");
+    for (i = 1; i < 300; i++)
+        ADD(b, ",e%d", i);
+    ADD(b, "} from \"a.js\"; import * as ns from \"a.js\";");
+    for (i = 0; i < 300; i++)
+        ADD(b, "import \"a.js\";");
+    ADD(b, "globalThis.r = Object.keys(ns).length;");
+#undef ADD
+    for (k = 0; k <= reads && !failures; k++) {
+        VM v = vm_new();
+        volatile int *flag = JS_GetInterruptFlag(v.rt);
+
+        r = JS_Eval(v.ctx, a, strlen(a), "a.js", JS_EVAL_TYPE_MODULE);
+        CHECK(!JS_IsException(r), "the module of the exports does not run");
+        JS_FreeValue(v.ctx, r);
+        before = host_poll_reads;
+        host_poll_stop_after(k);
+        r = JS_Eval(v.ctx, b, strlen(b), "b.js", JS_EVAL_TYPE_MODULE);
+        host_poll_stop_after(0);
+        set = *flag;
+        *flag = 0;
+        if (k == 0) {
+            reads = host_poll_reads - before;
+            CHECK(!JS_IsException(r) && JS_PromiseState(v.ctx, r) == JS_PROMISE_FULFILLED,
+                  "the module of the imports does not run");
+        } else if (JS_IsException(r)) {
+            t = exception_text(v.ctx);
+            CHECK(t && strcmp(t, "InternalError: interrupted") == 0, "the stop at reading %ld of %ld: %s", k, reads,
+                  t ? t : "no exception");
+            free(t);
+        } else if (JS_PromiseState(v.ctx, r) == JS_PROMISE_REJECTED) {
+            e = JS_PromiseResult(v.ctx, r);
+            JS_Throw(v.ctx, e);
+            t = exception_text(v.ctx);
+            CHECK(t && strcmp(t, "InternalError: interrupted") == 0,
+                  "the stop at reading %ld of %ld rejected the module with %s", k, reads, t ? t : "nothing");
+            free(t);
+        } else {
+            CHECK(set, "the stop at reading %ld of %ld did not stop the module", k, reads);
+        }
+        JS_FreeValue(v.ctx, r);
+        vm_free(&v);
+    }
+    CHECK(reads > 10, "the module of the imports read the flag %ld times", reads);
+}
+
+/* stop_end ends a run that a stop may have cut: it runs the jobs the run
+   left until one fails, then clears the flag, takes the exception and runs
+   the rest with no stop, so that nothing of the run is left to act later. */
+static void stop_end(VM *v)
+{
+    while (!JS_HasException(v->ctx) && JS_ExecutePendingJob(v->rt, NULL) > 0)
+        ;
+    host_poll_stop_after(0);
+    *JS_GetInterruptFlag(v->rt) = 0;
+    JS_FreeValue(v->ctx, JS_GetException(v->ctx));
+    drain_jobs(v);
+}
+
+/* A stop at each reading of the flag in the run of module b.js, which
+   imports a.js, which imports c.js, both made but not run, then an import of
+   b.js with no stop: the import settles, and the runtime is freed with no
+   block left. A stop in the evaluation leaves each module it ran recorded
+   with the error, and the promise of b.js was left pending for good, as the
+   call that rejects it fails while the interrupt is pending: the import
+   after it now rejects with the error recorded. A stop in the link leaked
+   the bindings the link made (test_link_retry). */
+static void test_module_eval_stops(void)
+{
+    static const char c[] = "export var z = 1;";
+    static const char a[] =
+        "import {z} from \"c.js\"; export var y = z;"
+        "for (let i = 0; i < 50; i++) y += 0;";
+    static const char b[] =
+        "import {y} from \"a.js\"; globalThis.x = y;"
+        "for (let i = 0; i < 50; i++) globalThis.x += 0;";
+    long k, reads = 0, before, rejected = 0;
+    char buf[128];
+    int leaked;
+
+    for (k = 0; k <= reads; k++) {
+        VM v = vm_new();
+
+        compile_module(&v, "c.js", c);
+        compile_module(&v, "a.js", a);
+        before = host_poll_reads;
+        host_poll_stop_after(k);
+        JS_FreeValue(v.ctx, JS_Eval(v.ctx, b, strlen(b), "b.js", JS_EVAL_TYPE_MODULE));
+        if (k == 0)
+            reads = host_poll_reads - before;
+        stop_end(&v);
+        import_state(&v, "b.js", buf, sizeof(buf));
+        if (strcmp(buf, "ok") == 0) {
+            CHECK(eval_is(v.ctx, "x", "1"), "the stop at reading %ld of %ld: x is not 1", k, reads);
+        } else {
+            CHECK(strcmp(buf, "InternalError: interrupted") == 0 || strncmp(buf, "ReferenceError", 14) == 0,
+                  "the stop at reading %ld of %ld: the import after it gave %s", k, reads, buf);
+            rejected += strcmp(buf, "InternalError: interrupted") == 0;
+        }
+        leaked = host_leaked_runtimes();
+        vm_free(&v);
+        CHECK(host_leaked_runtimes() == leaked, "the stop at reading %ld of %ld left blocks in the runtime", k, reads);
+    }
+    CHECK(reads > 10, "the module read the flag %ld times", reads);
+    CHECK(rejected > 10, "%ld imports after a stop rejected with the error the module recorded", rejected);
+}
+
+/* A stop at each reading of the flag in an import of module b.js, which
+   binds 300 names of a.js and a namespace a.js exports from c.js, then an
+   import of b.js again with no stop, once the jobs of the first are done.
+   A link that stopped had bound some of the names, and the link again took
+   a second reference to each and lost the first, and made the namespace
+   binding again: the runtime was freed with blocks left (js_unbind_module).
+   A stop in the making of the promise of b.js left the exception in its
+   place, and the import again rejected with no error. The import again
+   links b.js and runs it, with the objects, atoms and blocks of an import
+   that never stopped, or rejects with the error a stopped evaluation
+   recorded, and the runtime is freed with no block left. */
+static void test_link_retry(void)
+{
+    static const char c[] = "export var z = 1;";
+    static const char first[] = "import(\"b.js\"); 0";
+    char a[4096], b[4096], buf[128];
+    size_t n;
+    long k, reads = 0, before, relinked = 0;
+    int i, leaked;
+    int64_t objs = 0, atoms = 0, blocks = 0;
+    JSMemoryUsage u;
+    JSValue r;
+
+#define ADD(s, ...) (n += snprintf(s + n, sizeof(s) - n, __VA_ARGS__))
+    n = 0;
+    ADD(a, "export * as nsx from \"c.js\"; export var e0 = 0");
+    for (i = 1; i < 300; i++)
+        ADD(a, ",e%d = 0", i);
+    ADD(a, ";");
+    CHECK(n < sizeof(a), "the source of a.js does not fit");
+    n = 0;
+    ADD(b, "import {nsx, e0");
+    for (i = 1; i < 300; i++)
+        ADD(b, ",e%d", i);
+    ADD(b, "} from \"a.js\"; globalThis.x = e0 + e299 + nsx.z;");
+    CHECK(n < sizeof(b), "the source of b.js does not fit");
+#undef ADD
+    for (k = 0; k <= reads; k++) {
+        VM v = vm_new();
+
+        r = JS_Eval(v.ctx, c, strlen(c), "c.js", JS_EVAL_TYPE_MODULE);
+        CHECK(!JS_IsException(r), "c.js does not run");
+        JS_FreeValue(v.ctx, r);
+        r = JS_Eval(v.ctx, a, strlen(a), "a.js", JS_EVAL_TYPE_MODULE);
+        CHECK(!JS_IsException(r), "a.js does not run");
+        JS_FreeValue(v.ctx, r);
+        compile_module(&v, "b.js", b);
+        drain_jobs(&v);
+        before = host_poll_reads;
+        host_poll_stop_after(k);
+        JS_FreeValue(v.ctx, JS_Eval(v.ctx, first, strlen(first), "<first>", JS_EVAL_TYPE_GLOBAL));
+        stop_end(&v);
+        if (k == 0)
+            reads = host_poll_reads - before;
+        import_state(&v, "b.js", buf, sizeof(buf));
+        if (strcmp(buf, "ok") == 0) {
+            CHECK(eval_is(v.ctx, "x", "1"), "the stop at reading %ld of %ld: x is not 1", k, reads);
+            JS_RunGC(v.rt);
+            JS_ComputeMemoryUsage(v.rt, &u);
+            if (k == 0) {
+                objs = u.obj_count;
+                atoms = u.atom_count;
+                blocks = u.malloc_count;
+            } else {
+                relinked++;
+                CHECK(u.obj_count == objs && u.atom_count == atoms && u.malloc_count == blocks,
+                      "the stop at reading %ld of %ld: %lld objects, %lld atoms and %lld blocks, against %lld, %lld and %lld",
+                      k, reads, (long long)u.obj_count, (long long)u.atom_count, (long long)u.malloc_count,
+                      (long long)objs, (long long)atoms, (long long)blocks);
+            }
+        } else {
+            CHECK(k > 0 && strcmp(buf, "InternalError: interrupted") == 0,
+                  "the stop at reading %ld of %ld: the import after it gave %s", k, reads, buf);
+        }
+        leaked = host_leaked_runtimes();
+        vm_free(&v);
+        CHECK(host_leaked_runtimes() == leaked, "the stop at reading %ld of %ld left blocks in the runtime", k, reads);
+    }
+    CHECK(reads > 10 && relinked > 10, "the import read the flag %ld times, and %ld stops linked again", reads, relinked);
+}
+
+/* A stop at each reading of the flag in the run of module u.js, compiled
+   before, and in the jobs that go on with it: u.js imports t.js, whose
+   top-level await waits for c.js, whose top-level await ends in a job, and
+   t.js runs on after its own await in a job too, in its body or in an
+   async function it awaits (inner). A stop in such a job left the promise
+   that would go on with t.js pending for good: t.js stayed evaluating, and
+   so did u.js, and an import of either did not settle. Now the host taking
+   the error records every module still evaluating as failed with it
+   (js_fail_async_modules): an import of u.js after the stop gives the
+   result or the error interrupted, and so does one of t.js, which fails
+   only when u.js does. done.js, evaluated before, and idle.js, made but
+   not evaluated, are left as they were, and the runtime is freed with no
+   block left. Each runs also with an async context set
+   (JS_SetAsyncContext), which wraps each handler of a promise in a
+   function that sets it. */
+static void module_await_stops(int inner, int with_context)
+{
+    static const char c[] = "await 0; globalThis.c = 1;";
+    static const char t_body[] =
+        "import \"c.js\"; globalThis.n = 0;"
+        "for (let i = 0; i < 20; i++) n++;"
+        "await 0; for (let i = 0; i < 20; i++) n++;";
+    static const char t_inner[] =
+        "import \"c.js\"; globalThis.n = 0;"
+        "for (let i = 0; i < 20; i++) n++;"
+        "await (async function () { await 0; for (let i = 0; i < 20; i++) n++; })();";
+    static const char u[] = "import \"t.js\"; globalThis.x = n;";
+    static const char done[] = "export var d = 7; await 0; globalThis.done = d;";
+    static const char idle[] = "globalThis.idle = 1;";
+    static const char stopped[] = "InternalError: interrupted";
+    long k, reads = 0, sync_reads = 0, before, rejected = 0, in_jobs = 0;
+    char buf[128], buf2[128], buf3[128], buf4[128];
+    int leaked;
+    JSValue m;
+
+    for (k = 0; k <= reads; k++) {
+        VM v = vm_new();
+
+        if (with_context) {
+            JSValue o = JS_NewObject(v.ctx);
+
+            JS_SetAsyncContext(v.ctx, o);
+            JS_FreeValue(v.ctx, o);
+        }
+        compile_module(&v, "done.js", done);
+        CHECK(strcmp(import_state(&v, "done.js", buf3, sizeof(buf3)), "ok") == 0, "done.js gave %s", buf3);
+        compile_module(&v, "idle.js", idle);
+        compile_module(&v, "c.js", c);
+        compile_module(&v, "t.js", inner ? t_inner : t_body);
+        m = JS_Eval(v.ctx, u, strlen(u), "u.js", JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY);
+        CHECK(!JS_IsException(m), "u.js does not compile");
+        before = host_poll_reads;
+        host_poll_stop_after(k);
+        JS_FreeValue(v.ctx, JS_EvalFunction(v.ctx, m));
+        if (k == 0)
+            sync_reads = host_poll_reads - before;
+        stop_end(&v);
+        if (k == 0)
+            reads = host_poll_reads - before;
+        import_state(&v, "u.js", buf, sizeof(buf));
+        import_state(&v, "t.js", buf2, sizeof(buf2));
+        if (strcmp(buf, "ok") == 0) {
+            CHECK(strcmp(buf2, "ok") == 0, "inner %d, context %d, the stop at reading %ld of %ld: u.js ran, and the import of t.js gave %s",
+                  inner, with_context, k, reads, buf2);
+            CHECK(eval_is(v.ctx, "x", "40"), "inner %d, context %d, the stop at reading %ld of %ld: x is not 40",
+                  inner, with_context, k, reads);
+        } else {
+            CHECK(k > 0 && strcmp(buf, stopped) == 0 && (strcmp(buf2, "ok") == 0 || strcmp(buf2, stopped) == 0),
+                  "inner %d, context %d, the stop at reading %ld of %ld: the imports after it gave %s and %s",
+                  inner, with_context, k, reads, buf, buf2);
+            rejected++;
+            in_jobs += k > sync_reads;
+        }
+        import_state(&v, "done.js", buf3, sizeof(buf3));
+        import_state(&v, "idle.js", buf4, sizeof(buf4));
+        CHECK(strcmp(buf3, "ok") == 0 && strcmp(buf4, "ok") == 0 && eval_is(v.ctx, "done + idle", "8"),
+              "inner %d, context %d, the stop at reading %ld of %ld: done.js and idle.js gave %s and %s",
+              inner, with_context, k, reads, buf3, buf4);
+        leaked = host_leaked_runtimes();
+        vm_free(&v);
+        CHECK(host_leaked_runtimes() == leaked, "inner %d, context %d, the stop at reading %ld of %ld left blocks in the runtime",
+              inner, with_context, k, reads);
+    }
+    CHECK(reads > 20 && rejected > 10 && in_jobs > 5,
+          "inner %d, context %d: the modules read the flag %ld times, and %ld imports rejected with the error recorded, %ld after a stop in a job",
+          inner, with_context, reads, rejected, in_jobs);
+}
+
+static void test_module_await_stops(void)
+{
+    int inner, with_context;
+
+    for (inner = 0; inner < 2; inner++)
+        for (with_context = 0; with_context < 2; with_context++)
+            module_await_stops(inner, with_context);
+}
+
+/* A module with a top-level await that changes Promise.prototype.constructor
+   before its first await: the handlers of the module were put on the
+   promise of its function by Promise.prototype.then, whose look for the
+   species constructor threw, and the module stayed evaluating for good,
+   with the TypeError left pending after the eval returned its promise. The
+   module now runs to its end (js_execute_async_module). An import() whose
+   module is evaluated while the constructor is changed never settled, its
+   job ending with the TypeError pending, for the same look: it now gives
+   the module (JS_LoadModuleInternal). */
+static void test_module_await_species(void)
+{
+    static const char s[] = "Promise.prototype.constructor = 1; await 0; globalThis.s = 1;";
+    static const char imp[] = "import(\"q.js\")";
+    VM v = vm_new();
+    JSValue r = JS_Eval(v.ctx, s, strlen(s), "s.js", JS_EVAL_TYPE_MODULE);
+    int failed = 0;
+    JSContext *ctx;
+
+    CHECK(!JS_IsException(r) && !JS_HasException(v.ctx), "the eval of s.js threw");
+    drain_jobs(&v);
+    CHECK(JS_PromiseState(v.ctx, r) == JS_PROMISE_FULFILLED, "s.js is in state %d", JS_PromiseState(v.ctx, r));
+    CHECK(eval_is(v.ctx, "s", "1"), "s.js did not run to its end");
+    JS_FreeValue(v.ctx, r);
+    compile_module(&v, "q.js", "globalThis.q = 1;");
+    r = JS_Eval(v.ctx, imp, strlen(imp), "<import>", JS_EVAL_TYPE_GLOBAL);
+    CHECK(!JS_IsException(r), "the import threw");
+    while (JS_ExecutePendingJob(v.rt, &ctx) != 0 || JS_HasException(v.ctx)) {
+        if (JS_HasException(v.ctx)) {
+            JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+            failed++;
+        }
+    }
+    CHECK(failed == 0 && JS_PromiseState(v.ctx, r) == JS_PROMISE_FULFILLED,
+          "the import is in state %d, with %d exceptions left by its jobs", JS_PromiseState(v.ctx, r), failed);
+    JS_FreeValue(v.ctx, r);
+    vm_free(&v);
+}
+
+/* gc_tracker runs the collector, as a host's tracker of rejections may. */
+static int gc_tracker_calls;
+
+static void gc_tracker(JSContext *ctx, JSValueConst promise, JSValueConst reason,
+                       JS_BOOL is_handled, void *opaque)
+{
+    (void)promise;
+    (void)reason;
+    (void)is_handled;
+    (void)opaque;
+    gc_tracker_calls++;
+    JS_RunGC(JS_GetRuntime(ctx));
+}
+
+/* The modules a stop fails (js_fail_async_modules) are those of every
+   context of the runtime. Context b waits in b.js on a promise nothing
+   settles, its eval's promise and the host's reference to b freed, so that
+   b, its module and its promise are a cycle only the collector frees,
+   which does not run on its own. A stop of context a fails b.js with it:
+   its rejection called the host's tracker while the walk of the modules
+   was on b.js, with no reference to b, its module or its promise, and a
+   tracker that ran the collector freed them all under it. The tracker is
+   not told of these rejections, and the walk calls nothing. */
+static void test_module_fail_collect(void)
+{
+    static const char wait[] = "await new Promise(() => {});";
+    static const char spin[] = "for (;;) {}";
+    JSRuntime *rt = host_new_runtime();
+    JSContext *a = JS_NewContext(rt), *b = JS_NewContext(rt);
+    long leaked = host_leaked_runtimes();
+    JSValue r, e;
+    const char *s;
+
+    JS_SetGCThreshold(rt, (size_t)-1);
+    JS_SetHostPromiseRejectionTracker(rt, gc_tracker, NULL);
+    gc_tracker_calls = 0;
+    r = JS_Eval(b, wait, strlen(wait), "b.js", JS_EVAL_TYPE_MODULE);
+    CHECK(!JS_IsException(r), "the eval of b.js threw");
+    JS_FreeValue(b, r);
+    JS_FreeContext(b);
+    host_poll_stop_after(1);
+    r = JS_Eval(a, spin, strlen(spin), "<spin>", JS_EVAL_TYPE_GLOBAL);
+    host_poll_stop_after(0);
+    CHECK(JS_IsException(r), "the loop of a ran to its end");
+    *JS_GetInterruptFlag(rt) = 0;
+    e = JS_GetException(a);
+    s = JS_ToCString(a, e);
+    CHECK(s && strcmp(s, "InternalError: interrupted") == 0, "a ended with %s", s ? s : "?");
+    JS_FreeCString(a, s);
+    JS_FreeValue(a, e);
+    CHECK(gc_tracker_calls == 0, "the tracker was called %d times", gc_tracker_calls);
+    JS_RunGC(rt);
+    JS_FreeContext(a);
+    host_free_runtime(rt);
+    CHECK(host_leaked_runtimes() == leaked, "blocks left in the runtime");
+}
+
+/* A job that a stop ends fails in the return of JS_ExecutePendingJob, with
+   its error pending, whatever its reaction had to settle. The reaction of
+   an await settles no promise of its own (its capability is undefined), and
+   its job returned 1 with the uncatchable error pending: a host that takes
+   the exception only on a negative return, as the API says, never took it,
+   and a module with a top-level await stayed evaluating for good, as the
+   failure of the modules runs where the host takes the error
+   (js_fail_async_modules). Each case is stopped at each reading of the flag
+   in its jobs, and only the return value decides what the host does. The
+   promise of the module is then rejected, also after a stop in the job
+   that ended it, which refused the call of its resolving function
+   (js_module_settle). */
+static void test_job_stop_returns(void)
+{
+    static const struct {
+        const char *what, *src;
+        int module;
+    } cases[] = {
+        { "module", "await 0; for (let i = 0; i < 50; i++) globalThis.n = i;", 1 },
+        { "async function",
+          "(async () => { await 0; for (let i = 0; i < 50; i++) globalThis.n = i; })()", 0 },
+        { "then", "Promise.resolve().then(() => { for (let i = 0; i < 50; i++) globalThis.n = i; })", 0 },
+    };
+    size_t i;
+
+    for (i = 0; i < countof(cases); i++) {
+        long k;
+
+        for (k = 1;; k++) {
+            VM v = vm_new();
+            JSValue p = JS_Eval(v.ctx, cases[i].src, strlen(cases[i].src), "<job>",
+                                cases[i].module ? JS_EVAL_TYPE_MODULE : JS_EVAL_TYPE_GLOBAL);
+            JSContext *c;
+            int ret, failed = 0, swallowed = 0;
+
+            CHECK(!JS_IsException(p), "%s: the eval threw", cases[i].what);
+            host_poll_reads = 0;
+            host_poll_stop_after(k);
+            while ((ret = JS_ExecutePendingJob(v.rt, &c)) != 0) {
+                if (ret < 0) {
+                    JSValue e;
+                    const char *s;
+
+                    *JS_GetInterruptFlag(v.rt) = 0;
+                    e = JS_GetException(v.ctx);
+                    s = JS_ToCString(v.ctx, e);
+                    CHECK(s && strcmp(s, "InternalError: interrupted") == 0, "%s, stop at %ld: %s",
+                          cases[i].what, k, s ? s : "?");
+                    JS_FreeCString(v.ctx, s);
+                    JS_FreeValue(v.ctx, e);
+                    failed++;
+                } else if (JS_HasException(v.ctx)) {
+                    swallowed++;
+                    break;
+                }
+            }
+            host_poll_stop_after(0);
+            CHECK(swallowed == 0, "%s, stop at %ld: a job returned 1 with the error pending",
+                  cases[i].what, k);
+            if (swallowed) {
+                *JS_GetInterruptFlag(v.rt) = 0;
+                JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+            }
+            if (cases[i].module && failed) {
+                CHECK(JS_PromiseState(v.ctx, p) == JS_PROMISE_REJECTED, "module, stop at %ld: in state %d",
+                      k, JS_PromiseState(v.ctx, p));
+            }
+            JS_FreeValue(v.ctx, p);
+            drain_jobs(&v);
+            vm_free(&v);
+            if (!failed && !swallowed)
+                break;
+        }
+        CHECK(k > 3, "%s: %ld readings", cases[i].what, k);
+    }
+}
+
+/* A call of the host that a stop ends returns the exception, whatever the
+   code it ran returned. An async function stopped before its first await
+   cannot reject its promise, as the call of its reject function is refused
+   while the error is pending, and returned that promise, still pending:
+   JS_Eval of a module with a top-level await after a busy loop returned the
+   pending promise of the module, no job was left to run, and a host that
+   takes the exception only when a call fails never took it, so the module
+   stayed evaluating for good. A module with no await returned its promise
+   rejected, a script that calls an async function and JS_Call of one their
+   pending promise. Each is stopped at each reading of the flag up to
+   ENTRY_STOPS, in the compile and in the loop. */
+#define ENTRY_STOPS 40
+static void test_entry_stop_returns(void)
+{
+    static const struct {
+        const char *what, *src;
+        int module, call;
+    } cases[] = {
+        { "module with an await", "for (;;) {} await 0;", 1, 0 },
+        { "module", "for (;;) {}", 1, 0 },
+        { "script", "(async () => { for (;;) {} })()", 0, 0 },
+        { "JS_Call", "globalThis.f = async () => { for (;;) {} };", 0, 1 },
+    };
+    size_t i;
+    long k;
+
+    for (i = 0; i < countof(cases); i++) {
+        for (k = 1; k <= ENTRY_STOPS; k++) {
+            VM v = vm_new();
+            JSValue r, f = JS_UNDEFINED, e;
+            const char *s;
+
+            if (cases[i].call) {
+                r = JS_Eval(v.ctx, cases[i].src, strlen(cases[i].src), "<entry>", JS_EVAL_TYPE_GLOBAL);
+                CHECK(!JS_IsException(r), "%s: the eval threw", cases[i].what);
+                JS_FreeValue(v.ctx, r);
+                JSValue g = JS_GetGlobalObject(v.ctx);
+
+                f = JS_GetPropertyStr(v.ctx, g, "f");
+                JS_FreeValue(v.ctx, g);
+            }
+            host_poll_reads = 0;
+            host_poll_stop_after(k);
+            if (cases[i].call)
+                r = JS_Call(v.ctx, f, JS_UNDEFINED, 0, NULL);
+            else
+                r = JS_Eval(v.ctx, cases[i].src, strlen(cases[i].src), "<entry>",
+                            cases[i].module ? JS_EVAL_TYPE_MODULE : JS_EVAL_TYPE_GLOBAL);
+            host_poll_stop_after(0);
+            CHECK(JS_IsException(r), "%s, stop at %ld: returned %s with %s pending", cases[i].what, k,
+                  JS_IsException(r) ? "the exception" : "a value",
+                  JS_IsUncatchableException(v.ctx) ? "an uncatchable error" : "no error");
+            JS_FreeValue(v.ctx, r);
+            *JS_GetInterruptFlag(v.rt) = 0;
+            e = JS_GetException(v.ctx);
+            s = JS_ToCString(v.ctx, e);
+            CHECK(s && strcmp(s, "InternalError: interrupted") == 0, "%s, stop at %ld: %s",
+                  cases[i].what, k, s ? s : "?");
+            JS_FreeCString(v.ctx, s);
+            JS_FreeValue(v.ctx, e);
+            JS_FreeValue(v.ctx, f);
+            drain_jobs(&v);
+            vm_free(&v);
+        }
+    }
+}
+
+/* the module loader of test_api_stop_returns: every module is api_module_src */
+static const char api_module_src[] = "for (;;) {} await 0;";
+
+static JSModuleDef *api_module_loader(JSContext *ctx, const char *name, void *opaque)
+{
+    JSValue f = JS_Eval(ctx, api_module_src, strlen(api_module_src), name,
+                        JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY);
+    JSModuleDef *m;
+
+    (void)opaque;
+    if (JS_IsException(f))
+        return NULL;
+    m = JS_VALUE_GET_PTR(f);
+    JS_FreeValue(ctx, f);
+    return m;
+}
+
+enum {
+    API_GET, API_SET, API_INSTANCEOF, API_TYPED_ARRAY, API_TO_FLOAT64,
+    API_JSON, API_LOAD_MODULE,
+};
+
+/* Every function of the API that runs code fails when a stop ends it,
+   whatever that code returned: a place that catches an exception to settle
+   a promise or to keep it as a result ends with an uncatchable one instead.
+   An async function, an async generator, a for await over a sync iterator,
+   a module with a top-level await and the close of an iterator by Set
+   methods each turned a stop into a value: the getter returned the pending
+   promise of an async function stopped before its first await, the setter
+   succeeded, and so on, with the interrupt left pending. Each case is
+   stopped at each reading of the flag up to ENTRY_STOPS. */
+static void test_api_stop_returns(void)
+{
+    static const char setup[] =
+        "globalThis.spin = async function () { for (;;) {} };\n"
+        "globalThis.o = {};\n"
+        "Object.defineProperty(o, 'get', { get: async function () { for (;;) {} } });\n"
+        "Object.defineProperty(o, 'set', { set: async function (v) { for (;;) {} } });\n"
+        "Object.defineProperty(o, 'gen', { get: function () {\n"
+        "  return (async function* () { for (;;) {} })().next(); } });\n"
+        "Object.defineProperty(o, 'syncIter', { get: function () {\n"
+        "  return (async function () {\n"
+        "    for await (const x of { [Symbol.iterator]() { return { next() { for (;;) {} } }; } }) {}\n"
+        "  })(); } });\n"
+        "Object.defineProperty(o, 'setClose', { get: function () {\n"
+        "  return new Set([1, 2]).isDisjointFrom({ size: 1, has() { return true; }, keys() {\n"
+        "    return { next() { return { value: 1, done: false }; }, return() { for (;;) {} } }; } });\n"
+        "  } });\n"
+        "globalThis.C = { [Symbol.hasInstance]: async function () { for (;;) {} } };\n"
+        "globalThis.iterable = { [Symbol.iterator]() { return { next() {\n"
+        "  const r = { value: 1 };\n"
+        "  Object.defineProperty(r, 'done', { get: async function () { for (;;) {} } });\n"
+        "  return r; } }; } };\n"
+        "globalThis.num = { valueOf() { spin(); return 7; } };\n"
+        "globalThis.j = {};\n"
+        "Object.defineProperty(j, 'toJSON', { get: async function () { for (;;) {} } });\n"
+        "globalThis.j2 = {};\n"
+        "Object.defineProperty(j2, 'a', { get: async function () { for (;;) {} }, enumerable: true });\n";
+    static const struct {
+        const char *what, *prop;
+        int op;
+    } cases[] = {
+        { "async getter", "get", API_GET },
+        { "async generator", "gen", API_GET },
+        { "for await of a sync iterator", "syncIter", API_GET },
+        { "close of Set methods", "setClose", API_GET },
+        { "async setter", "set", API_SET },
+        { "async Symbol.hasInstance", NULL, API_INSTANCEOF },
+        { "async done of an iterator", NULL, API_TYPED_ARRAY },
+        { "valueOf calling an async function", NULL, API_TO_FLOAT64 },
+        { "async toJSON getter", NULL, API_JSON },
+        { "async getter of a property", "j2", API_JSON },
+        { "JS_LoadModule", NULL, API_LOAD_MODULE },
+    };
+    size_t i;
+    long k;
+
+    for (i = 0; i < countof(cases); i++) {
+        for (k = 1; k <= ENTRY_STOPS; k++) {
+            VM v = vm_new();
+            JSValue g, arg, r = JS_UNDEFINED, e;
+            const char *s;
+            int failed = 0;
+            double d;
+
+            JS_SetModuleLoaderFunc(v.rt, NULL, api_module_loader, NULL);
+            r = JS_Eval(v.ctx, setup, strlen(setup), "<setup>", JS_EVAL_TYPE_GLOBAL);
+            CHECK(!JS_IsException(r), "%s: the setup threw", cases[i].what);
+            JS_FreeValue(v.ctx, r);
+            r = JS_UNDEFINED;
+            g = JS_GetGlobalObject(v.ctx);
+            switch (cases[i].op) {
+            case API_GET: case API_SET: arg = JS_GetPropertyStr(v.ctx, g, "o"); break;
+            case API_INSTANCEOF: arg = JS_GetPropertyStr(v.ctx, g, "C"); break;
+            case API_TYPED_ARRAY: arg = JS_GetPropertyStr(v.ctx, g, "iterable"); break;
+            case API_TO_FLOAT64: arg = JS_GetPropertyStr(v.ctx, g, "num"); break;
+            case API_JSON: arg = JS_GetPropertyStr(v.ctx, g, cases[i].prop ? cases[i].prop : "j"); break;
+            default: arg = JS_UNDEFINED; break;
+            }
+            host_poll_reads = 0;
+            host_poll_stop_after(k);
+            switch (cases[i].op) {
+            case API_GET:
+                r = JS_GetPropertyStr(v.ctx, arg, cases[i].prop);
+                failed = JS_IsException(r);
+                break;
+            case API_SET:
+                failed = JS_SetPropertyStr(v.ctx, arg, cases[i].prop, JS_NewInt32(v.ctx, 1)) < 0;
+                break;
+            case API_INSTANCEOF:
+                failed = JS_IsInstanceOf(v.ctx, g, arg) < 0;
+                break;
+            case API_TYPED_ARRAY:
+                r = JS_NewTypedArray(v.ctx, 1, (JSValueConst *)&arg, JS_TYPED_ARRAY_UINT8);
+                failed = JS_IsException(r);
+                break;
+            case API_TO_FLOAT64:
+                failed = JS_ToFloat64(v.ctx, &d, arg) < 0;
+                break;
+            case API_JSON:
+                r = JS_JSONStringify(v.ctx, arg, JS_UNDEFINED, JS_UNDEFINED);
+                failed = JS_IsException(r);
+                break;
+            case API_LOAD_MODULE:
+                r = JS_LoadModule(v.ctx, "", "stop.js");
+                failed = JS_IsException(r);
+                break;
+            }
+            host_poll_stop_after(0);
+            CHECK(failed, "%s, stop at %ld: succeeded with %s pending", cases[i].what, k,
+                  JS_IsUncatchableException(v.ctx) ? "an uncatchable error" : "no error");
+            JS_FreeValue(v.ctx, r);
+            *JS_GetInterruptFlag(v.rt) = 0;
+            e = JS_GetException(v.ctx);
+            s = JS_ToCString(v.ctx, e);
+            CHECK(s && strcmp(s, "InternalError: interrupted") == 0, "%s, stop at %ld: %s",
+                  cases[i].what, k, s ? s : "?");
+            JS_FreeCString(v.ctx, s);
+            JS_FreeValue(v.ctx, e);
+            JS_FreeValue(v.ctx, arg);
+            JS_FreeValue(v.ctx, g);
+            drain_jobs(&v);
+            vm_free(&v);
+        }
+    }
+}
+
+/* take_stop clears the flag and frees the exception a stop left, which must
+   be the interrupt. */
+static void take_stop(VM *v, const char *what, long k)
+{
+    JSValue e;
+    const char *s;
+
+    *JS_GetInterruptFlag(v->rt) = 0;
+    e = JS_GetException(v->ctx);
+    s = JS_ToCString(v->ctx, e);
+    CHECK(s && strcmp(s, "InternalError: interrupted") == 0, "%s, stop at %ld: %s",
+          what, k, s ? s : "?");
+    JS_FreeCString(v->ctx, s);
+    JS_FreeValue(v->ctx, e);
+}
+
+/* call_next calls next of the generator g from C */
+static JSValue call_next(JSContext *ctx, JSValueConst g)
+{
+    JSValue f = JS_GetPropertyStr(ctx, g, "next");
+    JSValue r = JS_Call(ctx, f, g, 0, NULL);
+
+    JS_FreeValue(ctx, f);
+    return r;
+}
+
+/* The requests queued on an async generator that finished all settle, as
+   the drain of the spec settles them (AsyncGeneratorDrainQueue): after a
+   failure of its body, and behind a return. Only the first after the end
+   settled, and those after it stayed pending for good. */
+static void test_async_gen_drain(void)
+{
+    static const struct {
+        const char *what, *src, *want;
+    } cases[] = {
+        { "after a throw",
+          "var r = [];\n"
+          "var it = (async function* () { await 0; throw 1; })();\n"
+          "it.next().then(v => r.push('1ok'), e => r.push('1err'));\n"
+          "it.next().then(v => r.push('2 ' + v.done));\n"
+          "it.next().then(v => r.push('3 ' + v.done));\n"
+          "it.throw(4).catch(e => r.push('4 ' + e));\n"
+          "it.next().then(v => r.push('5 ' + v.done));\n",
+          "1err,2 true,3 true,4 4,5 true" },
+        { "behind a return",
+          "var r = [];\n"
+          "var it = (async function* () {})();\n"
+          "it.next();\n"
+          "it.return(5).then(v => r.push('ret ' + v.value));\n"
+          "it.next().then(v => r.push('n1 ' + v.done));\n"
+          "it.next().then(v => r.push('n2 ' + v.done));\n",
+          "ret 5,n1 true,n2 true" },
+    };
+    size_t i;
+
+    for (i = 0; i < countof(cases); i++) {
+        VM v = vm_new();
+
+        eval_ok(v.ctx, cases[i].src);
+        drain_jobs(&v);
+        CHECK(eval_is(v.ctx, "r.join()", cases[i].want), "%s", cases[i].what);
+        vm_free(&v);
+    }
+}
+
+/* A stop in the run of an async generator ends it, and the request it ran
+   for leaves the queue unsettled (the stop cannot become its rejection):
+   every later request settles. The stopped request was left at the head of
+   the queue, where the next call of next settled it in place of its own,
+   whose promise stayed pending for good. A request queued behind the
+   stopped one (from a job) settles at the next call too, as all those
+   queued on a finished generator do. Each case is stopped at each reading
+   of the flag until a run ends with no stop. A stop in the job of the
+   await before it reached the generator loses the rest of the await, as it
+   does for an async function, and the generator waits for good. */
+static void test_async_gen_stop_queue(void)
+{
+    static const char setup[] =
+        "globalThis.make = () => (async function* () {\n"
+        "  for (let i = 0; i < 50; i++) globalThis.n = i;\n"
+        "})();\n"
+        "globalThis.makeAwait = () => (async function* () {\n"
+        "  await 0;\n"
+        "  for (let i = 0; i < 50; i++) globalThis.n = i;\n"
+        "})();\n";
+    int job;
+    long k;
+
+    for (job = 0; job < 2; job++) {
+        const char *what = job ? "stop in a job" : "stop in next";
+
+        for (k = 1;; k++) {
+            VM v = vm_new();
+            JSValue g, p1, p2 = JS_UNDEFINED, p3;
+            int stopped = 0, ret;
+            char *t;
+
+            eval_ok(v.ctx, setup);
+            g = call_global(v.ctx, job ? "makeAwait" : "make");
+            CHECK(JS_IsObject(g), "%s: no generator", what);
+            if (job) {
+                p1 = call_next(v.ctx, g);
+                p2 = call_next(v.ctx, g);
+                host_poll_reads = 0;
+                host_poll_stop_after(k);
+                while ((ret = JS_ExecutePendingJob(v.rt, NULL)) > 0)
+                    ;
+                stopped = ret < 0;
+            } else {
+                host_poll_reads = 0;
+                host_poll_stop_after(k);
+                p1 = call_next(v.ctx, g);
+                stopped = JS_IsException(p1);
+            }
+            host_poll_stop_after(0);
+            if (stopped)
+                take_stop(&v, what, k);
+            t = eval_text(v.ctx, "String(globalThis.n)");
+            p3 = call_next(v.ctx, g);
+            drain_jobs(&v);
+            /* a stop in the job before it called the generator lost the
+               end of the await, as for an async function: the generator
+               waits for good. A stop in the body leaves both requests to
+               settle, and one in the settle of a request at the end (n is
+               49) may leave that request pending */
+            if (!(job && t && strcmp(t, "undefined") == 0)) {
+                if (job && !(t && strcmp(t, "49") == 0))
+                    CHECK(JS_PromiseState(v.ctx, p2) == JS_PROMISE_FULFILLED,
+                          "%s, stop at %ld: the second request is in state %d", what, k,
+                          JS_PromiseState(v.ctx, p2));
+                CHECK(JS_PromiseState(v.ctx, p3) == JS_PROMISE_FULFILLED,
+                      "%s, stop at %ld: the request after the stop is in state %d", what, k,
+                      JS_PromiseState(v.ctx, p3));
+            }
+            free(t);
+            JS_FreeValue(v.ctx, p1);
+            JS_FreeValue(v.ctx, p2);
+            JS_FreeValue(v.ctx, p3);
+            JS_FreeValue(v.ctx, g);
+            vm_free(&v);
+            if (!stopped)
+                break;
+        }
+        CHECK(k > 3, "%s: %ld readings", what, k);
+    }
+}
+
+/* A stop in a step of an await (a getter of then that loops) ends an async
+   generator or an async function as a failure of its body ends it: its
+   variables closed and its frame freed, so that a closure it made keeps
+   only what it captured. They were left with the frame suspended and the
+   variables open: keep held the frame, and the buffer of 16 MiB in it, for
+   as long as it lived. Each case is stopped at each reading of the flag up
+   to ENTRY_STOPS. */
+static void test_await_stop_frees_frame(void)
+{
+    static const struct {
+        const char *what, *src;
+    } cases[] = {
+        { "async generator",
+          "globalThis.run = () => (async function* () {\n"
+          "  let buf = new ArrayBuffer(16 << 20), x = 0;\n"
+          "  globalThis.keep = () => ++x;\n"
+          "  await { get then() { for (;;) {} } };\n"
+          "  return buf.byteLength;\n"
+          "})().next();\n" },
+        { "async function",
+          "globalThis.run = () => (async function () {\n"
+          "  let buf = new ArrayBuffer(16 << 20), x = 0;\n"
+          "  globalThis.keep = () => ++x;\n"
+          "  await { get then() { for (;;) {} } };\n"
+          "  return buf.byteLength;\n"
+          "})();\n" },
+    };
+    size_t i;
+    long k;
+
+    for (i = 0; i < countof(cases); i++) {
+        for (k = 1; k <= ENTRY_STOPS; k++) {
+            VM v = vm_new();
+            JSMemoryUsage base, after;
+            JSValue r;
+
+            eval_ok(v.ctx, cases[i].src);
+            base = usage(&v);
+            host_poll_reads = 0;
+            host_poll_stop_after(k);
+            r = call_global(v.ctx, "run");
+            host_poll_stop_after(0);
+            CHECK(JS_IsException(r), "%s, stop at %ld: the call returned a value", cases[i].what, k);
+            JS_FreeValue(v.ctx, r);
+            take_stop(&v, cases[i].what, k);
+            drain_jobs(&v);
+            after = usage(&v);
+            CHECK(after.malloc_size < base.malloc_size + (1 << 20),
+                  "%s, stop at %ld: %lld bytes kept by the closure", cases[i].what, k,
+                  (long long)(after.malloc_size - base.malloc_size));
+            vm_free(&v);
+        }
+    }
+}
+
+/* call_method calls the method m of the global object o from C, with the
+   argument 1 */
+static JSValue call_method(JSContext *ctx, const char *o, const char *m)
+{
+    JSValue g = JS_GetGlobalObject(ctx);
+    JSValue obj = JS_GetPropertyStr(ctx, g, o);
+    JSValue f = JS_GetPropertyStr(ctx, obj, m);
+    JSValue one = JS_NewInt32(ctx, 1);
+    JSValue r = JS_Call(ctx, f, obj, 1, (JSValueConst *)&one);
+
+    JS_FreeValue(ctx, f);
+    JS_FreeValue(ctx, obj);
+    JS_FreeValue(ctx, g);
+    return r;
+}
+
+/* A settle of an async function or an async generator that fails on an
+   error a script can catch, the call depth, fails the call that ran it, as
+   no call may return a value with an exception left pending. The settle
+   that failed kept its error pending and the call returned its promise:
+   return(1) on a finished generator (the promise of the value to await
+   failed, and the rejected one made in its place too), next on it, and an
+   async function or a generator whose resolve of its own promise failed.
+   The jobs of an await of return settle on the same steps. Each case runs
+   at each call depth up to 12, and the runtime is closed with no block in
+   use (vm_free). */
+static void test_settle_depth_fails_call(void)
+{
+    static const struct {
+        const char *what, *setup, *o, *m;
+    } cases[] = {
+        { "return on a finished generator",
+          "globalThis.g = (async function* () {})(); g.next();", "g", "return" },
+        { "next on a finished generator",
+          "globalThis.g = (async function* () {})(); g.next();", "g", "next" },
+        { "next that yields",
+          "globalThis.g = (async function* () { yield 1; })();", "g", "next" },
+        { "next that throws",
+          "globalThis.g = (async function* () { throw 1; })();", "g", "next" },
+        { "async function that returns",
+          "globalThis.o = { f: async function (x) { return x; } };", "o", "f" },
+        { "async function that throws",
+          "globalThis.o = { f: async function (x) { throw x; } };", "o", "f" },
+        { "jobs of an await of return",
+          "globalThis.g = (async function* () {})(); g.next();\n"
+          "g.return(Promise.resolve(2)); g.next(); g.next();\n"
+          "globalThis.o = { f() {} };", "o", "f" },
+        { "jobs of an await of a generator",
+          "globalThis.g = (async function* () { await 0; return 1; })();\n"
+          "g.next(); g.next();\n"
+          "globalThis.o = { f() {} };", "o", "f" },
+        { "jobs of an await of an async function",
+          "(async function () { await 0; return 1; })();\n"
+          "globalThis.o = { f() {} };", "o", "f" },
+    };
+    size_t i;
+    int d;
+
+    for (i = 0; i < countof(cases); i++) {
+        for (d = 1; d <= 12; d++) {
+            VM v = vm_new();
+            int max = JS_GetMaxCallDepth(v.rt), ret;
+            JSContext *jctx;
+            JSValue r;
+
+            eval_ok(v.ctx, cases[i].setup);
+            CHECK(JS_SetMaxCallDepth(v.rt, d) == 0, "%s: depth %d not set", cases[i].what, d);
+            r = call_method(v.ctx, cases[i].o, cases[i].m);
+            CHECK(JS_IsException(r) == JS_HasException(v.ctx),
+                  "%s, depth %d: the call returned %s with %s pending", cases[i].what, d,
+                  JS_IsException(r) ? "an exception" : "a value",
+                  JS_HasException(v.ctx) ? "an exception" : "nothing");
+            if (JS_IsException(r))
+                JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+            JS_FreeValue(v.ctx, r);
+            while ((ret = JS_ExecutePendingJob(v.rt, &jctx)) != 0) {
+                CHECK((ret < 0) == JS_HasException(v.ctx),
+                      "%s, depth %d: a job returned %d with %s pending", cases[i].what, d, ret,
+                      JS_HasException(v.ctx) ? "an exception" : "nothing");
+                if (JS_HasException(v.ctx))
+                    JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+            }
+            JS_SetMaxCallDepth(v.rt, max);
+            drain_jobs(&v);
+            vm_free(&v);
+        }
+    }
+}
+
+/* After a stop, async work that was running may never settle, and the VM
+   is kept only to be read and closed: what must hold is that nothing is
+   used after it was freed (the sanitizers), that no call or job ends with
+   a value and an error left pending, and that closing the runtime frees
+   every block (vm_free). Each case sets up its async work, then go runs
+   with a stop at each reading of the flag, in the call and in the jobs
+   that follow it, until a run ends with no stop. Each run is done twice:
+   once the VM is closed as soon as the stop is taken, as a host that drops
+   it does, and once after a call of after and the rest of the jobs. Some run with an async context set, so
+   that each handler of an await is wrapped in a function of its own. No
+   promise is checked: these are the paths where one stays pending. */
+static void test_stop_async_frees(void)
+{
+    static const struct {
+        const char *what, *setup;
+        int actx;
+    } cases[] = {
+        { "a stop in the jobs of an await of a generator",
+          "globalThis.g = (async function* () {\n"
+          "  await 0;\n"
+          "  for (let i = 0; i < 50; i++) globalThis.n = i;\n"
+          "})();\n"
+          "globalThis.go = () => { g.next(); g.next(); };\n"
+          "globalThis.after = () => g.next();\n", 0 },
+        { "the same, each handler wrapped for its async context",
+          "globalThis.g = (async function* () {\n"
+          "  await 0;\n"
+          "  for (let i = 0; i < 50; i++) globalThis.n = i;\n"
+          "})();\n"
+          "globalThis.go = () => { g.next(); g.next(); };\n"
+          "globalThis.after = () => g.next();\n", 1 },
+        { "a stop in the jobs of an await of an async function",
+          "globalThis.go = () => (async function () {\n"
+          "  let buf = new ArrayBuffer(1 << 20);\n"
+          "  globalThis.keep = () => buf;\n"
+          "  await 0;\n"
+          "  for (let i = 0; i < 50; i++) globalThis.n = i;\n"
+          "})();\n"
+          "globalThis.after = () => 0;\n", 1 },
+        { "a stop in the then of the result a return settles with",
+          "globalThis.g = (async function* () {})(); g.next();\n"
+          "globalThis.go = () => {\n"
+          "  Object.defineProperty(Object.prototype, 'then', { configurable: true,\n"
+          "    get() { for (let i = 0; i < 50; i++) globalThis.n = i; } });\n"
+          "  g.return(Promise.resolve(1)); g.next(); g.next();\n"
+          "};\n"
+          "globalThis.after = () => { delete Object.prototype.then; return g.next(); };\n", 0 },
+        { "a stop in the then of a thenable an await gets",
+          "var res, p = new Promise(r => { res = r; });\n"
+          "globalThis.g = (async function* () { await p; return 1; })();\n"
+          "g.next(); g.next();\n"
+          "globalThis.go = () => res({ then(f) {\n"
+          "  for (let i = 0; i < 50; i++) globalThis.n = i;\n"
+          "  f(1);\n"
+          "} });\n"
+          "globalThis.after = () => g.next();\n", 0 },
+        { "an await of an async function a stop left pending",
+          "async function inner() {\n"
+          "  await { get then() { for (let i = 0; i < 50; i++) globalThis.n = i; } };\n"
+          "  return 1;\n"
+          "}\n"
+          "globalThis.g = (async function* () { await inner(); return 2; })();\n"
+          "globalThis.go = () => { g.next(); g.next(); };\n"
+          "globalThis.after = () => g.next();\n", 1 },
+    };
+    size_t i;
+    long k;
+    int drop;
+
+    for (i = 0; i < countof(cases); i++) {
+      for (drop = 0; drop < 2; drop++) {
+        for (k = 1; k < 4000; k++) {
+            VM v = vm_new();
+            JSContext *jctx;
+            JSValue r;
+            int stopped = 0, ret;
+
+            if (cases[i].actx) {
+                JSValue ac = JS_NewObject(v.ctx);
+
+                JS_SetAsyncContext(v.ctx, ac);
+                JS_FreeValue(v.ctx, ac);
+            }
+            eval_ok(v.ctx, cases[i].setup);
+            host_poll_reads = 0;
+            host_poll_stop_after(k);
+            r = call_global(v.ctx, "go");
+            CHECK(JS_IsException(r) == JS_HasException(v.ctx),
+                  "%s, stop at %ld: the call returned %s with %s pending", cases[i].what, k,
+                  JS_IsException(r) ? "an exception" : "a value",
+                  JS_HasException(v.ctx) ? "an exception" : "nothing");
+            if (JS_IsException(r)) {
+                stopped = 1;
+                take_stop(&v, cases[i].what, k);
+            }
+            JS_FreeValue(v.ctx, r);
+            while (!(drop && stopped) && (ret = JS_ExecutePendingJob(v.rt, &jctx)) != 0) {
+                CHECK((ret < 0) == JS_HasException(v.ctx),
+                      "%s, stop at %ld: a job returned %d with %s pending", cases[i].what, k,
+                      ret, JS_HasException(v.ctx) ? "an exception" : "nothing");
+                if (ret < 0) {
+                    stopped = 1;
+                    take_stop(&v, cases[i].what, k);
+                }
+            }
+            host_poll_stop_after(0);
+            if (*JS_GetInterruptFlag(v.rt)) {
+                /* a stop no step read */
+                stopped = 1;
+                *JS_GetInterruptFlag(v.rt) = 0;
+            }
+            if (!(drop && stopped)) {
+                JS_FreeValue(v.ctx, call_global(v.ctx, "after"));
+                CHECK(!JS_HasException(v.ctx), "%s, stop at %ld: after threw", cases[i].what, k);
+                drain_jobs(&v);
+            }
+            vm_free(&v);
+            if (!stopped)
+                break;
+        }
+        CHECK(k > 3 && k < 4000, "%s, drop %d: %ld readings", cases[i].what, drop, k);
+      }
+    }
+}
+
 int main(void)
 {
+    test_compile_stops();
+    test_link_stops();
+    test_module_eval_stops();
+    test_link_retry();
+    test_module_await_stops();
+    test_module_await_species();
+    test_module_fail_collect();
+    test_job_stop_returns();
+    test_entry_stop_returns();
+    test_api_stop_returns();
+    test_async_gen_drain();
+    test_async_gen_stop_queue();
+    test_await_stop_frees_frame();
+    test_settle_depth_fails_call();
+    test_stop_async_frees();
     test_for_in_keeps_shape();
     test_plain_objects();
     test_run_gc_threshold();
