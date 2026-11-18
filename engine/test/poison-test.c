@@ -408,7 +408,7 @@ static void test_uaf(const char *self)
 static void test_large(JSRuntime *rt)
 {
     uint8_t *p, *q;
-    size_t u0, u1, inplace = 0;
+    size_t u0, u1, moved = 0;
     int attempt;
 
     JS_SetFrontCache(rt, 0);
@@ -428,8 +428,23 @@ static void test_large(JSRuntime *rt)
     ALL_POISONED(q + u1, u0 - u1, "the tail a resize cut off");
     js_free_rt(rt, q);
 
+    /* a resize that grows into the free space after the block: the shrink
+       before it cuts the tail off in place, so that space is free whatever
+       else the heap holds */
+    p = js_malloc_rt(rt, 12000);
+    q = js_realloc_rt(rt, p, 2000);
+    CHECK(q == p, "a large block that shrinks from 12000 to 2000 should stay in place");
+    u0 = js_malloc_usable_size_rt(rt, q);
+    p = js_realloc_rt(rt, q, 9000);
+    u1 = js_malloc_usable_size_rt(rt, p);
+    CHECK(p == q && u1 >= 9000, "a block should grow back into the tail it cut off");
+    NONE_POISONED(p, u1, "a block that grew in place");
+    js_free_rt(rt, p);
+    ALL_POISONED(p, u1, "a freed block that had grown in place");
+
     /* a resize that grows: into the free space after the block when there is
-       any, or to another place, where the old block is free */
+       any, or to another place, where the old block is free. Which one
+       depends on what the heap holds after the block. */
     for (attempt = 0; attempt < 20; attempt++) {
         uint8_t *guard = js_malloc_rt(rt, 100 + 8 * (size_t)attempt);
 
@@ -438,16 +453,16 @@ static void test_large(JSRuntime *rt)
         q = js_realloc_rt(rt, p, 9000);
         u1 = js_malloc_usable_size_rt(rt, q);
         if (q == p) {
-            inplace++;
             NONE_POISONED(q, u1, "a block that grew in place");
         } else {
+            moved++;
             NONE_POISONED(q, u1, "a block that moved when it grew");
             ALL_POISONED(p, u0, "the old block after a resize that moved");
         }
         js_free_rt(rt, q);
         js_free_rt(rt, guard);
     }
-    CHECK(inplace > 0, "no resize grew in place in 20 attempts, the test checked only the move");
+    CHECK(moved > 0, "no resize moved in 20 attempts, the test checked only the growth in place");
 
     /* a block of 5 MiB has a chunk of its own: readable to its usable size, and the
        room the chunk has after it is poisoned, until the block grows into it */

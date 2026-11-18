@@ -1,8 +1,8 @@
 # The long checks a release waits for, cut into jobs that run side by side: the
 # whole throw injection of the register loop (about 10 hours on one core) and
 # scripts/go-versions.sh, one job for each Go release. They run when a branch
-# gates/<name> is pushed, or by hand. See "The long checks, in CI" in
-# docs/testing.md.
+# gates/<name> is pushed, by hand, and every night on main from nightly.yml.
+# See "CI" in docs/testing.md.
 name: gates
 
 on:
@@ -10,6 +10,9 @@ on:
     branches:
       - "gates/**"
   workflow_dispatch:
+  # nightly.yml. A called workflow takes the caller's name in
+  # github.workflow, so the group below is then nightly-<ref>.
+  workflow_call:
 
 # A newer push to the same ref stops the older run.
 concurrency:
