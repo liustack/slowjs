@@ -499,17 +499,17 @@ The job takes about 4 minutes on `ubuntu-24.04`: the install 15 seconds, `make c
 
 ### Nightly
 
-`nightly.yml` runs every night at 18:37 UTC on the newest commit of `main`, the checks a push leaves out, so that a problem a merge let through shows up within a day. All jobs run on `ubuntu-24.04` (linux/amd64), with LLVM 22.1.8 and its sanitizer runtimes from apt.llvm.org. The times are guesses from the times on an Apple M4 and on the build machine, until the first runs measure them.
+`nightly.yml` runs every night at 18:37 UTC on the newest commit of `main`, the checks a push leaves out, so that a problem a merge let through shows up within a day. All jobs run on `ubuntu-24.04` (linux/amd64), with LLVM 22.1.8 and its sanitizer runtimes from apt.llvm.org. The times are those of the first run (2026-11-18), on runners that may be slower or faster another night.
 
 | Job | What it runs | Time |
 | --- | --- | --- |
-| `gates` | `gates.yml` itself, through `workflow_call`: the whole throw injection in 12 jobs and one job for each Go release | about 40 minutes |
-| `native (plain)` | `scripts/check.sh full` without the steps `ci.yml` and `llvm-steps.yml` run on each push, the sanitizer steps and `race`: `host-plain`, `scripts`, `inject-goldens`, `math`, `heap`, `golden`, `inject`, `inject-sample`, `test262`. A step added to `scripts/check.sh` runs here unless `CHECK_SKIP` in `nightly.yml` names it | 45 to 60 minutes |
-| `native (asan)` | the `host-asan` and `compare-asan` steps, test262 and `api-test.sh` under AddressSanitizer | 1 to 1.5 hours |
-| `native (ubsan)` | the `host-ubsan` and `compare-ubsan` steps, test262 and `heap.sh` under UndefinedBehaviorSanitizer | about 20 minutes |
-| `native (asan-heap)` | test262 and `heap.sh` on the engine's own allocator with its poison, and `heap.sh` on `asan-heap-iter` | 30 to 40 minutes |
-| `native (tools)` | `libc-test.sh`, `check-symbols.sh` for x86-64 and arm64, `vendor.sh --verify`, `tlsf-edges.sh`, `host-test.sh tsan`, and the fuzz target of the allocator for 5 minutes | about 20 minutes |
-| `go` | `scripts/vet-tags.sh` (`go vet` of every module with every build tag its Go files use, which fails on a tag or a module it does not list), the tests of every package but the root one without `-short`, the tests of `compare` and `compare/engines`, the preemption hammer (`CENGINE_HAMMER_N=3000`), and the `race` step | 45 to 75 minutes |
+| `gates` | `gates.yml` itself, through `workflow_call`: the whole throw injection in 12 jobs and one job for each Go release | 35 minutes, its jobs 6 to 19 minutes each |
+| `native (plain)` | `scripts/check.sh full` without the steps `ci.yml` and `llvm-steps.yml` run on each push, the sanitizer steps and `race`: `host-plain`, `scripts`, `inject-goldens`, `math`, `heap`, `golden`, `inject`, `inject-sample`, `test262`. A step added to `scripts/check.sh` runs here unless `CHECK_SKIP` in `nightly.yml` names it | 23 minutes |
+| `native (asan)` | the `host-asan` and `compare-asan` steps, test262 and `api-test.sh` under AddressSanitizer | 26 minutes |
+| `native (ubsan)` | the `host-ubsan` and `compare-ubsan` steps, test262 and `heap.sh` under UndefinedBehaviorSanitizer | 19 minutes |
+| `native (asan-heap)` | test262 and `heap.sh` on the engine's own allocator with its poison, and `heap.sh` on `asan-heap-iter` | not measured yet |
+| `native (tools)` | `libc-test.sh`, `check-symbols.sh` for x86-64 and arm64, `vendor.sh --verify`, `tlsf-edges.sh`, `host-test.sh tsan`, and the fuzz target of the allocator for 5 minutes | 10 minutes |
+| `go` | `scripts/vet-tags.sh` (`go vet` of every module with every build tag its Go files use, for each system the module builds for, which fails on a tag or a module it does not list), the tests of every package but the root one without `-short`, the tests of `compare` and `compare/engines`, the preemption hammer (`CENGINE_HAMMER_N=3000`), and the `race` step | not measured yet |
 
 Each job keeps its logs as an artifact for 7 days. To start a run by hand: `gh workflow run nightly.yml --ref main` (`--ref` can name another pushed branch), or "Run workflow" on the page of the workflow in the Actions tab. A push of a branch `nightly/<name>` also runs it, to try a change to `nightly.yml` before it is on `main`. `CHECK_SKIP="..." scripts/check.sh full` with the list of `nightly.yml` runs the first native job on your own machine.
 
