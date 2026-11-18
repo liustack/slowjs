@@ -83,6 +83,26 @@ if [ "${GO_VERSIONS_LIST:-}" = 1 ]; then
 	exit 0
 fi
 
+# Every toolchain is fetched before the first check, while the network that
+# gave the list is there: the checks of the last release start an hour later
+# on a runner of CI, where a lookup of the proxy failed once (go-latest on
+# darwin/arm64, 2026-11-09: go1.27.3 failed in 0 s after eight releases had
+# passed). A fetch that fails is tried again, and one that still fails stops
+# the script before it checks anything, as a list that cannot be fetched does.
+pause=${GO_VERSIONS_FETCH_PAUSE:-30}
+for v in $versions; do
+	n=1
+	until GOTOOLCHAIN=$v GOFLAGS= go version >"$logs/$v.fetch.log" 2>&1; do
+		if [ "$n" -ge 3 ]; then
+			cat "$logs/$v.fetch.log" >&2
+			echo "go-versions.sh: cannot fetch the toolchain of $v ($n tries): the network, or GOPROXY" >&2
+			exit 2
+		fi
+		n=$((n + 1))
+		sleep "$pause"
+	done
+done
+
 # -f only finds the folder. gen-engine.sh checks the version and says what to install.
 llvm=$(scripts/llvm-bin.sh -f) || llvm=
 use_llvm=${GO_VERSIONS_LLVM:-auto}
@@ -102,6 +122,7 @@ fi
 
 status=0
 summary=
+failed=
 for v in $versions; do
 	log=$logs/$v.log
 	t0=$(date +%s)
@@ -149,8 +170,16 @@ ok    $v  (${t}s)"
 	else
 		summary="$summary
 FAIL  $v  (${t}s, $log)"
+		failed="$failed $log"
 		status=1
 	fi
 done
 echo "$summary" | sed 1d
+# The log stays on the machine that ran the checks, a runner of CI among
+# them: print why each release failed.
+for log in $failed; do
+	echo
+	echo "== the last 40 lines of $log"
+	tail -n 40 "$log"
+done
 exit $status
