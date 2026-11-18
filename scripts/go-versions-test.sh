@@ -31,8 +31,16 @@ cat > "$d/bin/go" <<'EOS'
 case $1 in
 env) case $2 in GOHOSTOS) echo linux ;; GOHOSTARCH) echo amd64 ;; GOVERSION) echo "$GOTOOLCHAIN" ;; esac ;;
 list) cat "$LIST"; exit "$LISTRC" ;;
-version) echo "go version $GOTOOLCHAIN linux/amd64" ;;
-build | vet) ;;
+version)
+	# NOFETCH: a release whose toolchain cannot be fetched. ONCE: a file,
+	# present until the first fetch, which fails.
+	if [ "$GOTOOLCHAIN" = "${NOFETCH:-}" ] || { [ -n "${ONCE:-}" ] && [ -f "$ONCE" ] && rm "$ONCE"; }; then
+		echo "go: downloading $GOTOOLCHAIN (linux/amd64)"
+		echo "go: download $GOTOOLCHAIN for linux/amd64: dial tcp: lookup proxy.golang.org: no such host" >&2
+		exit 1
+	fi
+	echo "go version $GOTOOLCHAIN linux/amd64" ;;
+build | vet) echo "$GOTOOLCHAIN $1" >> "$CALLS" ;;
 test)
 	[ -z "${TESTFAIL:-}" ] && exit 0
 	echo "--- FAIL: TestStandIn"
@@ -81,16 +89,35 @@ checks() {
 	name=$1 expect=$2
 	shift 2
 	set +e
-	PATH="$d/bin:$PATH" GO_VERSIONS_LLVM=0 GO_VERSIONS_LOGS="$d/logs" "$here/go-versions.sh" "$@" > "$d/out" 2>&1
+	: > "$d/calls"
+	PATH="$d/bin:$PATH" CALLS="$d/calls" GO_VERSIONS_LLVM=0 GO_VERSIONS_LOGS="$d/logs" GO_VERSIONS_FETCH_PAUSE=0 \
+		"$here/go-versions.sh" "$@" > "$d/out" 2>&1
 	rc=$?
 	set -e
 	if [ "$expect" = pass ] && [ "$rc" -ne 0 ]; then echo "go-versions-test: $name: should pass, got $rc"; cat "$d/out"; exit 1; fi
 	if [ "$expect" = fail ] && [ "$rc" -ne 1 ]; then echo "go-versions-test: $name: should fail with 1, got $rc"; cat "$d/out"; exit 1; fi
+	if [ "$expect" = stop ] && [ "$rc" -ne 2 ]; then echo "go-versions-test: $name: should stop with 2, got $rc"; cat "$d/out"; exit 1; fi
 	echo "go-versions-test: $name: $expect, as expected"
 }
 
 checks "the checks pass" pass go1.99.1
 grep -q 'the line that says why' "$d/out" && { echo "go-versions-test: a release that passed had its log printed:"; cat "$d/out"; exit 1; }
-TESTFAIL=1 checks "a test fails" fail go1.99.1
+# An assignment before a function call stays set in some shells: unset it after.
+export TESTFAIL=1
+checks "a test fails" fail go1.99.1
+unset TESTFAIL
 # the reason is in what the script prints, not only in a log on the machine
 grep -q 'the line that says why' "$d/out" || { echo "go-versions-test: the end of the failed log is not printed:"; cat "$d/out"; exit 1; }
+
+# Every toolchain is fetched before the first check: one that cannot be
+# fetched stops the script before it checks anything, and says why.
+export NOFETCH=go1.99.2
+checks "a toolchain cannot be fetched" stop go1.99.1 go1.99.2
+unset NOFETCH
+[ -s "$d/calls" ] && { echo "go-versions-test: checks ran before every toolchain was fetched:"; cat "$d/calls"; exit 1; }
+grep -q 'no such host' "$d/out" || { echo "go-versions-test: the reason of the failed fetch is not printed:"; cat "$d/out"; exit 1; }
+# a fetch that fails once is tried again
+touch "$d/once"
+export ONCE="$d/once"
+checks "a fetch fails once" pass go1.99.1
+unset ONCE
