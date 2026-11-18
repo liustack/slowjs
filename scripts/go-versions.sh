@@ -102,6 +102,7 @@ fi
 
 status=0
 summary=
+failed=
 for v in $versions; do
 	log=$logs/$v.log
 	t0=$(date +%s)
@@ -149,8 +150,16 @@ ok    $v  (${t}s)"
 	else
 		summary="$summary
 FAIL  $v  (${t}s, $log)"
+		failed="$failed $log"
 		status=1
 	fi
 done
 echo "$summary" | sed 1d
+# The log stays on the machine that ran the checks, a runner of CI among
+# them: print why each release failed.
+for log in $failed; do
+	echo
+	echo "== the last 40 lines of $log"
+	tail -n 40 "$log"
+done
 exit $status
