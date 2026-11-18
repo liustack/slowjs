@@ -2,9 +2,9 @@
 # make check-full that ci.yml and llvm-steps.yml leave out, test262 and the
 # allocator tests under the sanitizers, the other native checks of
 # engine/test, the race detector, the tests that -short skips, go vet with
-# every build tag of every module, and gates.yml (the whole throw injection and
-# every Go release). A schedule runs on the default branch only. See "Nightly"
-# in docs/testing.md.
+# every build tag of every module, the fuzz targets, and gates.yml (the
+# whole throw injection and every Go release). A schedule runs on the
+# default branch only. See "Nightly" in docs/testing.md.
 name: nightly
 
 on:
@@ -145,6 +145,9 @@ jobs:
           engine/test/build.sh plain
           engine/test/build.sh fuzz
           engine/test/heap.sh -s 1 -n 10000 -f 300
+      - name: The engine, its fuzz target for 10 minutes
+        if: matrix.part == 'tools'
+        run: PATH=$LLVM_BIN:$PATH engine/test/js-fuzz.sh -f 600
 
       - name: Keep the logs
         if: always()
@@ -156,6 +159,42 @@ jobs:
             engine/test/out/test262-*/run.log
             engine/test/out/test262-*/run/test262_errors.txt
             engine/test/out/compare-*/*.diff
+            crash-*
+            timeout-*
+            oom-*
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # Every Go fuzz target for a few minutes (scripts/fuzz.sh). An input that
+  # fails is kept in testdata/fuzz of its package: the job keeps those.
+  fuzz:
+    name: go fuzz (linux/amd64)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+      - name: Show the machine
+        run: lscpu | grep "Model name" && nproc
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Every fuzz target, 3 minutes each
+        run: scripts/fuzz.sh
+      - name: Gather the inputs that failed
+        if: failure()
+        run: |
+          mkdir -p .build/fuzz-failed
+          git ls-files --others --exclude-standard -- '*testdata/fuzz/*' | while read -r f; do
+            mkdir -p ".build/fuzz-failed/$(dirname "$f")"
+            cp "$f" ".build/fuzz-failed/$f"
+          done
+      - name: Keep the inputs that failed
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: nightly-fuzz
+          path: .build/fuzz-failed
           if-no-files-found: ignore
           retention-days: 7
 

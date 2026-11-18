@@ -1,5 +1,5 @@
 ---
-summary: 'Testing and verification: the checks to run before committing, the Makefile targets, the focused checks, test262 and its 33 known errors, test262 and the sanitizers on the C tree with the native test host, the race detector subset, building every target, the local go.work, and the make targets that generate the C engine and check that what is checked in is what the generator makes, run its checks in two tiers, time builds at several code positions and do it all on another machine, and what CI on GitHub checks on each push, every night and leaves out'
+summary: 'Testing and verification: the checks to run before committing, the Makefile targets, the focused checks, test262 and its 33 known errors, test262 and the sanitizers on the C tree with the native test host, the fuzz targets of the Go API and of the C tree, the race detector subset, building every target, the local go.work, and the make targets that generate the C engine and check that what is checked in is what the generator makes, run its checks in two tiers, time builds at several code positions and do it all on another machine, and what CI on GitHub checks on each push, every night and leaves out'
 read_when:
   - Getting ready to commit and checking which checks to run
   - Writing a new test or fixing a bug
@@ -8,6 +8,7 @@ read_when:
   - Changing the C tree in engine/, or running it natively under the sanitizers
   - Changing the register interpreter, or running its tests (rvdiff, the goldens, rvgen, the throw injection)
   - Looking for a leak, or changing how values are duplicated and freed (the sanitizers of the native test host)
+  - Fuzzing the engine, the Go API or url, or a fuzz target found an input
   - Changing code that several goroutines or VMs share
   - Setting up a go.work
   - Generating the C engine, running the fast or the full checks of a change to it, or timing one build of it against another
@@ -281,6 +282,40 @@ CENGINE_HAMMER_N=3000 go test -tags cenginehammer -run Hammer ./internal/cengine
 - **Strict**, with `shapes=0`, the shape cache off: each `full-gc` line after the first of its phase is not above that first line in size, blocks or footprint, exactly. The lines cycle with the inputs, because the pages render in turn. With K inputs and a line every 100 renders the period is K / gcd(K, 100) lines, so the first lines of the phases are the first lines of the run, at 100, 200, 300 and on. The period comes from the number of inputs, so a list of pages of another length needs no new rule. With nothing kept on purpose, it catches a leak down to one block.
 - **Band**, with the default `shapes=2048` that a VM of the Go API keeps: from render 300 on, the size stays in a band of 1%, the mean size and the mean blocks of the last third are not above those of the middle third by more than 0.1%, and the footprint is not above its value at 300. It shows that the cache stays bounded at the setting users get. The cache is a ring of 2048 shapes of plain objects whose last object died, and a round of the MUI pages kills more than that, so the ring keeps turning and the size moves in a narrow band rather than staying flat. Measured on the MUI pages: flat with the cache off, a band of 0.21% with 2048, flat again with 4096, which holds every such shape.
 
+## Fuzzing
+
+Two kinds of fuzz targets look for inputs that crash the process, run past a limit, leak, or break what a call promises. A failing input, made small, goes into a test with its fix: a Go target keeps it in `testdata/fuzz/<target>/` of its package, which `go test` then runs.
+
+The Go targets run through the Go API on the generated engine. Each input runs in a new VM with an eval timeout of 100 ms and a memory limit the input picks (32 MiB down to 384 KiB, so that running out of memory comes inside the parser and the built-ins too), and must keep the contract of a call: no panic, an error that is an exception or one the API documents, a return within 2 s of the timeout (a watchdog ends the process after 30 s), no exception pending after a call that returned a value, and nothing left after `Close` (no block in use when the runtime is freed, no chunk or stack in the host).
+
+| Target | What it runs |
+| --- | --- |
+| `FuzzEval` (root) | a source as a script or a module, with its jobs, then compiled in a second VM and run with `EvalBytecodeValue` |
+| `FuzzRegExp` (root) | a pattern with any of the flags `dgimsuvy`, run on a subject by every method; the `source` compiles again to the same regexp, which matches the same |
+| `FuzzJSON` (root) | `JSON.parse`, then `JSON.stringify` plain, indented and with a replacer, a reviver and `Value.MarshalJSON`, each parsing again to the same value; a text of valid UTF-8 parses when `encoding/json` takes it, to the same value |
+| `FuzzVM` (`url`) | `new URL(input, base)`, `URL.parse`, `URL.canParse`, the getters, a setter, `searchParams` and `URLSearchParams`; the href is the one `internal/whatwgurl` parses |
+
+```sh
+go test -run '^$' -fuzz '^FuzzEval$' -fuzztime 10m -fuzzminimizetime 10s .
+SLOWJS_FUZZ_SEEDS=$T/test/language:$T/test/annexB go test -run '^$' -fuzz '^FuzzEval$' -fuzztime 4h -fuzzminimizetime 10s .   # T: an unpacked test262
+scripts/fuzz.sh                       # every Go fuzz target of the module, 3 minutes each (FUZZTIME), as the nightly run does
+scripts/fuzz.sh 'FuzzRegExp|FuzzVM$'  # those whose package and name match
+```
+
+- With `-fuzz`, `FuzzEval` also takes the scripts of `engine/test` and `testdata` as seeds, and those of the folders `SLOWJS_FUZZ_SEEDS` lists, and `FuzzVM` the inputs of the web-platform-tests data. `SLOWJS_JS_FUZZ_CORPUS` lists folders of inputs of `js-fuzz` (below), which `FuzzEval`, `FuzzRegExp` and `FuzzJSON` take by their first byte: so the generated engine runs what `js-fuzz` found with the coverage of the C. A plain `go test` runs only the seeds written in the test and those in `testdata/fuzz`.
+- `-fuzzminimizetime 10s`: an input that runs to the eval timeout would take the minute of the default to shrink.
+- Go's fuzzer sees the coverage of Go code only, not of the generated assembly, so over the engine it mutates its inputs without guidance: it checks the Go API and the limits, and finds what random changes of the seeds reach. `js-fuzz` below is guided by the coverage of the C.
+
+`js-fuzz` (`engine/test/js-fuzz.c`) is the libFuzzer target of the C tree on the native test host, under AddressSanitizer, with the engine's allocator poisoning what is free, and UndefinedBehaviorSanitizer: it finds the memory errors the Go build cannot see. It runs what the Go targets of the root package run, with the same scripts: the first byte of an input picks a script, a module, a regexp or a JSON text, the memory limit, and whether a script goes through `JS_WriteObject` and `JS_ReadObject` first. A run stops after 200,000 readings of the interrupt flag. It aborts on a value returned with an exception pending, a runtime freed with blocks in use, or memory the host still maps, and a run that never stops is a timeout of libFuzzer.
+
+```sh
+engine/test/build.sh fuzz                       # heap-fuzz and js-fuzz, in engine/test/out/fuzz
+engine/test/js-fuzz.sh -f 600                   # 10 minutes, from engine/test/out/js-fuzz-corpus
+engine/test/out/fuzz/js-fuzz -runs=1 crash-...  # one input again
+```
+
+The first run of `js-fuzz.sh` seeds the corpus with the scripts of `engine/test` and the inputs in `engine/test/js-fuzz-seeds`. Run it for hours on a server, from test262 files made into inputs (a byte 0, or 1 for a module, then the file).
+
 ## The race detector
 
 The engine itself has no shared state, but the registries of Go functions, the lazy setup of error stacks and intl's shared locale data are shared by every VM of the process. Run these with `-race` after touching them:
@@ -509,8 +544,9 @@ The job takes about 4 minutes on `ubuntu-24.04`: the install 15 seconds, `make c
 | `native (asan)` | the `host-asan` and `compare-asan` steps, test262 and `api-test.sh` under AddressSanitizer | 37 minutes |
 | `native (ubsan)` | the `host-ubsan` and `compare-ubsan` steps, test262 and `heap.sh` under UndefinedBehaviorSanitizer | 28 minutes |
 | `native (asan-heap)` | test262 and `heap.sh` on the engine's own allocator with its poison, and `heap.sh` on `asan-heap-iter` | 13 minutes |
-| `native (tools)` | `libc-test.sh`, `check-symbols.sh` for x86-64 and arm64, `vendor.sh --verify`, `tlsf-edges.sh`, `host-test.sh tsan`, and the fuzz target of the allocator for 5 minutes | 11 minutes |
+| `native (tools)` | `libc-test.sh`, `check-symbols.sh` for x86-64 and arm64, `vendor.sh --verify`, `tlsf-edges.sh`, `host-test.sh tsan`, the fuzz target of the allocator for 5 minutes and `js-fuzz` for 10 ([Fuzzing](#fuzzing)) | 11 minutes before `js-fuzz` was added |
 | `go` | `scripts/vet-tags.sh` (`go vet` of every module with every build tag its Go files use, for each system the module builds for, which fails on a tag or a module it does not list), the tests of every package but the root one without `-short`, the tests of `compare` and `compare/engines`, the preemption hammer (`CENGINE_HAMMER_N=3000`), and the `race` step | 14 minutes |
+| `fuzz` | `scripts/fuzz.sh`: every Go fuzz target of the module for 3 minutes, one after another ([Fuzzing](#fuzzing)), and the inputs that failed as an artifact | not measured yet |
 
 Each job keeps its logs as an artifact for 7 days. To start a run by hand: `gh workflow run nightly.yml --ref main` (`--ref` can name another pushed branch), or "Run workflow" on the page of the workflow in the Actions tab. A push of a branch `nightly/<name>` also runs it, to try a change to `nightly.yml` before it is on `main`. `CHECK_SKIP="..." scripts/check.sh full` with the list of `nightly.yml` runs the first native job on your own machine.
 
