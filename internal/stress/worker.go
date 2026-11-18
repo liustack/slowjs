@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"runtime/debug"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -173,10 +174,13 @@ func (w *worker) pickOp(v *pvm) op {
 
 // interrupter calls Interrupt on a VM after a while, from a goroutine of its
 // own, unless it is ended first.
-type interrupter struct{ stop, done chan struct{} }
+type interrupter struct {
+	stop, done chan struct{}
+	once       sync.Once
+}
 
 func (s *stress) interruptAfter(vm *slowjs.VM, d time.Duration) *interrupter {
-	it := &interrupter{make(chan struct{}), make(chan struct{})}
+	it := &interrupter{stop: make(chan struct{}), done: make(chan struct{})}
 	go func() {
 		defer close(it.done)
 		t := time.NewTimer(d)
@@ -191,13 +195,16 @@ func (s *stress) interruptAfter(vm *slowjs.VM, d time.Duration) *interrupter {
 	return it
 }
 
-// end stops the interrupter, and returns once its goroutine has.
+// end stops the interrupter, and returns once its goroutine has. Calling
+// it again does nothing.
 func (it *interrupter) end() {
 	if it == nil {
 		return
 	}
-	close(it.stop)
-	<-it.done
+	it.once.Do(func() {
+		close(it.stop)
+		<-it.done
+	})
 }
 
 func (w *worker) run(end time.Time) {
@@ -351,12 +358,41 @@ func (w *worker) step(i int) (keep bool) {
 		w.s.retired.Add(1)
 		return false
 	}
+	// What follows a render runs on a goroutine of its own, as the collection of
+	// tifa's pool does: the VM changes goroutine between two calls.
+	var ok bool
+	handOver(func() { ok = w.after(v, o, p, it) })
+	return ok
+}
+
+// handOver runs f on a new goroutine and waits for it. A panic of f goes on
+// in the caller, with the stack where it began.
+func handOver(f func()) {
+	var p any
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		defer func() {
+			if r := recover(); r != nil {
+				p = fmt.Sprintf("%v\n%s", r, debug.Stack())
+			}
+		}()
+		f()
+	})
+	wg.Wait()
+	if p != nil {
+		panic(p)
+	}
+}
+
+// after collects after a render, ends the interrupter, runs the jobs the
+// collection queued and measures a steady VM now and then. It returns false
+// when the VM was closed and is to be replaced.
+func (w *worker) after(v *pvm, o op, p *page, it *interrupter) bool {
 	if !w.between(v, o, p) {
 		w.closeVM(v, "after its collection failed")
 		return false
 	}
 	it.end()
-	it = nil
 	// The jobs the collection queued, with no stop pending: an Interrupt
 	// that came after the render, while the VM collected, is cleared by
 	// this call, the outermost (docs/api.md).
