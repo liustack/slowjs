@@ -4,6 +4,10 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 
 ## [Unreleased]
 
+### Fixed
+
+- A render near the memory limit could free a shape that an object then went on to use, and later abort the engine (`gohost: the engine aborted`, which ends the process unless it is recovered) or corrupt another object. It came in with v0.31.4.
+
 ## [v0.31.7] - 2026-11-18
 
 ### Changed

@@ -2298,6 +2298,70 @@ static void test_shape_drop_in_resize(void)
     vm_free(&v);
 }
 
+/* The write of a name o.done = v keeps the step of the key it added: the
+   shape it gave the object, with no reference (RV_PUTF,
+   engine/regvm-ops-basic.h). The next object of the shape before takes that
+   shape at once, and when its property array must grow for it, rv_putf_step
+   asks for the new array first. Once the objects of the shape are gone, the
+   shape cache alone holds it, and that request runs js_heap_drain, which
+   lets it go: the step must hold it before the request, as add_property
+   holds the shape it finds (test_shape_drop_in_resize), or the object takes
+   a shape that is freed, and whatever takes its block next has a count one
+   short (the sanitizer builds see the read of the freed block, and the
+   others the shapes made after it, and the runtime that frees with no block
+   left). */
+static void test_shape_drop_in_step(void)
+{
+    static void *slots[SLOTS_MAX];
+    VM v;
+    JSValue g, o, s, r;
+    uint32_t w[4] = { 0, 0, 0, 0 };
+    size_t size;
+    int n, kept;
+
+    if (white_every_block_is_a_request())
+        return;
+    v = vm_new();
+    JS_SetShapeCache(v.ctx, 64);
+    CHECK(eval_ok(v.ctx,
+                  "function s(o) { o.done = 4; return 0 }\n"
+                  "function mk() { var o = {}; o.length = 1; o.name = 2; o.value = 3; return o }\n"
+                  "s(mk()); s(mk());\n"
+                  "var o = mk();"),
+          "the script threw");
+    JS_RunGC(v.rt);
+    g = JS_GetGlobalObject(v.ctx);
+    o = JS_GetPropertyStr(v.ctx, g, "o");
+    s = JS_GetPropertyStr(v.ctx, g, "s");
+    CHECK(white_regvm_putf_sites(s, w, 1) == 1 && w[3] == white_shape_step_epoch(v.rt),
+          "the write of s keeps no step of this epoch (ids %u %u, epoch %u of %u)",
+          w[1], w[2], w[3], white_shape_step_epoch(v.rt));
+    size = white_found_resize(v.ctx, o, "done");
+    kept = white_kept_shapes(v.rt);
+    CHECK(size > 0 && kept > 0, "adding done to o finds no shape held by the cache alone with more room");
+    n = white_take_slots(v.rt, size, slots, SLOTS_MAX);
+    CHECK(n >= 0, "more than %d free blocks of %lu bytes", SLOTS_MAX, (unsigned long)size);
+    white_drain_once();
+    r = JS_Call(v.ctx, s, JS_UNDEFINED, 1, &o);
+    CHECK(JS_VALUE_GET_TAG(r) == JS_TAG_INT && JS_VALUE_GET_INT(r) == 0, "s(o) threw");
+    JS_FreeValue(v.ctx, r);
+    /* the shape o left once it had the new one is the only one kept */
+    CHECK(kept > 1 && white_kept_shapes(v.rt) == 1, "%d shapes kept after the refused request, %d before",
+          white_kept_shapes(v.rt), kept);
+    while (n > 0)
+        js_free_rt(v.rt, slots[--n]);
+    JS_FreeValue(v.ctx, s);
+    JS_FreeValue(v.ctx, o);
+    JS_FreeValue(v.ctx, g);
+    /* shapes of the size of the one o has, made after it */
+    CHECK(eval_is(v.ctx,
+                  "var more = []; for (var i = 0; i < 64; i++) { var m = mk(); m.done = i; more.push(m, { p: i, q: 1, r: 2, t: 3 }) }\n"
+                  "Object.keys(o) + ':' + o.done + ':' + JSON.stringify(o) + ':' + more.length",
+                  "length,name,value,done:4:{\"length\":1,\"name\":2,\"value\":3,\"done\":4}:128"),
+          "o after the property was added");
+    vm_free(&v);
+}
+
 /* ---- the shape cache and the prototype it holds ---- */
 
 /* The cache holds the prototype of the shapes it keeps. Letting them go in a
@@ -11124,6 +11188,7 @@ int main(int argc, char **argv)
     test_putel_atom_shape();
     test_shape_drop_slot();
     test_shape_drop_in_resize();
+    test_shape_drop_in_step();
     test_shape_cache_set_in_drop();
     test_shape_cache_set_in_off();
     test_shape_cache_proto_replaced();
