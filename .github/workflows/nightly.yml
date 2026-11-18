@@ -2,7 +2,8 @@
 # make check-full that ci.yml and llvm-steps.yml leave out, test262 and the
 # allocator tests under the sanitizers, the other native checks of
 # engine/test, the race detector, the tests that -short skips, go vet with
-# every build tag of every module, the fuzz targets, and gates.yml (the
+# every build tag of every module, the render stress, the fuzz targets, and
+# gates.yml (the
 # whole throw injection and every Go release). A schedule runs on the
 # default branch only. See "Nightly" in docs/testing.md.
 name: nightly
@@ -226,6 +227,15 @@ jobs:
           CENGINE_HAMMER_N: "3000"
       - name: The race detector
         run: CHECK_ONLY="race" scripts/check.sh full
+      # tifa's pages rendered on pools of VMs with stops at random points:
+      # the HTML, the errors and bounded memory (docs/testing.md, "The
+      # render stress"). The series goes with the logs.
+      - name: The render stress, 12 minutes
+        run: |
+          mkdir -p .build/check-logs
+          go run ./internal/stress -duration 12m -series .build/check-logs/stress.csv
+      - name: The render stress with maps refused, 5 minutes
+        run: go run -tags testhooks ./internal/stress -duration 5m -refuse 10 -series .build/check-logs/stress-refuse.csv
 
       - name: Keep the logs
         if: always()
