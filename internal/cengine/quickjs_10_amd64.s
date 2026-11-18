@@ -4,25 +4,6 @@
 #include "textflag.h"
 #include "funcdata.h"
 
-TEXT ·js_TA_get_int8(SB), NOSPLIT|NOFRAME, $0-24
-	NO_LOCAL_POINTERS
-#ifdef GOOS_windows
-	MOVQ (TLS), R14
-	LEAQ -12288(SP), R12
-	CMPQ R12, 16(R14)
-	JHI 2(PC)
-	CALL ·goasm_room(SB)
-	BYTE $0x90
-#endif
-	PCALIGN $16
-	MOVQ a0+0(FP), R12
-	MOVQ a1+8(FP), R13
-	MOVQ a2+16(FP), R14
-	QUAD $0xd231c08906be0f49
-	BYTE $0xeb
-	BYTE $0x00
-	RET
-
 TEXT ·js_TA_get_int16(SB), NOSPLIT|NOFRAME, $0-24
 	NO_LOCAL_POINTERS
 #ifdef GOOS_windows

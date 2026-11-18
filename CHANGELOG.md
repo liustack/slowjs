@@ -4,6 +4,10 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 
 ## [Unreleased]
 
+### Changed
+
+- After a timeout, an interrupt or running out of memory that is no kill, async work that was in flight may never settle: the VM still works and `Close` frees all it held, but do not wait on its promises. docs/api.md says what each method does after a stop, out of memory and a kill ([api.md](docs/api.md#errors)).
+
 ### Fixed
 
 - Reading the bytecode of a module with EvalBytecode under a memory limit that runs out at its list of imports or exports returns the out of memory error, where it crashed the process.
@@ -14,6 +18,7 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 - An async generator that finished, by a throw or a `return`, settles every request queued on it, where those after the first stayed pending for good.
 - A timeout or interrupt that ends an async generator or async function, also while it awaits, frees its frame, which a closure it made kept alive, and later calls of the generator settle.
 - Running out of memory for a job of a promise fails the call, where a resolve with a thenable left the promise pending and the call went on with the error left pending.
+- An async function or async generator whose settle the call depth refuses now fails the call with the `RangeError`, where the call returned a promise, or the job of an await succeeded, with the error left pending.
 
 ## [v0.31.4] - 2026-11-17
 

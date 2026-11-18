@@ -3159,6 +3159,102 @@ static void test_promise_jobs_oom(void)
     }
 }
 
+/* Running out of memory in a step of async work leaves that work as a stop
+   does: it may never settle, and the VM is kept only to be read and
+   closed. What must hold is that no call or job ends with a value and an
+   error left pending, and that closing the runtime frees every block
+   (vm_free): a return on a finished generator whose job of the await gets
+   no memory leaves the generator waiting on that return for good, and an
+   await whose promise is resolved with a thenable can lose the job of the
+   thenable or its resolving functions. go runs under each room, from C,
+   and the jobs after it too. Each room is run twice: once the VM is closed
+   as soon as a call or a job failed, as a host that drops it does, and
+   once after a call of after and the rest of the jobs with no limit. No
+   promise is checked. */
+static void test_async_oom_frees(void)
+{
+    static const struct {
+        const char *what, *setup;
+    } cases[] = {
+        { "a return of a settled value on a finished generator",
+          "var g = (async function* () {})(); g.next();\n"
+          "var v = Promise.resolve(1);\n"
+          "function go() { g.return(v); g.next(); g.next(); }\n"
+          "function after() { return g.next(); }\n" },
+        { "an await of a generator resolved with a thenable",
+          "var res, p = new Promise(r => { res = r; });\n"
+          "var g = (async function* () { await p; return 1; })();\n"
+          "g.next(); g.next();\n"
+          "var t = { then(f) { f(1); } };\n"
+          "function go() { res(t); }\n"
+          "function after() { return g.next(); }\n" },
+        { "an await of an async function resolved with a thenable",
+          "var res, p = new Promise(r => { res = r; });\n"
+          "(async function () { await p; return 1; })();\n"
+          "var t = { then(f) { f(1); } };\n"
+          "function go() { res(t); }\n"
+          "function after() { return 0; }\n" },
+    };
+    FillRoom rm[FILL_ROOMS];
+    size_t nfill = fill_rooms(rm), nbytes = 4096 / 8 + 1, i, k;
+    int drop;
+
+    for (i = 0; i < countof(cases); i++) {
+      for (drop = 0; drop < 2; drop++) {
+        int failed = 0;
+
+        for (k = 0; k < nbytes + nfill; k++) {
+            VM v = vm_new();
+            JSContext *jctx;
+            JSValue r;
+            int ret, fail = 0;
+            char *t;
+
+            eval_ok(v.ctx, cases[i].setup);
+            if (k < nbytes) {
+                room(&v, k * 8);
+            } else {
+                fill_memory(&v);
+                free_blocks(&v, rm[k - nbytes].min, rm[k - nbytes].max, rm[k - nbytes].n);
+            }
+            r = call_global(v.ctx, "go");
+            CHECK(JS_IsException(r) == JS_HasException(v.ctx),
+                  "%s: room %zu: the call returned %s with %s pending", cases[i].what, k,
+                  JS_IsException(r) ? "an exception" : "a value",
+                  JS_HasException(v.ctx) ? "an exception" : "nothing");
+            if (JS_IsException(r))
+                fail = 1;
+            free(exception_text(v.ctx));
+            JS_FreeValue(v.ctx, r);
+            while (!(drop && fail) && (ret = JS_ExecutePendingJob(v.rt, &jctx)) != 0) {
+                CHECK((ret < 0) == JS_HasException(v.ctx),
+                      "%s: room %zu: a job returned %d with %s pending", cases[i].what, k,
+                      ret, JS_HasException(v.ctx) ? "an exception" : "nothing");
+                if (ret < 0)
+                    fail = 1;
+                free(exception_text(v.ctx));
+            }
+            failed += fail;
+            /* the blocks fill_memory took go back to the runtime before it
+               is closed, as they are the test's and no part of the VM */
+            if (k < nbytes)
+                unlimit(&v);
+            else
+                release_blocks(&v);
+            if (!(drop && fail)) {
+                JS_FreeValue(v.ctx, call_global(v.ctx, "after"));
+                t = exception_text(v.ctx);
+                CHECK(!t, "%s: room %zu: after threw %s", cases[i].what, k, t);
+                free(t);
+                drain_jobs(&v);
+            }
+            vm_free(&v);
+        }
+        CHECK(failed > 0, "%s, drop %d: no room made it fail", cases[i].what, drop);
+      }
+    }
+}
+
 /* ---- the rejections kept for the host ---- */
 
 /* The two allocations of keeping rejections, each with no memory: the list,
@@ -3602,6 +3698,7 @@ int main(void)
     test_empty_string_full_heap();
     test_finrec_job_full_heap();
     test_promise_jobs_oom();
+    test_async_oom_frees();
     test_rejections_oom();
     test_split_paths_oom();
     test_compile_names_oom();
