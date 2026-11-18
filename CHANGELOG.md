@@ -4,6 +4,8 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 
 ## [Unreleased]
 
+## [v0.31.7] - 2026-11-18
+
 ### Changed
 
 - A release of fixes: timeouts, interrupts and running out of memory in the compile, in async functions and generators, in modules and in the jobs of promises, what a VM is good for after a stop, and the load of many modules in time linear in their number.
@@ -866,7 +868,8 @@ The first release of the fork, from modernc.org/quickjs v0.25.0 and libquickjs v
 - A VM that runs out of memory inside `JSON.parse`, or anything else that converts a string with non-ASCII characters to UTF-8, no longer leaks that string.
 - `VM.Call` and `VM.CallValue` report the exception thrown while evaluating the function expression instead of `cannot call a non-function`.
 
-[Unreleased]: https://github.com/liustack/slowjs/compare/v0.31.6...main
+[Unreleased]: https://github.com/liustack/slowjs/compare/v0.31.7...main
+[v0.31.7]: https://github.com/liustack/slowjs/compare/v0.31.6...v0.31.7
 [v0.31.6]: https://github.com/liustack/slowjs/compare/v0.31.5...v0.31.6
 [v0.31.5]: https://github.com/liustack/slowjs/compare/v0.31.4...v0.31.5
 [v0.31.4]: https://github.com/liustack/slowjs/compare/v0.31.3...v0.31.4
