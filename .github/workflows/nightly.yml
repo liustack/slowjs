@@ -1,0 +1,193 @@
+# Every night on main, the checks a push does not run: the steps of
+# make check-full that ci.yml and llvm-steps.yml leave out, test262 and the
+# allocator tests under the sanitizers, the other native checks of
+# engine/test, the race detector, the tests that -short skips, go vet with
+# every build tag of every module, and gates.yml (the whole throw injection and
+# every Go release). A schedule runs on the default branch only. See "Nightly"
+# in docs/testing.md.
+name: nightly
+
+on:
+  schedule:
+    # 18:37 UTC, off the hour: GitHub delays scheduled runs at the start of
+    # an hour.
+    - cron: "37 18 * * *"
+  workflow_dispatch:
+
+# No concurrency group here: gates.yml, called below, takes this workflow's
+# name in its own group, and the same group in both would cancel this run.
+
+permissions:
+  contents: read
+
+env:
+  CGO_ENABLED: "0"
+  LLVM_BIN: /usr/lib/llvm-22/bin
+
+jobs:
+  gates:
+    uses: ./.github/workflows/gates.yml
+
+  # The native test host of engine/test, built by the clang of LLVM 22.1.8.
+  native:
+    name: native (${{ matrix.part }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: ${{ matrix.timeout }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - part: plain
+            timeout: 240
+          - part: asan
+            timeout: 300
+          - part: ubsan
+            timeout: 180
+          - part: asan-heap
+            timeout: 180
+          - part: tools
+            timeout: 90
+    steps:
+      - uses: actions/checkout@v7
+      - name: Show the machine
+        run: lscpu | grep "Model name" && nproc
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install LLVM 22 from apt.llvm.org
+        # As in llvm-steps.yml, with the sanitizer runtimes (libclang-rt).
+        run: |
+          curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc >/dev/null
+          echo "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-22 main" | sudo tee /etc/apt/sources.list.d/llvm22.list
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends clang-22 llvm-22-dev lld-22 libclang-rt-22-dev
+          $LLVM_BIN/clang --version
+      - name: Fewer random bits in mmap addresses, for the sanitizers
+        run: sudo sysctl -w vm.mmap_rnd_bits=28
+
+      # Every step of make check-full but those ci.yml and llvm-steps.yml run on
+      # each push, the sanitizer steps (the next two parts) and race (job go).
+      # A step added to scripts/check.sh runs here unless it is named below.
+      - name: check-full, the steps CI leaves out
+        if: matrix.part == 'plain'
+        run: scripts/check.sh full
+        env:
+          CHECK_SKIP: >-
+            build gofmt docs goasm cengine compare-plain cycles pages gen gointl
+            testhooks root root-hooks race
+            host-asan compare-asan host-ubsan compare-ubsan
+
+      - name: check-full, AddressSanitizer
+        if: matrix.part == 'asan'
+        run: CHECK_ONLY="host-asan compare-asan" scripts/check.sh full
+      - name: test262, AddressSanitizer
+        if: matrix.part == 'asan'
+        run: PATH=$LLVM_BIN:$PATH engine/test/test262.sh -m asan -T 2
+      - name: The API checks, AddressSanitizer
+        if: matrix.part == 'asan'
+        run: PATH=$LLVM_BIN:$PATH engine/test/api-test.sh asan
+
+      - name: check-full, UndefinedBehaviorSanitizer
+        if: matrix.part == 'ubsan'
+        run: CHECK_ONLY="host-ubsan compare-ubsan" scripts/check.sh full
+      - name: test262, UndefinedBehaviorSanitizer
+        if: matrix.part == 'ubsan'
+        run: PATH=$LLVM_BIN:$PATH engine/test/test262.sh -m ubsan -T 2
+      - name: Allocator, UndefinedBehaviorSanitizer
+        if: matrix.part == 'ubsan'
+        run: PATH=$LLVM_BIN:$PATH engine/test/heap.sh -m ubsan -s 2 -n 100000
+
+      # The engine's own allocator, which poisons what is free in it.
+      - name: Build, asan-heap
+        if: matrix.part == 'asan-heap'
+        run: PATH=$LLVM_BIN:$PATH engine/test/build.sh asan-heap
+      - name: test262, asan-heap
+        if: matrix.part == 'asan-heap'
+        run: PATH=$LLVM_BIN:$PATH engine/test/test262.sh -m asan-heap -T 2
+      - name: Allocator, asan-heap
+        if: matrix.part == 'asan-heap'
+        run: PATH=$LLVM_BIN:$PATH engine/test/heap.sh -m asan-heap -s 2 -n 100000
+      - name: Allocator, asan-heap-iter
+        if: matrix.part == 'asan-heap'
+        run: |
+          export PATH=$LLVM_BIN:$PATH
+          engine/test/build.sh asan-heap-iter
+          engine/test/heap.sh -m asan-heap-iter -s 2 -n 100000
+
+      - name: engine/libc against the system's libc
+        if: matrix.part == 'tools'
+        run: PATH=$LLVM_BIN:$PATH engine/test/libc-test.sh
+      - name: What the engine asks of the outside
+        if: matrix.part == 'tools'
+        run: PATH=$LLVM_BIN:$PATH CC=clang NM=llvm-nm engine/test/check-symbols.sh x86_64-linux-gnu aarch64-linux-gnu
+      - name: The files taken from musl
+        if: matrix.part == 'tools'
+        run: engine/libc/vendor.sh --verify
+      - name: The edge cases of TLSF
+        if: matrix.part == 'tools'
+        run: PATH=$LLVM_BIN:$PATH engine/test/tlsf-edges.sh
+      - name: The test host, ThreadSanitizer
+        if: matrix.part == 'tools'
+        run: |
+          export PATH=$LLVM_BIN:$PATH
+          engine/test/build.sh tsan
+          engine/test/host-test.sh tsan
+      - name: Allocator, the fuzz target for 5 minutes
+        if: matrix.part == 'tools'
+        run: |
+          export PATH=$LLVM_BIN:$PATH
+          engine/test/build.sh plain
+          engine/test/build.sh fuzz
+          engine/test/heap.sh -s 1 -n 10000 -f 300
+
+      - name: Keep the logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: nightly-${{ matrix.part }}
+          path: |
+            .build/check-logs
+            engine/test/out/test262-*/run.log
+            engine/test/out/test262-*/run/test262_errors.txt
+            engine/test/out/compare-*/*.diff
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # The Go side: what ci.yml leaves out.
+  go:
+    name: go (linux/amd64)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v7
+      - name: Show the machine
+        run: lscpu | grep "Model name" && nproc
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: go vet with every build tag, in every module
+        run: scripts/vet-tags.sh
+      - name: Test, packages other than the root, without -short
+        run: go test -count=1 -p 2 -timeout 120m $(go list ./... | grep -v '/slowjs$')
+      - name: Test, the two modules of compare
+        run: |
+          (cd compare && go test -count=1 ./...)
+          (cd compare/engines && go test -count=1 ./...)
+      - name: The preemption hammer
+        run: go test -count=1 -tags cenginehammer -run Hammer -v ./internal/cengine
+        env:
+          CENGINE_HAMMER_N: "3000"
+      - name: The race detector
+        run: CHECK_ONLY="race" scripts/check.sh full
+
+      - name: Keep the logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: nightly-go
+          path: .build/check-logs
+          if-no-files-found: ignore
+          retention-days: 7
