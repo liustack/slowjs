@@ -3167,8 +3167,10 @@ static void test_promise_jobs_oom(void)
    no memory leaves the generator waiting on that return for good, and an
    await whose promise is resolved with a thenable can lose the job of the
    thenable or its resolving functions. go runs under each room, from C,
-   and the jobs after it too, then after and the rest of the jobs with no
-   limit. No promise is checked. */
+   and the jobs after it too. Each room is run twice: once the VM is closed
+   as soon as a call or a job failed, as a host that drops it does, and
+   once after a call of after and the rest of the jobs with no limit. No
+   promise is checked. */
 static void test_async_oom_frees(void)
 {
     static const struct {
@@ -3195,15 +3197,17 @@ static void test_async_oom_frees(void)
     };
     FillRoom rm[FILL_ROOMS];
     size_t nfill = fill_rooms(rm), nbytes = 4096 / 8 + 1, i, k;
+    int drop;
 
     for (i = 0; i < countof(cases); i++) {
+      for (drop = 0; drop < 2; drop++) {
         int failed = 0;
 
         for (k = 0; k < nbytes + nfill; k++) {
             VM v = vm_new();
             JSContext *jctx;
             JSValue r;
-            int ret;
+            int ret, fail = 0;
             char *t;
 
             eval_ok(v.ctx, cases[i].setup);
@@ -3219,29 +3223,35 @@ static void test_async_oom_frees(void)
                   JS_IsException(r) ? "an exception" : "a value",
                   JS_HasException(v.ctx) ? "an exception" : "nothing");
             if (JS_IsException(r))
-                failed++;
+                fail = 1;
             free(exception_text(v.ctx));
             JS_FreeValue(v.ctx, r);
-            while ((ret = JS_ExecutePendingJob(v.rt, &jctx)) != 0) {
+            while (!(drop && fail) && (ret = JS_ExecutePendingJob(v.rt, &jctx)) != 0) {
                 CHECK((ret < 0) == JS_HasException(v.ctx),
                       "%s: room %zu: a job returned %d with %s pending", cases[i].what, k,
                       ret, JS_HasException(v.ctx) ? "an exception" : "nothing");
                 if (ret < 0)
-                    failed++;
+                    fail = 1;
                 free(exception_text(v.ctx));
             }
+            failed += fail;
+            /* the blocks fill_memory took go back to the runtime before it
+               is closed, as they are the test's and no part of the VM */
             if (k < nbytes)
                 unlimit(&v);
             else
                 release_blocks(&v);
-            JS_FreeValue(v.ctx, call_global(v.ctx, "after"));
-            t = exception_text(v.ctx);
-            CHECK(!t, "%s: room %zu: after threw %s", cases[i].what, k, t);
-            free(t);
-            drain_jobs(&v);
+            if (!(drop && fail)) {
+                JS_FreeValue(v.ctx, call_global(v.ctx, "after"));
+                t = exception_text(v.ctx);
+                CHECK(!t, "%s: room %zu: after threw %s", cases[i].what, k, t);
+                free(t);
+                drain_jobs(&v);
+            }
             vm_free(&v);
         }
-        CHECK(failed > 0, "%s: no room made it fail", cases[i].what);
+        CHECK(failed > 0, "%s, drop %d: no room made it fail", cases[i].what, drop);
+      }
     }
 }
 

@@ -3450,8 +3450,9 @@ static void test_settle_depth_fails_call(void)
    a value and an error left pending, and that closing the runtime frees
    every block (vm_free). Each case sets up its async work, then go runs
    with a stop at each reading of the flag, in the call and in the jobs
-   that follow it, until a run ends with no stop, and after that a call of
-   after and the rest of the jobs. Some run with an async context set, so
+   that follow it, until a run ends with no stop. Each run is done twice:
+   once the VM is closed as soon as the stop is taken, as a host that drops
+   it does, and once after a call of after and the rest of the jobs. Some run with an async context set, so
    that each handler of an await is wrapped in a function of its own. No
    promise is checked: these are the paths where one stays pending. */
 static void test_stop_async_frees(void)
@@ -3510,8 +3511,10 @@ static void test_stop_async_frees(void)
     };
     size_t i;
     long k;
+    int drop;
 
     for (i = 0; i < countof(cases); i++) {
+      for (drop = 0; drop < 2; drop++) {
         for (k = 1; k < 4000; k++) {
             VM v = vm_new();
             JSContext *jctx;
@@ -3537,7 +3540,7 @@ static void test_stop_async_frees(void)
                 take_stop(&v, cases[i].what, k);
             }
             JS_FreeValue(v.ctx, r);
-            while ((ret = JS_ExecutePendingJob(v.rt, &jctx)) != 0) {
+            while (!(drop && stopped) && (ret = JS_ExecutePendingJob(v.rt, &jctx)) != 0) {
                 CHECK((ret < 0) == JS_HasException(v.ctx),
                       "%s, stop at %ld: a job returned %d with %s pending", cases[i].what, k,
                       ret, JS_HasException(v.ctx) ? "an exception" : "nothing");
@@ -3552,14 +3555,17 @@ static void test_stop_async_frees(void)
                 stopped = 1;
                 *JS_GetInterruptFlag(v.rt) = 0;
             }
-            JS_FreeValue(v.ctx, call_global(v.ctx, "after"));
-            CHECK(!JS_HasException(v.ctx), "%s, stop at %ld: after threw", cases[i].what, k);
-            drain_jobs(&v);
+            if (!(drop && stopped)) {
+                JS_FreeValue(v.ctx, call_global(v.ctx, "after"));
+                CHECK(!JS_HasException(v.ctx), "%s, stop at %ld: after threw", cases[i].what, k);
+                drain_jobs(&v);
+            }
             vm_free(&v);
             if (!stopped)
                 break;
         }
-        CHECK(k > 3 && k < 4000, "%s: %ld readings", cases[i].what, k);
+        CHECK(k > 3 && k < 4000, "%s, drop %d: %ld readings", cases[i].what, drop, k);
+      }
     }
 }
 

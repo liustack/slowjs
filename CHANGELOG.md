@@ -6,7 +6,7 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 
 ### Changed
 
-- After a timeout, an interrupt or running out of memory, async work that was in flight may never settle: keep such a VM only to read it and close it, which frees all it held, and do not wait on its promises ([api.md](docs/api.md#errors)).
+- After a timeout, an interrupt or running out of memory that is no kill, async work that was in flight may never settle: the VM still works and `Close` frees all it held, but do not wait on its promises. docs/api.md says what each method does after a stop, out of memory and a kill ([api.md](docs/api.md#errors)).
 
 ### Fixed
 
