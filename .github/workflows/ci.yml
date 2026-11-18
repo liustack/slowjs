@@ -83,9 +83,9 @@ jobs:
         run: go build ./...
       - name: Vet
         run: go vet ./...
-      - name: Format and docs
+      - name: Format, docs and tracked files
         if: ${{ !matrix.no-format }}
-        run: CHECK_ONLY="gofmt docs" scripts/check.sh fast
+        run: CHECK_ONLY="gofmt docs tracked" scripts/check.sh fast
 
       - name: Test, packages other than the root
         run: go test -count=1 -short -p 2 -timeout 60m $(go list ./... | grep -v '/slowjs$')

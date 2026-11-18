@@ -356,6 +356,7 @@ The engine is generated with a profile of page renders ([generator.md](changes/g
 | Step | Tier | What it runs |
 | --- | --- | --- |
 | `build`, `gofmt`, `docs` | fast | `go build ./...`, `gofmt -l -s .` (generated files left out), `scripts/docs-list.sh --check` |
+| `tracked` | fast | `scripts/check-tracked.sh`: fails on a tracked file over 1 MB or a binary file that its lists do not name, and on names never to be tracked (profiles, Python caches, environment and key files), so that build output or a secret never goes into a tag and the module's zip |
 | `goasm` | fast | the tests of `internal/goasm/...` with `SLOWJS_LLVM`, `SLOWJS_SHADOW_PASS` and `SLOWJS_LLD` set, so that they do not skip |
 | `cengine` | fast | `go test -tags testhooks ./internal/cengine` |
 | `host-plain`, `compare-plain`, `cycles` | fast | `engine/test/build.sh plain`, `compare.sh plain` and `render-test.sh plain`, `cycles.sh` |
@@ -464,7 +465,7 @@ GitHub Actions (`.github/workflows/`) checks every push, and every pull request 
 | Step | What it runs |
 | --- | --- |
 | Build, Vet | `go build ./...` and `go vet ./...` |
-| Format and docs | the `gofmt` and `docs` steps of `scripts/check.sh` |
+| Format, docs and tracked files | the `gofmt`, `docs` and `tracked` steps of `scripts/check.sh` |
 | Test, packages other than the root | `go test -count=1 -short -p 2` on every package but the root one |
 | Test, internal packages with the test hooks | `go test -tags testhooks` on `internal/cengine`, `internal/gohost`, `internal/hostmem` and `internal/idtable` |
 | Test, root package | the `root` step (`go test -p 1 .`) |
