@@ -3302,6 +3302,59 @@ static int test_module_retry(void *unused)
     return 0;
 }
 
+/* The modules of test_module_waiter_order: t awaits, a and b import t, and x
+   imports a. Each but t writes down its name when it runs. */
+static JSModuleDef *order_loader(JSContext *ctx, const char *name, void *opaque)
+{
+    static const struct { const char *name, *src; } mods[] = {
+        { "t", "globalThis.order = []; await 0;" },
+        { "a", "import \"t\"; order.push(\"a\");" },
+        { "b", "import \"t\"; order.push(\"b\");" },
+        { "x", "import \"a\"; order.push(\"x\");" },
+    };
+    JSValue v;
+    JSModuleDef *m;
+    size_t i;
+
+    for (i = 0; i < sizeof(mods) / sizeof(mods[0]); i++) {
+        if (strcmp(name, mods[i].name) == 0)
+            break;
+    }
+    if (i == sizeof(mods) / sizeof(mods[0])) {
+        JS_ThrowReferenceError(ctx, "no module %s", name);
+        return NULL;
+    }
+    v = JS_Eval(ctx, mods[i].src, strlen(mods[i].src), name,
+                JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY);
+    if (JS_IsException(v))
+        return NULL;
+    m = JS_VALUE_GET_PTR(v);
+    JS_FreeValue(ctx, v);
+    return m;
+}
+
+/* A module imports a, b and x, in that order, where a and b wait for the
+   await of t and x waits for a. When the await ends, the modules that
+   waited are found from t up: a, then x, which waits for a, then b, then the
+   module on top. They run in the order the evaluation reached them, a, b, x
+   and the top, which the sort of what was found gives. */
+static void test_module_waiter_order(void)
+{
+    static const char top[] =
+        "import \"a\"; import \"b\"; import \"x\"; order.push(\"top\");";
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    char buf[64];
+
+    JS_SetModuleLoaderFunc(rt, NULL, order_loader, NULL);
+    module_eval(ctx, "top", top, 0, buf, sizeof(buf));
+    CHECK(strcmp(buf, "ok") == 0, "top: %s", buf);
+    CHECK(run_jobs(rt), "jobs");
+    CHECK(eval_is(ctx, "order.join()", "a,b,x,top"), "the order");
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
 /* stack_fail_sweep runs src with the stack short at the first count of the
    engine, then at the second, and so on until it runs whole. Each time it
    fails with a RangeError, or runs to want with no exception left behind. */
@@ -5485,6 +5538,51 @@ static void test_heap_move_polls(void)
     host_free_runtime(rt);
 }
 
+/* The elements of a fast array move with its block when it grows, and the
+   heap copies a block of a MiB or more that moves a MiB at a time with a
+   read of the interrupt flag before each step (expand_fast_array, as for an
+   ArrayBuffer). With the remap of chunks off, as on darwin and windows, a
+   push past the room of an array of 2 Mi elements (32 MiB, made exact by
+   slice) moves the block. It is stopped at each of its readings, or 64
+   spread over them: the push ends with "interrupted", the array keeps its
+   length and its elements, and a push after the stops works. Before, the
+   copy read no flag, and a stop asked in it was seen by up to 14 polls of
+   the Go host (TestRegExpCaptureLoopsStopPolls on darwin). */
+static void test_array_growth_polls(void)
+{
+    static const char setup[] =
+        "var n = 1 << 21, a = []; for (var i = 0; i < n; i++) a.push(i); a = a.slice(); 0\n";
+    static const char call[] = "a.push(-1)";
+    static const char after[] =
+        "String((a.length === n || a.length === n + 1 && a[n] === -1) && a[0] === 0 && a[n - 1] === n - 1)";
+    static const char reset[] = "a = a.slice(0, n); 0";
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx;
+    long before, reads, j, k, stops;
+
+    JS_SetHostRemap(rt, 0);
+    ctx = JS_NewContext(rt);
+    CHECK(eval(ctx, setup), "the setup threw");
+    before = host_poll_reads;
+    CHECK(eval_is(ctx, call, "2097153"), "the push");
+    reads = host_poll_reads - before;
+    /* the copy of 32 MiB */
+    CHECK(reads >= 32, "%ld readings of the flag in the push, want at least 32", reads);
+    CHECK(eval(ctx, reset), "the reset threw");
+    stops = reads < 64 ? reads : 64;
+    for (j = 0; j < stops; j++) {
+        k = 1 + j * reads / stops;
+        host_poll_stop_after(k);
+        CHECK(interrupted(ctx, call), "the push was not stopped at reading %ld of %ld", k, reads);
+        host_poll_stop_after(0);
+        CHECK(eval_is(ctx, after, "true"), "the array after a stop at reading %ld", k);
+        CHECK(eval(ctx, reset), "the reset after reading %ld", k);
+    }
+    CHECK(eval_is(ctx, call, "2097153"), "the push after the stops");
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
 /* readings of the flag while js_make_error made its error */
 static long error_reads;
 
@@ -5756,6 +5854,7 @@ int main(void)
     host_run_thread(test_json_records, NULL);
     host_run_thread(test_module_chains, NULL);
     host_run_thread(test_module_retry, NULL);
+    test_module_waiter_order();
     test_ropes();
     test_free_nesting();
     test_free_order();
@@ -5809,6 +5908,7 @@ int main(void)
     test_integrity_levels();
     test_integrity_polls();
     test_heap_move_polls();
+    test_array_growth_polls();
     test_error_reads_no_flag();
     test_tag_polls();
     test_rope_flat_polls();

@@ -256,10 +256,11 @@ JS_ClearKeptObjects
 
 JS_ComputeMemoryUsage
 # Func Hash:
-347085842651549654
+223168362953465175
 # Num Counters:
-99
+100
 # Counter Values:
+0
 0
 0
 0
@@ -687,9 +688,9 @@ JS_EvalThis
 
 JS_ExecutePendingJob
 # Func Hash:
-755017003868054717
+1094630541116305610
 # Num Counters:
-9
+11
 # Counter Values:
 5930
 122
@@ -698,6 +699,8 @@ JS_ExecutePendingJob
 0
 28248
 0
+5808
+5808
 5808
 5808
 
@@ -1306,10 +1309,11 @@ JS_JSONStringify
 
 JS_LoadModule
 # Func Hash:
-172590168
+2895582300283992
 # Num Counters:
-2
+3
 # Counter Values:
+0
 0
 0
 
@@ -1363,11 +1367,13 @@ JS_NewAtom
 
 JS_NewAtomLen
 # Func Hash:
-731050230051286079
+236857955800203338
 # Num Counters:
-10
+12
 # Counter Values:
 32377
+0
+0
 32377
 32375
 32375
@@ -2659,7 +2665,7 @@ __JS_FreeValue
 # Num Counters:
 1
 # Counter Values:
-3493502
+3493501
 
 __JS_FreeValueRT
 # Func Hash:
@@ -2667,9 +2673,9 @@ __JS_FreeValueRT
 # Num Counters:
 15
 # Counter Values:
-6270030
-6270030
-1321491
+6270029
+6270029
+1321490
 5855
 4913949
 9841
@@ -2911,16 +2917,16 @@ __strchrnul
 # Counter Values:
 4566
 0
-16081
-622
-16081
-15459
-629
+13081
+2722
+10981
+10359
+1829
 1842
-629
-8822
-10035
-8822
+1829
+4322
+5535
+4322
 
 __tan
 # Func Hash:
@@ -4821,7 +4827,7 @@ js_free_rt
 # Num Counters:
 1
 # Counter Values:
-11308120
+11308123
 
 js_malloc
 # Func Hash:
@@ -8892,10 +8898,10 @@ memchr
 # Counter Values:
 299086
 621741
-634742
+639373
 621741
-635527
-634742
+640158
+639373
 268520
 298178
 268520
@@ -8935,7 +8941,7 @@ memcpy
 1058552
 447325
 197487
-1671754
+1671755
 0
 0
 
@@ -8966,14 +8972,14 @@ memset
 # Num Counters:
 8
 # Counter Values:
-109007
+109106
 67
-25
-29
+31
 32
+34
 6432
-37587
-155917
+37590
+156963
 
 modf
 # Func Hash:
@@ -9921,7 +9927,7 @@ quickjs.c:JS_FreeValue
 # Counter Values:
 116729506
 68866548
-3493258
+3493257
 
 quickjs.c:JS_FreeValueRT
 # Func Hash:
@@ -10343,7 +10349,7 @@ quickjs.c:JS_IsException
 # Num Counters:
 1
 # Counter Values:
-20534843
+20547702
 
 quickjs.c:JS_IsHTMLDDA
 # Func Hash:
@@ -10404,7 +10410,7 @@ quickjs.c:JS_IsUndefined
 # Num Counters:
 1
 # Counter Values:
-3336786
+3317178
 
 quickjs.c:JS_IsUninitialized
 # Func Hash:
@@ -10479,10 +10485,11 @@ quickjs.c:JS_IteratorNext2
 
 quickjs.c:JS_LoadModuleInternal
 # Func Hash:
-22825689446645981
+330250548284847044
 # Num Counters:
-5
+6
 # Counter Values:
+0
 0
 0
 0
@@ -13732,10 +13739,11 @@ quickjs.c:JS_ThrowErrorf
 
 quickjs.c:JS_ThrowInterrupted
 # Func Hash:
-2696721
+706810029585
 # Num Counters:
-2
+3
 # Counter Values:
+0
 0
 0
 
@@ -14695,7 +14703,7 @@ quickjs.c:__JS_AtomIsTaggedInt
 # Num Counters:
 1
 # Counter Values:
-7657115
+7654907
 
 quickjs.c:__JS_AtomToUInt32
 # Func Hash:
@@ -14703,7 +14711,7 @@ quickjs.c:__JS_AtomToUInt32
 # Num Counters:
 1
 # Counter Values:
-938032
+938006
 
 quickjs.c:__JS_AtomToValue
 # Func Hash:
@@ -14784,7 +14792,7 @@ quickjs.c:__JS_FreeAtom
 2
 # Counter Values:
 1032756
-1013782
+1013781
 
 quickjs.c:__JS_NewAtom
 # Func Hash:
@@ -14904,8 +14912,8 @@ quickjs.c:__js_free
 # Num Counters:
 3
 # Counter Values:
-12141805
-250047
+12141808
+250050
 10716093
 
 quickjs.c:__js_free_block
@@ -15242,9 +15250,9 @@ quickjs.c:add_global_var
 
 quickjs.c:add_global_variables
 # Func Hash:
-603682683801336315
+372470455226615255
 # Num Counters:
-23
+25
 # Counter Values:
 2
 0
@@ -15260,6 +15268,8 @@ quickjs.c:add_global_variables
 3
 3
 3
+0
+0
 0
 0
 0
@@ -15975,14 +15985,17 @@ quickjs.c:can_opt_put_ref_value
 
 quickjs.c:capture_by_value
 # Func Hash:
-815331194168986383
+930186034026594552
 # Num Counters:
-296
+329
 # Counter Values:
 33
 0
 33
 33
+0
+33
+0
 0
 2608
 0
@@ -16017,7 +16030,11 @@ quickjs.c:capture_by_value
 4
 3
 0
+0
 83
+33
+0
+0
 2608
 1541
 8
@@ -16025,6 +16042,7 @@ quickjs.c:capture_by_value
 8
 2280
 2280
+0
 0
 96
 65
@@ -16072,6 +16090,9 @@ quickjs.c:capture_by_value
 0
 2
 2
+1
+0
+0
 88
 65
 11
@@ -16110,10 +16131,14 @@ quickjs.c:capture_by_value
 2
 2
 2
+0
 1
 0
 1
 1
+1
+0
+0
 1
 0
 0
@@ -16127,17 +16152,26 @@ quickjs.c:capture_by_value
 0
 0
 0
+0
 1
 1
 1
 1
 1
 1
+1
+0
+0
 88
 65
 4
+0
+1
+0
+0
 88
 65
+0
 0
 0
 0
@@ -16164,6 +16198,8 @@ quickjs.c:capture_by_value
 1
 8
 4
+0
+0
 176
 130
 22
@@ -16219,6 +16255,8 @@ quickjs.c:capture_by_value
 1
 0
 6
+0
+0
 1
 0
 1
@@ -16227,11 +16265,15 @@ quickjs.c:capture_by_value
 0
 0
 6
+0
+0
 0
 4
 0
 0
 6
+0
+0
 2
 2
 0
@@ -16271,6 +16313,7 @@ quickjs.c:capture_by_value
 0
 0
 33
+0
 0
 0
 0
@@ -16565,16 +16608,18 @@ quickjs.c:check_options_object
 
 quickjs.c:check_polls
 # Func Hash:
-1008523993588765261
+95930742730283437
 # Num Counters:
-14
+16
 # Counter Values:
 33
 0
 0
 0
+0
 33
 33
+0
 0
 0
 0
@@ -16609,6 +16654,15 @@ quickjs.c:check_uint8array
 # Counter Values:
 0
 0
+0
+0
+
+quickjs.c:clear_exec_module_list
+# Func Hash:
+18129
+# Num Counters:
+2
+# Counter Values:
 0
 0
 
@@ -16784,14 +16838,16 @@ quickjs.c:compute_jsstring_size
 
 quickjs.c:compute_pc2line_info
 # Func Hash:
-442860573979853886
+654942722098261319
 # Num Counters:
-15
+18
 # Counter Values:
 33
 33
 0
 1621
+62
+33
 0
 0
 0
@@ -16803,6 +16859,7 @@ quickjs.c:compute_pc2line_info
 1542
 1597
 1542
+0
 
 quickjs.c:compute_register_code_size
 # Func Hash:
@@ -16819,16 +16876,18 @@ quickjs.c:compute_register_code_size
 
 quickjs.c:compute_stack_size
 # Func Hash:
-235889364909887767
+446129799500889062
 # Num Counters:
-71
+73
 # Counter Values:
 33
 0
-4600
 0
 0
 2608
+0
+0
+0
 0
 2608
 2608
@@ -17593,8 +17652,8 @@ quickjs.c:find_hashed_shape_keys
 # Counter Values:
 63820
 438744
-69375
-5658
+68711
+4994
 63717
 63717
 63717
@@ -17612,7 +17671,7 @@ quickjs.c:find_hashed_shape_prop
 15
 # Counter Values:
 1175285
-1171544
+1195130
 1076062
 1076062
 1076062
@@ -17625,7 +17684,7 @@ quickjs.c:find_hashed_shape_prop
 1076062
 1076062
 1072109
-95482
+119068
 
 quickjs.c:find_hashed_shape_proto
 # Func Hash:
@@ -17634,7 +17693,7 @@ quickjs.c:find_hashed_shape_proto
 7
 # Counter Values:
 1715570
-1988128
+2450271
 1704894
 1704894
 1704894
@@ -17642,16 +17701,6 @@ quickjs.c:find_hashed_shape_proto
 1704894
 
 quickjs.c:find_import_local
-# Func Hash:
-1245367951758424
-# Num Counters:
-3
-# Counter Values:
-0
-0
-0
-
-quickjs.c:find_in_exec_module_list
 # Func Hash:
 1245367951758424
 # Num Counters:
@@ -18114,9 +18163,9 @@ quickjs.c:fromfp16
 
 quickjs.c:fulfill_or_reject_promise
 # Func Hash:
-597808175855784225
+108066066908745112
 # Num Counters:
-10
+11
 # Counter Values:
 7304
 0
@@ -18127,6 +18176,7 @@ quickjs.c:fulfill_or_reject_promise
 0
 0
 2739
+0
 2739
 
 quickjs.c:func_has_ancestor_kind
@@ -18150,9 +18200,9 @@ quickjs.c:func_has_ancestor_kind
 
 quickjs.c:fuse_code
 # Func Hash:
-952765384036208668
+1092121411252194263
 # Num Counters:
-34
+38
 # Counter Values:
 33
 0
@@ -18161,6 +18211,8 @@ quickjs.c:fuse_code
 27
 0
 2608
+66
+33
 1541
 183
 1541
@@ -18177,6 +18229,8 @@ quickjs.c:fuse_code
 183
 183
 183
+0
+0
 9
 9
 0
@@ -18552,11 +18606,12 @@ quickjs.c:get_closure_var
 
 quickjs.c:get_closure_var1
 # Func Hash:
-1024149443614917804
+147519151285867660
 # Num Counters:
-8
+9
 # Counter Values:
 64
+0
 0
 0
 0
@@ -18638,10 +18693,12 @@ quickjs.c:get_exported_names
 
 quickjs.c:get_exported_names1
 # Func Hash:
-147227692297648904
+745954591259844935
 # Num Counters:
-15
+17
 # Counter Values:
+0
+0
 0
 0
 0
@@ -18928,7 +18985,7 @@ quickjs.c:get_shape_prop
 # Num Counters:
 1
 # Counter Values:
-58389208
+58392173
 
 quickjs.c:get_shape_size
 # Func Hash:
@@ -19381,11 +19438,12 @@ quickjs.c:init_shape_hash
 
 quickjs.c:insert_polls
 # Func Hash:
-470659759706660583
+568398029424494261
 # Num Counters:
-43
+47
 # Counter Values:
 33
+0
 0
 0
 0
@@ -19396,10 +19454,12 @@ quickjs.c:insert_polls
 1
 0
 217
+0
 117
 399
 0
 217
+0
 117
 0
 0
@@ -19407,6 +19467,7 @@ quickjs.c:insert_polls
 0
 0
 217
+0
 117
 1
 217
@@ -19431,9 +19492,9 @@ quickjs.c:insert_polls
 
 quickjs.c:instantiate_hoisted_definitions
 # Func Hash:
-795491979574078956
+1143207809420888199
 # Num Counters:
-23
+24
 # Counter Values:
 33
 10
@@ -19445,6 +19506,7 @@ quickjs.c:instantiate_hoisted_definitions
 0
 0
 6
+0
 21
 6
 0
@@ -19676,8 +19738,8 @@ quickjs.c:is_num
 # Num Counters:
 3
 # Counter Values:
-649146
-645488
+648841
+645183
 40663
 
 quickjs.c:is_num_string
@@ -19686,10 +19748,10 @@ quickjs.c:is_num_string
 # Num Counters:
 10
 # Counter Values:
-694029
-186498
-693802
-507531
+691847
+184621
+691620
+507226
 22169
 496
 1
@@ -21427,13 +21489,12 @@ quickjs.c:js_async_context_call
 
 quickjs.c:js_async_context_wrap
 # Func Hash:
-1077338691289636774
+45046158689368
 # Num Counters:
-5
+4
 # Counter Values:
 11220
 11220
-0
 0
 0
 
@@ -21473,10 +21534,14 @@ quickjs.c:js_async_from_sync_iterator_mark
 
 quickjs.c:js_async_from_sync_iterator_next
 # Func Hash:
-52040976937838950
+991035649078452987
 # Num Counters:
-29
+33
 # Counter Values:
+0
+0
+0
+0
 0
 0
 0
@@ -21525,22 +21590,24 @@ quickjs.c:js_async_from_sync_iterator_unwrap_func_create
 
 quickjs.c:js_async_function_call
 # Func Hash:
-187543167020139608
+694345918810921704
 # Num Counters:
-3
+4
 # Counter Values:
 1639
+0
 0
 0
 
 quickjs.c:js_async_function_resolve_call
 # Func Hash:
-188105773376156760
+795031785488842900
 # Num Counters:
-3
+4
 # Counter Values:
 1958
 1958
+0
 0
 
 quickjs.c:js_async_function_resolve_create
@@ -21574,12 +21641,14 @@ quickjs.c:js_async_function_resolve_mark
 
 quickjs.c:js_async_function_resume
 # Func Hash:
-445379949037455906
+979991659497532376
 # Num Counters:
-9
+11
 # Counter Values:
 3597
 1639
+0
+0
 0
 0
 0
@@ -21613,10 +21682,11 @@ quickjs.c:js_async_generator_complete
 
 quickjs.c:js_async_generator_completed_return
 # Func Hash:
-778371418865164735
+1021697458913249432
 # Num Counters:
-4
+5
 # Counter Values:
+0
 0
 0
 0
@@ -21667,10 +21737,14 @@ quickjs.c:js_async_generator_mark
 
 quickjs.c:js_async_generator_next
 # Func Hash:
-376246403909961511
+1114880062521249178
 # Num Counters:
-6
+10
 # Counter Values:
+0
+0
+0
+0
 0
 0
 0
@@ -21680,6 +21754,14 @@ quickjs.c:js_async_generator_next
 
 quickjs.c:js_async_generator_reject
 # Func Hash:
+24
+# Num Counters:
+1
+# Counter Values:
+0
+
+quickjs.c:js_async_generator_request_free
+# Func Hash:
 0
 # Num Counters:
 1
@@ -21688,7 +21770,7 @@ quickjs.c:js_async_generator_reject
 
 quickjs.c:js_async_generator_resolve
 # Func Hash:
-0
+24
 # Num Counters:
 1
 # Counter Values:
@@ -21696,10 +21778,14 @@ quickjs.c:js_async_generator_resolve
 
 quickjs.c:js_async_generator_resolve_function
 # Func Hash:
-75500367304924845
+1035073927572116183
 # Num Counters:
-9
+13
 # Counter Values:
+0
+0
+0
+0
 0
 0
 0
@@ -21723,7 +21809,7 @@ quickjs.c:js_async_generator_resolve_function_create
 
 quickjs.c:js_async_generator_resolve_or_reject
 # Func Hash:
-0
+24
 # Num Counters:
 1
 # Counter Values:
@@ -21731,10 +21817,16 @@ quickjs.c:js_async_generator_resolve_or_reject
 
 quickjs.c:js_async_generator_resume_next
 # Func Hash:
-270459861054619393
+762461035040881264
 # Num Counters:
-31
+37
 # Counter Values:
+0
+0
+0
+0
+0
+0
 0
 0
 0
@@ -21767,12 +21859,28 @@ quickjs.c:js_async_generator_resume_next
 0
 0
 
+quickjs.c:js_async_generator_stop
+# Func Hash:
+174662744
+# Num Counters:
+2
+# Counter Values:
+0
+0
+
 quickjs.c:js_async_module_execution_fulfilled
 # Func Hash:
-102397512122099355
+175147238637355893
 # Num Counters:
-17
+24
 # Counter Values:
+0
+0
+0
+0
+0
+0
+0
 0
 0
 0
@@ -21802,10 +21910,12 @@ quickjs.c:js_async_module_execution_rejected
 
 quickjs.c:js_async_module_execution_rejected1
 # Func Hash:
-394495626884899763
+454447683884298455
 # Num Counters:
-14
+16
 # Counter Values:
+0
+0
 0
 0
 0
@@ -23650,6 +23760,14 @@ quickjs.c:js_call_leave
 # Counter Values:
 2381817
 
+quickjs.c:js_catch_ends
+# Func Hash:
+24
+# Num Counters:
+1
+# Counter Values:
+0
+
 quickjs.c:js_class_func_block
 # Func Hash:
 99227
@@ -23843,6 +23961,18 @@ quickjs.c:js_cmp_doubles
 0
 0
 
+quickjs.c:js_code_piece
+# Func Hash:
+537566805030493686
+# Num Counters:
+5
+# Counter Values:
+702
+306
+0
+396
+0
+
 quickjs.c:js_compare_bigint
 # Func Hash:
 203502635045561278
@@ -23870,6 +24000,57 @@ quickjs.c:js_compare_bigint
 0
 2600
 0
+
+quickjs.c:js_compile_count
+# Func Hash:
+859
+# Num Counters:
+2
+# Counter Values:
+2744
+8
+
+quickjs.c:js_compile_end
+# Func Hash:
+2729105
+# Num Counters:
+2
+# Counter Values:
+2
+2
+
+quickjs.c:js_compile_keep
+# Func Hash:
+0
+# Num Counters:
+1
+# Counter Values:
+54
+
+quickjs.c:js_compile_left
+# Func Hash:
+24
+# Num Counters:
+1
+# Counter Values:
+54
+
+quickjs.c:js_compile_poll
+# Func Hash:
+45795546596440
+# Num Counters:
+2
+# Counter Values:
+10613
+8
+
+quickjs.c:js_compile_read
+# Func Hash:
+24
+# Num Counters:
+1
+# Counter Values:
+8
 
 quickjs.c:js_compile_regexp
 # Func Hash:
@@ -24401,10 +24582,11 @@ quickjs.c:js_create_module_function
 
 quickjs.c:js_create_module_function1
 # Func Hash:
-454610651181629007
+230330480961691201
 # Num Counters:
-12
+13
 # Counter Values:
+0
 0
 0
 0
@@ -25010,10 +25192,13 @@ quickjs.c:js_dup_shape
 
 quickjs.c:js_dynamic_import
 # Func Hash:
-987502122271010842
+942353134166837473
 # Num Counters:
-21
+24
 # Counter Values:
+0
+0
+0
 0
 0
 0
@@ -25038,10 +25223,13 @@ quickjs.c:js_dynamic_import
 
 quickjs.c:js_dynamic_import_job
 # Func Hash:
-923285475372143258
+318687873805403511
 # Num Counters:
-5
+8
 # Counter Values:
+0
+0
+0
 0
 0
 0
@@ -25971,7 +26159,7 @@ quickjs.c:js_end_tag
 # Counter Values:
 139579
 0
-164571
+163372
 0
 139579
 
@@ -26193,10 +26381,14 @@ quickjs.c:js_escape_text
 
 quickjs.c:js_evaluate_module
 # Func Hash:
-203680013549061168
+504966895366598280
 # Num Counters:
-31
+35
 # Counter Values:
+0
+0
+0
+0
 0
 0
 0
@@ -26252,6 +26444,26 @@ quickjs.c:js_execute_sync_module
 0
 0
 
+quickjs.c:js_fail_async_modules
+# Func Hash:
+11182876187216905
+# Num Counters:
+13
+# Counter Values:
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+
 quickjs.c:js_fast_array_find
 # Func Hash:
 1067726282512712090
@@ -26288,12 +26500,10 @@ quickjs.c:js_find_index_atom
 
 quickjs.c:js_find_loaded_module
 # Func Hash:
-1267358184313944
+24
 # Num Counters:
-3
+1
 # Counter Values:
-0
-0
 0
 
 quickjs.c:js_find_string_atom
@@ -26621,23 +26831,29 @@ quickjs.c:js_frame_next
 
 quickjs.c:js_frame_plain
 # Func Hash:
-209047821933631824
+832610043196305238
 # Num Counters:
-23
+11
 # Counter Values:
-33
-2
-31
-31
-33
-31
+24
+0
+24
+24
+24
+24
 3
 3
 3
 4
 3
-4859
-4859
+
+quickjs.c:js_frame_plain_op
+# Func Hash:
+801383778926902608
+# Num Counters:
+13
+# Counter Values:
+4765
 0
 0
 0
@@ -26648,6 +26864,8 @@ quickjs.c:js_frame_plain
 0
 0
 0
+0
+4765
 
 quickjs.c:js_free_desc
 # Func Hash:
@@ -26814,9 +27032,35 @@ quickjs.c:js_free_string_rt
 # Num Counters:
 3
 # Counter Values:
-1328603
-64519
-7767
+1328602
+64518
+7766
+
+quickjs.c:js_free_unresolved_modules
+# Func Hash:
+0
+# Num Counters:
+1
+# Counter Values:
+0
+
+quickjs.c:js_freeing_end
+# Func Hash:
+2729105
+# Num Counters:
+2
+# Counter Values:
+0
+0
+
+quickjs.c:js_freeing_start
+# Func Hash:
+42129
+# Num Counters:
+2
+# Counter Values:
+0
+0
 
 quickjs.c:js_front_drain
 # Func Hash:
@@ -27645,10 +27889,11 @@ quickjs.c:js_heap_realloc
 
 quickjs.c:js_host_resolve_imported_module
 # Func Hash:
-721978515665695887
+180944105135949709
 # Num Counters:
-7
+8
 # Counter Values:
+0
 0
 0
 0
@@ -27697,10 +27942,12 @@ quickjs.c:js_inner_module_evaluation
 
 quickjs.c:js_inner_module_evaluation1
 # Func Hash:
-444161357230183703
+470223389672388429
 # Num Counters:
-37
+39
 # Counter Values:
+0
+0
 0
 0
 0
@@ -27750,10 +27997,11 @@ quickjs.c:js_inner_module_linking
 
 quickjs.c:js_inner_module_linking1
 # Func Hash:
-1106790534236282436
+198190043907063903
 # Num Counters:
-44
+45
 # Counter Values:
+0
 0
 0
 0
@@ -28709,19 +28957,22 @@ quickjs.c:js_link_module
 
 quickjs.c:js_load_module_fulfilled
 # Func Hash:
-172590168
+722626752121030215
 # Num Counters:
-2
+4
 # Counter Values:
+0
+0
 0
 0
 
 quickjs.c:js_load_module_rejected
 # Func Hash:
-11245532248
+428462195317271481
 # Num Counters:
-2
+3
 # Counter Values:
+0
 0
 0
 
@@ -29207,6 +29458,73 @@ quickjs.c:js_method_set_properties
 0
 0
 
+quickjs.c:js_module_hash
+# Func Hash:
+24
+# Num Counters:
+1
+# Counter Values:
+0
+
+quickjs.c:js_module_hash_add
+# Func Hash:
+2696401
+# Num Counters:
+2
+# Counter Values:
+0
+0
+
+quickjs.c:js_module_hash_first
+# Func Hash:
+1036716819147107546
+# Num Counters:
+4
+# Counter Values:
+0
+0
+0
+0
+
+quickjs.c:js_module_hash_push
+# Func Hash:
+42129
+# Num Counters:
+2
+# Counter Values:
+0
+0
+
+quickjs.c:js_module_hash_remove
+# Func Hash:
+943311905972343338
+# Num Counters:
+5
+# Counter Values:
+0
+0
+0
+0
+0
+
+quickjs.c:js_module_hash_room
+# Func Hash:
+310989583144825513
+# Num Counters:
+11
+# Counter Values:
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+
 quickjs.c:js_module_ns_autoinit
 # Func Hash:
 984264215127171537
@@ -29224,6 +29542,28 @@ quickjs.c:js_module_ns_has
 # Num Counters:
 1
 # Counter Values:
+0
+
+quickjs.c:js_module_settle
+# Func Hash:
+588906125990027065
+# Num Counters:
+6
+# Counter Values:
+0
+0
+0
+0
+0
+0
+
+quickjs.c:js_module_unlink
+# Func Hash:
+42129
+# Num Counters:
+2
+# Counter Values:
+0
 0
 
 quickjs.c:js_murmur2
@@ -29351,10 +29691,11 @@ quickjs.c:js_new_long_string_atom
 
 quickjs.c:js_new_module_def
 # Func Hash:
-11178443864
+185317267201426520
 # Num Counters:
-2
+3
 # Counter Values:
+0
 0
 0
 
@@ -30521,11 +30862,11 @@ quickjs.c:js_own_key_kind
 # Num Counters:
 12
 # Counter Values:
-606647
+604439
 7170
-3271
+3245
 0
-596206
+594024
 0
 0
 0
@@ -30543,9 +30884,9 @@ quickjs.c:js_own_key_kinds
 379899
 55
 376133
-360693
-109967
-15440
+357728
+107759
+18405
 
 quickjs.c:js_own_key_pair
 # Func Hash:
@@ -32442,9 +32783,9 @@ quickjs.c:js_parse_skip_parens_error
 
 quickjs.c:js_parse_skip_parens_token
 # Func Hash:
-353393679942631049
+998424799785598581
 # Num Counters:
-46
+50
 # Counter Values:
 151
 4974
@@ -32482,6 +32823,10 @@ quickjs.c:js_parse_skip_parens_token
 1221
 1217
 1217
+0
+4974
+4974
+0
 0
 0
 151
@@ -33028,7 +33373,7 @@ quickjs.c:js_poll_interrupts
 # Num Counters:
 2
 # Counter Values:
-5028478
+5028882
 0
 
 quickjs.c:js_post_inc_slow
@@ -33399,9 +33744,9 @@ quickjs.c:js_printf
 
 quickjs.c:js_promise_all
 # Func Hash:
-482143321682619772
+995661794879593730
 # Num Counters:
-32
+33
 # Counter Values:
 451
 0
@@ -33409,6 +33754,7 @@ quickjs.c:js_promise_all
 0
 451
 451
+0
 0
 0
 0
@@ -33470,15 +33816,16 @@ quickjs.c:js_promise_catch
 
 quickjs.c:js_promise_constructor
 # Func Hash:
-120117729608683070
+866223790283011028
 # Num Counters:
-10
+11
 # Counter Values:
 7304
 0
 0
 0
 14608
+0
 0
 0
 0
@@ -33556,10 +33903,11 @@ quickjs.c:js_promise_mark
 
 quickjs.c:js_promise_race
 # Func Hash:
-42920694859002794
+680298724489435962
 # Num Counters:
-18
+19
 # Counter Values:
+0
 0
 0
 0
@@ -33597,9 +33945,9 @@ quickjs.c:js_promise_resolve
 
 quickjs.c:js_promise_resolve_function_call
 # Func Hash:
-498757275391573720
+525255488662416615
 # Num Counters:
-13
+16
 # Counter Values:
 7700
 0
@@ -33612,8 +33960,11 @@ quickjs.c:js_promise_resolve_function_call
 0
 0
 0
+0
 3157
 7304
+0
+0
 
 quickjs.c:js_promise_resolve_function_finalizer
 # Func Hash:
@@ -33644,11 +33995,13 @@ quickjs.c:js_promise_resolve_function_mark
 
 quickjs.c:js_promise_resolve_thenable_job
 # Func Hash:
-1064248016595875378
+676417781532582050
 # Num Counters:
-5
+7
 # Counter Values:
 396
+0
+0
 0
 0
 0
@@ -33681,10 +34034,11 @@ quickjs.c:js_promise_then_finally_func
 
 quickjs.c:js_promise_try
 # Func Hash:
-187543167020119128
+227592764119717291
 # Num Counters:
-3
+4
 # Counter Values:
+0
 0
 0
 0
@@ -34241,7 +34595,7 @@ quickjs.c:js_rc
 # Num Counters:
 1
 # Counter Values:
-72230251
+72210643
 
 quickjs.c:js_realloc_array
 # Func Hash:
@@ -35441,10 +35795,11 @@ quickjs.c:js_resolve_export1
 
 quickjs.c:js_resolve_export2
 # Func Hash:
-904309698863600790
+361730932833326829
 # Num Counters:
-19
+20
 # Counter Values:
+0
 0
 0
 0
@@ -35490,10 +35845,11 @@ quickjs.c:js_resolve_module
 
 quickjs.c:js_resolve_module1
 # Func Hash:
-283022087152332051
+598513130321605858
 # Num Counters:
-5
+6
 # Counter Values:
+0
 0
 0
 0
@@ -35587,7 +35943,7 @@ quickjs.c:js_same_value_zero
 # Num Counters:
 1
 # Counter Values:
-119819
+99156
 
 quickjs.c:js_scratch_drain
 # Func Hash:
@@ -35788,7 +36144,7 @@ quickjs.c:js_set_isSupersetOf
 
 quickjs.c:js_set_module_evaluated
 # Func Hash:
-11178407889
+45786758743128
 # Num Counters:
 4
 # Counter Values:
@@ -35854,6 +36210,15 @@ quickjs.c:js_set_union
 0
 0
 0
+0
+
+quickjs.c:js_settle_result
+# Func Hash:
+172590168
+# Num Counters:
+2
+# Counter Values:
+1639
 0
 
 quickjs.c:js_shape_cache_drop
@@ -35949,8 +36314,8 @@ quickjs.c:js_shape_hash_unlink
 3
 # Counter Values:
 141719
-954
-763
+907
+789
 
 quickjs.c:js_shape_keep
 # Func Hash:
@@ -36165,7 +36530,7 @@ quickjs.c:js_short_eq_budget
 # Num Counters:
 9
 # Counter Values:
-7735
+7810
 1751
 1751
 1751
@@ -36288,26 +36653,26 @@ quickjs.c:js_strict_eq2
 # Num Counters:
 36
 # Counter Values:
-351578
-351578
+330915
+330915
 0
 0
 11
 0
-133731
+133701
 0
-115167
+115137
 18564
 18564
 18564
 0
 0
-172711
-1347
-15859
+152300
+1154
+15875
 8667
 5638
-19861
+19623
 8458
 8386
 31149
@@ -36446,7 +36811,7 @@ quickjs.c:js_string_atom_or_key
 # Num Counters:
 3
 # Counter Values:
-1332714
+1332713
 1268195
 1268195
 
@@ -36613,7 +36978,7 @@ quickjs.c:js_string_eq_polls
 # Num Counters:
 12
 # Counter Values:
-152313
+152388
 18564
 131776
 18564
@@ -36623,8 +36988,8 @@ quickjs.c:js_string_eq_polls
 220
 220
 220
-133529
-133529
+133604
+133604
 
 quickjs.c:js_string_find
 # Func Hash:
@@ -37760,6 +38125,15 @@ quickjs.c:js_symbol_valueOf
 # Counter Values:
 0
 
+quickjs.c:js_take_exception
+# Func Hash:
+11180516440
+# Num Counters:
+2
+# Counter Values:
+0
+0
+
 quickjs.c:js_thisBigIntValue
 # Func Hash:
 415429963603478387
@@ -38826,6 +39200,19 @@ quickjs.c:js_unary_arith_slow
 0
 0
 
+quickjs.c:js_unbind_module
+# Func Hash:
+106154938726517128
+# Num Counters:
+6
+# Counter Values:
+0
+0
+0
+0
+0
+0
+
 quickjs.c:js_uncatchable_mark
 # Func Hash:
 706843583569
@@ -38842,7 +39229,7 @@ quickjs.c:js_uncatchable_pending
 # Num Counters:
 3
 # Counter Values:
-12101338
+12107146
 0
 0
 
@@ -38989,7 +39376,7 @@ quickjs.c:js_weakref_is_live
 # Num Counters:
 2
 # Counter Values:
-114482
+94874
 0
 
 quickjs.c:js_weakref_is_target
@@ -40064,13 +40451,13 @@ quickjs.c:map_delete_record
 0
 6121
 4621
-10021
+9751
 0
 0
-10021
+9751
 0
 0
-2400
+2475
 0
 6121
 
@@ -40094,7 +40481,7 @@ quickjs.c:map_delete_weakrefs
 3025
 23672
 341
-451
+446
 0
 341
 341
@@ -40109,11 +40496,11 @@ quickjs.c:map_find_record
 0
 0
 10876
-16724
-9
-16724
-3285
-9
+15963
+11
+15963
+3030
+11
 0
 
 quickjs.c:map_find_record_long
@@ -40143,12 +40530,12 @@ quickjs.c:map_find_record_quiet
 565998
 0
 66898
-93083
+73453
 58065
-93083
+73453
 58065
-93083
-84225
+73453
+64872
 0
 974784
 0
@@ -40169,9 +40556,9 @@ quickjs.c:map_find_record_short
 15
 # Counter Values:
 10876
-7389
+7177
 0
-7389
+7177
 0
 0
 6029
@@ -40284,7 +40671,7 @@ quickjs.c:map_key_eq
 # Num Counters:
 4
 # Counter Values:
-2400
+2475
 0
 0
 0
@@ -40444,8 +40831,8 @@ quickjs.c:min_int
 # Num Counters:
 2
 # Counter Values:
-749341
-462757
+749737
+463153
 
 quickjs.c:min_int64
 # Func Hash:
@@ -40660,6 +41047,15 @@ quickjs.c:new_label_fd
 0
 
 quickjs.c:next_token
+# Func Hash:
+172590168
+# Num Counters:
+2
+# Counter Values:
+4331
+0
+
+quickjs.c:next_token1
 # Func Hash:
 956072203199770992
 # Num Counters:
@@ -41000,32 +41396,38 @@ quickjs.c:peek_token
 
 quickjs.c:perform_promise_then
 # Func Hash:
-775178742406157343
+64893086819784270
 # Num Counters:
-13
+17
 # Counter Values:
 5412
 10824
 0
-0
 21648
 1375
+0
 2739
 5478
 0
 0
 0
 0
+0
 5346
+0
+0
+0
 
 quickjs.c:poll_scan
 # Func Hash:
-684808629577995851
+699613607607966964
 # Num Counters:
-60
+66
 # Counter Values:
 66
 5215
+132
+66
 0
 5215
 5215
@@ -41034,7 +41436,10 @@ quickjs.c:poll_scan
 0
 9
 0
+0
 5215
+132
+66
 3082
 5215
 30
@@ -41084,6 +41489,7 @@ quickjs.c:poll_scan
 366
 234
 0
+0
 
 quickjs.c:pop_break_entry
 # Func Hash:
@@ -41113,14 +41519,15 @@ quickjs.c:promise_reaction_data_free
 
 quickjs.c:promise_reaction_job
 # Func Hash:
-1120137267596521721
+101547962914451202
 # Num Counters:
-7
+8
 # Counter Values:
 5412
 0
 0
 22
+0
 0
 0
 3454
@@ -41275,7 +41682,7 @@ quickjs.c:put_u8
 
 quickjs.c:reject_promise
 # Func Hash:
-0
+24
 # Num Counters:
 1
 # Counter Values:
@@ -41353,9 +41760,9 @@ quickjs.c:resize_shape_hash
 
 quickjs.c:resolve_labels
 # Func Hash:
-173779656156635066
+868391543950223908
 # Num Counters:
-313
+321
 # Counter Values:
 33
 24
@@ -41364,9 +41771,10 @@ quickjs.c:resolve_labels
 29
 29
 0
-28
+0
+0
 33
-28
+0
 0
 0
 0
@@ -41382,6 +41790,8 @@ quickjs.c:resolve_labels
 0
 0
 4619
+66
+33
 0
 4619
 1642
@@ -41633,11 +42043,14 @@ quickjs.c:resolve_labels
 0
 0
 0
+0
 312
 0
 0
 33
 183
+57
+33
 152
 17
 44
@@ -41651,12 +42064,14 @@ quickjs.c:resolve_labels
 30
 0
 31
+0
 642
 348
 202
 202
 2380
 1444
+0
 15
 146
 146
@@ -41948,12 +42363,13 @@ quickjs.c:resolve_scope_var
 
 quickjs.c:resolve_variables
 # Func Hash:
-294770731486808240
+496959326596010908
 # Num Counters:
-118
+122
 # Counter Values:
 33
 6
+0
 6
 6
 0
@@ -41973,6 +42389,7 @@ quickjs.c:resolve_variables
 0
 6
 5498
+0
 5498
 1736
 0
@@ -42033,7 +42450,9 @@ quickjs.c:resolve_variables
 312
 312
 144
+0
 33
+0
 0
 0
 0
@@ -42465,9 +42884,9 @@ quickjs.c:rv_branch_top
 
 quickjs.c:rv_build
 # Func Hash:
-477738152242327846
+102108916266454480
 # Num Counters:
-49
+50
 # Counter Values:
 33
 33
@@ -42482,7 +42901,7 @@ quickjs.c:rv_build
 0
 0
 0
-4600
+0
 0
 0
 33
@@ -42515,6 +42934,7 @@ quickjs.c:rv_build
 0
 0
 33
+0
 0
 0
 0
@@ -43129,9 +43549,9 @@ quickjs.c:rv_cmp_info
 
 quickjs.c:rv_code
 # Func Hash:
-916136591905423531
+930130567743323891
 # Num Counters:
-48
+49
 # Counter Values:
 43
 0
@@ -43140,6 +43560,7 @@ quickjs.c:rv_code
 3590
 3600
 3590
+0
 2191
 437
 0
@@ -43207,6 +43628,15 @@ quickjs.c:rv_convert
 1
 # Counter Values:
 27
+
+quickjs.c:rv_convert_error
+# Func Hash:
+172590168
+# Num Counters:
+2
+# Counter Values:
+0
+0
 
 quickjs.c:rv_convert_rt
 # Func Hash:
@@ -43525,13 +43955,14 @@ quickjs.c:rv_defm
 
 quickjs.c:rv_depths
 # Func Hash:
-342026431587832232
+521805608098556007
 # Num Counters:
-53
+54
 # Counter Values:
 33
 153
 2608
+0
 0
 0
 0
@@ -45042,9 +45473,9 @@ quickjs.c:rv_k
 8
 # Counter Values:
 759
-375
-372
 373
+372
+372
 372
 0
 387
@@ -45089,9 +45520,9 @@ quickjs.c:rv_last_getvr
 
 quickjs.c:rv_lazy_args
 # Func Hash:
-277971952822728600
+659129944981641878
 # Num Counters:
-61
+63
 # Counter Values:
 33
 0
@@ -45100,6 +45531,7 @@ quickjs.c:rv_lazy_args
 33
 33
 2608
+0
 1541
 2608
 4
@@ -45143,6 +45575,7 @@ quickjs.c:rv_lazy_args
 0
 0
 50
+0
 30
 0
 45
@@ -46476,6 +46909,16 @@ quickjs.c:rv_owned_p
 11
 0
 9
+0
+
+quickjs.c:rv_pass_stop
+# Func Hash:
+850726364392384373
+# Num Counters:
+3
+# Counter Values:
+8856
+0
 0
 
 quickjs.c:rv_patch
@@ -48062,14 +48505,16 @@ quickjs.c:shape_initial_hash
 
 quickjs.c:share_local_slots
 # Func Hash:
-415517670450258152
+1054879801446319486
 # Num Counters:
-265
+287
 # Counter Values:
-28
-7
+33
+12
+24
 21
-21
+24
+24
 0
 21
 21
@@ -48077,6 +48522,9 @@ quickjs.c:share_local_slots
 21
 299
 4765
+42
+21
+0
 4765
 536
 0
@@ -48126,6 +48574,7 @@ quickjs.c:share_local_slots
 0
 0
 0
+0
 18177
 0
 0
@@ -48156,6 +48605,8 @@ quickjs.c:share_local_slots
 21
 21
 4765
+42
+21
 412
 299
 0
@@ -48171,6 +48622,7 @@ quickjs.c:share_local_slots
 0
 603
 501
+0
 0
 0
 47
@@ -48199,6 +48651,9 @@ quickjs.c:share_local_slots
 0
 1398
 654
+0
+0
+0
 0
 0
 133
@@ -48260,6 +48715,9 @@ quickjs.c:share_local_slots
 0
 412
 886
+0
+0
+0
 886
 283
 0
@@ -48269,10 +48727,16 @@ quickjs.c:share_local_slots
 0
 603
 133
+0
+0
+0
 133
 588
 133
 133
+0
+0
+0
 3
 130
 844
@@ -48330,6 +48794,7 @@ quickjs.c:share_local_slots
 0
 59
 41
+21
 21
 
 quickjs.c:short_opcode_index
@@ -48908,7 +49373,7 @@ quickjs.c:string_get
 # Num Counters:
 2
 # Counter Values:
-2081524
+2081219
 17115
 
 quickjs.c:string_get_digits
@@ -49275,22 +49740,34 @@ quickjs.c:tag_is_string
 # Num Counters:
 3
 # Counter Values:
-416398
-233857
-233615
+416368
+233827
+233585
 
 quickjs.c:tdz_checks
 # Func Hash:
-597444958717640313
+624809608962534926
 # Num Counters:
-108
+120
 # Counter Values:
 33
+33
+0
+0
 5121
 0
 5121
 5121
+0
 33
+0
+0
+0
+0
+0
+0
+0
+0
 0
 0
 0
@@ -50081,10 +50558,10 @@ strlen
 5
 # Counter Values:
 66528
-167104
-32115
-957
-159128
+251937
+2220
+966
+44328
 
 strrchr
 # Func Hash:
@@ -50188,11 +50665,11 @@ tlsf.c:block_absorb
 # Num Counters:
 5
 # Counter Values:
-67360
+67361
 0
 0
-67360
-67360
+67361
+67361
 
 tlsf.c:block_can_split
 # Func Hash:
@@ -50232,7 +50709,7 @@ tlsf.c:block_is_last
 # Num Counters:
 1
 # Counter Values:
-529606
+529609
 
 tlsf.c:block_is_prev_free
 # Func Hash:
@@ -50248,7 +50725,7 @@ tlsf.c:block_link_next
 # Num Counters:
 1
 # Counter Values:
-245665
+245666
 
 tlsf.c:block_locate_free
 # Func Hash:
@@ -50290,11 +50767,11 @@ tlsf.c:block_merge_next
 0
 74802
 74802
-53283
+53284
 0
 0
-53283
-53283
+53284
+53284
 
 tlsf.c:block_merge_prev
 # Func Hash:
@@ -50319,7 +50796,7 @@ tlsf.c:block_next
 # Num Counters:
 3
 # Counter Values:
-408963
+408964
 0
 0
 
@@ -50354,7 +50831,7 @@ tlsf.c:block_remove
 # Num Counters:
 1
 # Counter Values:
-67360
+67361
 
 tlsf.c:block_set_free
 # Func Hash:
@@ -50402,7 +50879,7 @@ tlsf.c:block_size
 # Num Counters:
 1
 # Counter Values:
-1817354
+1817360
 
 tlsf.c:block_split
 # Func Hash:
@@ -50428,7 +50905,7 @@ tlsf.c:block_to_ptr
 # Num Counters:
 1
 # Counter Values:
-888579
+888580
 
 tlsf.c:block_trim_free
 # Func Hash:
@@ -50516,8 +50993,8 @@ tlsf.c:mapping_insert
 # Num Counters:
 2
 # Counter Values:
-254683
-58637
+254684
+58638
 
 tlsf.c:mapping_search
 # Func Hash:
@@ -50534,7 +51011,7 @@ tlsf.c:offset_to_block
 # Num Counters:
 1
 # Counter Values:
-464487
+464488
 
 tlsf.c:remove_free_block
 # Func Hash:
@@ -50542,17 +51019,17 @@ tlsf.c:remove_free_block
 # Num Counters:
 12
 # Counter Values:
-128919
+128920
 0
 0
-128919
-128919
+128920
+128920
 0
 0
-128919
-128919
-104155
-49772
+128920
+128920
+104156
+49770
 12849
 
 tlsf.c:search_suitable_block

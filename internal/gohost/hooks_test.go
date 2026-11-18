@@ -18,20 +18,20 @@ import (
 func TestInterruptAtPoll(t *testing.T) {
 	v := newVM(t, small)
 	base, _ := v.Stack()
-	testFlag = 0
-	v.SetInterruptFlag(uintptr(unsafe.Pointer(&testFlag)))
+	testFlag[0] = 0
+	v.SetInterruptFlag(uintptr(unsafe.Pointer(&testFlag[0])))
 	v.SetKillGrace(-1)
 	v.EnterScript(0)
 	v.InterruptAtPoll(v.Polls() + 5)
 	for range 4 {
 		Poll(base + 64)
 	}
-	if v.Interrupted() || testFlag != 0 {
-		t.Fatalf("before the poll: interrupted %v, flag %d", v.Interrupted(), testFlag)
+	if v.Interrupted() || testFlag[0] != 0 {
+		t.Fatalf("before the poll: interrupted %v, flag %d", v.Interrupted(), testFlag[0])
 	}
 	Poll(base + 64)
-	if !v.Interrupted() || testFlag != 1 || v.StopPolls() != 1 {
-		t.Fatalf("at the poll: interrupted %v, flag %d, %d polls saw the request", v.Interrupted(), testFlag, v.StopPolls())
+	if !v.Interrupted() || testFlag[0] != 1 || v.StopPolls() != 1 {
+		t.Fatalf("at the poll: interrupted %v, flag %d, %d polls saw the request", v.Interrupted(), testFlag[0], v.StopPolls())
 	}
 	v.Leave()
 	v.EnterScript(0)

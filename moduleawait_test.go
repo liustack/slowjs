@@ -169,6 +169,33 @@ func TestModuleAwaitTimeout(t *testing.T) {
 
 	_, err := m.EvalBytecode(code)
 	wantKind(t, err, interrupted)
+	if err := m.SetEvalTimeout(0); err != nil {
+		t.Fatal(err)
+	}
+	wantEval(t, m, "1 + 1", 2)
+}
+
+// TestModuleTimeoutBeforeAwait runs into the eval timeout in a loop before
+// the module's first await, where the module function cannot reject its
+// promise. Eval and EvalBytecode return the timeout, not the pending promise
+// of the module or errAwaitPending, and the VM runs code again after it.
+func TestModuleTimeoutBeforeAwait(t *testing.T) {
+	const src = "for (;;) {} await 0;\n"
+	code := moduleBytecode(t, src)
+	m := newTestVM(t)
+	if err := m.SetEvalTimeout(100 * time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := m.Eval(src, EvalModule)
+	wantKind(t, err, interrupted)
+	wantNoPendingException(t, m)
+	_, err = m.EvalBytecode(code)
+	wantKind(t, err, interrupted)
+	wantNoPendingException(t, m)
+	if err := m.SetEvalTimeout(0); err != nil {
+		t.Fatal(err)
+	}
 	wantEval(t, m, "1 + 1", 2)
 }
 
@@ -205,6 +232,9 @@ globalThis.after = true;
 	_, err := m.EvalBytecode(code)
 	wantKind(t, err, interrupted)
 	wantNoPendingException(t, m)
+	if err := m.SetEvalTimeout(0); err != nil {
+		t.Fatal(err)
+	}
 	wantEval(t, m, "typeof after", "undefined")
 }
 

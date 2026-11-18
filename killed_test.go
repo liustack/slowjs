@@ -106,9 +106,6 @@ func TestNoKillAfterLongHostCall(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			m := newTestVM(t)
 			const timeout = 20 * time.Millisecond
-			if err := m.SetEvalTimeout(timeout); err != nil {
-				t.Fatal(err)
-			}
 			mustHost(t, m, "nested", func([]any) (any, error) {
 				time.Sleep(timeout + 50*time.Millisecond + pastDeadline)
 				nested(m)
@@ -117,10 +114,18 @@ func TestNoKillAfterLongHostCall(t *testing.T) {
 			if _, err := m.Eval(`globalThis.loop = function() { for (let i = 0; i < 1e5; i++) {} }`+hookJS, EvalGlobal); err != nil {
 				t.Fatal(err)
 			}
+			if err := m.SetEvalTimeout(timeout); err != nil {
+				t.Fatal(err)
+			}
 			_, err := m.Eval(`nested(); loop(); 'done'`, EvalGlobal)
 			var e *Error
 			if !errors.As(err, &e) || !e.Interrupted || errors.Is(err, ErrKilled) {
 				t.Fatalf("the outer call got %v, want an interrupted error that does not match ErrKilled", err)
+			}
+			// The VM goes on, with no deadline: a busy machine may run the
+			// loop past 20 ms.
+			if err := m.SetEvalTimeout(0); err != nil {
+				t.Fatal(err)
 			}
 			if _, err := m.Eval(`loop(); 'done'`, EvalGlobal); err != nil {
 				t.Fatalf("the next call: %v", err)
@@ -347,4 +352,46 @@ func TestKillWhileFreeing(t *testing.T) {
 			t.Fatalf("%d elements: the next call got %v, want an error that matches ErrKilled", c.n, err)
 		}
 	}
+}
+
+// wantKillWhileFreeing runs the case of 100,000 elements of
+// TestKillWhileFreeing on m: the poll after KillPolls kills the call. A VM
+// that still counts every poll of a script toward the kill gives it, so the
+// mark of the freeing of a stopped compile (TestStoppedCompileFreeNotKilled)
+// was not left set. m is good only for Close afterwards.
+func wantKillWhileFreeing(t *testing.T, m *VM, what string) {
+	t.Helper()
+	mustHost(t, m, "stop", func([]any) (any, error) {
+		m.Interrupt()
+		return nil, nil
+	})
+	if _, err := m.Eval(`globalThis.go = function (n) {
+	var r = Array.from({length: n}, (_, i) => i);
+	stop();
+	for (;;) {}
+}`, EvalGlobal); err != nil {
+		t.Fatal(err)
+	}
+	m.h.SetKillGrace(0)
+	m.h.SetPollInterval(100)
+	_, err := m.Eval(`go(100000)`, EvalGlobal)
+	if polls := m.h.StopPolls(); !errors.Is(err, ErrKilled) || polls != gohost.KillPolls+1 {
+		t.Fatalf("%s: a script that frees 100,000 elements after its stop got %v after %d polls saw the request, want a kill at poll %d", what, err, polls, gohost.KillPolls+1)
+	}
+}
+
+// TestCompileOutOfMemoryLeavesNoMark: a compile that runs out of memory
+// leaves through the exits a stopped one takes (js_compile_end), and the VM
+// still kills a script that frees for longer than KillPolls polls after its
+// stop.
+func TestCompileOutOfMemoryLeavesNoMark(t *testing.T) {
+	m := newTestVM(t)
+	if _, err := m.Eval(`var a = 0, s = '(function(){' + 'a=a+1;'.repeat(1 << 18) + '})'; 0`, EvalGlobal); err != nil {
+		t.Fatal(err)
+	}
+	m.SetMemoryLimit(uintptr(vmMemory(m).Fmalloc_size) + 1<<20)
+	_, err := m.Eval(`(0, eval)(s); 0`, EvalGlobal)
+	m.SetMemoryLimit(^uintptr(0))
+	wantOutOfMemory(t, "a compile of 1.5 MB with 1 MB left", err)
+	wantKillWhileFreeing(t, m, "after a compile out of memory")
 }

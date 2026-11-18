@@ -491,6 +491,16 @@ struct JSRuntime {
 
     /* see JS_GetInterruptFlag */
     volatile int interrupt_flag;
+    /* not 0 from the reading of the flag that stops a compile to the end
+       of that compile (JS_ThrowInterrupted, js_compile_end), and in the
+       free of modules a stopped resolution leaves (js_freeing_start): the
+       host reads it next to the flag (JS_GetInterruptFlag) */
+    volatile int freeing_code;
+    /* a compile runs (__JS_EvalInternal) */
+    BOOL compiling;
+    /* the work the parser and the compiler may do before they read the
+       flag again (js_compile_poll) */
+    int compile_left;
 
     JSHostPromiseRejectionTracker *host_promise_rejection_tracker;
     void *host_promise_rejection_tracker_opaque;
@@ -821,6 +831,14 @@ struct JSContext {
 
 
     struct list_head loaded_modules; /* list of JSModuleDef.link */
+    /* the modules of loaded_modules by name: 1 << module_hash_bits lists of
+       JSModuleDef.hash_next, with the first loaded module of each name, the
+       one js_find_loaded_module finds, and the others of its name after it
+       in JSModuleDef.same_link. NULL until the first module. */
+    JSModuleDef **module_hash;
+    int module_hash_bits;
+    /* the names in the table: those with a module still loaded */
+    uint32_t module_hash_count;
     /* the modules the resolution under way marked resolved, the latest
        first, linked by JSModuleDef.resolve_prev (see js_resolve_module_top) */
     JSModuleDef *resolve_marked;
@@ -1249,6 +1267,13 @@ struct JSModuleDef {
     JSGCObjectHeader header; /* must come first */
     JSAtom module_name;
     struct list_head link;
+    /* the next module of its list in ctx->module_hash, and the pointer to
+       this one, for the first loaded module of a name. NULL for the others
+       of its name, and when it is out of loaded_modules */
+    JSModuleDef *hash_next;
+    JSModuleDef **hash_pprev;
+    /* the ring of the modules of its name, in the order they were loaded */
+    struct list_head same_link;
 
     JSReqModuleEntry *req_module_entries;
     int req_module_entries_count;
@@ -1273,10 +1298,17 @@ struct JSModuleDef {
     BOOL resolved : 8;
     BOOL func_created : 8;
     JSModuleStatus status : 8;
+    /* in the list of js_async_module_execution_fulfilled while it is
+       gathered */
+    BOOL in_exec_list : 8;
     /* the module marked resolved before it, while a resolution is under way */
     JSModuleDef *resolve_prev;
     /* the module marked func_created before it, the same way */
     JSModuleDef *func_prev;
+    /* the next module whose promise js_fail_async_modules rejects, and its
+       context, each with a reference, while it runs */
+    JSModuleDef *fail_next;
+    JSContext *fail_ctx;
     /* temp use during js_module_link() & js_module_evaluate() */
     int dfs_index, dfs_ancestor_index;
     JSModuleDef *stack_prev;
@@ -1633,11 +1665,13 @@ static void rv_scratch_free(JSRuntime *rt);
 static void rv_scratch_drop(JSRuntime *rt);
 static int rv_stack_make(JSRuntime *rt);
 static no_inline RVFunc *rv_convert(JSContext *ctx, struct JSFunctionBytecode *b);
+static JSValue rv_convert_error(JSContext *ctx);
 static __exception int rv_read_check(JSContext *ctx, struct JSFunctionBytecode *b);
 static no_inline JSValue JS_RegvmRun(JSContext *caller_ctx, JSValueConst func_obj,
                                      JSValueConst this_obj, JSValue new_target,
                                      int argc, JSValueConst *argv);
 static JSValue rv_gen_resume(JSContext *ctx, JSAsyncFunctionState *s);
+static void rv_gen_fail(JSRuntime *rt, JSAsyncFunctionState *s);
 /* the call of a function the pass refused (regvm.h) */
 static no_inline JSValue rv_refused(JSContext *ctx, struct JSFunctionBytecode *b);
 /* counts for the measurements of design 6.2, in a native build with
@@ -1962,6 +1996,7 @@ static JSValue js_array_from_iterator(JSContext *ctx, uint32_t *plen,
                                       JSValueConst obj, JSValueConst method);
 static int js_string_find_invalid_codepoint(JSString *p);
 static inline __exception int js_poll_interrupts(JSContext *ctx);
+static BOOL js_uncatchable_pending(JSRuntime *rt);
 static void js_emit_free(JSContext *ctx);
 static JSValue js_string_to_number(JSContext *ctx, JSValue val);
 static JSValue js_dtoa2(JSContext *ctx,
@@ -2266,6 +2301,16 @@ static BOOL js_front_drain(JSMallocContext *s)
    most work between two readings, and not only how many readings there were. */
 #ifndef JS_WORK
 #define JS_WORK(n) ((void)0)
+#endif
+
+/* JS_MODULE_STEP() says that a walk over modules took one step: a parent
+   module the gathering after an await looked at, a mark it cleared, a
+   name a look in the table of the loaded modules went past, a name a grow
+   of it moved. It is nothing in the engine. white.c
+   counts the steps, so that a test sees how the work grows with the number
+   of modules, with no clock. */
+#ifndef JS_MODULE_STEP
+#define JS_MODULE_STEP() ((void)0)
 #endif
 
 /* JS_SHAPE_ID_CHECK set to 1 makes find_hashed_shape_prop compare the keys of
@@ -3535,6 +3580,11 @@ void JS_SetGCThreshold(JSRuntime *rt, size_t gc_threshold)
 #define free(p) free_is_forbidden(p)
 #define realloc(p,s) realloc_is_forbidden(p,s)
 
+/* the host reads freeing_code in the word after the flag */
+_Static_assert(offsetof(JSRuntime, freeing_code) ==
+               offsetof(JSRuntime, interrupt_flag) + sizeof(int),
+               "freeing_code after interrupt_flag");
+
 volatile int *JS_GetInterruptFlag(JSRuntime *rt)
 {
     return &rt->interrupt_flag;
@@ -3626,7 +3676,12 @@ __exception int JS_ExecutePendingJob(JSRuntime *rt, JSContext **pctx)
     js_call_leave(rt);
     for(i = 0; i < e->argc; i++)
         JS_FreeValue(ctx, e->argv[i]);
-    if (JS_IsException(res))
+    /* a job never hides an uncatchable exception from the host, whatever it
+       returned: the reaction of an await settles no promise of its own (its
+       capability is undefined), and its job returns undefined after a handler
+       that was stopped. The host takes the exception on -1, and with it the
+       modules still evaluating fail (js_fail_async_modules) */
+    if (JS_IsException(res) || js_uncatchable_pending(rt))
         ret = -1;
     else
         ret = 1;
@@ -4233,6 +4288,159 @@ JSValue JS_GetClassProto(JSContext *ctx, JSClassID class_id)
     return JS_DupValue(ctx, ctx->class_proto[class_id]);
 }
 
+/* The look for a module by its name goes through ctx->module_hash, lists of
+   the names of the modules by their atom, rather than through
+   loaded_modules, whose walk made the load of n modules that import each
+   other take n^2 / 2 steps and each import.meta as many as there were
+   modules. Only the first loaded module of a name is in the list of its
+   bucket (hash_next, hash_pprev): the modules of the same name loaded after
+   it follow it in a ring, in the order they were loaded (same_link), so
+   that the first loaded is the one found, as in loaded_modules, and adding
+   or taking out a module takes a few steps whatever the names, the many
+   modules of one name (an <eval> made a module again and again) too. The
+   table has as many lists as names, or up to twice as many: four pointers
+   of the module and one or two of the table, 40 to 48 bytes a module on 64
+   bits. */
+#define JS_MODULE_HASH_BITS0 4
+
+static inline uint32_t js_module_hash(JSAtom name, int bits)
+{
+    return (uint32_t)(name * 0x9e3779b1u) >> (32 - bits);
+}
+
+/* m, the first of its name, at the head of its list in tab */
+static void js_module_hash_push(JSModuleDef **tab, int bits, JSModuleDef *m)
+{
+    JSModuleDef **pp = &tab[js_module_hash(m->module_name, bits)];
+
+    m->hash_next = *pp;
+    if (m->hash_next)
+        m->hash_next->hash_pprev = &m->hash_next;
+    m->hash_pprev = pp;
+    *pp = m;
+}
+
+/* the first loaded module of name in ctx, or NULL, with the names of its
+   list it went past in *n */
+static JSModuleDef *js_module_hash_first(JSContext *ctx, JSAtom name, int *n)
+{
+    JSModuleDef *m;
+
+    *n = 0;
+    if (!ctx->module_hash)
+        return NULL;
+    for (m = ctx->module_hash[js_module_hash(name, ctx->module_hash_bits)];
+         m; m = m->hash_next) {
+        (*n)++;
+        JS_MODULE_STEP();
+        if (m->module_name == name)
+            return m;
+    }
+    return NULL;
+}
+
+/* m, just loaded, into the table, which has room (js_module_hash_room):
+   after the modules of its name, or as the first of its name */
+static void js_module_hash_add(JSContext *ctx, JSModuleDef *m)
+{
+    JSModuleDef *first;
+    int n;
+
+    first = js_module_hash_first(ctx, m->module_name, &n);
+    if (first) {
+        list_add_tail(&m->same_link, &first->same_link);
+        m->hash_next = NULL;
+        m->hash_pprev = NULL;
+    } else {
+        init_list_head(&m->same_link);
+        js_module_hash_push(ctx->module_hash, ctx->module_hash_bits, m);
+        ctx->module_hash_count++;
+    }
+}
+
+/* m out of the table, with no need of its context: the module of its name
+   loaded after it, if any, takes its place in its list. 1 when its name has
+   no module left. */
+static int js_module_hash_remove(JSModuleDef *m)
+{
+    JSModuleDef *next;
+
+    if (!m->hash_pprev) {
+        list_del(&m->same_link);
+        return 0;
+    }
+    if (list_empty(&m->same_link)) {
+        *m->hash_pprev = m->hash_next;
+        if (m->hash_next)
+            m->hash_next->hash_pprev = m->hash_pprev;
+        m->hash_next = NULL;
+        m->hash_pprev = NULL;
+        return 1;
+    }
+    next = list_entry(m->same_link.next, JSModuleDef, same_link);
+    list_del(&m->same_link);
+    next->hash_next = m->hash_next;
+    if (next->hash_next)
+        next->hash_next->hash_pprev = &next->hash_next;
+    next->hash_pprev = m->hash_pprev;
+    *next->hash_pprev = next;
+    m->hash_next = NULL;
+    m->hash_pprev = NULL;
+    return 0;
+}
+
+/* m out of loaded_modules and of the table, with its name out of the count
+   when it was the last of its name: the reference of the list is then the
+   caller's to free. Every free of a module that is still loaded goes
+   through here, but that of the collector, which frees its context in the
+   same collection. */
+static void js_module_unlink(JSContext *ctx, JSModuleDef *m)
+{
+    list_del(&m->link);
+    m->link.prev = NULL;
+    m->link.next = NULL;
+    if (js_module_hash_remove(m))
+        ctx->module_hash_count--;
+}
+
+/* Room in ctx->module_hash for one more name: the table is made with the
+   first module and doubled when there are as many names as lists, the first
+   module of each name moved to the new table, a step each. -1 with out of
+   memory thrown when there is no table and none can be made. A table that
+   cannot grow stays as it is, with longer lists. */
+static __exception int js_module_hash_room(JSContext *ctx)
+{
+    JSModuleDef **tab, *m, *next;
+    uint32_t i;
+    int bits;
+
+    if (ctx->module_hash &&
+        (ctx->module_hash_count < (1U << ctx->module_hash_bits) ||
+         ctx->module_hash_bits >= 30))
+        return 0;
+    bits = ctx->module_hash ? ctx->module_hash_bits + 1 : JS_MODULE_HASH_BITS0;
+    tab = js_mallocz_rt(ctx->rt, sizeof(tab[0]) << bits);
+    if (!tab) {
+        if (ctx->module_hash)
+            return 0;
+        JS_ThrowOutOfMemory(ctx);
+        return -1;
+    }
+    if (ctx->module_hash) {
+        for (i = 0; i < (1U << ctx->module_hash_bits); i++) {
+            for (m = ctx->module_hash[i]; m; m = next) {
+                next = m->hash_next;
+                JS_MODULE_STEP();
+                js_module_hash_push(tab, bits, m);
+            }
+        }
+    }
+    js_free_rt(ctx->rt, ctx->module_hash);
+    ctx->module_hash = tab;
+    ctx->module_hash_bits = bits;
+    return 0;
+}
+
 typedef enum JSFreeModuleEnum {
     JS_FREE_MODULE_ALL,
     JS_FREE_MODULE_NOT_RESOLVED,
@@ -4249,9 +4457,7 @@ static void js_free_modules(JSContext *ctx, JSFreeModuleEnum flag)
             /* warning: the module may be referenced elsewhere. It
                could be simpler to use an array instead of a list for
                'ctx->loaded_modules' */
-            list_del(&m->link);
-            m->link.prev = NULL;
-            m->link.next = NULL;
+            js_module_unlink(ctx, m);
             JS_FreeValue(ctx, JS_MKPTR(JS_TAG_MODULE, m));
         }
     }
@@ -4364,6 +4570,9 @@ void JS_FreeContext(JSContext *ctx)
 #endif
 
     js_free_modules(ctx, JS_FREE_MODULE_ALL);
+    /* every module is out of the table */
+    js_free_rt(ctx->rt, ctx->module_hash);
+    ctx->module_hash = NULL;
 
     JS_FreeValue(ctx, ctx->global_obj);
     JS_FreeValue(ctx, ctx->global_var_obj);
@@ -5091,6 +5300,14 @@ JSAtom JS_NewAtomLen(JSContext *ctx, const char *str, size_t len)
 {
     JSValue val;
 
+    if (unlikely(len >= JS_POLL_SHORT_STEP)) {
+        /* a long name: the scan of its token read the flag where its
+           address met a multiple of JS_ROPE_STEP, up to a step before its
+           end, and the look in the table, the string and its hash start
+           from a reading */
+        if (js_poll_interrupts(ctx))
+            return JS_ATOM_NULL;
+    }
     if (len == 0 ||
         (len < JS_ROPE_STEP && !is_digit(*str) &&
          count_ascii((const uint8_t *)str, len) == len)) {
@@ -11744,6 +11961,10 @@ void JS_ComputeMemoryUsage(JSRuntime *rt, JSMemoryUsage *s)
             s->shape_count++;
             s->shape_size += get_shape_size(hash_size, sh->prop_size);
         }
+        if (ctx->module_hash) {
+            s->memory_used_count += 1;
+            s->memory_used_size += sizeof(ctx->module_hash[0]) << ctx->module_hash_bits;
+        }
         list_for_each(el1, &ctx->loaded_modules) {
             JSModuleDef *m = list_entry(el1, JSModuleDef, link);
             s->memory_used_count += 1;
@@ -12248,11 +12469,13 @@ static BOOL js_uncatchable_pending(JSRuntime *rt)
 }
 
 /* The bit of the interrupt flag the engine keeps set while an uncatchable
-   exception is pending. A built-in can record such an exception (in a
-   promise it rejects) and return as if it had not failed, and the script
-   goes on: every read of the flag then stops it, the backward jump of a loop
-   with no call in it too, and the exception ends the call. The host's stop
-   is 1 (see JS_GetInterruptFlag and docs/changes/uncatchable.md). */
+   exception is pending. No place that catches an exception keeps such a
+   one as a value (js_catch_ends), but a built-in that does not check every
+   step can run out of memory in one (a property of an object it makes) and
+   return as if it had not failed, and the script goes on: every read of
+   the flag then stops it, the backward jump of a loop with no call in it
+   too, and the exception ends the call. The host's stop is 1 (see
+   JS_GetInterruptFlag and docs/changes/uncatchable.md). */
 #define JS_INTERRUPT_UNCATCHABLE 2
 
 /* sets or clears JS_INTERRUPT_UNCATCHABLE to say whether an uncatchable
@@ -12284,17 +12507,35 @@ JSValue JS_Throw(JSContext *ctx, JSValue obj)
     return JS_EXCEPTION;
 }
 
-/* return the pending exception (cannot be called twice). */
-JSValue JS_GetException(JSContext *ctx)
+/* take the pending exception, for the engine's own use: it puts it back
+   or handles it, and the host has not given up the call */
+static inline JSValue js_take_exception(JSRuntime *rt)
 {
     JSValue val;
-    JSRuntime *rt = ctx->rt;
     val = rt->current_exception;
     rt->current_exception = JS_UNINITIALIZED;
     /* nothing is pending now: the clear of js_uncatchable_mark, inline, so
        that this stays a leaf with no frame */
     if (unlikely(rt->interrupt_flag & JS_INTERRUPT_UNCATCHABLE))
         rt->interrupt_flag &= ~JS_INTERRUPT_UNCATCHABLE;
+    return val;
+}
+
+static void js_fail_async_modules(JSRuntime *rt, JSValueConst error);
+
+/* return the pending exception (cannot be called twice). When it is
+   uncatchable, the host gives up the call with it (js_fail_async_modules). */
+JSValue JS_GetException(JSContext *ctx)
+{
+    JSValue val;
+    JSRuntime *rt = ctx->rt;
+    BOOL uncatchable = js_uncatchable_pending(rt);
+
+    val = js_take_exception(rt);
+    /* the state of the exception, not the bit of the flag, which a host
+       may have cleared with its stop */
+    if (unlikely(uncatchable))
+        js_fail_async_modules(rt, val);
     return val;
 }
 
@@ -12307,7 +12548,35 @@ static JSValue js_get_exception(JSContext *ctx)
     JSRuntime *rt = ctx->rt;
     if (js_uncatchable_pending(rt))
         return JS_DupValue(ctx, rt->current_exception);
-    return JS_GetException(ctx);
+    return js_take_exception(rt);
+}
+
+/* A place that catches an exception to keep it as a value (rejects a
+   promise with it, records it as the result of a module, a job or a step)
+   asks this first: TRUE when the exception is uncatchable, which no value
+   may hold. The place then ends its call with the exception pending. The
+   call of a reject function is refused while one is, and its result was
+   dropped, so the call that started the work returned a pending
+   promise, or a rejected one, with the stop pending, and a host that takes
+   the exception only when a call fails lost the stop: JS_Eval of a module
+   with an await after a busy loop, a getter that calls an async function. */
+static inline BOOL js_catch_ends(JSContext *ctx)
+{
+    return js_uncatchable_pending(ctx->rt);
+}
+
+/* ret, the result of a call of a resolving function that its caller drops:
+   -1 when the call failed, which ends the caller too, with the exception
+   pending, else 0. The call fails on an uncatchable exception (the resolve
+   read a getter of then that stopped) and on one a script can catch, as
+   the call depth refusing the call: the caller returned its promise with
+   that RangeError left pending, and no call may return a value so. */
+static __exception int js_settle_result(JSContext *ctx, JSValue ret)
+{
+    if (JS_IsException(ret))
+        return -1;
+    JS_FreeValue(ctx, ret);
+    return 0;
 }
 
 JS_BOOL JS_IsUncatchableException(JSContext *ctx)
@@ -12809,7 +13078,7 @@ static const char *js_backtrace_prop_string(JSContext *ctx, JSObject *p,
             return str;
         }
     }
-    JS_FreeValue(ctx, JS_GetException(ctx));
+    JS_FreeValue(ctx, js_take_exception(rt));
     JS_Throw(ctx, exception);
     JS_SetUncatchableException(ctx, uncatchable);
     return NULL;
@@ -13004,7 +13273,7 @@ static void js_backtrace_restore(JSContext *ctx, JSValueConst error_obj,
     if (ok) {
         JS_FreeValue(ctx, saved->exception);
     } else {
-        JS_FreeValue(ctx, JS_GetException(ctx));
+        JS_FreeValue(ctx, js_take_exception(ctx->rt));
         JS_Throw(ctx, saved->exception);
         JS_SetUncatchableException(ctx, saved->uncatchable);
     }
@@ -13452,6 +13721,15 @@ static JSValue JS_ThrowTypeErrorInvalidClass(JSContext *ctx, int class_id)
 
 static void JS_ThrowInterrupted(JSContext *ctx)
 {
+    /* A compile that stops then frees the code it made, in the passes that
+       fail, in the frees of the function defs and of the functions made of
+       them, and in the free of its module: about one poll for each 10,000
+       instructions of code, more than a kill allows for a source of 8 MB.
+       That work is bounded by what the compile already did, which read the
+       flag as it went, so the host leaves its polls out of the kill
+       (freeing_code) until the compile has returned (js_compile_end). */
+    if (ctx->rt->compiling)
+        ctx->rt->freeing_code = 1;
     /* the flag stops while an uncatchable exception is pending
        (JS_INTERRUPT_UNCATCHABLE): that exception ends the call, and no
        error is made in vain, with no memory left for it */
@@ -13459,6 +13737,32 @@ static void JS_ThrowInterrupted(JSContext *ctx)
         return;
     JS_ThrowInternalError(ctx, "interrupted");
     JS_SetUncatchableException(ctx, TRUE);
+}
+
+/* The free of modules after a stop that came once their compile had
+   returned, in the resolution of their imports (__JS_EvalInternal,
+   JS_ResolveModule, an import of a module): it is bounded by the code those
+   compiles made, as the free of a stopped compile is, so the host leaves
+   its polls out of the kill too until the free is done. Only with an
+   uncatchable exception pending: an error of the script is no stop. */
+static void js_freeing_start(JSRuntime *rt)
+{
+    if (js_uncatchable_pending(rt))
+        rt->freeing_code = 1;
+}
+
+static void js_freeing_end(JSRuntime *rt)
+{
+    /* inside a compile, its end clears the mark (js_compile_end) */
+    if (!rt->compiling)
+        rt->freeing_code = 0;
+}
+
+static void js_free_unresolved_modules(JSContext *ctx)
+{
+    js_freeing_start(ctx->rt);
+    js_free_modules(ctx, JS_FREE_MODULE_NOT_RESOLVED);
+    js_freeing_end(ctx->rt);
 }
 
 static no_inline __exception int __js_poll_interrupts(JSContext *ctx)
@@ -13475,6 +13779,93 @@ static inline __exception int js_poll_interrupts(JSContext *ctx)
         return __js_poll_interrupts(ctx);
     return 0;
 }
+
+/* The parse and the compile of a source read the interrupt flag after a
+   count of their work rather than where a pointer meets an address: a
+   source of short tokens, the passes over its code and the conversion to
+   register code would otherwise go on to their end, hundreds of polls for a
+   few hundred KB, past the kill for a few MB. The work is counted down in
+   rt->compile_left, in units of about one step of a short loop:
+   JS_TOKEN_WORK for a token, JS_CODE_WORK for an instruction a pass goes
+   over, one for each entry a look for a name goes over (js_compile_count).
+   The flag is read when it goes below 0, every JS_COMPILE_POLL_STEP units,
+   a poll or two. A pass keeps the count in a local from js_compile_left to
+   js_compile_keep, so that each step costs a subtraction and a branch
+   (js_compile_tick), and a walk over the code reads the flag by pieces
+   (js_code_more), which costs nothing in its loop. */
+#define JS_COMPILE_POLL_STEP (1 << 14)
+#define JS_TOKEN_WORK 16
+#define JS_CODE_WORK 4
+
+/* below 0, the count stops at -1 until the next reading: the counts of the
+   looks between two readings may add up past an int */
+static inline void js_compile_count(JSContext *ctx, int n)
+{
+    JSRuntime *rt = ctx->rt;
+    int left = rt->compile_left;
+    rt->compile_left = left < n ? -1 : left - n;
+}
+
+/* out of line, so that the hot loops keep only the count */
+static no_inline __exception int js_compile_read(JSContext *ctx)
+{
+    return js_poll_interrupts(ctx);
+}
+
+/* -1 with "interrupted" thrown when n more units take the count below 0
+   and the flag is set */
+static inline __exception int js_compile_poll(JSContext *ctx, int n)
+{
+    JSRuntime *rt = ctx->rt;
+    if (unlikely((rt->compile_left -= n) < 0)) {
+        rt->compile_left = JS_COMPILE_POLL_STEP;
+        return js_compile_read(ctx);
+    }
+    return 0;
+}
+
+static inline __exception int js_compile_left(JSContext *ctx)
+{
+    return ctx->rt->compile_left;
+}
+
+static inline void js_compile_keep(JSContext *ctx, int left)
+{
+    ctx->rt->compile_left = left;
+}
+
+/* js_compile_poll on the local left of a pass: nonzero with "interrupted"
+   thrown when it was stopped */
+#define js_compile_tick(ctx, left, n)                                   \
+    (unlikely(((left) -= (n)) < 0) &&                                   \
+     ((left) = JS_COMPILE_POLL_STEP, js_compile_read(ctx)))
+
+/* A walk of a pass over the code of a function, or over a table of it, reads
+   the flag at its start and then every JS_CODE_PIECE entries, where its index
+   meets the end of a piece: the loop compares the index with the end of the
+   piece instead of the length and does no other work (js_code_more). A walk
+   with a large body, where that condition costs registers, runs as a loop to
+   the end of the piece, then goes back to read the flag and take the next
+   piece (TDZ_PIECE, CBV_PIECE). */
+#define JS_CODE_PIECE (1 << 13)
+
+/* the end of the piece that starts at pos: pos when the walk is over, -1 with
+   "interrupted" thrown when the flag is set. Without ctx it reads no flag. Out
+   of line, and the end is returned rather than stored through a pointer, so
+   that the loop keeps it in a register and stays as it was. */
+static no_inline __exception int js_code_piece(JSContext *ctx, int pos, int len)
+{
+    if (pos >= len)
+        return pos;
+    if (ctx && js_poll_interrupts(ctx))
+        return -1;
+    return min_int(len, pos + JS_CODE_PIECE);
+}
+
+/* the condition of a walk of pos up to len, with end set to pos before the
+   walk: after it, end < 0 when it was stopped */
+#define js_code_more(ctx, pos, len, end)                                \
+    ((pos) < (end) || ((end) = js_code_piece(ctx, pos, len)) > (pos))
 
 static void JS_SetImmutablePrototype(JSContext *ctx, JSValueConst obj)
 {
@@ -25648,7 +26039,7 @@ static no_inline JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst fun
                 /* its conversion ran out of memory: tried again at the
                    next call */
                 rt->rv_oom_b = NULL;
-                return JS_ThrowOutOfMemory(caller_ctx);
+                return rv_convert_error(caller_ctx);
             }
         }
         if (unlikely(rf->arg_count < 0))
@@ -26340,7 +26731,11 @@ static __exception int js_async_function_resolve_create(JSContext *ctx,
     return 0;
 }
 
-static void js_async_function_resume(JSContext *ctx, JSAsyncFunctionState *s)
+/* -1 when an uncatchable exception is pending: the function stopped, or a
+   step of its settling did (a getter of then the resolve read), and the call
+   ends with it, as no promise may hold it (js_catch_ends). -1 too when the
+   call of a resolving function failed (js_settle_result). 0 otherwise. */
+static __exception int js_async_function_resume(JSContext *ctx, JSAsyncFunctionState *s)
 {
     JSValue func_ret, ret2;
 
@@ -26349,17 +26744,25 @@ static void js_async_function_resume(JSContext *ctx, JSAsyncFunctionState *s)
         if (JS_IsException(func_ret)) {
             JSValue error;
         fail:
+            if (js_catch_ends(ctx)) {
+                /* stopped in a step of an await: it ends as a failure of
+                   its body ends it, its var_refs closed and its frame
+                   freed */
+                if (!s->is_completed)
+                    rv_gen_fail(ctx->rt, s);
+                return -1;
+            }
             error = js_get_exception(ctx);
             ret2 = js_call(ctx, s->resolving_funcs[1], JS_UNDEFINED,
                            1, (JSValueConst *)&error);
             JS_FreeValue(ctx, error);
-            JS_FreeValue(ctx, ret2); /* XXX: what to do if exception ? */
+            return js_settle_result(ctx, ret2);
         } else {
             /* normal return */
             ret2 = js_call(ctx, s->resolving_funcs[0], JS_UNDEFINED,
                            1, (JSValueConst *)&func_ret);
             JS_FreeValue(ctx, func_ret);
-            JS_FreeValue(ctx, ret2); /* XXX: what to do if exception ? */
+            return js_settle_result(ctx, ret2);
         }
     } else {
         JSValue value, promise, resolving_funcs[2], resolving_funcs1[2];
@@ -26393,6 +26796,7 @@ static void js_async_function_resume(JSContext *ctx, JSAsyncFunctionState *s)
         if (res)
             goto fail;
     }
+    return 0;
 }
 
 static JSValue js_async_function_resolve_call(JSContext *ctx,
@@ -26417,7 +26821,8 @@ static JSValue js_async_function_resolve_call(JSContext *ctx,
         /* return value of await */
         s->frame.cur_sp[-1] = JS_DupValue(ctx, arg);
     }
-    js_async_function_resume(ctx, s);
+    if (js_async_function_resume(ctx, s) < 0)
+        return JS_EXCEPTION;
     return JS_UNDEFINED;
 }
 
@@ -26438,7 +26843,10 @@ static JSValue js_async_function_call(JSContext *ctx, JSValueConst func_obj,
         return JS_EXCEPTION;
     }
 
-    js_async_function_resume(ctx, s);
+    if (js_async_function_resume(ctx, s) < 0) {
+        JS_FreeValue(ctx, promise);
+        promise = JS_EXCEPTION;
+    }
 
     async_func_free(ctx->rt, s);
 
@@ -26474,6 +26882,16 @@ typedef struct JSAsyncGeneratorData {
     struct list_head queue; /* list of JSAsyncGeneratorRequest.link */
 } JSAsyncGeneratorData;
 
+static void js_async_generator_request_free(JSRuntime *rt,
+                                            JSAsyncGeneratorRequest *req)
+{
+    JS_FreeValueRT(rt, req->result);
+    JS_FreeValueRT(rt, req->promise);
+    JS_FreeValueRT(rt, req->resolving_funcs[0]);
+    JS_FreeValueRT(rt, req->resolving_funcs[1]);
+    js_free_rt(rt, req);
+}
+
 static void js_async_generator_free(JSRuntime *rt,
                                     JSAsyncGeneratorData *s)
 {
@@ -26482,11 +26900,7 @@ static void js_async_generator_free(JSRuntime *rt,
 
     list_for_each_safe(el, el1, &s->queue) {
         req = list_entry(el, JSAsyncGeneratorRequest, link);
-        JS_FreeValueRT(rt, req->result);
-        JS_FreeValueRT(rt, req->promise);
-        JS_FreeValueRT(rt, req->resolving_funcs[0]);
-        JS_FreeValueRT(rt, req->resolving_funcs[1]);
-        js_free_rt(rt, req);
+        js_async_generator_request_free(rt, req);
     }
     if (s->func_state)
         async_func_free(rt, s->func_state);
@@ -26583,10 +26997,12 @@ static __exception int js_async_generator_await(JSContext *ctx,
     return -1;
 }
 
-static void js_async_generator_resolve_or_reject(JSContext *ctx,
-                                                 JSAsyncGeneratorData *s,
-                                                 JSValueConst result,
-                                                 int is_reject)
+/* -1 when the settle of the request failed, its exception pending
+   (js_settle_result), else 0 */
+static __exception int js_async_generator_resolve_or_reject(JSContext *ctx,
+                                                JSAsyncGeneratorData *s,
+                                                JSValueConst result,
+                                                int is_reject)
 {
     JSAsyncGeneratorRequest *next;
     JSValue ret;
@@ -26595,31 +27011,29 @@ static void js_async_generator_resolve_or_reject(JSContext *ctx,
     list_del(&next->link);
     ret = js_call(ctx, next->resolving_funcs[is_reject], JS_UNDEFINED, 1,
                   &result);
-    JS_FreeValue(ctx, ret);
-    JS_FreeValue(ctx, next->result);
-    JS_FreeValue(ctx, next->promise);
-    JS_FreeValue(ctx, next->resolving_funcs[0]);
-    JS_FreeValue(ctx, next->resolving_funcs[1]);
-    js_free(ctx, next);
+    js_async_generator_request_free(ctx->rt, next);
+    return js_settle_result(ctx, ret);
 }
 
-static void js_async_generator_resolve(JSContext *ctx,
-                                       JSAsyncGeneratorData *s,
-                                       JSValueConst value,
-                                       BOOL done)
+static __exception int js_async_generator_resolve(JSContext *ctx,
+                                      JSAsyncGeneratorData *s,
+                                      JSValueConst value,
+                                      BOOL done)
 {
     JSValue result;
+    int ret;
     result = js_create_iterator_result(ctx, JS_DupValue(ctx, value), done);
     /* XXX: better exception handling ? */
-    js_async_generator_resolve_or_reject(ctx, s, result, 0);
+    ret = js_async_generator_resolve_or_reject(ctx, s, result, 0);
     JS_FreeValue(ctx, result);
- }
+    return ret;
+}
 
-static void js_async_generator_reject(JSContext *ctx,
-                                       JSAsyncGeneratorData *s,
-                                       JSValueConst exception)
+static __exception int js_async_generator_reject(JSContext *ctx,
+                                     JSAsyncGeneratorData *s,
+                                     JSValueConst exception)
 {
-    js_async_generator_resolve_or_reject(ctx, s, exception, 1);
+    return js_async_generator_resolve_or_reject(ctx, s, exception, 1);
 }
 
 static void js_async_generator_complete(JSContext *ctx,
@@ -26630,6 +27044,24 @@ static void js_async_generator_complete(JSContext *ctx,
         async_func_free(ctx->rt, s->func_state);
         s->func_state = NULL;
     }
+}
+
+/* The end of a run of s that a stop left (js_catch_ends): s ends as a
+   failure of its body ends it, its var_refs closed and its frame freed
+   (rv_gen_fail) also when the stop came in a step of an await, and the
+   request it ran for leaves the queue unsettled, as no promise may hold the
+   exception. The requests behind it settle at the next drain. Returns -1. */
+static __exception int js_async_generator_stop(JSContext *ctx, JSAsyncGeneratorData *s)
+{
+    JSAsyncGeneratorRequest *next;
+
+    if (!s->func_state->is_completed)
+        rv_gen_fail(ctx->rt, s->func_state);
+    js_async_generator_complete(ctx, s);
+    next = list_entry(s->queue.next, JSAsyncGeneratorRequest, link);
+    list_del(&next->link);
+    js_async_generator_request_free(ctx->rt, next);
+    return -1;
 }
 
 static int js_async_generator_completed_return(JSContext *ctx,
@@ -26645,7 +27077,10 @@ static int js_async_generator_completed_return(JSContext *ctx,
     // A poisoned .constructor property is observable and the resulting
     // exception should be delivered to the catch handler.
     if (JS_IsException(promise)) {
-        JSValue err = js_get_exception(ctx);
+        JSValue err;
+        if (js_catch_ends(ctx))
+            return -1;
+        err = js_get_exception(ctx);
         promise = js_promise_resolve(ctx, ctx->promise_ctor, 1, (JSValueConst *)&err,
                                      /*is_reject*/1);
         JS_FreeValue(ctx, err);
@@ -26670,11 +27105,16 @@ static int js_async_generator_completed_return(JSContext *ctx,
     return res;
 }
 
-static void js_async_generator_resume_next(JSContext *ctx,
-                                           JSAsyncGeneratorData *s)
+/* -1 when an uncatchable exception is pending: the body stopped
+   (js_async_generator_stop), or a step of a settle did, and the call ends
+   with it (js_catch_ends). -1 too when a settle failed on an exception a
+   script can catch (js_settle_result). 0 otherwise. */
+static __exception int js_async_generator_resume_next(JSContext *ctx,
+                                          JSAsyncGeneratorData *s)
 {
     JSAsyncGeneratorRequest *next;
     JSValue func_ret, value;
+    int ret = 0;
 
     for(;;) {
         if (list_empty(&s->queue))
@@ -26694,15 +27134,26 @@ static void js_async_generator_resume_next(JSContext *ctx,
             }
             break;
         case JS_ASYNC_GENERATOR_STATE_COMPLETED:
-            if (next->completion_type == GEN_MAGIC_NEXT) {
-                js_async_generator_resolve(ctx, s, JS_UNDEFINED, TRUE);
-            } else if (next->completion_type == GEN_MAGIC_RETURN) {
+            /* the queue drains: each next and throw settles, and a return
+               waits for its value, the drain going on once it settled
+               (js_async_generator_resolve_function) */
+            if (next->completion_type == GEN_MAGIC_RETURN) {
                 s->state = JS_ASYNC_GENERATOR_STATE_AWAITING_RETURN;
-                js_async_generator_completed_return(ctx, s, next->result);
-            } else {
-                js_async_generator_reject(ctx, s, next->result);
+                /* a failure ends the call with its exception, also one a
+                   script can catch (the call depth refused the promise of
+                   the value and the rejected one made in its place): the
+                   call returned its promise with it left pending */
+                if (js_async_generator_completed_return(ctx, s, next->result) < 0)
+                    ret = -1;
+                goto done;
             }
-            goto done;
+            if (next->completion_type == GEN_MAGIC_NEXT)
+                ret = js_async_generator_resolve(ctx, s, JS_UNDEFINED, TRUE);
+            else
+                ret = js_async_generator_reject(ctx, s, next->result);
+            if (ret < 0)
+                return -1;
+            break;
         case JS_ASYNC_GENERATOR_STATE_SUSPENDED_YIELD:
         case JS_ASYNC_GENERATOR_STATE_SUSPENDED_YIELD_STAR:
             value = JS_DupValue(ctx, next->result);
@@ -26725,18 +27176,22 @@ static void js_async_generator_resume_next(JSContext *ctx,
             func_ret = async_func_resume(ctx, s->func_state);
             if (s->func_state->is_completed) {
                 if (JS_IsException(func_ret)) {
+                    if (js_catch_ends(ctx))
+                        return js_async_generator_stop(ctx, s);
                     value = js_get_exception(ctx);
                     js_async_generator_complete(ctx, s);
-                    js_async_generator_reject(ctx, s, value);
+                    ret = js_async_generator_reject(ctx, s, value);
                     JS_FreeValue(ctx, value);
                 } else {
                     /* end of function */
                     js_async_generator_complete(ctx, s);
-                    js_async_generator_resolve(ctx, s, func_ret, TRUE);
+                    ret = js_async_generator_resolve(ctx, s, func_ret, TRUE);
                     JS_FreeValue(ctx, func_ret);
                 }
+                if (ret < 0)
+                    return -1;
             } else {
-                int func_ret_code, ret;
+                int func_ret_code;
                 assert(JS_VALUE_GET_TAG(func_ret) == JS_TAG_INT);
                 func_ret_code = JS_VALUE_GET_INT(func_ret);
                 value = s->func_state->frame.cur_sp[-1];
@@ -26748,13 +27203,18 @@ static void js_async_generator_resume_next(JSContext *ctx,
                         s->state = JS_ASYNC_GENERATOR_STATE_SUSPENDED_YIELD_STAR;
                     else
                         s->state = JS_ASYNC_GENERATOR_STATE_SUSPENDED_YIELD;
-                    js_async_generator_resolve(ctx, s, value, FALSE);
+                    ret = js_async_generator_resolve(ctx, s, value, FALSE);
                     JS_FreeValue(ctx, value);
+                    if (ret < 0)
+                        return -1;
                     break;
                 case FUNC_RET_AWAIT:
                     ret = js_async_generator_await(ctx, s, value);
                     JS_FreeValue(ctx, value);
                     if (ret < 0) {
+                        if (js_catch_ends(ctx))
+                            return js_async_generator_stop(ctx, s);
+                        ret = 0;
                         /* exception: throw it */
                         s->func_state->throw_flag = TRUE;
                         goto resume_exec;
@@ -26769,7 +27229,8 @@ static void js_async_generator_resume_next(JSContext *ctx,
             abort();
         }
     }
- done: ;
+ done:
+    return ret;
 }
 
 static JSValue js_async_generator_resolve_function(JSContext *ctx,
@@ -26789,10 +27250,15 @@ static JSValue js_async_generator_resolve_function(JSContext *ctx,
                s->state == JS_ASYNC_GENERATOR_STATE_COMPLETED);
         s->state = JS_ASYNC_GENERATOR_STATE_COMPLETED;
         if (is_reject) {
-            js_async_generator_reject(ctx, s, arg);
+            if (js_async_generator_reject(ctx, s, arg) < 0)
+                return JS_EXCEPTION;
         } else {
-            js_async_generator_resolve(ctx, s, arg, TRUE);
+            if (js_async_generator_resolve(ctx, s, arg, TRUE) < 0)
+                return JS_EXCEPTION;
         }
+        /* the requests queued behind the return */
+        if (js_async_generator_resume_next(ctx, s) < 0)
+            return JS_EXCEPTION;
     } else if (s->state == JS_ASYNC_GENERATOR_STATE_EXECUTING) {
         /* restart function execution after await() */
         s->func_state->throw_flag = is_reject;
@@ -26802,7 +27268,8 @@ static JSValue js_async_generator_resolve_function(JSContext *ctx,
             /* return value of await */
             s->func_state->frame.cur_sp[-1] = JS_DupValue(ctx, arg);
         }
-        js_async_generator_resume_next(ctx, s);
+        if (js_async_generator_resume_next(ctx, s) < 0)
+            return JS_EXCEPTION;
     }
     return JS_UNDEFINED;
 }
@@ -26822,13 +27289,18 @@ static JSValue js_async_generator_next(JSContext *ctx, JSValueConst this_val,
     if (!s) {
         JSValue err, res2;
         JS_ThrowTypeError(ctx, "not an AsyncGenerator object");
+        if (js_catch_ends(ctx))
+            goto fail;
         err = js_get_exception(ctx);
         res2 = js_call(ctx, resolving_funcs[1], JS_UNDEFINED,
                        1, (JSValueConst *)&err);
         JS_FreeValue(ctx, err);
-        JS_FreeValue(ctx, res2);
         JS_FreeValue(ctx, resolving_funcs[0]);
         JS_FreeValue(ctx, resolving_funcs[1]);
+        if (js_settle_result(ctx, res2) < 0) {
+            JS_FreeValue(ctx, promise);
+            return JS_EXCEPTION;
+        }
         return promise;
     }
     req = js_mallocz(ctx, sizeof(*req));
@@ -26840,8 +27312,10 @@ static JSValue js_async_generator_next(JSContext *ctx, JSValueConst this_val,
     req->resolving_funcs[0] = resolving_funcs[0];
     req->resolving_funcs[1] = resolving_funcs[1];
     list_add_tail(&req->link, &s->queue);
-    if (s->state != JS_ASYNC_GENERATOR_STATE_EXECUTING) {
-        js_async_generator_resume_next(ctx, s);
+    if (s->state != JS_ASYNC_GENERATOR_STATE_EXECUTING &&
+        js_async_generator_resume_next(ctx, s) < 0) {
+        JS_FreeValue(ctx, promise);
+        return JS_EXCEPTION;
     }
     return promise;
  fail:
@@ -28009,7 +28483,7 @@ static JSAtom parse_ident(JSParseState *s, const uint8_t **pp,
 }
 
 
-static __exception int next_token(JSParseState *s)
+static no_inline __exception int next_token1(JSParseState *s)
 {
     const uint8_t *p;
     int c;
@@ -28475,6 +28949,19 @@ static __exception int next_token(JSParseState *s)
  fail:
     s->token.val = TOK_ERROR;
     return -1;
+}
+
+/* The scans of a long token read the flag where their pointer meets a
+   multiple of JS_ROPE_STEP, which a source of short tokens may never do,
+   and the parse and the code of each token are work of their own, counted
+   with the looks for names the parse makes, which read no flag themselves
+   (js_compile_poll), here rather than in the code of the scan
+   (next_token1). */
+static inline __exception int next_token(JSParseState *s)
+{
+    if (js_compile_poll(s->ctx, JS_TOKEN_WORK))
+        return -1;
+    return next_token1(s);
 }
 
 /* 'c' is the first character. Return JS_ATOM_NULL in case of error */
@@ -29473,6 +29960,7 @@ static __exception int emit_push_const(JSParseState *s, JSValueConst val,
 static __exception int find_arg(JSContext *ctx, JSFunctionDef *fd, JSAtom name)
 {
     int i;
+    js_compile_count(ctx, fd->arg_count);
     for(i = fd->arg_count; i-- > 0;) {
         if (fd->args[i].var_name == name)
             return i | ARGUMENT_VAR_OFFSET;
@@ -29483,6 +29971,7 @@ static __exception int find_arg(JSContext *ctx, JSFunctionDef *fd, JSAtom name)
 static __exception int find_var(JSContext *ctx, JSFunctionDef *fd, JSAtom name)
 {
     int i;
+    js_compile_count(ctx, fd->var_count);
     for(i = fd->var_count; i-- > 0;) {
         if (fd->vars[i].var_name == name && fd->vars[i].scope_level == 0)
             return i;
@@ -29495,6 +29984,7 @@ static __exception int find_var_in_scope(JSContext *ctx, JSFunctionDef *fd,
                              JSAtom name, int scope_level)
 {
     int scope_idx;
+    js_compile_count(ctx, fd->var_count);
     for(scope_idx = fd->scopes[scope_level].first; scope_idx >= 0;
         scope_idx = fd->vars[scope_idx].scope_next) {
         if (fd->vars[scope_idx].scope_level != scope_level)
@@ -29523,6 +30013,7 @@ static __exception int find_var_in_child_scope(JSContext *ctx, JSFunctionDef *fd
                                    JSAtom name, int scope_level)
 {
     int i;
+    js_compile_count(ctx, fd->var_count);
     for(i = 0; i < fd->var_count; i++) {
         JSVarDef *vd = &fd->vars[i];
         if (vd->var_name == name && vd->scope_level == 0) {
@@ -29538,6 +30029,7 @@ static __exception int find_var_in_child_scope(JSContext *ctx, JSFunctionDef *fd
 static JSGlobalVar *find_global_var(JSFunctionDef *fd, JSAtom name)
 {
     int i;
+    js_compile_count(fd->ctx, fd->global_var_count);
     for(i = 0; i < fd->global_var_count; i++) {
         JSGlobalVar *hf = &fd->global_vars[i];
         if (hf->var_name == name)
@@ -29559,6 +30051,7 @@ static JSGlobalVar *find_lexical_global_var(JSFunctionDef *fd, JSAtom name)
 static __exception int find_lexical_decl(JSContext *ctx, JSFunctionDef *fd, JSAtom name,
                              int scope_idx, BOOL check_catch_var)
 {
+    js_compile_count(ctx, fd->var_count);
     while (scope_idx >= 0) {
         JSVarDef *vd = &fd->vars[scope_idx];
         if (vd->var_name == name &&
@@ -30355,6 +30848,9 @@ static int js_parse_skip_parens_token(JSParseState *s, int *pbits, BOOL no_line_
     JSParsePos pos;
     int last_tok, tok = TOK_EOF;
     int c, tok_len, bits = 0;
+    /* the tokens of the lookahead are counted here, in a local, as the parse
+       after it counts them again (next_token) */
+    int left = JS_COMPILE_POLL_STEP / JS_TOKEN_WORK;
     const uint8_t *last_token_ptr;
     
     /* protect from underflow */
@@ -30448,7 +30944,10 @@ static int js_parse_skip_parens_token(JSParseState *s, int *pbits, BOOL no_line_
             last_tok = s->token.val;
         }
         last_token_ptr = s->token.ptr;
-        if (next_token(s)) {
+        if ((unlikely(--left < 0) &&
+             (left = JS_COMPILE_POLL_STEP / JS_TOKEN_WORK,
+              js_poll_interrupts(s->ctx))) ||
+            next_token1(s)) {
             if (js_parse_skip_parens_error(s))
                 return TOK_ERROR;
             break;
@@ -32016,6 +32515,7 @@ static int js_parse_check_duplicate_parameter(JSParseState *s, JSAtom name)
     /* Check for duplicate parameter names */
     JSFunctionDef *fd = s->cur_func;
     int i;
+    js_compile_count(s->ctx, fd->arg_count + fd->var_count);
     for (i = 0; i < fd->arg_count; i++) {
         if (fd->args[i].var_name == name)
             goto duplicate;
@@ -35634,6 +36134,10 @@ static __exception int js_parse_statement_or_decl(JSParseState *s,
 static JSModuleDef *js_new_module_def(JSContext *ctx, JSAtom name)
 {
     JSModuleDef *m;
+    if (js_module_hash_room(ctx)) {
+        JS_FreeAtom(ctx, name);
+        return NULL;
+    }
     m = js_mallocz(ctx, sizeof(*m));
     if (!m) {
         JS_FreeAtom(ctx, name);
@@ -35651,6 +36155,7 @@ static JSModuleDef *js_new_module_def(JSContext *ctx, JSAtom name)
     m->resolving_funcs[1] = JS_UNDEFINED;
     m->private_value = JS_UNDEFINED;
     list_add_tail(&m->link, &ctx->loaded_modules);
+    js_module_hash_add(ctx, m);
     return m;
 }
 
@@ -35725,6 +36230,10 @@ static void js_free_module_def(JSRuntime *rt, JSModuleDef *m)
        order so the module may no longer be referenced by the JSContext list */
     if (m->link.next) {
         list_del(&m->link);
+        /* only the collector frees a module still loaded, with its context
+           in the same collection, which no longer needs the count of its
+           table */
+        js_module_hash_remove(m);
     }
     remove_gc_object(&m->header);
     if (rt->gc_phase == JS_GC_PHASE_REMOVE_CYCLES && js_rc(m)->ref_count != 0) {
@@ -35771,6 +36280,8 @@ static JSExportEntry *add_export_entry2(JSContext *ctx,
 {
     JSExportEntry *me;
 
+    /* a look for each export the parse adds (js_compile_count) */
+    js_compile_count(ctx, m->export_entries_count);
     if (find_export_entry(ctx, m, export_name)) {
         char buf1[ATOM_GET_STR_BUF_SIZE];
         if (s) {
@@ -35966,16 +36477,14 @@ static char *js_default_module_normalize_name(JSContext *ctx,
 
 static JSModuleDef *js_find_loaded_module(JSContext *ctx, JSAtom name)
 {
-    struct list_head *el;
     JSModuleDef *m;
+    int n;
 
-    /* first look at the loaded modules */
-    list_for_each(el, &ctx->loaded_modules) {
-        m = list_entry(el, JSModuleDef, link);
-        if (m->module_name == name)
-            return m;
-    }
-    return NULL;
+    /* a look for each name of its list in the table of the loaded modules
+       (js_compile_count, read for each import, js_resolve_module1) */
+    m = js_module_hash_first(ctx, name, &n);
+    js_compile_count(ctx, n);
+    return m;
 }
 
 /* return NULL in case of exception (e.g. module could not be loaded) */
@@ -36013,6 +36522,16 @@ static JSModuleDef *js_host_resolve_imported_module(JSContext *ctx,
     }
 
     JS_FreeAtom(ctx, module_name);
+
+    /* a reading of the flag for each module the host loads, so that a stop
+       waits for the load of one module and not of all those left: a module
+       of source reads it in its compile, but the host may make one with no
+       compile (of C, or of bytecode), and the looks for the imports read it
+       only after a count of their work (js_resolve_module1) */
+    if (js_poll_interrupts(ctx)) {
+        js_free(ctx, cname);
+        return NULL;
+    }
 
     /* load the module */
     if (!rt->u.module_loader_func) {
@@ -36117,6 +36636,13 @@ static JSResolveResultEnum js_resolve_export2(JSContext *ctx,
 
     *pmodule = NULL;
     *pme = NULL;
+    /* a resolution looks along its way, then among the exports of m: the
+       flag is read before it adds to its way, where a failure, as one of
+       add_resolve_entry, leaves the way to js_resolve_export to free. The
+       link resolves each import so, and each indirect export, which grows
+       as their product. */
+    if (js_compile_poll(ctx, s->count + m->export_entries_count))
+        return JS_RESOLVE_RES_EXCEPTION;
     if (find_resolve_entry(s, m, export_name) >= 0)
         return JS_RESOLVE_RES_CIRCULAR;
     if (add_resolve_entry(ctx, s, m, export_name) < 0)
@@ -36309,6 +36835,11 @@ static __exception int get_exported_names1(JSContext *ctx,
     ExportedNameEntry *en;
     int i, j;
 
+    /* the modules on the way, then for each export the names collected so
+       far, are looked at: the flag is read before each look, where a
+       failure leaves s to js_build_module_ns to free */
+    if (js_compile_poll(ctx, s->modules_count))
+        return -1;
     /* check circular reference */
     for(i = 0; i < s->modules_count; i++) {
         if (s->modules[i] == m)
@@ -36323,6 +36854,8 @@ static __exception int get_exported_names1(JSContext *ctx,
         JSExportEntry *me = &m->export_entries[i];
         if (from_star && me->export_name == JS_ATOM_default)
             continue;
+        if (js_compile_poll(ctx, s->exported_names_count))
+            return -1;
         j = find_exported_name(s, me->export_name);
         if (j < 0) {
             if (js_resize_array(ctx, (void **)&s->exported_names, sizeof(s->exported_names[0]),
@@ -36595,6 +37128,11 @@ static __exception int js_resolve_module1(JSContext *ctx, JSModuleDef *m)
     /* resolve each requested module */
     for(i = 0; i < m->req_module_entries_count; i++) {
         JSReqModuleEntry *rme = &m->req_module_entries[i];
+        /* the host looks for each among the loaded modules
+           (js_find_loaded_module): a failure here, as one of the host,
+           leaves to js_resolve_module_top the modules marked */
+        if (js_compile_poll(ctx, 1))
+            return -1;
         m1 = js_host_resolve_imported_module_atom(ctx, m->module_name,
                                                   rme->module_name,
                                                   rme->attributes);
@@ -36665,12 +37203,17 @@ static __exception int js_create_module_bytecode_function(JSContext *ctx, JSModu
     if (JS_IsException(func_obj))
         return -1;
     m->func_obj = func_obj;
+    /* the function takes the reference m had to b, and frees it when
+       js_closure2 fails: m keeps one of its own, so that a link again
+       makes the function again. With none, m was left with no code, and
+       the link again took it as made and read the function it lacked. */
+    JS_DupValue(ctx, bfunc);
     func_obj = js_closure2(ctx, func_obj, b, NULL, NULL, TRUE, m);
     if (JS_IsException(func_obj)) {
-        m->func_obj = JS_UNDEFINED; /* XXX: keep it ? */
-        JS_FreeValue(ctx, func_obj);
+        m->func_obj = bfunc;
         return -1;
     }
+    JS_FreeValue(ctx, bfunc);
     return 0;
 }
 
@@ -36685,6 +37228,10 @@ static __exception int js_create_module_function1(JSContext *ctx, JSModuleDef *m
 
     if (m->func_created)
         return 0;
+    /* a module and its imports: a failure before the mark leaves it to
+       be done again (js_create_module_function_top) */
+    if (js_compile_poll(ctx, 1 + m->req_module_entries_count))
+        return -1;
 
     is_c_module = (m->init_func != NULL);
 
@@ -36786,6 +37333,12 @@ static __exception int js_inner_module_linking1(JSContext *ctx, JSModuleDef *m,
         return index;
 
     assert(m->status == JS_MODULE_STATUS_UNLINKED);
+    /* the walk over the imports, the exports and the modules a module
+       requests, whose resolutions read the flag too: a failure before m is
+       on the stack leaves the stack to js_link_module to undo */
+    if (js_compile_poll(ctx, 1 + m->req_module_entries_count +
+                        m->import_entries_count + m->export_entries_count))
+        return -1;
     m->status = JS_MODULE_STATUS_LINKING;
     m->dfs_index = index;
     m->dfs_ancestor_index = index;
@@ -36965,6 +37518,35 @@ static __exception int js_inner_module_linking(JSContext *ctx, JSModuleDef *m,
     return ret;
 }
 
+/* Release the bindings a link that failed made in m, which goes back to
+   unlinked: the imports it bound and the exported variables it kept. A link
+   again binds each from the start, and took a second reference to each in
+   place of the first, which was never released. */
+static void js_unbind_module(JSRuntime *rt, JSModuleDef *m)
+{
+    JSVarRef **var_refs;
+    int i;
+
+    if (m->init_func)
+        return;
+    var_refs = JS_VALUE_GET_OBJ(m->func_obj)->u.func.var_refs;
+    for(i = 0; i < m->import_entries_count; i++) {
+        JSImportEntry *mi = &m->import_entries[i];
+        /* a namespace import is a variable of m, set again */
+        if (!mi->is_star) {
+            free_var_ref(rt, var_refs[mi->var_idx]);
+            var_refs[mi->var_idx] = NULL;
+        }
+    }
+    for(i = 0; i < m->export_entries_count; i++) {
+        JSExportEntry *me = &m->export_entries[i];
+        if (me->export_type == JS_EXPORT_TYPE_LOCAL) {
+            free_var_ref(rt, me->u.local.var_ref);
+            me->u.local.var_ref = NULL;
+        }
+    }
+}
+
 /* Prepare a module to be executed by resolving all the imported
    variables. */
 static __exception int js_link_module(JSContext *ctx, JSModuleDef *m)
@@ -36987,6 +37569,7 @@ static __exception int js_link_module(JSContext *ctx, JSModuleDef *m)
             m1 = stack_top;
             assert(m1->status == JS_MODULE_STATUS_LINKING);
             m1->status = JS_MODULE_STATUS_UNLINKED;
+            js_unbind_module(ctx->rt, m1);
             stack_top = m1->stack_prev;
         }
         return -1;
@@ -37113,7 +37696,8 @@ static JSValue js_load_module_rejected(JSContext *ctx, JSValueConst this_val,
         error = JS_UNDEFINED;
     ret = js_call(ctx, resolving_funcs[1], JS_UNDEFINED,
                   1, &error);
-    JS_FreeValue(ctx, ret);
+    if (js_settle_result(ctx, ret) < 0)
+        return JS_EXCEPTION;
     return JS_UNDEFINED;
 }
 
@@ -37127,25 +37711,35 @@ static JSValue js_load_module_fulfilled(JSContext *ctx, JSValueConst this_val,
     /* return the module namespace */
     ns = JS_GetModuleNamespace(ctx, m);
     if (JS_IsException(ns)) {
-        JSValue err = js_get_exception(ctx);
-        js_load_module_rejected(ctx, JS_UNDEFINED, 1, (JSValueConst *)&err, 0, func_data);
-        return JS_UNDEFINED;
+        JSValue err;
+        if (js_catch_ends(ctx))
+            return JS_EXCEPTION;
+        err = js_get_exception(ctx);
+        ret = js_load_module_rejected(ctx, JS_UNDEFINED, 1, (JSValueConst *)&err, 0, func_data);
+        JS_FreeValue(ctx, err);
+        return ret;
     }
     ret = js_call(ctx, resolving_funcs[0], JS_UNDEFINED,
                    1, (JSValueConst *)&ns);
-    JS_FreeValue(ctx, ret);
     JS_FreeValue(ctx, ns);
+    if (js_settle_result(ctx, ret) < 0)
+        return JS_EXCEPTION;
     return JS_UNDEFINED;
 }
 
-static void JS_LoadModuleInternal(JSContext *ctx, const char *basename,
-                                  const char *filename,
-                                  JSValueConst *resolving_funcs,
-                                  JSValueConst attributes)
+/* -1 when an uncatchable exception is pending, which ends the call with no
+   promise holding it (js_catch_ends), or out of memory left the promise
+   unsettled, or the call of a resolving function failed
+   (js_settle_result), else 0 */
+static __exception int JS_LoadModuleInternal(JSContext *ctx, const char *basename,
+                                 const char *filename,
+                                 JSValueConst *resolving_funcs,
+                                 JSValueConst attributes)
 {
+    int res;
     JSValue evaluate_promise;
     JSModuleDef *m;
-    JSValue ret, err, func_obj, evaluate_resolving_funcs[2];
+    JSValue ret, err, func_obj, evaluate_resolving_funcs[2], cap[2];
     JSValueConst func_data[3];
 
     m = js_host_resolve_imported_module(ctx, basename, filename, attributes);
@@ -37153,7 +37747,7 @@ static void JS_LoadModuleInternal(JSContext *ctx, const char *basename,
         goto fail;
 
     if (js_resolve_module_top(ctx, m) < 0) {
-        js_free_modules(ctx, JS_FREE_MODULE_NOT_RESOLVED);
+        js_free_unresolved_modules(ctx);
         goto fail;
     }
 
@@ -37162,12 +37756,13 @@ static void JS_LoadModuleInternal(JSContext *ctx, const char *basename,
     evaluate_promise = JS_EvalFunctionInternal(ctx, func_obj, ctx->global_obj, NULL, NULL);
     if (JS_IsException(evaluate_promise)) {
     fail:
+        if (js_catch_ends(ctx))
+            return -1;
         err = js_get_exception(ctx);
         ret = js_call(ctx, resolving_funcs[1], JS_UNDEFINED,
                       1, (JSValueConst *)&err);
-        JS_FreeValue(ctx, ret); /* XXX: what to do if exception ? */
         JS_FreeValue(ctx, err);
-        return;
+        return js_settle_result(ctx, ret);
     }
 
     func_obj = JS_NewModuleValue(ctx, m);
@@ -37177,11 +37772,21 @@ static void JS_LoadModuleInternal(JSContext *ctx, const char *basename,
     evaluate_resolving_funcs[0] = JS_NewCFunctionData(ctx, js_load_module_fulfilled, 0, 0, 3, func_data);
     evaluate_resolving_funcs[1] = JS_NewCFunctionData(ctx, js_load_module_rejected, 0, 0, 3, func_data);
     JS_FreeValue(ctx, func_obj);
-    ret = js_promise_then(ctx, evaluate_promise, 2, (JSValueConst *)evaluate_resolving_funcs);
-    JS_FreeValue(ctx, ret);
+    /* PerformPromiseThen, with no species constructor to look up and no
+       promise made: Promise.prototype.then threw when a script had changed
+       Promise.prototype.constructor, and the import never settled (see
+       js_execute_async_module) */
+    cap[0] = JS_UNDEFINED;
+    cap[1] = JS_UNDEFINED;
+    /* out of memory, which ends the call: the exception stays pending for
+       the caller */
+    res = perform_promise_then(ctx, evaluate_promise,
+                               (JSValueConst *)evaluate_resolving_funcs,
+                               (JSValueConst *)cap);
     JS_FreeValue(ctx, evaluate_resolving_funcs[0]);
     JS_FreeValue(ctx, evaluate_resolving_funcs[1]);
     JS_FreeValue(ctx, evaluate_promise);
+    return res;
 }
 
 /* Return a promise or an exception in case of memory error. Used by
@@ -37194,8 +37799,11 @@ JSValue JS_LoadModule(JSContext *ctx, const char *basename,
     promise = JS_NewPromiseCapability(ctx, resolving_funcs);
     if (JS_IsException(promise))
         return JS_EXCEPTION;
-    JS_LoadModuleInternal(ctx, basename, filename,
-                          (JSValueConst *)resolving_funcs, JS_UNDEFINED);
+    if (JS_LoadModuleInternal(ctx, basename, filename,
+                              (JSValueConst *)resolving_funcs, JS_UNDEFINED) < 0) {
+        JS_FreeValue(ctx, promise);
+        promise = JS_EXCEPTION;
+    }
     JS_FreeValue(ctx, resolving_funcs[0]);
     JS_FreeValue(ctx, resolving_funcs[1]);
     return promise;
@@ -37210,6 +37818,7 @@ static JSValue js_dynamic_import_job(JSContext *ctx,
     JSValueConst attributes = argv[4];
     const char *basename = NULL, *filename;
     JSValue ret, err;
+    int res;
 
     if (!JS_IsString(basename_val)) {
         JS_ThrowTypeError(ctx, "no function filename for import()");
@@ -37223,19 +37832,20 @@ static JSValue js_dynamic_import_job(JSContext *ctx,
     if (!filename)
         goto exception;
 
-    JS_LoadModuleInternal(ctx, basename, filename,
-                          resolving_funcs, attributes);
+    res = JS_LoadModuleInternal(ctx, basename, filename,
+                                resolving_funcs, attributes);
     JS_FreeCString(ctx, filename);
     JS_FreeCString(ctx, basename);
-    return JS_UNDEFINED;
+    return res < 0 ? JS_EXCEPTION : JS_UNDEFINED;
  exception:
+    JS_FreeCString(ctx, basename);
+    if (js_catch_ends(ctx))
+        return JS_EXCEPTION;
     err = js_get_exception(ctx);
     ret = js_call(ctx, resolving_funcs[1], JS_UNDEFINED,
                    1, (JSValueConst *)&err);
-    JS_FreeValue(ctx, ret); /* XXX: what to do if exception ? */
     JS_FreeValue(ctx, err);
-    JS_FreeCString(ctx, basename);
-    return JS_UNDEFINED;
+    return js_settle_result(ctx, ret) < 0 ? JS_EXCEPTION : JS_UNDEFINED;
 }
 
 static JSValue js_dynamic_import(JSContext *ctx, JSValueConst specifier, JSValueConst options)
@@ -37320,7 +37930,11 @@ static JSValue js_dynamic_import(JSContext *ctx, JSValueConst specifier, JSValue
     
     /* cannot run JS_LoadModuleInternal synchronously because it would
        cause an unexpected recursion in js_evaluate_module() */
-    JS_EnqueueJob(ctx, js_dynamic_import_job, 5, args);
+    if (JS_EnqueueJob(ctx, js_dynamic_import_job, 5, args) < 0) {
+        /* no memory: an error that cannot be caught (js_catch_ends) */
+        JS_FreeValue(ctx, promise);
+        promise = JS_EXCEPTION;
+    }
  done:
     JS_FreeValue(ctx, basename_val);
     JS_FreeValue(ctx, resolving_funcs[0]);
@@ -37330,25 +37944,34 @@ static JSValue js_dynamic_import(JSContext *ctx, JSValueConst specifier, JSValue
     return promise;
  exception:
     JS_FreeValue(ctx, attributes_obj);
+    if (js_catch_ends(ctx)) {
+        JS_FreeValue(ctx, promise);
+        promise = JS_EXCEPTION;
+        goto done;
+    }
     err = js_get_exception(ctx);
     ret = js_call(ctx, resolving_funcs[1], JS_UNDEFINED,
                    1, (JSValueConst *)&err);
-    JS_FreeValue(ctx, ret);
     JS_FreeValue(ctx, err);
+    if (js_settle_result(ctx, ret) < 0) {
+        JS_FreeValue(ctx, promise);
+        promise = JS_EXCEPTION;
+    }
     goto done;
 }
 
-static void js_set_module_evaluated(JSContext *ctx, JSModuleDef *m)
+static __exception int js_module_settle(JSContext *ctx, JSModuleDef *m, BOOL is_reject,
+                                        JSValueConst value);
+
+/* -1 when the settle of the promise of m got no memory (js_module_settle) */
+static __exception int js_set_module_evaluated(JSContext *ctx, JSModuleDef *m)
 {
     m->status = JS_MODULE_STATUS_EVALUATED;
     if (!JS_IsUndefined(m->promise)) {
-        JSValue value, ret_val;
         assert(m->cycle_root == m);
-        value = JS_UNDEFINED;
-        ret_val = js_call(ctx, m->resolving_funcs[0], JS_UNDEFINED,
-                          1, (JSValueConst *)&value);
-        JS_FreeValue(ctx, ret_val);
+        return js_module_settle(ctx, m, FALSE, JS_UNDEFINED);
     }
+    return 0;
 }
 
 typedef struct {
@@ -37357,15 +37980,14 @@ typedef struct {
     int size;
 } ExecModuleList;
 
-/* XXX: slow. Could use a linked list instead of ExecModuleList */
-static BOOL find_in_exec_module_list(ExecModuleList *exec_list, JSModuleDef *m)
+/* the modules of exec_list lose their marks */
+static void clear_exec_module_list(ExecModuleList *exec_list)
 {
     int i;
     for(i = 0; i < exec_list->count; i++) {
-        if (exec_list->tab[i] == m)
-            return TRUE;
+        JS_MODULE_STEP();
+        exec_list->tab[i]->in_exec_list = FALSE;
     }
-    return FALSE;
 }
 
 static __exception int gather_available_ancestors(JSContext *ctx, JSModuleDef *module,
@@ -37377,7 +37999,10 @@ static __exception int gather_available_ancestors1(JSContext *ctx, JSModuleDef *
 
     for(i = 0; i < module->async_parent_modules_count; i++) {
         JSModuleDef *m = module->async_parent_modules[i];
-        if (!find_in_exec_module_list(exec_list, m) &&
+        JS_MODULE_STEP();
+        /* the mark of m, in place of a search of exec_list that made the
+           work grow as the square of the number of modules */
+        if (!m->in_exec_list &&
             !m->cycle_root->eval_has_exception) {
             assert(m->status == JS_MODULE_STATUS_EVALUATING_ASYNC);
             assert(!m->eval_has_exception);
@@ -37389,6 +38014,7 @@ static __exception int gather_available_ancestors1(JSContext *ctx, JSModuleDef *
                     return -1;
                 }
                 exec_list->tab[exec_list->count++] = m;
+                m->in_exec_list = TRUE;
                 if (!m->has_tla) {
                     if (gather_available_ancestors(ctx, m, exec_list))
                         return -1;
@@ -37458,20 +38084,22 @@ static JSValue js_async_module_execution_rejected1(JSContext *ctx, JSValueConst 
     module->status = JS_MODULE_STATUS_EVALUATED;
     module->async_evaluation = FALSE;
 
+    /* a failure (no memory) ends the job, and the host taking its
+       exception fails the modules still evaluating (js_fail_async_modules) */
     if (!JS_IsUndefined(module->promise)) {
-        JSValue ret_val;
         assert(module->cycle_root == module);
-        ret_val = js_call(ctx, module->resolving_funcs[1], JS_UNDEFINED,
-                          1, &error);
-        JS_FreeValue(ctx, ret_val);
+        if (js_module_settle(ctx, module, TRUE, error) < 0)
+            return JS_EXCEPTION;
     }
 
     for(i = 0; i < module->async_parent_modules_count; i++) {
         JSModuleDef *m = module->async_parent_modules[i];
         JSValue m_obj = JS_NewModuleValue(ctx, m);
-        js_async_module_execution_rejected(ctx, JS_UNDEFINED, 1, &error, 0,
-                                           &m_obj);
+        JSValue ret = js_async_module_execution_rejected(ctx, JS_UNDEFINED, 1, &error, 0,
+                                                         &m_obj);
         JS_FreeValue(ctx, m_obj);
+        if (JS_IsException(ret))
+            return JS_EXCEPTION;
     }
     return JS_UNDEFINED;
 }
@@ -37493,7 +38121,7 @@ static JSValue js_async_module_execution_fulfilled(JSContext *ctx, JSValueConst 
 {
     JSModuleDef *module = JS_VALUE_GET_PTR(func_data[0]);
     ExecModuleList exec_list_s, *exec_list = &exec_list_s;
-    int i;
+    int i, ret;
 
 #ifdef DUMP_MODULE_EXEC
     js_dump_module(ctx, __func__, module);
@@ -37506,13 +38134,18 @@ static JSValue js_async_module_execution_fulfilled(JSContext *ctx, JSValueConst 
     assert(!module->eval_has_exception);
     assert(module->async_evaluation);
     module->async_evaluation = FALSE;
-    js_set_module_evaluated(ctx, module);
+    /* no memory for the settle: as a failure of an ancestor below */
+    if (js_set_module_evaluated(ctx, module) < 0)
+        return JS_EXCEPTION;
 
     exec_list->tab = NULL;
     exec_list->count = 0;
     exec_list->size = 0;
 
-    if (gather_available_ancestors(ctx, module, exec_list) < 0) {
+    ret = gather_available_ancestors(ctx, module, exec_list);
+    /* the marks are only for the gathering */
+    clear_exec_module_list(exec_list);
+    if (ret < 0) {
         js_free(ctx, exec_list->tab);
         return JS_EXCEPTION;
     }
@@ -37529,30 +38162,53 @@ static JSValue js_async_module_execution_fulfilled(JSContext *ctx, JSValueConst 
         if (m->status == JS_MODULE_STATUS_EVALUATED) {
             assert(m->eval_has_exception);
         } else if (m->has_tla) {
-            js_execute_async_module(ctx, m);
+            /* out of memory or an uncatchable exception, which ends the
+               job: the host taking it fails the modules still evaluating
+               (js_fail_async_modules) */
+            if (js_execute_async_module(ctx, m) < 0)
+                goto fail;
         } else {
             JSValue error;
             if (js_execute_sync_module(ctx, m, &error) < 0) {
                 JSValue m_obj = JS_NewModuleValue(ctx, m);
-                js_async_module_execution_rejected(ctx, JS_UNDEFINED,
-                                                   1, (JSValueConst *)&error, 0,
-                                                   &m_obj);
+                JSValue rej = js_async_module_execution_rejected(ctx, JS_UNDEFINED,
+                                                                 1, (JSValueConst *)&error, 0,
+                                                                 &m_obj);
                 JS_FreeValue(ctx, m_obj);
                 JS_FreeValue(ctx, error);
+                /* m is recorded as failed, and an uncatchable exception
+                   ends the job too (js_catch_ends), as does a failure of
+                   the rejection */
+                if (JS_IsException(rej) || js_catch_ends(ctx))
+                    goto fail;
             } else {
                 m->async_evaluation = FALSE;
-                js_set_module_evaluated(ctx, m);
+                if (js_set_module_evaluated(ctx, m) < 0)
+                    goto fail;
             }
         }
     }
     js_free(ctx, exec_list->tab);
     return JS_UNDEFINED;
+ fail:
+    js_free(ctx, exec_list->tab);
+    return JS_EXCEPTION;
 }
 
+/* Start the evaluation of m, which has a top-level await, and put the
+   handlers of m on the promise of its function. That is PerformPromiseThen
+   of the spec, with no promise made for the result: Promise.prototype.then,
+   which upstream called, looks up the species constructor of the promise,
+   which a script changes (Promise.prototype.constructor = 1 in the module
+   before its first await): its TypeError left m with no handler, evaluating
+   for good, and the error pending after a call that did not fail. A failure
+   now is out of memory or an interrupt, which ends the call: the host
+   taking it records m as failed (js_fail_async_modules). */
 static int js_execute_async_module(JSContext *ctx, JSModuleDef *m)
 {
     JSValue promise, m_obj;
-    JSValue resolve_funcs[2], ret_val;
+    JSValue resolve_funcs[2], cap[2];
+    int ret;
 #ifdef DUMP_MODULE_EXEC
     js_dump_module(ctx, __func__, m);
 #endif
@@ -37562,13 +38218,15 @@ static int js_execute_async_module(JSContext *ctx, JSModuleDef *m)
     m_obj = JS_NewModuleValue(ctx, m);
     resolve_funcs[0] = JS_NewCFunctionData(ctx, js_async_module_execution_fulfilled, 0, 0, 1, (JSValueConst *)&m_obj);
     resolve_funcs[1] = JS_NewCFunctionData(ctx, js_async_module_execution_rejected, 0, 0, 1, (JSValueConst *)&m_obj);
-    ret_val = js_promise_then(ctx, promise, 2, (JSValueConst *)resolve_funcs);
-    JS_FreeValue(ctx, ret_val);
+    cap[0] = JS_UNDEFINED;
+    cap[1] = JS_UNDEFINED;
+    ret = perform_promise_then(ctx, promise, (JSValueConst *)resolve_funcs,
+                               (JSValueConst *)cap);
     JS_FreeValue(ctx, m_obj);
     JS_FreeValue(ctx, resolve_funcs[0]);
     JS_FreeValue(ctx, resolve_funcs[1]);
     JS_FreeValue(ctx, promise);
-    return 0;
+    return ret;
 }
 
 /* return < 0 in case of exception. *pvalue contains the exception. */
@@ -37648,6 +38306,13 @@ static __exception int js_inner_module_evaluation1(JSContext *ctx, JSModuleDef *
     /* push 'm' on stack */
     m->stack_prev = *pstack_top;
     *pstack_top = m;
+    /* the walk over the modules a module requests: the flag is read once m
+       is on the stack, as a failure is one of its evaluation, which
+       js_evaluate_module gives to each module on the stack, m too */
+    if (js_compile_poll(ctx, 1 + m->req_module_entries_count)) {
+        *pvalue = js_get_exception(ctx);
+        return -1;
+    }
 
     for(i = 0; i < m->req_module_entries_count; i++) {
         JSReqModuleEntry *rme = &m->req_module_entries[i];
@@ -37690,7 +38355,13 @@ static __exception int js_inner_module_evaluation1(JSContext *ctx, JSModuleDef *
         m->async_evaluation = TRUE;
         m->async_evaluation_timestamp =
             ctx->rt->module_async_evaluation_next_timestamp++;
-        js_execute_async_module(ctx, m);
+        /* its start fails only with an uncatchable exception (a stop
+           before its first await, out of memory): a failure of its
+           evaluation, which js_evaluate_module ends the call with */
+        if (js_execute_async_module(ctx, m) < 0) {
+            *pvalue = js_get_exception(ctx);
+            return -1;
+        }
     } else {
         if (js_execute_sync_module(ctx, m, pvalue) < 0)
             return -1;
@@ -37737,7 +38408,7 @@ static __exception int js_inner_module_evaluation(JSContext *ctx, JSModuleDef *m
 static JSValue js_evaluate_module(JSContext *ctx, JSModuleDef *m)
 {
     JSModuleDef *m1, *stack_top;
-    JSValue ret_val, result;
+    JSValue result;
 
 #ifdef DUMP_MODULE_EXEC
     js_dump_module(ctx, __func__, m);
@@ -37753,8 +38424,12 @@ static JSValue js_evaluate_module(JSContext *ctx, JSModuleDef *m)
     if (!JS_IsUndefined(m->promise))
         return JS_DupValue(ctx, m->promise);
     m->promise = JS_NewPromiseCapability(ctx, m->resolving_funcs);
-    if (JS_IsException(m->promise))
+    if (JS_IsException(m->promise)) {
+        /* no promise: the next import makes one, where it took the
+           exception for the promise, with no exception pending */
+        m->promise = JS_UNDEFINED;
         return JS_EXCEPTION;
+    }
 
     stack_top = NULL;
     if (js_inner_module_evaluation(ctx, m, 0, &stack_top, &result) < 0) {
@@ -37770,9 +38445,13 @@ static JSValue js_evaluate_module(JSContext *ctx, JSModuleDef *m)
         JS_FreeValue(ctx, result);
         assert(m->status == JS_MODULE_STATUS_EVALUATED);
         assert(m->eval_has_exception);
-        ret_val = js_call(ctx, m->resolving_funcs[1], JS_UNDEFINED,
-                          1, (JSValueConst *)&m->eval_exception);
-        JS_FreeValue(ctx, ret_val);
+        /* the modules record an uncatchable exception too, so that an
+           import of them fails, but the call ends with it, and no promise
+           it returns holds it (js_catch_ends), as it ends when the settle
+           of the promise got no memory */
+        if (js_module_settle(ctx, m, TRUE, m->eval_exception) < 0 ||
+            js_catch_ends(ctx))
+            return JS_EXCEPTION;
     } else {
 #ifdef DUMP_MODULE_EXEC
         js_dump_module(ctx, "  done", m);
@@ -37781,12 +38460,9 @@ static JSValue js_evaluate_module(JSContext *ctx, JSModuleDef *m)
                m->status == JS_MODULE_STATUS_EVALUATED);
         assert(!m->eval_has_exception);
         if (!m->async_evaluation) {
-            JSValue value;
             assert(m->status == JS_MODULE_STATUS_EVALUATED);
-            value = JS_UNDEFINED;
-            ret_val = js_call(ctx, m->resolving_funcs[0], JS_UNDEFINED,
-                              1, (JSValueConst *)&value);
-            JS_FreeValue(ctx, ret_val);
+            if (js_module_settle(ctx, m, FALSE, JS_UNDEFINED) < 0)
+                return JS_EXCEPTION;
         }
         assert(stack_top == NULL);
     }
@@ -38098,6 +38774,7 @@ static __exception int add_import(JSParseState *s, JSModuleDef *m,
         return js_parse_error(s, "invalid import binding");
 
     if (local_name != JS_ATOM_default) {
+        js_compile_count(ctx, s->cur_func->closure_var_count);
         for (i = 0; i < s->cur_func->closure_var_count; i++) {
             if (s->cur_func->closure_var[i].var_name == local_name)
                 return js_parse_error(s, "duplicate import binding");
@@ -39046,6 +39723,12 @@ static __exception int get_closure_var1(JSContext *ctx, JSFunctionDef *s,
         if (closure_type != JS_CLOSURE_GLOBAL_REF)
             closure_type = JS_CLOSURE_REF;
     }
+    /* the closure variables an eval collects (add_eval_variables) are as
+       many as the variables of the functions around it, each looked for at
+       every level: the flag is read here, where a failure leaves the
+       closure variables of s and of its parents whole */
+    if (js_compile_poll(ctx, s->closure_var_count))
+        return -1;
     for(i = 0; i < s->closure_var_count; i++) {
         JSClosureVar *cv = &s->closure_var[i];
         if (cv->var_idx == var_idx && cv->closure_type == closure_type)
@@ -39253,6 +39936,8 @@ static __exception int resolve_scope_var(JSContext *ctx, JSFunctionDef *s,
                      var_name == JS_ATOM_new_target ||
                      var_name == JS_ATOM_this);
 
+    /* the chains of the scopes are as long as the vars of each function */
+    js_compile_count(ctx, s->var_count);
     /* resolve local scoped variables */
     var_idx = -1;
     for (idx = s->scopes[scope_level].first; idx >= 0;) {
@@ -39432,6 +40117,7 @@ static __exception int resolve_scope_var(JSContext *ctx, JSFunctionDef *s,
     for (fd = s; fd->parent;) {
         scope_level = fd->parent_scope_level;
         fd = fd->parent;
+        js_compile_count(ctx, fd->var_count);
         for (idx = fd->scopes[scope_level].first; idx >= 0;) {
             vd = &fd->vars[idx];
             if (vd->var_name == var_name) {
@@ -40372,7 +41058,9 @@ static BOOL code_match(CodeContext *s, int pos, ...)
     return ret;
 }
 
-static void instantiate_hoisted_definitions(JSContext *ctx, JSFunctionDef *s, DynBuf *bc)
+/* -1 with "interrupted" thrown when it was stopped: the global vars not done
+   stay in s, for js_free_function_def */
+static __exception int instantiate_hoisted_definitions(JSContext *ctx, JSFunctionDef *s, DynBuf *bc)
 {
     int i, idx, label_next = -1;
 
@@ -40403,7 +41091,7 @@ static void instantiate_hoisted_definitions(JSContext *ctx, JSFunctionDef *s, Dy
         label_next = new_label_fd(s);
         if (label_next < 0) {
             dbuf_set_error(bc);
-            return;
+            return 0;
         }
         /* if 'this' is true, initialize the global variables and return */
         dbuf_putc(bc, OP_push_this);
@@ -40420,6 +41108,14 @@ static void instantiate_hoisted_definitions(JSContext *ctx, JSFunctionDef *s, Dy
         JSGlobalVar *hf = &s->global_vars[i];
         BOOL has_var_obj = FALSE;
         BOOL force_init = hf->force_init;
+        /* the global vars times the closure vars, as in resolve_variables:
+           the names of those done are freed */
+        if (js_compile_poll(ctx, s->closure_var_count)) {
+            s->global_var_count -= i;
+            memmove(s->global_vars, s->global_vars + i,
+                    sizeof(s->global_vars[0]) * s->global_var_count);
+            return -1;
+        }
         /* we are in an eval, so the closure contains all the
            enclosing variables */
         /* If the outer function has a variable environment,
@@ -40477,6 +41173,7 @@ static void instantiate_hoisted_definitions(JSContext *ctx, JSFunctionDef *s, Dy
     s->global_vars = NULL;
     s->global_var_count = 0;
     s->global_var_size = 0;
+    return 0;
 }
 
 static int skip_dead_code(JSFunctionDef *s, const uint8_t *bc_buf, int bc_len,
@@ -40573,6 +41270,12 @@ static __exception int resolve_variables(JSContext *ctx, JSFunctionDef *s)
     for(i = 0; i < s->global_var_count; i++) {
         JSGlobalVar *hf = &s->global_vars[i];
 
+        /* the global vars times the closure vars: the vars of an eval in a
+           function with many locals. A stop copies all the code. */
+        if (js_compile_poll(ctx, s->closure_var_count)) {
+            pos = 0;
+            goto fail;
+        }
         /* check if global variable (XXX: simplify) */
         for(idx = 0; idx < s->closure_var_count; idx++) {
             JSClosureVar *cv = &s->closure_var[idx];
@@ -40605,6 +41308,9 @@ static __exception int resolve_variables(JSContext *ctx, JSFunctionDef *s)
 
     line_num = 0; /* avoid warning */
     for (pos = 0; pos < bc_len; pos = pos_next) {
+        /* the rest of the code is copied as it is */
+        if (js_compile_poll(ctx, JS_CODE_WORK))
+            goto fail;
         op = bc_buf[pos];
         len = opcode_info[op].size;
         pos_next = pos + len;
@@ -40773,9 +41479,9 @@ static __exception int resolve_variables(JSContext *ctx, JSFunctionDef *s)
             {
                 int scope_idx, scope = get_u16(bc_buf + pos + 1);
 
-                if (scope == s->body_scope) {
-                    instantiate_hoisted_definitions(ctx, s, &bc_out);
-                }
+                if (scope == s->body_scope &&
+                    instantiate_hoisted_definitions(ctx, s, &bc_out))
+                    goto fail;
 
                 for(scope_idx = s->scopes[scope].first; scope_idx >= 0;) {
                     JSVarDef *vd = &s->vars[scope_idx];
@@ -40906,12 +41612,10 @@ static __exception int resolve_variables(JSContext *ctx, JSFunctionDef *s)
  fail:
     /* continue the copy to keep the atom refcounts consistent */
     /* XXX: find a better solution ? */
-    for (; pos < bc_len; pos = pos_next) {
-        op = bc_buf[pos];
-        len = opcode_info[op].size;
-        pos_next = pos + len;
-        dbuf_put(&bc_out, bc_buf + pos, len);
-    }
+    /* in one copy, which reads no flag: the instructions are whole from
+       pos to the end */
+    if (pos < bc_len)
+        dbuf_put(&bc_out, bc_buf + pos, bc_len - pos);
     dbuf_free(&s->byte_code);
     s->byte_code = bc_out;
     return -1;
@@ -40945,7 +41649,7 @@ static int compute_pc2line_info(JSFunctionDef *s)
     if (!s->strip_debug) {
         int last_line_num, last_col_num;
         uint32_t last_pc = 0;
-        int i, line_num, col_num;
+        int i, line_num, col_num, end;
         const uint8_t *buf_start = s->get_line_col_cache->buf_start;
         js_dbuf_init(s->ctx, &s->pc2line);
 
@@ -40957,7 +41661,7 @@ static int compute_pc2line_info(JSFunctionDef *s)
         dbuf_put_leb128(&s->pc2line, last_line_num); /* line number minus 1 */
         dbuf_put_leb128(&s->pc2line, last_col_num); /* column number minus 1 */
 
-        for (i = 0; i < s->line_number_count; i++) {
+        for (i = end = 0; js_code_more(s->ctx, i, s->line_number_count, end); i++) {
             uint32_t pc = s->line_number_slots[i].pc;
             uint32_t source_pos = s->line_number_slots[i].source_pos;
             int diff_pc, diff_line, diff_col;
@@ -40994,6 +41698,8 @@ static int compute_pc2line_info(JSFunctionDef *s)
             last_line_num = line_num;
             last_col_num = col_num;
         }
+        if (end < 0)
+            return -1;
     }
     return 0;
 }
@@ -41260,15 +41966,19 @@ static BOOL fused_run_at(const uint8_t *bc_buf, int bc_len, int pos,
    instruction starts. */
 #define POLL_NONE 0xff
 
-static const char *poll_scan(const uint8_t *bc_buf, int bc_len, uint8_t *run,
-                             uint8_t *ins)
+/* what poll_scan gives when ctx is not NULL and the interrupt flag was set:
+   "interrupted" is thrown */
+static const char poll_scan_stopped[] = "interrupted";
+
+static const char *poll_scan(JSContext *ctx, const uint8_t *bc_buf, int bc_len,
+                             uint8_t *run, uint8_t *ins)
 {
-    int pos, len, op, r, in, falls, next, jumps;
+    int pos, len, op, r, in, falls, next, jumps, end;
     int64_t target;
     const JSOpCode *oi;
 
     memset(run, POLL_NONE, bc_len);
-    for (pos = 0; pos < bc_len; pos += len) {
+    for (pos = end = 0; js_code_more(ctx, pos, bc_len, end); pos += len) {
         op = bc_buf[pos];
         if (op == OP_invalid || op >= OP_COUNT)
             return "an opcode the interpreter does not have";
@@ -41279,10 +41989,12 @@ static const char *poll_scan(const uint8_t *bc_buf, int bc_len, uint8_t *run,
         if (is_fused_op(op) && !fused_run_match(bc_buf, bc_len, pos, op, TRUE))
             return "a fused opcode without the instructions it reads";
     }
+    if (end < 0)
+        return poll_scan_stopped;
     /* the entry counts */
     r = 0;
     falls = TRUE;
-    for (pos = 0; pos < bc_len; pos += len) {
+    for (pos = end = 0; js_code_more(ctx, pos, bc_len, end); pos += len) {
         op = bc_buf[pos];
         oi = &short_opcode_info(op);
         len = oi->size;
@@ -41347,6 +42059,8 @@ static const char *poll_scan(const uint8_t *bc_buf, int bc_len, uint8_t *run,
             run[target] = max_int(run[target], r);
         falls = next;
     }
+    if (end < 0)
+        return poll_scan_stopped;
     if (falls)
         return "a last instruction that runs off the end of the code";
     return NULL;
@@ -41378,13 +42092,18 @@ static __exception int check_polls(JSContext *ctx, const uint8_t *bc_buf, uint32
         run = js_malloc(ctx, max_int(bc_len, 1));
         if (!run)
             return -1;
-        why = poll_scan(bc_buf, bc_len, run, NULL);
+        why = poll_scan(ctx, bc_buf, bc_len, run, NULL);
         js_free(ctx, run);
+        if (why == poll_scan_stopped)
+            return -1;
     }
     if (!why) {
         if (!memchr(bc_buf, OP_gosub, bc_len))
             return 0;
         for (pos = 0; pos < (int)bc_len; pos += short_opcode_info(bc_buf[pos]).size) {
+            /* the caller frees *ret_bits */
+            if (js_compile_poll(ctx, JS_CODE_WORK))
+                return -1;
             if (bc_buf[pos] == OP_gosub && pos + 5 < (int)bc_len) {
                 if (!*ret_bits) {
                     *ret_bits = js_mallocz(ctx, sizeof(uint32_t) * ((bc_len + 31) / 32));
@@ -41433,7 +42152,9 @@ static __exception int insert_polls(JSContext *ctx, JSFunctionDef *s, DynBuf *bc
         return -1;
     ins = run + len;
     memset(ins, 0, len + 1);
-    why = poll_scan(buf, len, run, ins);
+    why = poll_scan(ctx, buf, len, run, ins);
+    if (why == poll_scan_stopped)
+        goto fail;
     if (why) {
         JS_ThrowInternalError(ctx, "compiled bytecode: %s", why);
         goto fail;
@@ -41454,6 +42175,8 @@ static __exception int insert_polls(JSContext *ctx, JSFunctionDef *s, DynBuf *bc
     do {
         cur = 0;
         for (pos = 0; pos < len; pos += sz) {
+            if (js_compile_poll(ctx, JS_CODE_WORK))
+                goto fail;
             sz = short_opcode_info(buf[pos]).size;
             cur += ins[pos];
             for (k = 0; k < sz; k++)
@@ -41463,6 +42186,8 @@ static __exception int insert_polls(JSContext *ctx, JSFunctionDef *s, DynBuf *bc
         npos[len] = cur;
         changed = FALSE;
         for (pos = 0; pos < len; pos += sz) {
+            if (js_compile_poll(ctx, JS_CODE_WORK))
+                goto fail;
             oi = &short_opcode_info(buf[pos]);
             sz = oi->size;
             if (wide[pos])
@@ -41482,6 +42207,10 @@ static __exception int insert_polls(JSContext *ctx, JSFunctionDef *s, DynBuf *bc
     } while (changed);
     js_dbuf_bytecode_init(ctx, &out);
     for (pos = 0; pos < len; pos += sz) {
+        if (js_compile_poll(ctx, JS_CODE_WORK)) {
+            dbuf_free(&out);
+            goto fail;
+        }
         op = buf[pos];
         oi = &short_opcode_info(op);
         sz = oi->size;
@@ -41603,7 +42332,7 @@ static no_inline __exception int fuse_code(JSContext *ctx, DynBuf *bc)
     uint8_t small[256], *buf = bc->buf, *mark;
     int at[32];
     const uint8_t *run;
-    int len = bc->size, pos, k, op, end, size, runs = 0, i;
+    int len = bc->size, pos, k, op, end, size, runs = 0, i, piece;
     int64_t to;
 
     if (ctx->rt->no_fused_ops || len == 0)
@@ -41616,7 +42345,7 @@ static no_inline __exception int fuse_code(JSContext *ctx, DynBuf *bc)
         if (!mark)
             return -1;
     }
-    for (pos = 0; pos < len; pos += size) {
+    for (pos = piece = 0; js_code_more(ctx, pos, len, piece); pos += size) {
         op = buf[pos];
         size = short_opcode_info(op).size;
         switch (short_fuse_kind(op)) {
@@ -41651,6 +42380,12 @@ static no_inline __exception int fuse_code(JSContext *ctx, DynBuf *bc)
         }
         if (to >= 0 && to <= len)
             mark[to] |= 1;
+    }
+    /* the code is not changed before the second loop */
+    if (piece < 0) {
+        if (mark != small)
+            js_free(ctx, mark);
+        return -1;
     }
     /* each run, unless a jump lands inside it */
     for (i = 0, pos = 0; i < runs; i++, pos++) {
@@ -41711,8 +42446,10 @@ static no_inline __exception int fuse_code(JSContext *ctx, DynBuf *bc)
    variable a stretch that only grows. It gives up on code it does not know
    the jumps of, and stops looking past a budget of labels. A dropped
    set_loc_uninitialized keeps its place with LOC_DROPPED for its index,
-   and resolve_labels leaves it out. */
-static no_inline void tdz_checks(JSContext *ctx, JSFunctionDef *s)
+   and resolve_labels leaves it out. It reads the interrupt flag as it goes
+   (js_compile_poll): -1 with "interrupted" thrown when it was stopped, the
+   code then half done, which the compile drops. */
+static no_inline __exception int tdz_checks(JSContext *ctx, JSFunctionDef *s)
 {
     typedef struct {
         int pos;   /* the label, or the place after an OP_gosub */
@@ -41737,15 +42474,25 @@ static no_inline void tdz_checks(JSContext *ctx, JSFunctionDef *s)
     TDZPoint *points = NULL;
     TDZVar *vars = NULL;
     BOOL any = FALSE;
+    int ret = 0, piece_end;
     const JSOpCode *oi;
 
-    for (pos = 0; pos < len; pos += opcode_info[op].size) {
+    /* each walk over the code goes by pieces of JS_CODE_PIECE bytes, with a
+       reading of the flag before each (js_code_piece), which leaves its loop
+       as it was */
+#define TDZ_PIECE() do { piece_end = js_code_piece(ctx, pos, len); if (piece_end < 0) { ret = -1; goto done; } } while (0)
+    pos = 0;
+ walk_checks:
+    TDZ_PIECE();
+    for (; pos < piece_end; pos += opcode_info[op].size) {
         op = buf[pos];
         if (op == OP_get_loc_check || op == OP_put_loc_check)
             any = TRUE;
     }
+    if (pos < len)
+        goto walk_checks;
     if (!any || s->var_count == 0 || ctx->rt->no_fused_ops)
-        return;
+        return 0;
     /* without memory for the walk, the checks stay: the requests do not
        throw, so that the compile goes on as it would have */
     lmin = js_malloc_rt(ctx->rt, sizeof(int) * (s->label_count + 1));
@@ -41765,7 +42512,10 @@ static no_inline void tdz_checks(JSContext *ctx, JSFunctionDef *s)
         vars[i].left = 0;
     }
     /* the labels, the jumps to each, and the set_loc_uninitialized */
-    for (pos = 0; pos < len; pos += oi->size) {
+    pos = 0;
+ walk_labels:
+    TDZ_PIECE();
+    for (; pos < piece_end; pos += oi->size) {
         op = buf[pos];
         oi = &opcode_info[op];
         label = -1;
@@ -41812,6 +42562,8 @@ static no_inline void tdz_checks(JSContext *ctx, JSFunctionDef *s)
                 vars[idx].uninit = vars[idx].uninit == -1 ? pos : -2;
         }
     }
+    if (pos < len)
+        goto walk_labels;
     /* the points reached again from the code after them: by a jump back to
        a label, or by an OP_ret back to the place after an OP_gosub */
     reach = -1;
@@ -41820,7 +42572,10 @@ static no_inline void tdz_checks(JSContext *ctx, JSFunctionDef *s)
         points[i].reach = reach;
     }
     /* the checks, in the order of the code */
-    for (pos = 0; pos < len; pos += oi->size) {
+    pos = 0;
+ walk_stretches:
+    TDZ_PIECE();
+    for (; pos < piece_end; pos += oi->size) {
         TDZVar *v;
 
         op = buf[pos];
@@ -41903,6 +42658,8 @@ static no_inline void tdz_checks(JSContext *ctx, JSFunctionDef *s)
             break;
         }
     }
+    if (pos < len)
+        goto walk_stretches;
     if (!s->has_eval_call) {
         for (i = 0; i < s->var_count; i++) {
             if (vars[i].uninit >= 0 && !vars[i].left &&
@@ -41950,6 +42707,8 @@ static no_inline void tdz_checks(JSContext *ctx, JSFunctionDef *s)
     js_free_rt(ctx->rt, lcatch);
     js_free_rt(ctx->rt, vars);
     js_free_rt(ctx->rt, points);
+    return ret;
+#undef TDZ_PIECE
 }
 
 /* Whether nothing but the code of s reads or writes its locals and
@@ -41957,34 +42716,36 @@ static no_inline void tdz_checks(JSContext *ctx, JSFunctionDef *s)
    (whose references to a variable may write it), no mapped arguments
    object (whose elements are the arguments), and not the code of an eval or
    a module. Then a local or an argument no closure captures changes only by
-   the instructions of s that name it, which share_local_slots relies on. */
+   the instructions of s that name it, which share_local_slots relies on.
+   This tests the function, and js_frame_plain_op each instruction of its
+   code, in the walk of share_local_slots. */
 static BOOL js_frame_plain(JSFunctionDef *s)
 {
-    const uint8_t *buf = s->byte_code.buf;
-    int len = s->byte_code.size, pos, op;
-
     if (s->has_eval_call || s->is_eval || s->module)
         return FALSE;
     if (s->arguments_var_idx >= 0 && !(s->js_mode & JS_MODE_STRICT) &&
         s->has_simple_parameter_list)
         return FALSE;
-    for (pos = 0; pos < len; pos += opcode_info[op].size) {
-        op = buf[pos];
-        switch (op) {
-        case OP_with_get_var:
-        case OP_with_put_var:
-        case OP_with_delete_var:
-        case OP_with_make_ref:
-        case OP_with_get_ref:
-        case OP_make_loc_ref:
-        case OP_make_arg_ref:
-        case OP_make_var_ref_ref:
-        case OP_eval:
-        case OP_apply_eval:
-            return FALSE;
-        }
-    }
     return TRUE;
+}
+
+static BOOL js_frame_plain_op(int op)
+{
+    switch (op) {
+    case OP_with_get_var:
+    case OP_with_put_var:
+    case OP_with_delete_var:
+    case OP_with_make_ref:
+    case OP_with_get_ref:
+    case OP_make_loc_ref:
+    case OP_make_arg_ref:
+    case OP_make_var_ref_ref:
+    case OP_eval:
+    case OP_apply_eval:
+        return FALSE;
+    default:
+        return TRUE;
+    }
 }
 
 /* the links of the locals of fd to the variables of their scope and the
@@ -42050,14 +42811,17 @@ static void link_var_scopes(JSFunctionDef *fd)
    the closure variables of the functions of its constant pool, compiled
    already, that name its locals, and the list of its locals change
    together. The pass gives up, with nothing changed, on code it does not
-   know, more than 1024 locals, and when it has no memory. */
-static no_inline void share_local_slots(JSContext *ctx, JSFunctionDef *s)
+   know, more than 1024 locals, and when it has no memory. It reads the
+   interrupt flag as it goes (js_compile_poll), before it changes anything:
+   -1 with "interrupted" thrown when it was stopped. */
+static no_inline __exception int share_local_slots(JSContext *ctx, JSFunctionDef *s)
 {
     JSRuntime *rt = ctx->rt;
+    int ret = 0, work;
     uint8_t *buf = s->byte_code.buf;
     int len = s->byte_code.size, n = s->var_count, words;
     int nb = 0, nl = 0, ncatch = 0, nret = 0, ncolors = 0;
-    int pos, op, idx, label, b, i, k, c, w, changed;
+    int pos, op, idx, label, b, i, k, c, w, changed, piece;
     size_t budget;
     const JSOpCode *oi;
     uint8_t *lead = NULL, *pinned = NULL, *closed = NULL;
@@ -42065,8 +42829,9 @@ static no_inline void share_local_slots(JSContext *ctx, JSFunctionDef *s)
     int *locs = NULL, *ret_blk = NULL, *catch_label = NULL, *color = NULL, *forb = NULL;
     uint64_t *gen = NULL, *kill = NULL, *in = NULL, *out = NULL, *adj = NULL, *live = NULL;
 
-    if (n < 2 || n > 1024)
-        return;
+    if (n < 2 || n > 1024 || !js_frame_plain(s))
+        return 0;
+    work = js_compile_left(ctx);
     words = (n + 63) / 64;
     lead = js_mallocz_rt(rt, len + 1);
     pinned = js_mallocz_rt(rt, n);
@@ -42078,9 +42843,11 @@ static no_inline void share_local_slots(JSContext *ctx, JSFunctionDef *s)
     /* the instructions that start a block, the instructions on locals, and
        code the pass does not know */
     lead[0] = 1;
-    for (pos = 0; pos < len; pos += oi->size) {
+    for (pos = piece = 0; js_code_more(ctx, pos, len, piece); pos += oi->size) {
         op = buf[pos];
         oi = &opcode_info[op];
+        if (!js_frame_plain_op(op))
+            goto done;
         switch (oi->fmt) {
         case OP_FMT_label:
             label = get_u32(buf + pos + 1);
@@ -42150,6 +42917,10 @@ static no_inline void share_local_slots(JSContext *ctx, JSFunctionDef *s)
             break;
         }
     }
+    if (piece < 0) {
+        ret = -1;
+        goto done;
+    }
     for (pos = 0; pos < len; pos++)
         nb += lead[pos];
     if ((size_t)nb * words > (1 << 20))
@@ -42175,7 +42946,7 @@ static no_inline void share_local_slots(JSContext *ctx, JSFunctionDef *s)
        targets of the catches, and what each block reads before it writes
        (gen) and writes (kill) */
     nb = nl = ncatch = nret = 0;
-    for (pos = 0; pos < len; pos += oi->size) {
+    for (pos = piece = 0; js_code_more(ctx, pos, len, piece); pos += oi->size) {
         op = buf[pos];
         oi = &opcode_info[op];
         if (lead[pos]) {
@@ -42214,6 +42985,10 @@ static no_inline void share_local_slots(JSContext *ctx, JSFunctionDef *s)
                 break;
             }
         }
+    }
+    if (piece < 0) {
+        ret = -1;
+        goto done;
     }
     blk_loc[nb] = nl;
     for (i = 0; i < ncatch; i++) {
@@ -42281,6 +43056,10 @@ static no_inline void share_local_slots(JSContext *ctx, JSFunctionDef *s)
             if (budget < (size_t)s1)
                 goto done;
             budget -= s1;
+            if (js_compile_tick(ctx, work, s1)) {
+                ret = -1;
+                goto done;
+            }
         }
     } while (changed);
     /* the locals that keep a slot of their own */
@@ -42331,6 +43110,10 @@ static no_inline void share_local_slots(JSContext *ctx, JSFunctionDef *s)
         for (k = blk_loc[b + 1] - 1; k >= blk_loc[b]; k--) {
             uint64_t bit, *row;
             pos = locs[k];
+            if (js_compile_tick(ctx, work, words)) {
+                ret = -1;
+                goto done;
+            }
             op = buf[pos];
             idx = get_u16(buf + pos + 1);
             bit = (uint64_t)1 << (idx & 63);
@@ -42353,6 +43136,10 @@ static no_inline void share_local_slots(JSContext *ctx, JSFunctionDef *s)
         }
     }
     for (i = 0; i < n; i++) {
+        if (js_compile_tick(ctx, work, n)) {
+            ret = -1;
+            goto done;
+        }
         for (w = 0; w < words; w++) {
             uint64_t m = adj[i * words + w];
             while (m) {
@@ -42367,6 +43154,10 @@ static no_inline void share_local_slots(JSContext *ctx, JSFunctionDef *s)
         forb[i] = -1;
     }
     for (i = 0; i < n; i++) {
+        if (js_compile_tick(ctx, work, i + ncolors)) {
+            ret = -1;
+            goto done;
+        }
         if (pinned[i]) {
             closed[ncolors] = 1;
             color[i] = ncolors++;
@@ -42434,6 +43225,8 @@ static no_inline void share_local_slots(JSContext *ctx, JSFunctionDef *s)
     s->var_count = ncolors;
     link_var_scopes(s);
  done:
+    if (!ret)
+        js_compile_keep(ctx, work);
     js_free_rt(rt, lead);
     js_free_rt(rt, pinned);
     js_free_rt(rt, closed);
@@ -42451,6 +43244,7 @@ static no_inline void share_local_slots(JSContext *ctx, JSFunctionDef *s)
     js_free_rt(rt, out);
     js_free_rt(rt, adj);
     js_free_rt(rt, live);
+    return ret;
 }
 
 /* peephole optimizations and resolve goto/labels */
@@ -42462,7 +43256,7 @@ static __exception int resolve_labels(JSContext *ctx, JSFunctionDef *s)
     LabelSlot *label_slots, *ls;
     RelocEntry *re, *re_next;
     CodeContext cc;
-    int label;
+    int label, piece;
 #if SHORT_OPCODES
     JumpSlot *jp;
 #endif
@@ -42491,9 +43285,11 @@ static __exception int resolve_labels(JSContext *ctx, JSFunctionDef *s)
         s->line_number_last_pc = 0;
     }
     /* the checks of the temporal dead zone that cannot fail */
-    tdz_checks(ctx, s);
-    if (!ctx->rt->no_fused_ops && js_frame_plain(s))
-        share_local_slots(ctx, s);
+    /* stopped there, the code is the function's still, freed with it */
+    if (tdz_checks(ctx, s))
+        return -1;
+    if (!ctx->rt->no_fused_ops && share_local_slots(ctx, s))
+        return -1;
 
     /* initialize the 'home_object' variable if needed */
     if (s->home_object_var_idx >= 0) {
@@ -42561,7 +43357,7 @@ static __exception int resolve_labels(JSContext *ctx, JSFunctionDef *s)
         put_short_code(&bc_out, OP_put_loc, s->arg_var_object_idx);
     }
 
-    for (pos = 0; pos < bc_len; pos = pos_next) {
+    for (pos = piece = 0; js_code_more(ctx, pos, bc_len, piece); pos = pos_next) {
         int val;
         /* a relocation or a jump slot may point after a write that failed */
         if (dbuf_error(&bc_out))
@@ -43298,6 +44094,12 @@ static __exception int resolve_labels(JSContext *ctx, JSFunctionDef *s)
             break;
         }
     }
+    if (piece < 0) {
+        /* the code from pos on is not copied, and nothing before pos freed
+           one of its atoms: they are freed here */
+        free_bytecode_atoms(ctx->rt, bc_buf + pos, bc_len - pos, FALSE);
+        goto fail;
+    }
 
     if (dbuf_error(&bc_out))
         goto out_of_memory;
@@ -43310,10 +44112,11 @@ static __exception int resolve_labels(JSContext *ctx, JSFunctionDef *s)
     if (OPTIMIZE) {
         /* more jump optimizations */
         int patch_offsets = 0;
-        for (i = 0, jp = s->jump_slots; i < s->jump_count; i++, jp++) {
+        for (i = piece = 0, jp = s->jump_slots; js_code_more(ctx, i, s->jump_count, piece);
+             i++, jp++) {
             LabelSlot *ls;
             JumpSlot *jp1;
-            int j, pos, diff, delta;
+            int j, pos, diff, delta, size, op1;
 
             delta = 3;
             switch (op = jp->op) {
@@ -43327,20 +44130,34 @@ static __exception int resolve_labels(JSContext *ctx, JSFunctionDef *s)
                 diff = s->label_slots[jp->label].addr - pos;
                 if (diff >= -128 && diff <= 127 + delta) {
                     //put_u8(bc_out.buf + pos, diff);
-                    jp->size = 1;
-                    if (op == OP_goto16) {
-                        bc_out.buf[pos - 1] = jp->op = OP_goto8;
-                    } else {
-                        bc_out.buf[pos - 1] = jp->op = OP_if_false8 + (op - OP_if_false);
-                    }
+                    size = 1;
+                    if (op == OP_goto16)
+                        op1 = OP_goto8;
+                    else
+                        op1 = OP_if_false8 + (op - OP_if_false);
                     goto shrink;
                 } else
                 if (diff == (int16_t)diff && op == OP_goto) {
                     //put_u16(bc_out.buf + pos, diff);
-                    jp->size = 2;
+                    size = 2;
                     delta = 2;
-                    bc_out.buf[pos - 1] = jp->op = OP_goto16;
+                    op1 = OP_goto16;
                 shrink:
+                    /* each shrink moves the code after it and goes over
+                       the labels, the jumps after it and the lines: the
+                       flag is read after a count of that work, which is
+                       quadratic in the number of jumps. It is read before
+                       the opcode and the size change, as a stop then frees
+                       the code, whose instructions must have the size of
+                       their opcode: the jumps not done keep their long
+                       form, and none has its target yet, which the
+                       freeing of the atoms does not read. */
+                    if (js_compile_poll(ctx, s->label_count + s->jump_count - i +
+                                        s->line_number_count +
+                                        ((bc_out.size - pos) >> 4)))
+                        goto fail;
+                    jp->size = size;
+                    bc_out.buf[pos - 1] = jp->op = op1;
                     /* XXX: should reduce complexity, using 2 finger copy scheme */
                     memmove(bc_out.buf + pos + jp->size, bc_out.buf + pos + jp->size + delta,
                             bc_out.size - pos - jp->size - delta);
@@ -43363,6 +44180,8 @@ static __exception int resolve_labels(JSContext *ctx, JSFunctionDef *s)
                 break;
             }
         }
+        if (piece < 0)
+            goto fail;
         if (patch_offsets) {
             JumpSlot *jp1;
             int j;
@@ -43507,7 +44326,7 @@ static __exception int compute_stack_size(JSContext *ctx,
                                           int *pstack_size)
 {
     StackSizeState s_s, *s = &s_s;
-    int i, diff, n_pop, pos_next, stack_len, pos, op, catch_pos, catch_level;
+    int i, diff, n_pop, pos_next, stack_len, pos, op, catch_pos, catch_level, work;
     const JSOpCode *oi;
     const uint8_t *bc_buf;
 
@@ -43518,8 +44337,9 @@ static __exception int compute_stack_size(JSContext *ctx,
                                    s->bc_len);
     if (!s->stack_level_tab)
         return -1;
-    for(i = 0; i < s->bc_len; i++)
-        s->stack_level_tab[i] = 0xffff;
+    /* every level 0xffff, in a memset: far fewer polls for long code than a
+       loop over its bytes, which read no flag either */
+    memset(s->stack_level_tab, 0xff, sizeof(s->stack_level_tab[0]) * s->bc_len);
     s->pc_stack = NULL;
     s->catch_pos_tab = js_malloc(ctx, sizeof(s->catch_pos_tab[0]) *
                                    s->bc_len);
@@ -43536,7 +44356,10 @@ static __exception int compute_stack_size(JSContext *ctx,
     if (ss_check(ctx, s, 0, OP_invalid, 0, -1))
         goto fail;
 
+    work = js_compile_left(ctx);
     while (s->pc_stack_len > 0) {
+        if (js_compile_tick(ctx, work, JS_CODE_WORK))
+            goto fail;
         pos = s->pc_stack[--s->pc_stack_len];
         stack_len = s->stack_level_tab[pos];
         catch_pos = s->catch_pos_tab[pos];
@@ -43699,6 +44522,7 @@ static __exception int compute_stack_size(JSContext *ctx,
             goto fail;
     done_insn: ;
     }
+    js_compile_keep(ctx, work);
     /* a function runs in the register loop, which folds a stack deeper than
        RV_STACK_FIT into a frame where its catch offsets have
        RV_FOLD_PINS_MAX temps (regvm-func.h) */
@@ -43782,8 +44606,13 @@ static __exception int add_global_variables(JSContext *ctx, JSFunctionDef *fd)
         JSModuleDef *m = fd->module;
         JSExportEntry *me;
 
+        /* each export looks for its name among the imports, then among the
+           closure variables: the flag is read before each, where a failure
+           leaves the module whole */
         /* Convert local exports to indirect if the local name was imported */
         for(i = 0; i < m->export_entries_count; i++) {
+            if (js_compile_poll(ctx, m->import_entries_count))
+                return -1;
             me = &m->export_entries[i];
             if (me->export_type == JS_EXPORT_TYPE_LOCAL) {
                 JSImportEntry *mi;
@@ -43807,6 +44636,8 @@ static __exception int add_global_variables(JSContext *ctx, JSFunctionDef *fd)
         
         /* resolve the variable names of the local exports */
         for(i = 0; i < m->export_entries_count; i++) {
+            if (js_compile_poll(ctx, fd->closure_var_count))
+                return -1;
             me = &m->export_entries[i];
             if (me->export_type == JS_EXPORT_TYPE_LOCAL) {
                 idx = find_closure_var(ctx, fd, me->local_name);
@@ -43960,7 +44791,7 @@ static BOOL cbv_jump(const uint8_t *buf, int pos, int64_t *t)
 
 /* the target of the jump at pos, or -1 when it has none, -2 when it is
    not the start of an instruction (starts marks them) */
-static int cbv_target(const uint8_t *buf, int len, const uint8_t *starts, int pos)
+static force_inline int cbv_target(const uint8_t *buf, int len, const uint8_t *starts, int pos)
 {
     int64_t t;
     if (!cbv_jump(buf, pos, &t))
@@ -43980,7 +44811,7 @@ static BOOL cbv_class_at(const uint8_t *buf, int len, int64_t pos)
     return pos < len && (buf[pos] == OP_define_class || buf[pos] == OP_define_class_computed);
 }
 
-static BOOL cbv_ends(int op)
+static force_inline BOOL cbv_ends(int op)
 {
     switch (op) {
     case OP_return: case OP_return_undef: case OP_return_async: case OP_throw:
@@ -44007,7 +44838,7 @@ static JSFunctionBytecode *cbv_child(JSFunctionBytecode *b, int i)
    with mark, set them, without, tell whether the chain of REFs is at most
    CBV_DEPTH functions deep. A loop over a stack of its own, not a
    recursion, so that it needs no count (engine/test/cycles.sh). */
-static BOOL cbv_mark(JSFunctionBytecode *c, int j, BOOL mark)
+static force_inline BOOL cbv_mark(JSFunctionBytecode *c, int j, BOOL mark)
 {
     struct {
         JSFunctionBytecode *f;
@@ -44076,7 +44907,9 @@ static __exception int capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
     int nlocal = b->arg_count + b->var_count;
     int pos, prev, op, sz, i, j, k, r, s, t, kind, space, idx, base, changed, ngosub;
     int64_t t64;
+    int piece_end;
     BOOL eval = FALSE, mapped = FALSE, bad = FALSE, need_flow = FALSE, oom = FALSE;
+    BOOL stopped = FALSE;
     uint8_t *starts = NULL, *ok = NULL, *site = NULL, *writes = NULL;
     int *ref_of = NULL, *slot_of = NULL, *gosub_after = NULL, *catch_blk = NULL, ncatch;
     uint8_t *lead = NULL;
@@ -44084,6 +44917,9 @@ static __exception int capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
     uint64_t *in = NULL, *gen = NULL, *kill = NULL;
     CBVGraph g;
 
+    /* the flag is read as the walks and the flow go (js_compile_poll): -1
+       with "interrupted" thrown when it was stopped, as with no memory */
+#define CBV_POLL(n) do { if (js_compile_poll(ctx, (n))) { stopped = TRUE; goto bad; } } while (0)
     memset(&g, 0, sizeof(g));
     if (len < 0 || len > INT32_MAX / 8)
         goto bad;
@@ -44091,7 +44927,15 @@ static __exception int capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
     starts = js_mallocz_rt(rt, len + 1);
     if (!starts)
         goto no_mem;
-    for (pos = 0, prev = -1; pos < len; pos += sz) {
+    /* each walk over the code goes by pieces of JS_CODE_PIECE bytes, with a
+       reading of the flag before each (js_code_piece), which leaves its loop
+       as it was */
+#define CBV_PIECE() do { piece_end = js_code_piece(ctx, pos, len); if (piece_end < 0) { stopped = TRUE; goto bad; } } while (0)
+    pos = 0;
+    prev = -1;
+ walk_starts:
+    CBV_PIECE();
+    for (; pos < piece_end; pos += sz) {
         op = buf[pos];
         if (op == OP_invalid || op >= OP_COUNT)
             goto bad;
@@ -44127,11 +44971,16 @@ static __exception int capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
         if (cbv_slot(buf + pos, &space, &idx) == CBV_BAD)
             goto bad;
     }
+    if (pos < len)
+        goto walk_starts;
 
     /* the closure variables of b that b or a function below it writes */
     for (i = 0; i < b->closure_var_count; i++)
         b->closure_var[i].written = eval;
-    for (pos = 0; pos < len; pos += short_opcode_info(buf[pos]).size) {
+    pos = 0;
+ walk_written:
+    CBV_PIECE();
+    for (; pos < piece_end; pos += short_opcode_info(buf[pos]).size) {
         kind = cbv_slot(buf + pos, &space, &idx);
         if ((kind == CBV_WRITE || kind == CBV_REF) && space == 2) {
             if (idx >= b->closure_var_count)
@@ -44139,6 +44988,8 @@ static __exception int capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
             b->closure_var[idx].written = 1;
         }
     }
+    if (pos < len)
+        goto walk_written;
     for (i = 0; i < b->cpool_count; i++) {
         JSFunctionBytecode *c = cbv_child(b, i);
         if (!c)
@@ -44201,7 +45052,10 @@ static __exception int capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
         }
     }
     /* references, the places closures are made, the writes */
-    for (pos = 0; pos < len; pos += short_opcode_info(buf[pos]).size) {
+    pos = 0;
+ walk_refs:
+    CBV_PIECE();
+    for (; pos < piece_end; pos += short_opcode_info(buf[pos]).size) {
         op = buf[pos];
         kind = cbv_slot(buf + pos, &space, &idx);
         if (kind != CBV_NONE && kind != CBV_READ && space != 2) {
@@ -44243,6 +45097,8 @@ static __exception int capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
             }
         }
     }
+    if (pos < len)
+        goto walk_refs;
     /* a slot no closure of b captures stays a JSVarRef (something else made it) */
     for (r = 0; r < n; r++) {
         if (!site[r])
@@ -44264,7 +45120,10 @@ static __exception int capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
             goto no_mem;
         lead[0] = 1;
         ngosub = ncatch = 0;
-        for (pos = 0; pos < len; pos += sz) {
+        pos = 0;
+    walk_lead:
+        CBV_PIECE();
+        for (; pos < piece_end; pos += sz) {
             op = buf[pos];
             sz = short_opcode_info(op).size;
             t = cbv_target(buf, len, starts, pos);
@@ -44281,6 +45140,8 @@ static __exception int capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
             if (op == OP_catch)
                 ncatch++;
         }
+        if (pos < len)
+            goto walk_lead;
         g.blk = js_malloc_rt(rt, sizeof(int) * (len + 1));
         g.start = js_malloc_rt(rt, sizeof(int) * (len + 2));
         gosub_after = js_malloc_rt(rt, sizeof(int) * (ngosub + 1));
@@ -44288,15 +45149,23 @@ static __exception int capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
         if (!g.blk || !g.start || !gosub_after || !catch_blk)
             goto no_mem;
         g.nb = 0;
-        for (pos = 0; pos < len; pos += short_opcode_info(buf[pos]).size) {
+        pos = 0;
+    walk_blocks:
+        CBV_PIECE();
+        for (; pos < piece_end; pos += short_opcode_info(buf[pos]).size) {
             if (lead[pos])
                 g.start[g.nb++] = pos;
             g.blk[pos] = g.nb - 1;
         }
+        if (pos < len)
+            goto walk_blocks;
         g.start[g.nb] = len;
         g.blk[len] = g.nb;
         ngosub = ncatch = 0;
-        for (pos = 0; pos < len; pos += short_opcode_info(buf[pos]).size) {
+        pos = 0;
+    walk_gosubs:
+        CBV_PIECE();
+        for (; pos < piece_end; pos += short_opcode_info(buf[pos]).size) {
             if (buf[pos] == OP_gosub && pos + 5 < len)
                 gosub_after[ngosub++] = g.blk[pos + 5];
             if (buf[pos] == OP_catch) {
@@ -44306,6 +45175,8 @@ static __exception int capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
                 catch_blk[ncatch++] = g.blk[t];
             }
         }
+        if (pos < len)
+            goto walk_gosubs;
         vret = g.nb;
         vexc = g.nb + 1;
         /* count, then fill: normal successors, handlers, events, sites.
@@ -44333,6 +45204,7 @@ static __exception int capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
                     g.hand_at[i] = nhand;
                     g.ev_at[i] = nev;
                 }
+                CBV_POLL(g.start[i + 1] - g.start[i]);
                 for (pos = g.start[i]; pos < g.start[i + 1]; pos += short_opcode_info(buf[pos]).size) {
                     last = pos;
                     op = buf[pos];
@@ -44431,6 +45303,7 @@ static __exception int capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
         if (!want)
             continue;
         for (i = 0; i <= g.nb + 1; i++) {
+            CBV_POLL(JS_CODE_WORK + g.ev_at[i + 1] - g.ev_at[i]);
             gen[i] = kill[i] = seen = 0;
             for (k = g.ev_at[i]; k < g.ev_at[i + 1]; k++) {
                 r = g.ev[k] >> 1;
@@ -44453,6 +45326,7 @@ static __exception int capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
                 budget -= 1 + (g.succ_at[i + 1] - g.succ_at[i]) + (g.hand_at[i + 1] - g.hand_at[i]);
                 if (budget < 0)
                     goto bad;
+                CBV_POLL(1 + (g.succ_at[i + 1] - g.succ_at[i]) + (g.hand_at[i + 1] - g.hand_at[i]));
                 out = 0;
                 for (k = g.succ_at[i]; k < g.succ_at[i + 1]; k++)
                     out |= in[g.succ[k]];
@@ -44470,6 +45344,7 @@ static __exception int capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
             JSFunctionBytecode *c = cbv_child(b, g.site_child[j]);
             uint64_t alias = 0;
             i = g.site_blk[j];
+            CBV_POLL(JS_CODE_WORK + c->closure_var_count + g.ev_at[i + 1] - g.site_ev[j]);
             for (k = 0; k < c->closure_var_count; k++) {
                 JSClosureVar *cv = &c->closure_var[k];
                 if (cv->closure_type == JS_CLOSURE_LOCAL || cv->closure_type == JS_CLOSURE_ARG) {
@@ -44571,7 +45446,9 @@ static __exception int capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
         JS_ThrowOutOfMemory(ctx);
         return -1;
     }
-    return 0;
+    return stopped ? -1 : 0;
+#undef CBV_POLL
+#undef CBV_PIECE
 }
 
 /* JS_ReadFunctionTag on b, which no constant pool holds, once
@@ -45917,6 +46794,15 @@ JSValue JS_EvalFunction(JSContext *ctx, JSValue fun_obj)
     return ret;
 }
 
+/* the end of a compile (__JS_EvalInternal): the freeing of what a stop left
+   is done, and its polls count toward a kill again (JS_ThrowInterrupted) */
+static void js_compile_end(JSRuntime *rt, BOOL was)
+{
+    rt->compiling = was;
+    if (!was)
+        rt->freeing_code = 0;
+}
+
 /* 'input' must be zero terminated i.e. input[input_len] = '\0'. */
 static JSValue __JS_EvalInternal(JSContext *ctx, JSValueConst this_obj,
                                  const char *input, size_t input_len,
@@ -45930,6 +46816,7 @@ static JSValue __JS_EvalInternal(JSContext *ctx, JSValueConst this_obj,
     JSFunctionBytecode *b;
     JSFunctionDef *fd;
     JSModuleDef *m;
+    BOOL was_compiling = ctx->rt->compiling;
 
     js_parse_init(ctx, s, input, input_len, filename);
     if (skip_shebang(&s->buf_ptr, s->buf_end, &ctx->rt->interrupt_flag)) {
@@ -45970,6 +46857,7 @@ static JSValue __JS_EvalInternal(JSContext *ctx, JSValueConst this_obj,
                              s->buf_start, &s->get_line_col_cache);
     if (!fd)
         goto fail1;
+    ctx->rt->compiling = TRUE;
     s->cur_func = fd;
     fd->eval_type = eval_type;
     fd->has_this_binding = (eval_type != JS_EVAL_TYPE_DIRECT);
@@ -46016,6 +46904,7 @@ static JSValue __JS_EvalInternal(JSContext *ctx, JSValueConst this_obj,
     fun_obj = js_create_function(ctx, fd);
     if (JS_IsException(fun_obj))
         goto fail1;
+    js_compile_end(ctx->rt, was_compiling);
     /* Could add a flag to avoid resolution if necessary */
     if (m) {
         m->func_obj = fun_obj;
@@ -46031,8 +46920,16 @@ static JSValue __JS_EvalInternal(JSContext *ctx, JSValueConst this_obj,
     return ret_val;
  fail1:
     /* XXX: should free all the unresolved dependencies */
-    if (m)
+    if (m) {
+        /* a stop in the resolution, after the compile ended, frees the
+           module too */
+        js_freeing_start(ctx->rt);
+        js_module_unlink(ctx, m);
         JS_FreeValue(ctx, JS_MKPTR(JS_TAG_MODULE, m));
+    }
+    /* after the module, whose tables a stopped compile also made: on a
+       path that did not compile, or ended it already, it changes nothing */
+    js_compile_end(ctx->rt, was_compiling);
     return JS_EXCEPTION;
 }
 
@@ -46108,7 +47005,7 @@ __exception int JS_ResolveModule(JSContext *ctx, JSValueConst obj)
     if (JS_VALUE_GET_TAG(obj) == JS_TAG_MODULE) {
         JSModuleDef *m = JS_VALUE_GET_PTR(obj);
         if (js_resolve_module_top(ctx, m) < 0) {
-            js_free_modules(ctx, JS_FREE_MODULE_NOT_RESOLVED);
+            js_free_unresolved_modules(ctx);
             return -1;
         }
     }
@@ -47878,12 +48775,14 @@ static JSValue JS_ReadFunctionTag(BCReaderState *s, BOOL cpool_entry)
 static JSValue JS_ReadModule(BCReaderState *s)
 {
     JSContext *ctx = s->ctx;
-    JSValue obj;
+    JSValue obj = JS_UNDEFINED;
     JSModuleDef *m = NULL;
     JSAtom module_name;
-    int i;
+    int i, n;
     uint8_t v8;
 
+    /* the count of each list of m is set once its array is made, so that
+       a read that fails frees what it read (js_free_module_def) */
     if (bc_get_atom(s, &module_name))
         goto fail;
 #ifdef DUMP_READ_OBJECT
@@ -47893,13 +48792,14 @@ static JSValue JS_ReadModule(BCReaderState *s)
     if (!m)
         goto fail;
     obj = JS_NewModuleValue(ctx, m);
-    if (bc_get_leb128_int(s, &m->req_module_entries_count))
+    if (bc_get_leb128_int(s, &n))
         goto fail;
-    if (m->req_module_entries_count != 0) {
-        m->req_module_entries_size = m->req_module_entries_count;
-        m->req_module_entries = js_mallocz(ctx, sizeof(m->req_module_entries[0]) * m->req_module_entries_size);
+    if (n != 0) {
+        m->req_module_entries = js_mallocz(ctx, sizeof(m->req_module_entries[0]) * n);
         if (!m->req_module_entries)
             goto fail;
+        m->req_module_entries_size = n;
+        m->req_module_entries_count = n;
         for(i = 0; i < m->req_module_entries_count; i++) {
             JSReqModuleEntry *rme = &m->req_module_entries[i];
             JSValue val;
@@ -47912,13 +48812,14 @@ static JSValue JS_ReadModule(BCReaderState *s)
         }
     }
 
-    if (bc_get_leb128_int(s, &m->export_entries_count))
+    if (bc_get_leb128_int(s, &n))
         goto fail;
-    if (m->export_entries_count != 0) {
-        m->export_entries_size = m->export_entries_count;
-        m->export_entries = js_mallocz(ctx, sizeof(m->export_entries[0]) * m->export_entries_size);
+    if (n != 0) {
+        m->export_entries = js_mallocz(ctx, sizeof(m->export_entries[0]) * n);
         if (!m->export_entries)
             goto fail;
+        m->export_entries_size = n;
+        m->export_entries_count = n;
         for(i = 0; i < m->export_entries_count; i++) {
             JSExportEntry *me = &m->export_entries[i];
             if (bc_get_u8(s, &v8))
@@ -47938,13 +48839,14 @@ static JSValue JS_ReadModule(BCReaderState *s)
         }
     }
 
-    if (bc_get_leb128_int(s, &m->star_export_entries_count))
+    if (bc_get_leb128_int(s, &n))
         goto fail;
-    if (m->star_export_entries_count != 0) {
-        m->star_export_entries_size = m->star_export_entries_count;
-        m->star_export_entries = js_mallocz(ctx, sizeof(m->star_export_entries[0]) * m->star_export_entries_size);
+    if (n != 0) {
+        m->star_export_entries = js_mallocz(ctx, sizeof(m->star_export_entries[0]) * n);
         if (!m->star_export_entries)
             goto fail;
+        m->star_export_entries_size = n;
+        m->star_export_entries_count = n;
         for(i = 0; i < m->star_export_entries_count; i++) {
             JSStarExportEntry *se = &m->star_export_entries[i];
             if (bc_get_leb128_int(s, &se->req_module_idx))
@@ -47952,13 +48854,14 @@ static JSValue JS_ReadModule(BCReaderState *s)
         }
     }
 
-    if (bc_get_leb128_int(s, &m->import_entries_count))
+    if (bc_get_leb128_int(s, &n))
         goto fail;
-    if (m->import_entries_count != 0) {
-        m->import_entries_size = m->import_entries_count;
-        m->import_entries = js_mallocz(ctx, sizeof(m->import_entries[0]) * m->import_entries_size);
+    if (n != 0) {
+        m->import_entries = js_mallocz(ctx, sizeof(m->import_entries[0]) * n);
         if (!m->import_entries)
             goto fail;
+        m->import_entries_size = n;
+        m->import_entries_count = n;
         for(i = 0; i < m->import_entries_count; i++) {
             JSImportEntry *mi = &m->import_entries[i];
             uint8_t v8;
@@ -47984,6 +48887,10 @@ static JSValue JS_ReadModule(BCReaderState *s)
     return obj;
  fail:
     if (m) {
+        /* a module read in part is not left loaded: a later import of its
+           name would find it */
+        js_module_unlink(ctx, m);
+        JS_FreeValue(ctx, obj);
         JS_FreeValue(ctx, JS_MKPTR(JS_TAG_MODULE, m));
     }
     return JS_EXCEPTION;
@@ -69141,8 +70048,12 @@ static JSValue promise_reaction_job(JSContext *ctx, int argc,
         res = js_call(ctx, handler, JS_UNDEFINED, 1, &arg);
     }
     is_reject = JS_IsException(res);
-    if (is_reject)
+    if (is_reject) {
+        /* a handler that stopped ends the job (js_catch_ends) */
+        if (js_catch_ends(ctx))
+            return JS_EXCEPTION;
         res = js_get_exception(ctx);
+    }
     func = argv[is_reject];
     /* as an extension, we support undefined as value to avoid
        creating a dummy promise in the 'await' implementation of async
@@ -69318,16 +70229,21 @@ uint32_t JS_TakeDroppedRejections(JSRuntime *rt)
     return n;
 }
 
-static void fulfill_or_reject_promise(JSContext *ctx, JSValueConst promise,
-                                      JSValueConst value, BOOL is_reject)
+/* -1 when the job of a reaction got no memory: the promise is settled all
+   the same, the reaction whose job is missing is lost, and the out of
+   memory error, which cannot be caught, is pending for the caller to pass
+   on. 0 otherwise. */
+static __exception int fulfill_or_reject_promise(JSContext *ctx, JSValueConst promise,
+                                                 JSValueConst value, BOOL is_reject)
 {
     JSPromiseData *s = JS_GetOpaque(promise, JS_CLASS_PROMISE);
     struct list_head *el, *el1;
     JSPromiseReactionData *rd;
     JSValueConst args[5];
+    int ret = 0;
 
     if (!s || s->promise_state != JS_PROMISE_PENDING)
-        return; /* should never happen */
+        return 0; /* should never happen */
     set_value(ctx, &s->promise_result, JS_DupValue(ctx, value));
     s->promise_state = JS_PROMISE_FULFILLED + is_reject;
 #ifdef DUMP_PROMISE
@@ -69348,7 +70264,8 @@ static void fulfill_or_reject_promise(JSContext *ctx, JSValueConst promise,
         args[2] = rd->handler;
         args[3] = JS_NewBool(ctx, is_reject);
         args[4] = value;
-        JS_EnqueueJob(ctx, promise_reaction_job, 5, args);
+        if (JS_EnqueueJob(ctx, promise_reaction_job, 5, args) < 0)
+            ret = -1;
         list_del(&rd->link);
         promise_reaction_data_free(ctx->rt, rd);
     }
@@ -69358,12 +70275,113 @@ static void fulfill_or_reject_promise(JSContext *ctx, JSValueConst promise,
         list_del(&rd->link);
         promise_reaction_data_free(ctx->rt, rd);
     }
+    return ret;
 }
 
-static void reject_promise(JSContext *ctx, JSValueConst promise,
-                           JSValueConst value)
+static __exception int reject_promise(JSContext *ctx, JSValueConst promise,
+                                      JSValueConst value)
 {
-    fulfill_or_reject_promise(ctx, promise, value, TRUE);
+    return fulfill_or_reject_promise(ctx, promise, value, TRUE);
+}
+
+/* The promise of m, the root of its cycle, settles with no call of its
+   resolving function, which fails while an uncatchable exception is
+   pending: a stop in the job that ended a module left its promise pending
+   for good, the module evaluated. The function is the engine's own, and
+   the call did no more than this: fulfilled with undefined, or rejected
+   with value. A promise settled already stays as it is. */
+static __exception int js_module_settle(JSContext *ctx, JSModuleDef *m, BOOL is_reject,
+                                        JSValueConst value)
+{
+    JSPromiseFunctionData *fd;
+
+    if (JS_VALUE_GET_TAG(m->resolving_funcs[is_reject]) != JS_TAG_OBJECT)
+        return 0;
+    fd = JS_VALUE_GET_OBJ(m->resolving_funcs[is_reject])->u.promise_function_data;
+    if (!fd || fd->presolved->already_resolved)
+        return 0;
+    fd->presolved->already_resolved = TRUE;
+    return fulfill_or_reject_promise(ctx, fd->promise, is_reject ? value : JS_UNDEFINED,
+                                     is_reject);
+}
+
+/* An uncatchable exception (an interrupt, running out of memory, a panic of
+   a Go function called from javascript) reached the host, which gives up
+   the call with it (JS_GetException). A job it stopped, of a module with a
+   top-level await or of a function such a module awaits, never runs again,
+   and the module and those that wait for it stayed evaluating for good, an
+   import of them never settling. So every module still in its asynchronous
+   evaluation is recorded as failed with error, as its handler would, and
+   the promise of each that is the root of a cycle is rejected with it. A
+   module that is not evaluating, or that ended, is left as it is. Runs once
+   for each such end of a call, over the modules of the runtime.
+
+   The walk of the contexts and their modules only sets states, with no call
+   and no free, so that nothing changes the lists under it, and takes a
+   reference to each root and its context. The rejections come after it,
+   with no call of javascript (the interrupt may still be set): freeing the
+   reactions of a promise can free values, modules and contexts, which the
+   references keep from those still to reject. The tracker of rejections is
+   not told (is_handled): the host has the error already, from the call it
+   ends, and a tracker would run host code, and could run the collector, in
+   the middle of the host's take of it. With no memory for the jobs of its
+   reactions, those are lost, as for any promise, and the error is dropped:
+   the host has one already. */
+static no_inline void js_fail_async_modules(JSRuntime *rt, JSValueConst error)
+{
+    struct list_head *el, *el1;
+    JSModuleDef *m, *roots = NULL, **tail = &roots;
+
+    list_for_each(el, &rt->context_list) {
+        JSContext *ctx = list_entry(el, JSContext, link);
+
+        list_for_each(el1, &ctx->loaded_modules) {
+            JSPromiseFunctionData *fd;
+
+            m = list_entry(el1, JSModuleDef, link);
+            if (m->status != JS_MODULE_STATUS_EVALUATING_ASYNC)
+                continue;
+            assert(!m->eval_has_exception);
+            m->eval_has_exception = TRUE;
+            m->eval_exception = JS_DupValue(ctx, error);
+            m->status = JS_MODULE_STATUS_EVALUATED;
+            m->async_evaluation = FALSE;
+            if (JS_VALUE_GET_TAG(m->resolving_funcs[1]) != JS_TAG_OBJECT)
+                continue;
+            fd = JS_VALUE_GET_OBJ(m->resolving_funcs[1])->u.promise_function_data;
+            if (!fd || fd->presolved->already_resolved)
+                continue;
+            fd->presolved->already_resolved = TRUE;
+            JS_DupValue(ctx, JS_MKPTR(JS_TAG_MODULE, m));
+            m->fail_ctx = JS_DupContext(ctx);
+            m->fail_next = NULL;
+            *tail = m;
+            tail = &m->fail_next;
+        }
+    }
+    while (roots) {
+        JSContext *ctx;
+        JSPromiseData *s;
+        JSValue promise;
+
+        m = roots;
+        roots = m->fail_next;
+        ctx = m->fail_ctx;
+        m->fail_next = NULL;
+        m->fail_ctx = NULL;
+        promise = JS_DupValue(ctx, JS_VALUE_GET_OBJ(m->resolving_funcs[1])->u.promise_function_data->promise);
+        s = JS_GetOpaque(promise, JS_CLASS_PROMISE);
+        if (s)
+            s->is_handled = TRUE;
+        /* no memory for the jobs of its reactions: the error of that is
+           dropped below */
+        (void)reject_promise(ctx, promise, error);
+        if (!JS_IsUninitialized(rt->current_exception))
+            JS_FreeValue(ctx, js_take_exception(rt));
+        JS_FreeValue(ctx, promise);
+        JS_FreeValue(ctx, JS_MKPTR(JS_TAG_MODULE, m));
+        JS_FreeContext(ctx);
+    }
 }
 
 static JSValue js_promise_resolve_thenable_job(JSContext *ctx,
@@ -69382,7 +70400,7 @@ static JSValue js_promise_resolve_thenable_job(JSContext *ctx,
     if (js_create_resolving_functions(ctx, args, promise) < 0)
         return JS_EXCEPTION;
     res = js_call(ctx, then, thenable, 2, (JSValueConst *)args);
-    if (JS_IsException(res)) {
+    if (JS_IsException(res) && !js_catch_ends(ctx)) {
         JSValue error = js_get_exception(ctx);
         res = js_call(ctx, args[1], JS_UNDEFINED, 1, (JSValueConst *)&error);
         JS_FreeValue(ctx, error);
@@ -69522,9 +70540,8 @@ static JSValue js_async_context_call(JSContext *ctx, JSValueConst this_val,
 /* js_async_context_wrap takes the reference to handler and returns the
    handler of a reaction or a job: with an async context and a function
    handler, a new function of js_async_context_call that holds both, else
-   handler itself. When the function cannot be made (out of memory) the
-   handler runs without the context, and the exception, which cannot be
-   caught, is left for the caller of the engine. */
+   handler itself. JS_EXCEPTION, with handler freed, when the function
+   cannot be made (out of memory). */
 static JSValue js_async_context_wrap(JSContext *ctx, JSValue handler)
 {
     JSValueConst data[2];
@@ -69536,8 +70553,6 @@ static JSValue js_async_context_wrap(JSContext *ctx, JSValue handler)
         return handler;
     data[1] = handler;
     wrapped = JS_NewCFunctionData(ctx, js_async_context_call, 1, 0, 2, data);
-    if (JS_IsException(wrapped))
-        return handler;
     JS_FreeValue(ctx, handler);
     return wrapped;
 }
@@ -69553,6 +70568,7 @@ static JSValue js_promise_resolve_function_call(JSContext *ctx,
     JSValueConst resolution, args[3];
     JSValue then;
     BOOL is_reject;
+    int ret;
 
     s = p->u.promise_function_data;
     if (!s || s->presolved->already_resolved)
@@ -69578,21 +70594,31 @@ static JSValue js_promise_resolve_function_call(JSContext *ctx,
     if (JS_IsException(then)) {
         JSValue error;
     fail_reject:
+        /* a getter of then that stopped ends the call, with the promise
+           unsettled (js_catch_ends) */
+        if (js_catch_ends(ctx))
+            return JS_EXCEPTION;
         error = js_get_exception(ctx);
-        reject_promise(ctx, s->promise, error);
+        ret = reject_promise(ctx, s->promise, error);
         JS_FreeValue(ctx, error);
     } else if (!JS_IsFunction(ctx, then)) {
         JS_FreeValue(ctx, then);
     done:
-        fulfill_or_reject_promise(ctx, s->promise, resolution, is_reject);
+        ret = fulfill_or_reject_promise(ctx, s->promise, resolution, is_reject);
     } else {
         then = js_async_context_wrap(ctx, then);
+        if (JS_IsException(then))
+            return JS_EXCEPTION;
         args[0] = s->promise;
         args[1] = resolution;
         args[2] = then;
-        JS_EnqueueJob(ctx, js_promise_resolve_thenable_job, 3, args);
+        ret = JS_EnqueueJob(ctx, js_promise_resolve_thenable_job, 3, args);
         JS_FreeValue(ctx, then);
     }
+    /* with no memory for a job, the promise stays pending, and the call
+       ends with the error, which cannot be caught */
+    if (ret < 0)
+        return JS_EXCEPTION;
     return JS_UNDEFINED;
 }
 
@@ -69665,6 +70691,8 @@ static JSValue js_promise_constructor(JSContext *ctx, JSValueConst new_target,
     ret = js_call(ctx, executor, JS_UNDEFINED, 2, (JSValueConst *)args);
     if (JS_IsException(ret)) {
         JSValue ret2, error;
+        if (js_catch_ends(ctx))
+            goto fail1;
         error = js_get_exception(ctx);
         ret2 = js_call(ctx, args[1], JS_UNDEFINED, 1, (JSValueConst *)&error);
         JS_FreeValue(ctx, error);
@@ -69829,6 +70857,8 @@ static JSValue js_promise_try(JSContext *ctx, JSValueConst this_val,
         return JS_ThrowTypeErrorNotAnObject(ctx);
     ret = js_call(ctx, argv[0], JS_UNDEFINED, argc - 1, argv + 1);
     if (JS_IsException(ret)) {
+        if (js_catch_ends(ctx))
+            return JS_EXCEPTION;
         is_reject = 1;
         ret = js_get_exception(ctx);
     } else {
@@ -69957,6 +70987,9 @@ static JSValue js_promise_all(JSContext *ctx, JSValueConst this_val,
     if (JS_IsException(iter)) {
         JSValue error;
     fail_reject:
+        /* an uncatchable exception ends the call (js_catch_ends) */
+        if (js_catch_ends(ctx))
+            goto fail;
         error = js_get_exception(ctx);
         ret = js_call(ctx, resolving_funcs[1], JS_UNDEFINED, 1,
                        (JSValueConst *)&error);
@@ -70099,6 +71132,9 @@ static JSValue js_promise_race(JSContext *ctx, JSValueConst this_val,
     if (JS_IsException(iter)) {
         JSValue error;
     fail_reject:
+        /* an uncatchable exception ends the call (js_catch_ends) */
+        if (js_catch_ends(ctx))
+            goto fail;
         error = js_get_exception(ctx);
         ret = js_call(ctx, resolving_funcs[1], JS_UNDEFINED, 1,
                        (JSValueConst *)&error);
@@ -70154,18 +71190,15 @@ static __exception int perform_promise_then(JSContext *ctx,
 {
     JSPromiseData *s = JS_GetOpaque(promise, JS_CLASS_PROMISE);
     JSPromiseReactionData *rd_array[2], *rd;
-    int i, j;
+    int i, j, ret = 0;
 
     rd_array[0] = NULL;
     rd_array[1] = NULL;
     for(i = 0; i < 2; i++) {
         JSValueConst handler;
         rd = js_mallocz(ctx, sizeof(*rd));
-        if (!rd) {
-            if (i == 1)
-                promise_reaction_data_free(ctx->rt, rd_array[0]);
-            return -1;
-        }
+        if (!rd)
+            goto fail;
         for(j = 0; j < 2; j++)
             rd->resolving_funcs[j] = JS_DupValue(ctx, cap_resolving_funcs[j]);
         handler = resolve_reject[i];
@@ -70173,6 +71206,10 @@ static __exception int perform_promise_then(JSContext *ctx,
             handler = JS_UNDEFINED;
         rd->handler = js_async_context_wrap(ctx, JS_DupValue(ctx, handler));
         rd_array[i] = rd;
+        if (JS_IsException(rd->handler)) {
+            rd->handler = JS_UNDEFINED;
+            goto fail;
+        }
     }
 
     if (s->promise_state == JS_PROMISE_PENDING) {
@@ -70194,12 +71231,21 @@ static __exception int perform_promise_then(JSContext *ctx,
         args[2] = rd->handler;
         args[3] = JS_NewBool(ctx, i);
         args[4] = s->promise_result;
-        JS_EnqueueJob(ctx, promise_reaction_job, 5, args);
+        /* with no memory for the job, the reaction is lost and the error,
+           which cannot be caught, is pending */
+        if (JS_EnqueueJob(ctx, promise_reaction_job, 5, args) < 0)
+            ret = -1;
         for(i = 0; i < 2; i++)
             promise_reaction_data_free(ctx->rt, rd_array[i]);
     }
     s->is_handled = TRUE;
-    return 0;
+    return ret;
+ fail:
+    for(i = 0; i < 2; i++) {
+        if (rd_array[i])
+            promise_reaction_data_free(ctx->rt, rd_array[i]);
+    }
+    return -1;
 }
 
 static JSValue js_promise_then(JSContext *ctx, JSValueConst this_val,
@@ -70469,6 +71515,8 @@ static JSValue js_async_from_sync_iterator_next(JSContext *ctx, JSValueConst thi
         if (JS_IsUndefined(method) || JS_IsNull(method)) {
             if (magic == GEN_MAGIC_RETURN) {
                 err = js_create_iterator_result(ctx, JS_DupValue(ctx, argv[0]), TRUE);
+                if (JS_IsException(err))
+                    goto reject;
                 is_reject = 0;
                 goto done_resolve;
             } else {
@@ -70507,15 +71555,26 @@ static JSValue js_async_from_sync_iterator_next(JSContext *ctx, JSValueConst thi
                 js_iterator_close_throw(ctx, s->sync_iter);
             }
         reject:
+            /* an uncatchable exception ends the call, with no promise
+               holding it (js_catch_ends) */
+            if (js_catch_ends(ctx)) {
+                res = -1;
+                goto settled;
+            }
             err = js_get_exception(ctx);
             is_reject = 1;
         done_resolve:
             res2 = js_call(ctx, resolving_funcs[is_reject], JS_UNDEFINED,
                            1, (JSValueConst *)&err);
             JS_FreeValue(ctx, err);
-            JS_FreeValue(ctx, res2);
+            res = js_settle_result(ctx, res2);
+        settled:
             JS_FreeValue(ctx, resolving_funcs[0]);
             JS_FreeValue(ctx, resolving_funcs[1]);
+            if (res < 0) {
+                JS_FreeValue(ctx, promise);
+                return JS_EXCEPTION;
+            }
             return promise;
         }
 

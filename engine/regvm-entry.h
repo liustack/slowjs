@@ -322,7 +322,7 @@ static __exception int rv_read_check(JSContext *ctx, JSFunctionBytecode *b)
         return 0;
     }
     if (oom) {
-        JS_ThrowOutOfMemory(ctx);
+        rv_convert_error(ctx);
         return -1;
     }
     if (op != RV_CRAFTED)

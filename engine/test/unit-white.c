@@ -15,6 +15,7 @@
 
      unit-white */
 #include <errno.h>
+#include <limits.h>
 #include <spawn.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -103,6 +104,7 @@ int white_op_count(void);
 void white_days_to_date(int64_t days, int *y, int *m, int *d);
 int white_poll_run(void);
 void white_poll_skip(int on);
+int white_compile_count(JSContext *ctx, int left, int n, int times);
 const char *white_poll_scan(const uint8_t *code, int len);
 int white_poll_insert(JSContext *ctx, const uint8_t *code, int len, uint8_t *out, int cap);
 int white_code_shape(const uint8_t *code, int len, int *shape, int max);
@@ -144,7 +146,11 @@ int white_string_plain(JSContext *ctx, JSValueConst v);
 long white_call_debt(JSContext *ctx, int direct, int *depth);
 int white_key_atoms_bad(JSRuntime *rt, int *live, int *keys);
 unsigned long white_gc_run_count(int young);
+unsigned long white_module_steps_take(void);
+uint32_t white_module_names(JSContext *ctx, int *bits);
 JSValue white_call_failing(JSContext *ctx, JSValueConst func, JSValueConst this_val, int argc, JSValueConst *argv, int fail, int *nallocs);
+JSValue white_eval_function_failing(JSContext *ctx, JSValue m, int fail, int *nallocs);
+int white_jobs_failing(JSRuntime *rt, JSContext **pctx, int fail, int *nallocs);
 int white_regvm_convert_failing(JSContext *ctx, JSValueConst f, int fail, int mode, int *nallocs);
 uint32_t white_regvm_code_hash(JSValueConst f, int *code_len);
 const uint8_t *white_regvm_code(JSValueConst f, int *code_len);
@@ -4427,6 +4433,24 @@ static Code straight(int n)
     op_n(&c, W_PUSH_0, n);
     op_n(&c, W_RETURN_UNDEF, 1);
     return c;
+}
+
+/* The count of the work of a compile stays below 0 once it is there, up to
+   the next reading of the flag (js_compile_count): counts that add up past an
+   int took it around to a large number, and the reading came that much
+   later. */
+static void test_compile_count(void)
+{
+    VM v = vm_new();
+    int left;
+
+    left = white_compile_count(v.ctx, 100, 60, 1);
+    CHECK(left == 40, "100 less 60 is %d", left);
+    left = white_compile_count(v.ctx, 100, INT_MAX, 2);
+    CHECK(left < 0, "100 less twice INT_MAX is %d", left);
+    left = white_compile_count(v.ctx, 100, 1 << 20, 1 << 12);
+    CHECK(left < 0, "100 less 2 to the 32 is %d", left);
+    vm_free(&v);
 }
 
 /* poll_scan, which check_polls runs on all code before it runs, takes a run
@@ -10556,6 +10580,489 @@ static void test_array_grow_stops(void)
     vm_free(&v);
 }
 
+/* Each allocation of the evaluation of module u.js failing in turn, which
+   imports t.js, which has a top-level await it runs or not
+   (globalThis.runAwait), and each allocation of the jobs that go on with it
+   once it awaited, then the error taken as the host takes it. A failure
+   in making the function of u.js left u.js with no code, and the import
+   again crashed (js_create_module_bytecode_function). A failure that lost
+   a job of t.js, or of the handlers it put on the promise of its function,
+   left t.js and u.js evaluating for good, an import of either never
+   settling: running out of memory ends the call as a stop does, and the
+   host taking the error records them as failed (js_fail_async_modules). An
+   import of u.js after the failure gives the result or the error out of
+   memory, and so does one of t.js, which fails only when u.js does, and
+   nothing leaks. */
+static void test_module_jobs_oom(void)
+{
+    static const char t[] = "if (globalThis.runAwait) await 0; globalThis.n = 1;";
+    static const char u[] = "import \"t.js\"; globalThis.x = n + 1;";
+    static const char *const modes[] = { "no await", "await", "await, jobs" };
+    static const char oom[] = "InternalError: out of memory";
+    char buf[128], buf2[128];
+    int mode, fail, n, made, failed, leaked;
+    JSContext *ctx;
+    JSValue m, r;
+
+    for (mode = 0; mode < 3; mode++) {
+        n = 0;
+        failed = 0;
+        for (fail = 0; fail == 0 || fail <= n; fail++) {
+            VM v = vm_new();
+
+            CHECK(eval_ok(v.ctx, mode ? "globalThis.runAwait = true" : "globalThis.runAwait = false"), "the setup threw");
+            compile_module(&v, "t.js", t);
+            m = JS_Eval(v.ctx, u, strlen(u), "u.js", JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY);
+            CHECK(!JS_IsException(m), "u.js does not compile");
+            if (mode < 2) {
+                r = white_eval_function_failing(v.ctx, m, fail, &made);
+            } else {
+                r = JS_EvalFunction(v.ctx, m);
+                CHECK(!JS_IsException(r), "the evaluation of u.js threw");
+                white_jobs_failing(v.rt, &ctx, fail, &made);
+            }
+            if (fail == 0)
+                n = made;
+            JS_FreeValue(v.ctx, r);
+            JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+            drain_jobs(&v);
+            import_state(&v, "u.js", buf, sizeof(buf));
+            import_state(&v, "t.js", buf2, sizeof(buf2));
+            if (strcmp(buf, "ok") == 0) {
+                CHECK(strcmp(buf2, "ok") == 0 && eval_is(v.ctx, "x", "2"),
+                      "%s, allocation %d of %d failing: u.js ran, and the import of t.js gave %s", modes[mode], fail, n, buf2);
+            } else {
+                CHECK(fail > 0 && strcmp(buf, oom) == 0 && (strcmp(buf2, "ok") == 0 || strcmp(buf2, oom) == 0),
+                      "%s, allocation %d of %d failing: the imports after it gave %s and %s", modes[mode], fail, n, buf, buf2);
+                failed++;
+            }
+            leaked = host_leaked_runtimes();
+            vm_free(&v);
+            CHECK(host_leaked_runtimes() == leaked, "%s, allocation %d of %d failing: blocks left in the runtime",
+                  modes[mode], fail, n);
+        }
+        CHECK(n > 10 && failed > 0, "%s: %d allocations, %d failures recorded", modes[mode], n, failed);
+    }
+}
+
+/* The modules of test_module_waiters: module t awaits, and each module w<i>
+   imports it and writes down that it ran. */
+static JSModuleDef *waiter_loader(JSContext *ctx, const char *name, void *opaque)
+{
+    char src[64];
+    JSValue v;
+    JSModuleDef *m;
+
+    (void)opaque;
+    if (strcmp(name, "t") == 0)
+        snprintf(src, sizeof(src), "globalThis.order = []; await 0;");
+    else
+        snprintf(src, sizeof(src), "import \"t\"; order.push(%d);", atoi(name + 1));
+    v = JS_Eval(ctx, src, strlen(src), name, JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY);
+    if (JS_IsException(v))
+        return NULL;
+    m = JS_VALUE_GET_PTR(v);
+    JS_FreeValue(ctx, v);
+    return m;
+}
+
+/* When the await of a module ends, the modules that waited for it run in the
+   order they were reached, and the work of finding them is linear in their
+   number: the gathering looks at each parent once and clears each mark
+   once. A module imports WAITERS modules that each import the one module
+   that awaits: 2 * WAITERS parents and WAITERS + 1 marks. Looking each one
+   up in the list of those found so far, as QuickJS did, takes about
+   WAITERS^2 / 2 steps. The steps are counted (JS_MODULE_STEP), so that no
+   clock decides. */
+#define WAITERS 5000
+static void test_module_waiters(void)
+{
+    VM v = vm_new();
+    size_t size = (size_t)WAITERS * 24 + 64, len = 0;
+    char *src = malloc(size), want[128];
+    unsigned long steps;
+    JSValue r;
+    int i;
+
+    if (!src) {
+        CHECK(0, "no memory");
+        vm_free(&v);
+        return;
+    }
+    for (i = 0; i < WAITERS; i++)
+        len += snprintf(src + len, size - len, "import \"w%d\";\n", i);
+    len += snprintf(src + len, size - len, "order.push(-1);");
+    JS_SetModuleLoaderFunc(v.rt, NULL, waiter_loader, NULL);
+    r = JS_Eval(v.ctx, src, len, "top", JS_EVAL_TYPE_MODULE);
+    CHECK(!JS_IsException(r), "top threw");
+    JS_FreeValue(v.ctx, r);
+    white_module_steps_take();
+    drain_jobs(&v);
+    steps = white_module_steps_take();
+    CHECK(steps == 3 * WAITERS + 1, "the gathering took %lu steps for %d waiting modules",
+          steps, WAITERS);
+    snprintf(want, sizeof(want),
+             "order.length === %d && order.every((v, i) => v === (i < %d ? i : -1))",
+             WAITERS + 1, WAITERS);
+    CHECK(eval_is(v.ctx, want, "true"), "the order");
+    free(src);
+    vm_free(&v);
+}
+
+/* The modules of test_module_lookup: t starts a count, and each module w<i>
+   imports t and adds one to it. The loader refuses w<lookup_refuse>. */
+static int lookup_refuse = -1;
+
+static JSModuleDef *lookup_loader(JSContext *ctx, const char *name, void *opaque)
+{
+    char src[64];
+    JSValue v;
+    JSModuleDef *m;
+
+    (void)opaque;
+    if (strcmp(name, "t") == 0) {
+        snprintf(src, sizeof(src), "globalThis.n = 0;");
+    } else if (atoi(name + 1) == lookup_refuse) {
+        JS_ThrowReferenceError(ctx, "no module %s", name);
+        return NULL;
+    } else {
+        snprintf(src, sizeof(src), "import \"t\"; n++;");
+    }
+    v = JS_Eval(ctx, src, strlen(src), name, JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY);
+    if (JS_IsException(v))
+        return NULL;
+    m = JS_VALUE_GET_PTR(v);
+    JS_FreeValue(ctx, v);
+    return m;
+}
+
+/* lookup_top makes the source of a module that imports w0 to w<count - 1>
+   (malloc'd). */
+static char *lookup_top(int count)
+{
+    size_t size = (size_t)count * 24 + 64, len = 0;
+    char *src = malloc(size);
+    int i;
+
+    if (!src) {
+        fprintf(stderr, "no memory\n");
+        exit(2);
+    }
+    for (i = 0; i < count; i++)
+        len += snprintf(src + len, size - len, "import \"w%d\";\n", i);
+    src[len] = '\0';
+    return src;
+}
+
+/* The look for a module by its name among the loaded modules takes a few
+   steps whatever their number (JS_MODULE_STEP counts the modules it goes
+   past). A walk of the list of them, as QuickJS did, made the load of
+   LOOKUPS modules that each import one more take about LOOKUPS^2 / 2 steps,
+   and each import.meta as many as there were modules. A module the host
+   refused leaves the modules loaded with it freed, and they load again; of
+   two modules of one name, the first loaded is the one found, as in the
+   list. */
+#define LOOKUPS 2000
+static void test_module_lookup(void)
+{
+    static const char meta[] =
+        "globalThis.metas = 0;\n"
+        "for (let i = 0; i < 1000; i++) metas += typeof import.meta === \"object\";";
+    VM v = vm_new();
+    char *src = lookup_top(LOOKUPS), buf[64];
+    unsigned long steps;
+    JSValue r;
+
+    JS_SetModuleLoaderFunc(v.rt, NULL, lookup_loader, NULL);
+    lookup_refuse = LOOKUPS / 2;
+    r = JS_Eval(v.ctx, src, strlen(src), "top", JS_EVAL_TYPE_MODULE);
+    CHECK(JS_IsException(r), "top ran with w%d refused", LOOKUPS / 2);
+    JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+    lookup_refuse = -1;
+
+    white_module_steps_take();
+    r = JS_Eval(v.ctx, src, strlen(src), "top", JS_EVAL_TYPE_MODULE);
+    steps = white_module_steps_take();
+    CHECK(!JS_IsException(r), "top threw");
+    JS_FreeValue(v.ctx, r);
+    drain_jobs(&v);
+    CHECK(steps <= 4 * LOOKUPS, "the looks for %d modules went past %lu", LOOKUPS, steps);
+    snprintf(buf, sizeof(buf), "%d", LOOKUPS);
+    CHECK(eval_is(v.ctx, "n", buf), "the modules that ran");
+
+    r = JS_Eval(v.ctx, meta, strlen(meta), "meta", JS_EVAL_TYPE_MODULE);
+    steps = white_module_steps_take();
+    CHECK(!JS_IsException(r), "meta threw");
+    JS_FreeValue(v.ctx, r);
+    drain_jobs(&v);
+    CHECK(steps <= 4 * 1000, "1000 import.meta went past %lu modules", steps);
+    CHECK(eval_is(v.ctx, "metas", "1000"), "import.meta");
+
+    compile_module(&v, "d", "export var d = 1;");
+    compile_module(&v, "d", "export var d = 2;");
+    {
+        static const char e[] = "import { d } from \"d\"; globalThis.dv = d;";
+
+        r = JS_Eval(v.ctx, e, strlen(e), "e", JS_EVAL_TYPE_MODULE);
+    }
+    CHECK(!JS_IsException(r), "e threw");
+    JS_FreeValue(v.ctx, r);
+    drain_jobs(&v);
+    CHECK(eval_is(v.ctx, "dv", "1"), "the module d found");
+    free(src);
+    vm_free(&v);
+}
+
+
+/* A module whose compile fails, or whose bytecode cannot be read, is freed
+   with its name taken out of the table of the loaded modules and of their
+   count: the count of names stayed, with the module gone, and the table
+   doubled for names no module had. 1,000 failed compiles of `export {` and
+   1,000 failed reads of a module leave the one module read whole. */
+#define FAILED_LOADS 1000
+static void test_module_failed_names(void)
+{
+    VM v = vm_new();
+    JSValue r;
+    uint8_t *buf;
+    size_t size;
+    int i, bits;
+    uint32_t names;
+
+    for (i = 0; i < FAILED_LOADS; i++) {
+        r = JS_Eval(v.ctx, "export {", 8, "bad", JS_EVAL_TYPE_MODULE);
+        CHECK(JS_IsException(r), "export { compiled");
+        JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+    }
+    names = white_module_names(v.ctx, &bits);
+    CHECK(names == 0 && bits == 4, "after %d failed compiles: %u names, a table of 2^%d",
+          FAILED_LOADS, names, bits);
+
+    r = JS_Eval(v.ctx, "export var v = 1;", 17, "rb", JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY);
+    CHECK(!JS_IsException(r), "rb threw");
+    buf = JS_WriteObject(v.ctx, &size, r, JS_WRITE_OBJ_BYTECODE);
+    JS_FreeValue(v.ctx, r);
+    CHECK(buf != NULL && size > 8, "no bytecode");
+    for (i = 0; buf && i < FAILED_LOADS; i++) {
+        r = JS_ReadObject(v.ctx, buf, size - 1, JS_READ_OBJ_BYTECODE);
+        CHECK(JS_IsException(r), "a short read of rb worked");
+        JS_FreeValue(v.ctx, r);
+        JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+    }
+    js_free(v.ctx, buf);
+    names = white_module_names(v.ctx, &bits);
+    CHECK(names == 1 && bits == 4, "after %d failed reads: %u names, a table of 2^%d",
+          FAILED_LOADS, names, bits);
+    vm_free(&v);
+}
+
+/* The modules m imports, for test_module_read_oom. */
+static JSModuleDef *read_loader(JSContext *ctx, const char *name, void *opaque)
+{
+    static const char src[] = "export var a = 1, q = 2;";
+    JSValue v = JS_Eval(ctx, src, strlen(src), name, JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY);
+    JSModuleDef *m;
+
+    (void)opaque;
+    if (JS_IsException(v))
+        return NULL;
+    m = JS_VALUE_GET_PTR(v);
+    JS_FreeValue(ctx, v);
+    return m;
+}
+
+/* A module read from bytecode that gets no memory for its list of the
+   modules it requests, of its exports or of its imports fails with out of
+   memory. The count of each list was set before its array was made, and
+   the free of the module read the entries of the array it did not get.
+   Each allocation of the read of a module with every list fails in turn. */
+static void test_module_read_oom(void)
+{
+    static const char src[] =
+        "import { a } from \"x\"; export * from \"y\"; export { q as r } from \"z\";\n"
+        "export var v = a; export function f() { return v; }";
+    VM v = vm_new(), w;
+    JSValue c, obj;
+    uint8_t *buf;
+    size_t len;
+    char *t;
+    int fail, n, failed = 0;
+
+    JS_SetModuleLoaderFunc(v.rt, NULL, read_loader, NULL);
+    c = JS_Eval(v.ctx, src, strlen(src), "m", JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY);
+    CHECK(!JS_IsException(c), "m threw");
+    buf = JS_WriteObject(v.ctx, &len, c, JS_WRITE_OBJ_BYTECODE);
+    CHECK(buf != NULL, "m cannot be written");
+    JS_FreeValue(v.ctx, c);
+    for (fail = 1; buf; fail++) {
+        w = vm_new();
+        obj = white_read_failing(w.ctx, buf, len, fail, &n);
+        if (JS_IsException(obj)) {
+            t = exception_text(w.ctx);
+            CHECK(t && strstr(t, "out of memory"), "allocation %d failing: %s", fail, t ? t : "no exception");
+            free(t);
+            failed++;
+        }
+        JS_FreeValue(w.ctx, obj);
+        vm_free(&w);
+        if (fail > n)
+            break;
+    }
+    CHECK(failed >= 3, "%d reads failed", failed);
+    js_free(v.ctx, buf);
+    vm_free(&v);
+}
+
+/* The modules of test_module_same_name: the load of t makes a module named
+   s too, loaded after the one being compiled, and missing is refused. */
+static JSModuleDef *same_loader(JSContext *ctx, const char *name, void *opaque)
+{
+    static const char s2[] = "export var v = 2;", t[] = "export var w = 1;";
+    JSValue v;
+    JSModuleDef *m;
+
+    (void)opaque;
+    if (strcmp(name, "t") != 0) {
+        JS_ThrowReferenceError(ctx, "no module %s", name);
+        return NULL;
+    }
+    v = JS_Eval(ctx, s2, strlen(s2), "s", JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY);
+    if (JS_IsException(v))
+        return NULL;
+    JS_FreeValue(ctx, v);
+    v = JS_Eval(ctx, t, strlen(t), "t", JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY);
+    if (JS_IsException(v))
+        return NULL;
+    m = JS_VALUE_GET_PTR(v);
+    JS_FreeValue(ctx, v);
+    return m;
+}
+
+/* Many modules of one name, as an <eval> made a module again and again,
+   are added to the table of the loaded modules in a few steps each: only
+   the first of a name is in its list, and the others follow it. Each was
+   put at the end of the list of its bucket, which all of them shared, and
+   a grow did that again for each: about SAME^2 / 2 steps. The first loaded
+   of a name is the one found, and when it goes, the next loaded of its
+   name takes its place: s fails in its resolution after its load of t
+   made another s, which is then the one found. */
+#define SAME 4000
+static void test_module_same_name(void)
+{
+    static const char first[] = "import \"t\"; import \"missing\"; export var v = 1;";
+    static const char e[] = "import { v } from \"s\"; globalThis.sv = v;";
+    VM v = vm_new();
+    unsigned long steps;
+    char src[64];
+    JSValue r;
+    int i;
+
+    JS_SetModuleLoaderFunc(v.rt, NULL, same_loader, NULL);
+    r = JS_Eval(v.ctx, first, strlen(first), "s", JS_EVAL_TYPE_MODULE);
+    CHECK(JS_IsException(r), "the first s ran");
+    JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+    white_module_steps_take();
+    for (i = 3; i < SAME + 3; i++) {
+        snprintf(src, sizeof(src), "export var v = %d;", i);
+        r = JS_Eval(v.ctx, src, strlen(src), "s", JS_EVAL_TYPE_MODULE);
+        CHECK(!JS_IsException(r), "s %d threw", i);
+        JS_FreeValue(v.ctx, r);
+    }
+    steps = white_module_steps_take();
+    CHECK(steps <= 2 * SAME, "%d modules of one name took %lu steps", SAME, steps);
+    drain_jobs(&v);
+    r = JS_Eval(v.ctx, e, strlen(e), "e", JS_EVAL_TYPE_MODULE);
+    CHECK(!JS_IsException(r), "e threw");
+    JS_FreeValue(v.ctx, r);
+    drain_jobs(&v);
+    CHECK(eval_is(v.ctx, "sv", "2"), "the s found");
+    vm_free(&v);
+}
+
+/* The modules of test_module_load_stops: those of lookup_loader, or with
+   load_c modules of C that the host makes with no compile and that count
+   their runs in load_ran. The load of w<load_stop_at> asks the host to stop
+   the runtime, as a host does from another thread (host_interrupt), and the
+   flag is set at its next reading. load_after counts the modules loaded
+   after that one. */
+static int load_c, load_ran, load_stop_at = -1, load_stopped, load_after;
+
+static int load_c_init(JSContext *ctx, JSModuleDef *m)
+{
+    (void)ctx;
+    (void)m;
+    load_ran++;
+    return 0;
+}
+
+static JSModuleDef *stop_loader(JSContext *ctx, const char *name, void *opaque)
+{
+    if (load_stopped)
+        load_after++;
+    else if (strcmp(name, "t") != 0 && atoi(name + 1) == load_stop_at) {
+        host_interrupt(JS_GetRuntime(ctx));
+        load_stopped = 1;
+    }
+    if (load_c)
+        return JS_NewCModule(ctx, name, load_c_init);
+    return lookup_loader(ctx, name, opaque);
+}
+
+/* A stop asked during the load of a module ends the load before the host
+   loads another one: the engine reads the flag before it asks the host for
+   each module, so that the wait is that of one module, not of the modules
+   left. A module of source reads it in its compile, but one the host makes
+   with no compile, as a module of C or of bytecode, did not, and the look
+   for each import reads it only after a count of its work: a stop waited
+   for the load of every module left. The modules loaded before the stop
+   are freed with the failed resolution, and the same import then loads
+   and runs each of them once. */
+#define LOADS 2000
+static void test_module_load_stops(void)
+{
+    static const int at[] = { 0, 1, LOADS / 2, LOADS - 2 };
+    char *src = lookup_top(LOADS), buf[64];
+    size_t i;
+
+    snprintf(buf, sizeof(buf), "%d", LOADS);
+    for (load_c = 0; load_c < 2; load_c++) {
+        for (i = 0; i < countof(at); i++) {
+            VM v = vm_new();
+            JSValue r;
+            char *e;
+
+            JS_SetModuleLoaderFunc(v.rt, NULL, stop_loader, NULL);
+            load_stop_at = at[i];
+            load_stopped = 0;
+            load_after = 0;
+            load_ran = 0;
+            r = JS_Eval(v.ctx, src, strlen(src), "top", JS_EVAL_TYPE_MODULE);
+            CHECK(JS_IsException(r), "%s, stop at w%d: top ran", load_c ? "C" : "source", at[i]);
+            JS_FreeValue(v.ctx, r);
+            *JS_GetInterruptFlag(v.rt) = 0;
+            e = exception_text(v.ctx);
+            CHECK(e && strcmp(e, "InternalError: interrupted") == 0, "%s, stop at w%d: %s",
+                  load_c ? "C" : "source", at[i], e ? e : "no exception");
+            free(e);
+            CHECK(load_stopped && load_after == 0, "%s, stop at w%d: %d modules loaded after it",
+                  load_c ? "C" : "source", at[i], load_after);
+            load_stop_at = -1;
+            load_stopped = 0;
+
+            r = JS_Eval(v.ctx, src, strlen(src), "top", JS_EVAL_TYPE_MODULE);
+            CHECK(!JS_IsException(r), "%s, stop at w%d: top threw after the stop",
+                  load_c ? "C" : "source", at[i]);
+            JS_FreeValue(v.ctx, r);
+            drain_jobs(&v);
+            if (load_c)
+                CHECK(load_ran == LOADS, "C, stop at w%d: %d modules ran", at[i], load_ran);
+            else
+                CHECK(eval_is(v.ctx, "n", buf), "source, stop at w%d: the modules that ran", at[i]);
+            vm_free(&v);
+        }
+    }
+    free(src);
+}
 
 int main(int argc, char **argv)
 {
@@ -10643,6 +11150,7 @@ int main(int argc, char **argv)
     test_gc_in_free();
     test_error_nest();
     test_function_properties_oom();
+    test_compile_count();
     test_poll_scan();
     test_poll_insert();
     test_poll_compile();
@@ -10716,6 +11224,13 @@ int main(int argc, char **argv)
     test_regvm_putf_step();
     test_regvm_call_record();
     test_spread_alloc();
+    test_module_jobs_oom();
+    test_module_waiters();
+    test_module_lookup();
+    test_module_load_stops();
+    test_module_failed_names();
+    test_module_same_name();
+    test_module_read_oom();
     test_spread_refs();
     test_days_to_date();
     CHECK(white_gc_window_count() == 0, "%ld allocations while a collection had counts taken away", white_gc_window_count());

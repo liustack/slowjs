@@ -132,6 +132,11 @@ static unsigned long white_json_walked;
 /* JS_GC_RUN counts the collections that run, full (0) and young (1). */
 static unsigned long white_gc_runs[2];
 #define JS_GC_RUN(young) (white_gc_runs[young]++)
+
+/* JS_MODULE_STEP counts the steps of the walks over modules. */
+static unsigned long white_module_steps;
+#define JS_MODULE_STEP() (white_module_steps++)
+
 #define host_poll white_host_poll
 
 #include "../quickjs.c"
@@ -636,6 +641,16 @@ void white_poll_skip(int on)
     white_poll_skip_flag = on;
 }
 
+/* the count of the work of a compile (js_compile_count) after it was left
+   with left and then counted n units times times */
+int white_compile_count(JSContext *ctx, int left, int n, int times)
+{
+    ctx->rt->compile_left = left;
+    while (times-- > 0)
+        js_compile_count(ctx, n);
+    return ctx->rt->compile_left;
+}
+
 /* NULL when code keeps to the rule of the polls (poll_scan), else what is
    wrong. */
 const char *white_poll_scan(const uint8_t *code, int len)
@@ -644,7 +659,7 @@ const char *white_poll_scan(const uint8_t *code, int len)
 
     if (len > (int)sizeof(run))
         return "too long for the test";
-    return poll_scan(code, len, run, NULL);
+    return poll_scan(NULL, code, len, run, NULL);
 }
 
 /* The code with the OP_nop that insert_polls puts in, in out, which has room
@@ -1188,6 +1203,44 @@ int white_props_inline(JSValueConst obj, int *room)
     return p->prop == (JSProperty *)((uint8_t *)p + offsetof(JSObject, u));
 }
 
+/* Evaluate the module m (JS_EvalFunction, which takes it) with call number
+   fail of js_malloc_rt and js_realloc_rt failing (0 for none), the others
+   working. *nallocs is how many calls it made. Returns what
+   JS_EvalFunction returns. */
+JSValue white_eval_function_failing(JSContext *ctx, JSValue m, int fail, int *nallocs)
+{
+    JSValue v;
+
+    white_alloc_calls = 1;
+    white_alloc_count = 0;
+    white_alloc_fail_at = fail;
+    v = JS_EvalFunction(ctx, m);
+    *nallocs = white_alloc_count;
+    white_alloc_fail_at = 0;
+    white_alloc_calls = 0;
+    return v;
+}
+
+/* Run the pending jobs of rt until none is left or one fails, with call
+   number fail of js_malloc_rt and js_realloc_rt failing (0 for none), the
+   others working. The exception of a job that failed stays in its
+   context, which goes in *pctx. *nallocs is how many calls they made.
+   Returns what the last JS_ExecutePendingJob returned. */
+int white_jobs_failing(JSRuntime *rt, JSContext **pctx, int fail, int *nallocs)
+{
+    int r;
+
+    white_alloc_calls = 1;
+    white_alloc_count = 0;
+    white_alloc_fail_at = fail;
+    while ((r = JS_ExecutePendingJob(rt, pctx)) > 0)
+        ;
+    *nallocs = white_alloc_count;
+    white_alloc_fail_at = 0;
+    white_alloc_calls = 0;
+    return r;
+}
+
 /* Call func with this and the arguments, with call number fail of
    js_malloc_rt and js_realloc_rt failing (0 for none), the others working.
    *nallocs is how many calls it made. Returns what JS_Call returns. */
@@ -1387,6 +1440,25 @@ int white_ref_count(JSValueConst v)
 unsigned long white_gc_run_count(int young)
 {
     return white_gc_runs[young != 0];
+}
+
+/* ---- the steps of the walks over modules (JS_MODULE_STEP) ---- */
+
+/* The steps since the last call, which starts the count again. */
+unsigned long white_module_steps_take(void)
+{
+    unsigned long n = white_module_steps;
+
+    white_module_steps = 0;
+    return n;
+}
+
+/* The count of names in the table of the loaded modules of ctx, and the
+   log2 of its size in bits, 0 with no table. */
+uint32_t white_module_names(JSContext *ctx, int *bits)
+{
+    *bits = ctx->module_hash ? ctx->module_hash_bits : 0;
+    return ctx->module_hash_count;
 }
 
 /* ---- the ids of shapes (find_hashed_shape_prop) ---- */

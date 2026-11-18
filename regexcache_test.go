@@ -112,19 +112,22 @@ func TestRegExpCacheStops(t *testing.T) {
 		{`for (let i = 0; ; i++) new RegExp(p + (i % 1000), 'g')`, stopPolls},
 		{`for (let i = 0; ; i++) try { new RegExp(p + i, 'g') } catch (e) {}`, stopPolls},
 		{`for (let i = 0; ; i++) eval('/' + p + i + '/g')`, stopPolls},
-		// one compile of a pattern of 13.2M characters: its conversion to
-		// UTF-8 ran 41 polls with no reading of the flag, and the work after
-		// the parse about 1,360, past the 1000 after which a poll kills the
-		// script
-		{`new RegExp(p.replaceAll('(', '(?:').repeat(6000))`, stopPolls},
+		// compiles of a pattern of 13.2M characters: the conversion of one
+		// to UTF-8 ran 41 polls with no reading of the flag, and the work
+		// after the parse about 1,360, past the 1000 after which a poll
+		// kills the script. A new pattern each turn, so that no turn takes
+		// one from the cache and a late request still finds a compile
+		{`let b = p.replaceAll('(', '(?:').repeat(6000); for (let i = 0; ; i++) new RegExp(b + i)`, stopPolls},
 		// strings of one hash and one length in a class: a string was
 		// compared with the ones before it in one pass of memcmp, a byte
 		// at a time, up to 31 times 128 KiB with no reading of the flag.
 		// The pattern is a string of 16 bits, which the compile converts
 		// to UTF-8 in steps of 65,536 characters, about a tick each: up to
 		// 7 polls (see regexpStopPolls in internal/cengine), so a stop that
-		// comes in the conversion is held to stepStopPolls
-		{`new RegExp('[\\q{' + q + '}]', 'v')`, stepStopPolls},
+		// comes in the conversion is held to stepStopPolls. One compile
+		// takes about 50 ms, which a late request can pass, so the
+		// compiles go on as above
+		{`let c = '[\\q{' + q + '}]'; for (let i = 0; ; i++) new RegExp(c + i, 'v')`, stepStopPolls},
 	} {
 		js := r.js
 		for _, c := range []struct {
@@ -136,6 +139,12 @@ func TestRegExpCacheStops(t *testing.T) {
 				return func() {}
 			}},
 			{"interrupt", func(m *VM) func() { return interruptAfter(m, 10*time.Millisecond) }},
+			// The goroutine of interruptAfter runs when the scheduler lets
+			// it: with one P, held by the call, that is when the call gives
+			// it up, at times tens of milliseconds after d
+			// (docs/architecture.md, A long call and the Go scheduler). A
+			// request that comes late must still find the work going on.
+			{"late interrupt", func(m *VM) func() { return interruptAfter(m, 100*time.Millisecond) }},
 		} {
 			t.Run(c.name, func(t *testing.T) {
 				m := newTestVM(t)
