@@ -17,9 +17,9 @@
 # (default), asan-heap, asan-heap-iter or ubsan, and it must be built already:
 # engine/test/build.sh MODE. SEEDS (default 5) is how many seeds the random
 # sequences run with, STEPS (default 300000) the steps of each. SECONDS (default
-# 0, none) is how long the fuzz target runs: it builds engine/test/out/fuzz
-# first, starts from the inputs in engine/test/out/fuzz-corpus and keeps the
-# new ones there. The status is 0 when everything passed. Wrap the script in
+# 0, none) is how long the fuzz target runs, which must be built already too
+# (engine/test/build.sh fuzz): it starts from the inputs in
+# engine/test/out/fuzz-corpus and keeps the new ones there. The status is 0 when everything passed. Wrap the script in
 # taskset, flock or systemd-run to keep it to the CPUs and the memory you give
 # it.
 set -eu
