@@ -51,7 +51,7 @@ func TestPreemptionHammer(t *testing.T) {
 		{`/(\d+)-(\d+)/.exec("x10-20y").slice(1).join("|") + String(10n**20n)`, `10|20100000000000000000000`},
 	}
 	var in atomic.Bool
-	var requests atomic.Int64 // writes of stackPreempt, not preemptions that were made
+	var requests atomic.Int64                      // writes of stackPreempt, not preemptions that were made
 	guard := (*uintptr)(unsafe.Add(hammerG(), 16)) // g.stackguard0, the third word
 	stop := make(chan struct{})
 	done := make(chan struct{})
