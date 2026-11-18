@@ -179,8 +179,8 @@ jobs:
         run: go test -count=1 -p 2 -timeout 120m $(go list ./... | grep -v '/slowjs$')
       - name: Test, the two modules of compare
         run: |
-          (cd compare && go test -count=1 ./...)
-          (cd compare/engines && go test -count=1 ./...)
+          (cd compare && GOTOOLCHAIN=auto go test -count=1 ./...)
+          (cd compare/engines && GOTOOLCHAIN=auto go test -count=1 ./...)
       - name: The preemption hammer
         run: go test -count=1 -tags cenginehammer -run Hammer -v ./internal/cengine
         env:

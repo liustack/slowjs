@@ -16,6 +16,11 @@
 # The tags of GOOS, GOARCH, go1.N and the go command's own (unix, cgo, race,
 # gc, gccgo, ignore, purego) need no line.
 #
+# The root module is vetted with the go command as it is called (the oldest
+# Go the module supports, in the nightly run). The other modules are not part
+# of what users build and may ask for a newer Go in their go.mod, so they run
+# with GOTOOLCHAIN=auto, which fetches that Go when the one here is older.
+#
 # Environment:
 #   VET_TAGS_LIST  1: print the list and stop
 set -eu
@@ -77,9 +82,10 @@ while read -r dir tags systems; do
 	unix) targets=$unix ;;
 	*) echo "vet-tags.sh: $dir $tags: systems $systems: want all or unix" >&2; exit 2 ;;
 	esac
+	[ "$dir" = . ] && toolchain=${GOTOOLCHAIN:-} || toolchain=auto
 	for target in $targets; do
 		echo "== go vet ${t:+-tags $t }in $dir for $target"
-		(cd "$dir" && GOOS=${target%/*} GOARCH=${target#*/} go vet ${t:+-tags "$t"} ./...) || failed=1
+		(cd "$dir" && GOTOOLCHAIN=$toolchain GOOS=${target%/*} GOARCH=${target#*/} go vet ${t:+-tags "$t"} ./...) || failed=1
 	done
 done <<EOF
 $(echo "$list" | grep -v '^$')
