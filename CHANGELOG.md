@@ -6,7 +6,7 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 
 ### Fixed
 
-- A function, a class, a `String` object, an error, the result of `Proxy.revocable` or a template object made with too little memory now fails the call with the out of memory error, where it could come back without one of its properties and with the error left pending.
+- A function, a class, a `String` object, an error, a `RegExp` made with a new target, the result of `Proxy.revocable` or a template object made with too little memory now fails the call with the out of memory error, where it could come back without one of its properties and with the error left pending.
 
 ## [v0.31.5] - 2026-11-17
 

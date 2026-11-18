@@ -60996,9 +60996,14 @@ static JSValue js_regexp_set_internal(JSContext *ctx,
     re = &p->u.regexp;
     re->pattern = JS_VALUE_GET_STRING(pattern);
     re->bytecode = JS_VALUE_GET_STRING(bc);
-    /* Note: cannot fail because the field is preallocated */
-    (void)JS_DefinePropertyValue(ctx, obj, JS_ATOM_lastIndex, JS_NewInt32(ctx, 0),
-                                 JS_PROP_WRITABLE);
+    /* an object made from a new target whose prototype has a shape that
+       other objects share gets lastIndex in a shape of its own, which takes
+       memory. obj owns pattern and bc now, and frees them */
+    if (JS_DefinePropertyValue(ctx, obj, JS_ATOM_lastIndex, JS_NewInt32(ctx, 0),
+                               JS_PROP_WRITABLE) < 0) {
+        JS_FreeValue(ctx, obj);
+        return JS_EXCEPTION;
+    }
     return obj;
 }
 
@@ -61065,8 +61070,12 @@ static JSValue js_regexp_constructor(JSContext *ctx, JSValueConst new_target,
         if (JS_IsUndefined(flags1)) {
             bc = JS_DupValue(ctx, JS_MKPTR(JS_TAG_STRING, re->bytecode));
             obj = js_create_from_ctor(ctx, new_target, JS_CLASS_REGEXP);
-            if (JS_IsException(obj))
+            if (JS_IsException(obj)) {
+                /* the fail label does not free bc, taken with pattern before
+                   the prototype is read, so that both are of one regexp */
+                JS_FreeValue(ctx, bc);
                 goto fail;
+            }
             goto no_compilation;
         } else {
             flags = JS_DupValue(ctx, flags1);

@@ -3151,6 +3151,73 @@ static void test_define_after_make_oom(void)
     }
 }
 
+/* A RegExp made from a RegExp with a new target C, called from C as a host
+   does, with too little memory: the object takes the shape of C.prototype,
+   which keep, made with that prototype, holds too, so its lastIndex is a
+   key added to a shape of its own, which takes memory. With none, the call
+   fails with the out of memory error. It went on with the error pending and
+   gave the RegExp without lastIndex. A call that works gives the RegExp,
+   with lastIndex 0 and no error pending. A room where the object itself
+   cannot be made leaves no block (vm_free): it kept a reference to the
+   code of the seed. */
+static void test_regexp_new_target_oom(void)
+{
+    static const char setup[] =
+        "var seed = /x/g; function C() {} C.prototype = Object.create(RegExp.prototype);\n"
+        "var keep = Object.create(C.prototype); 0";
+    FillRoom rm[FILL_ROOMS];
+    size_t nfill = fill_rooms(rm), nbytes = 4096 / 8 + 1, k;
+    int failed = 0, worked = 0;
+
+    for (k = 0; k < nbytes + nfill; k++) {
+        VM v = vm_new();
+        JSValue g, re, c, seed, r;
+        char *t;
+
+        CHECK(eval_ok(v.ctx, setup), "the setup failed");
+        g = JS_GetGlobalObject(v.ctx);
+        re = JS_GetPropertyStr(v.ctx, g, "RegExp");
+        c = JS_GetPropertyStr(v.ctx, g, "C");
+        seed = JS_GetPropertyStr(v.ctx, g, "seed");
+        if (k < nbytes) {
+            room(&v, k * 8);
+        } else {
+            fill_memory(&v);
+            free_blocks(&v, rm[k - nbytes].min, rm[k - nbytes].max, rm[k - nbytes].n);
+        }
+        r = JS_CallConstructor2(v.ctx, re, c, 1, (JSValueConst *)&seed);
+        if (k < nbytes)
+            unlimit(&v);
+        else
+            release_blocks(&v);
+        if (JS_IsException(r)) {
+            failed++;
+            CHECK(JS_IsUncatchableException(v.ctx), "room %zu: a catchable error", k);
+            t = exception_text(v.ctx);
+            CHECK(t && (strstr(t, "out of memory") || strcmp(t, "null") == 0),
+                  "room %zu: not the out of memory error: %s", k, t ? t : "?");
+        } else {
+            t = exception_text(v.ctx);
+            CHECK(!t, "room %zu: a RegExp with %s pending", k, t);
+            free(t);
+            JS_SetPropertyStr(v.ctx, g, "r", JS_DupValue(v.ctx, r));
+            t = eval_text(v.ctx, "[r.source, r.flags, Object.hasOwn(r, 'lastIndex'), r.lastIndex, r instanceof C].join()");
+            CHECK(t && strcmp(t, "x,g,true,0,true") == 0, "room %zu: got %s", k, t ? t : "(exception)");
+            if (t && strcmp(t, "x,g,true,0,true") == 0)
+                worked++;
+        }
+        free(t);
+        JS_FreeValue(v.ctx, r);
+        JS_FreeValue(v.ctx, seed);
+        JS_FreeValue(v.ctx, c);
+        JS_FreeValue(v.ctx, re);
+        JS_FreeValue(v.ctx, g);
+        vm_free(&v);
+    }
+    CHECK(failed > 0, "RegExp with a new target: no room made it fail");
+    CHECK(worked > 0, "RegExp with a new target: no room let it work");
+}
+
 /* ---- the rejections kept for the host ---- */
 
 /* The two allocations of keeping rejections, each with no memory: the list,
@@ -3594,6 +3661,7 @@ int main(void)
     test_empty_string_full_heap();
     test_finrec_job_full_heap();
     test_define_after_make_oom();
+    test_regexp_new_target_oom();
     test_rejections_oom();
     test_split_paths_oom();
     test_compile_names_oom();
