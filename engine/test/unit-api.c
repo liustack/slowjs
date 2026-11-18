@@ -3355,6 +3355,95 @@ static void test_await_stop_frees_frame(void)
     }
 }
 
+/* call_method calls the method m of the global object o from C, with the
+   argument 1 */
+static JSValue call_method(JSContext *ctx, const char *o, const char *m)
+{
+    JSValue g = JS_GetGlobalObject(ctx);
+    JSValue obj = JS_GetPropertyStr(ctx, g, o);
+    JSValue f = JS_GetPropertyStr(ctx, obj, m);
+    JSValue one = JS_NewInt32(ctx, 1);
+    JSValue r = JS_Call(ctx, f, obj, 1, (JSValueConst *)&one);
+
+    JS_FreeValue(ctx, f);
+    JS_FreeValue(ctx, obj);
+    JS_FreeValue(ctx, g);
+    return r;
+}
+
+/* A settle of an async function or an async generator that fails on an
+   error a script can catch, the call depth, fails the call that ran it, as
+   no call may return a value with an exception left pending. The settle
+   that failed kept its error pending and the call returned its promise:
+   return(1) on a finished generator (the promise of the value to await
+   failed, and the rejected one made in its place too), next on it, and an
+   async function or a generator whose resolve of its own promise failed.
+   The jobs of an await of return settle on the same steps. Each case runs
+   at each call depth up to 12, and the runtime is closed with no block in
+   use (vm_free). */
+static void test_settle_depth_fails_call(void)
+{
+    static const struct {
+        const char *what, *setup, *o, *m;
+    } cases[] = {
+        { "return on a finished generator",
+          "globalThis.g = (async function* () {})(); g.next();", "g", "return" },
+        { "next on a finished generator",
+          "globalThis.g = (async function* () {})(); g.next();", "g", "next" },
+        { "next that yields",
+          "globalThis.g = (async function* () { yield 1; })();", "g", "next" },
+        { "next that throws",
+          "globalThis.g = (async function* () { throw 1; })();", "g", "next" },
+        { "async function that returns",
+          "globalThis.o = { f: async function (x) { return x; } };", "o", "f" },
+        { "async function that throws",
+          "globalThis.o = { f: async function (x) { throw x; } };", "o", "f" },
+        { "jobs of an await of return",
+          "globalThis.g = (async function* () {})(); g.next();\n"
+          "g.return(Promise.resolve(2)); g.next(); g.next();\n"
+          "globalThis.o = { f() {} };", "o", "f" },
+        { "jobs of an await of a generator",
+          "globalThis.g = (async function* () { await 0; return 1; })();\n"
+          "g.next(); g.next();\n"
+          "globalThis.o = { f() {} };", "o", "f" },
+        { "jobs of an await of an async function",
+          "(async function () { await 0; return 1; })();\n"
+          "globalThis.o = { f() {} };", "o", "f" },
+    };
+    size_t i;
+    int d;
+
+    for (i = 0; i < countof(cases); i++) {
+        for (d = 1; d <= 12; d++) {
+            VM v = vm_new();
+            int max = JS_GetMaxCallDepth(v.rt), ret;
+            JSContext *jctx;
+            JSValue r;
+
+            eval_ok(v.ctx, cases[i].setup);
+            CHECK(JS_SetMaxCallDepth(v.rt, d) == 0, "%s: depth %d not set", cases[i].what, d);
+            r = call_method(v.ctx, cases[i].o, cases[i].m);
+            CHECK(JS_IsException(r) == JS_HasException(v.ctx),
+                  "%s, depth %d: the call returned %s with %s pending", cases[i].what, d,
+                  JS_IsException(r) ? "an exception" : "a value",
+                  JS_HasException(v.ctx) ? "an exception" : "nothing");
+            if (JS_IsException(r))
+                JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+            JS_FreeValue(v.ctx, r);
+            while ((ret = JS_ExecutePendingJob(v.rt, &jctx)) != 0) {
+                CHECK((ret < 0) == JS_HasException(v.ctx),
+                      "%s, depth %d: a job returned %d with %s pending", cases[i].what, d, ret,
+                      JS_HasException(v.ctx) ? "an exception" : "nothing");
+                if (JS_HasException(v.ctx))
+                    JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+            }
+            JS_SetMaxCallDepth(v.rt, max);
+            drain_jobs(&v);
+            vm_free(&v);
+        }
+    }
+}
+
 int main(void)
 {
     test_compile_stops();
@@ -3370,6 +3459,7 @@ int main(void)
     test_async_gen_drain();
     test_async_gen_stop_queue();
     test_await_stop_frees_frame();
+    test_settle_depth_fails_call();
     test_for_in_keeps_shape();
     test_plain_objects();
     test_run_gc_threshold();

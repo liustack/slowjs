@@ -11792,11 +11792,14 @@ static inline BOOL js_catch_ends(JSContext *ctx)
 }
 
 /* ret, the result of a call of a resolving function that its caller drops:
-   -1 when the call left an uncatchable exception pending (the resolve read
-   a getter of then that stopped), which ends the caller too, else 0. */
+   -1 when the call failed, which ends the caller too, with the exception
+   pending, else 0. The call fails on an uncatchable exception (the resolve
+   read a getter of then that stopped) and on one a script can catch, as
+   the call depth refusing the call: the caller returned its promise with
+   that RangeError left pending, and no call may return a value so. */
 static int js_settle_result(JSContext *ctx, JSValue ret)
 {
-    if (JS_IsException(ret) && js_uncatchable_pending(ctx->rt))
+    if (JS_IsException(ret))
         return -1;
     JS_FreeValue(ctx, ret);
     return 0;
@@ -25933,7 +25936,8 @@ static int js_async_function_resolve_create(JSContext *ctx,
 
 /* -1 when an uncatchable exception is pending: the function stopped, or a
    step of its settling did (a getter of then the resolve read), and the call
-   ends with it, as no promise may hold it (js_catch_ends). 0 otherwise. */
+   ends with it, as no promise may hold it (js_catch_ends). -1 too when the
+   call of a resolving function failed (js_settle_result). 0 otherwise. */
 static int js_async_function_resume(JSContext *ctx, JSAsyncFunctionState *s)
 {
     JSValue func_ret, ret2;
@@ -26196,7 +26200,7 @@ static int js_async_generator_await(JSContext *ctx,
     return -1;
 }
 
-/* -1 when the settle of the request left an uncatchable exception pending
+/* -1 when the settle of the request failed, its exception pending
    (js_settle_result), else 0 */
 static int js_async_generator_resolve_or_reject(JSContext *ctx,
                                                 JSAsyncGeneratorData *s,
@@ -26306,7 +26310,8 @@ static int js_async_generator_completed_return(JSContext *ctx,
 
 /* -1 when an uncatchable exception is pending: the body stopped
    (js_async_generator_stop), or a step of a settle did, and the call ends
-   with it (js_catch_ends). 0 otherwise. */
+   with it (js_catch_ends). -1 too when a settle failed on an exception a
+   script can catch (js_settle_result). 0 otherwise. */
 static int js_async_generator_resume_next(JSContext *ctx,
                                           JSAsyncGeneratorData *s)
 {
@@ -26337,8 +26342,11 @@ static int js_async_generator_resume_next(JSContext *ctx,
                (js_async_generator_resolve_function) */
             if (next->completion_type == GEN_MAGIC_RETURN) {
                 s->state = JS_ASYNC_GENERATOR_STATE_AWAITING_RETURN;
-                if (js_async_generator_completed_return(ctx, s, next->result) < 0 &&
-                    js_catch_ends(ctx))
+                /* a failure ends the call with its exception, also one a
+                   script can catch (the call depth refused the promise of
+                   the value and the rejected one made in its place): the
+                   call returned its promise with it left pending */
+                if (js_async_generator_completed_return(ctx, s, next->result) < 0)
                     ret = -1;
                 goto done;
             }
@@ -36909,7 +36917,8 @@ static JSValue js_load_module_fulfilled(JSContext *ctx, JSValueConst this_val,
 
 /* -1 when an uncatchable exception is pending, which ends the call with no
    promise holding it (js_catch_ends), or out of memory left the promise
-   unsettled, else 0 */
+   unsettled, or the call of a resolving function failed
+   (js_settle_result), else 0 */
 static int JS_LoadModuleInternal(JSContext *ctx, const char *basename,
                                  const char *filename,
                                  JSValueConst *resolving_funcs,
