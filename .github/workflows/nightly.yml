@@ -234,8 +234,8 @@ jobs:
         run: |
           mkdir -p .build/check-logs
           go run ./internal/stress -duration 12m -series .build/check-logs/stress.csv
-      - name: The render stress with maps refused, 5 minutes
-        run: go run -tags testhooks ./internal/stress -duration 5m -refuse 10 -series .build/check-logs/stress-refuse.csv
+      - name: The render stress with maps refused and aborts, 5 minutes
+        run: go run -tags testhooks ./internal/stress -duration 5m -refuse 10 -abort 2 -series .build/check-logs/stress-refuse.csv
 
       - name: Keep the logs
         if: always()

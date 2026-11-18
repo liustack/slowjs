@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/liustack/slowjs"
+	"github.com/liustack/slowjs/internal/gohost"
 )
 
 // op is what a step does to a render.
@@ -27,10 +28,11 @@ const (
 	opTimeout             // under an eval timeout drawn at random, shorter than the render
 	opInterrupt           // Interrupt from another goroutine at a moment drawn at random
 	opKill                // a stop the engine does not see in time, deep in a render: a kill
+	opAbort               // the engine aborts at a poll drawn at random (-tags testhooks)
 	nOps
 )
 
-var opNames = [nOps]string{"normal", "oom", "timeout", "interrupt", "kill"}
+var opNames = [nOps]string{"normal", "oom", "timeout", "interrupt", "kill", "abort"}
 
 // outcome is how a render ended.
 type outcome int
@@ -41,6 +43,7 @@ const (
 	outOOM                        // *Error with OutOfMemory
 	outBudget                     // the time ran out between two calls of the render
 	outKilled                     // *Error that matches ErrKilled
+	outAborted                    // the panic of an abort of the engine
 	outThrown                     // an exception the page threw: catchable, not uncatchable
 	outUnresolved                 // no result once no job was left
 	outResult                     // a result that is not HTML
@@ -49,7 +52,7 @@ const (
 	nOutcomes
 )
 
-var outcomeNames = [nOutcomes]string{"html", "interrupted", "oom", "budget", "killed", "thrown", "unresolved", "result", "WRONG-HTML", "OTHER"}
+var outcomeNames = [nOutcomes]string{"html", "interrupted", "oom", "budget", "killed", "aborted", "thrown", "unresolved", "result", "WRONG-HTML", "OTHER"}
 
 // counts are the renders of the run, by op, by outcome, and by whether the
 // VM went on after a stop before.
@@ -97,6 +100,8 @@ func allowed(o op, reused bool, out outcome) bool {
 		return o == opOOM
 	case outKilled:
 		return o == opKill
+	case outAborted:
+		return o == opAbort
 	}
 	return false
 }
@@ -168,6 +173,8 @@ func (w *worker) pickOp(v *pvm) op {
 		return opInterrupt
 	case n < c.oom+c.timeout+c.interrupt+c.kill && !v.steady:
 		return opKill
+	case n >= c.oom+c.timeout+c.interrupt+c.kill && n < c.oom+c.timeout+c.interrupt+c.kill+c.abort && !v.steady:
+		return opAbort
 	}
 	return opNormal
 }
@@ -280,7 +287,18 @@ func (w *worker) step(i int) (keep bool) {
 	var it *interrupter
 	defer func() {
 		if r := recover(); r != nil {
-			w.s.unexpected(w.id, v.id, opNames[o], p.name, fmt.Sprintf("panic: %v\n%s", r, debug.Stack()))
+			// An abort of the engine, the one of opAbort or any other, leaves
+			// the VM good only for Close, which must free it all, and the
+			// other VMs go on: the renders after it are counted.
+			aborted := isAbort(r)
+			if aborted {
+				w.s.aborts.Add(1)
+			}
+			if aborted && o == opAbort {
+				w.s.counts.add(v.stops > 0, o, outAborted)
+			} else {
+				w.s.unexpected(w.id, v.id, opNames[o], p.name, fmt.Sprintf("panic: %v\n%s", r, debug.Stack()))
+			}
 			if !v.closed {
 				w.closeVM(v, "after a panic")
 			}
@@ -321,13 +339,28 @@ func (w *worker) step(i int) (keep bool) {
 		if w.rng.IntN(2) == 0 {
 			it = w.s.interruptAfter(v.VM, w.randDur(2*p.took))
 		}
+	case opAbort:
+		if p.polls == 0 {
+			o = opInterrupt
+			it = w.s.interruptAfter(v.VM, w.randDur(p.took*3/2))
+			break
+		}
+		// The poll may come after the render ends, which then gives its
+		// HTML.
+		abortAfterPolls(v.VM, 1+w.rng.Int64N(p.polls+p.polls/4+1))
 	}
 
 	reused := v.stops > 0
 	html, err := v.render(p.input, timeout)
+	if o == opAbort {
+		abortAfterPolls(v.VM, 0)
+	}
 	v.renders++
 	out, detail := classify(p, html, err)
 	w.s.counts.add(reused, o, out)
+	if out == outHTML && w.s.aborts.Load() > 0 {
+		w.s.htmlAfterAbort.Add(1)
+	}
 	if !allowed(o, reused, out) && !(w.s.refusing && out == outOOM) {
 		w.s.unexpected(w.id, v.id, opNames[o], p.name, fmt.Sprintf("%s (VM of %d renders, %d stops before): %s", outcomeNames[out], v.renders, v.stops, detail))
 	}
@@ -499,4 +532,10 @@ func (w *worker) updateEngine() {
 		}
 	}
 	w.engine.Store(sum)
+}
+
+// isAbort says whether r, the panic of a render, is an abort of the engine.
+func isAbort(r any) bool {
+	err, ok := r.(error)
+	return ok && errors.Is(err, gohost.ErrAbort)
 }

@@ -50,7 +50,7 @@ type config struct {
 	renderTimeout time.Duration // the eval timeout of a render that is not stopped on purpose
 	measureEvery  int           // how many renders of a steady VM between two measures
 	// percent of the steps that are each op, the rest normal renders
-	oom, timeout, interrupt, kill int
+	oom, timeout, interrupt, kill, abort int
 	// refuse is how many of every thousand maps of the OS are refused at random
 	// (-tags testhooks), 0 for none
 	refuse int
@@ -75,7 +75,10 @@ type stress struct {
 	ids                                        atomic.Int64
 	loaded, closed, retired, kills, interrupts atomic.Int64
 	finalizeFails                              atomic.Int64
-	refused, loadsRefused                      atomic.Int64
+	// aborts of the engine, and the renders that gave the right HTML after the
+	// first of them
+	aborts, htmlAfterAbort atomic.Int64
+	refused, loadsRefused  atomic.Int64
 	// refusing is set while the OS refuses maps at random: any render may then
 	// run out of memory, and a load may fail
 	refusing bool
@@ -149,6 +152,7 @@ func main() {
 	flag.IntVar(&c.timeout, "timeout", 12, "percent of the renders under an eval timeout drawn at random")
 	flag.IntVar(&c.interrupt, "interrupt", 12, "percent of the renders with an Interrupt at a random moment")
 	flag.IntVar(&c.kill, "kill", 3, "percent of the renders of churn VMs that end in a kill")
+	flag.IntVar(&c.abort, "abort", 0, "percent of the renders of churn VMs during which the engine aborts (needs -tags testhooks)")
 	flag.IntVar(&c.refuse, "refuse", 0, "of every thousand maps of chunks and blocks, how many the OS refuses at random (needs -tags testhooks)")
 	flag.Float64Var(&c.tolerance, "tolerance", 0.05, "the growth a memory measure may show from the middle third of the run after the warm-up to the last third, as a fraction")
 	flag.Int64Var(&c.slack, "slack", 1<<20, "and in bytes, besides the fraction")
@@ -202,12 +206,15 @@ func run(c config) error {
 	if c.seed == 0 {
 		c.seed = uint64(time.Now().UnixNano())
 	}
-	if c.workers < 1 || c.churn < 0 || c.measureEvery < 1 || c.oom+c.timeout+c.interrupt+c.kill > 100 {
+	if c.workers < 1 || c.churn < 0 || c.measureEvery < 1 || c.oom+c.timeout+c.interrupt+c.kill+c.abort > 100 {
 		return errors.New("stress: -workers at least 1, -churn at least 0, -measure-every at least 1, and the percents of the ops at most 100 together")
 	}
+	if c.abort > 0 && !canAbort {
+		return errors.New("stress: -abort needs a build with -tags testhooks")
+	}
 	s := &stress{cfg: c}
-	fmt.Fprintf(c.log, "stress: seed %d, %d workers, %d churn VMs a bundle, %v, warm-up %v, kinds %s, ops oom %d%% timeout %d%% interrupt %d%% kill %d%%, GOMAXPROCS %d\n",
-		c.seed, c.workers, c.churn, c.duration, c.warmup, strings.Join(c.kinds, ","), c.oom, c.timeout, c.interrupt, c.kill, runtime.GOMAXPROCS(0))
+	fmt.Fprintf(c.log, "stress: seed %d, %d workers, %d churn VMs a bundle, %v, warm-up %v, kinds %s, ops oom %d%% timeout %d%% interrupt %d%% kill %d%% abort %d%%, GOMAXPROCS %d\n",
+		c.seed, c.workers, c.churn, c.duration, c.warmup, strings.Join(c.kinds, ","), c.oom, c.timeout, c.interrupt, c.kill, c.abort, runtime.GOMAXPROCS(0))
 
 	base := snapshot()
 	var err error
@@ -343,6 +350,9 @@ func (s *stress) report(took time.Duration, ser *series) {
 		total, took.Round(time.Second), float64(total)/took.Seconds(), s.loaded.Load(), s.retired.Load(), s.kills.Load(), s.interrupts.Load(), s.finalizeFails.Load())
 	if s.refusing {
 		fmt.Fprintf(w, "stress: the OS refused %d maps, and %d loads failed for it\n", s.refused.Load(), s.loadsRefused.Load())
+	}
+	if n := s.aborts.Load(); n > 0 {
+		fmt.Fprintf(w, "stress: the engine aborted %d times, and %d renders after the first abort gave the right HTML\n", n, s.htmlAfterAbort.Load())
 	}
 	for r, name := range []string{"VMs that never stopped", "VMs that went on after a stop"} {
 		fmt.Fprintf(w, "stress: %s\n", name)

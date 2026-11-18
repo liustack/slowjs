@@ -341,6 +341,7 @@ The race detector ignores atomic operations on memory outside Go's heap, such as
 ```sh
 go run ./internal/stress -duration 10m -series series.csv                 # a run
 go run -tags testhooks ./internal/stress -duration 10m -refuse 10          # the OS also refuses 10 of every 1000 maps
+go run -tags testhooks ./internal/stress -duration 10m -abort 2           # and the engine aborts in 2% of the renders of churn VMs
 CGO_ENABLED=1 go test -race -run TestStress ./internal/stress -args -stress-duration 10m   # under the race detector
 ```
 
@@ -353,8 +354,9 @@ Before the run it compiles each bundle once, as tifa does, and renders every pag
 | `-timeout` | 12% | an eval timeout drawn up to 1.5 times the render's time | the HTML, an `*Error` with `Interrupted`, or the time running out between two calls of the render |
 | `-interrupt` | 12% | `Interrupt` from another goroutine at a moment drawn up to 1.5 times the render's time, which may land while the VM collects after the render | the HTML, or an `*Error` with `Interrupted` |
 | `-kill` | 3%, churn VMs only | `Array.prototype.push` wrapped so that its call number n, drawn at random, runs a loop the engine never stops in, under a short timeout and sometimes an `Interrupt`: the kill comes deep inside React's stack | the HTML, an interrupt, or an error that matches `ErrKilled` |
+| `-abort` | 0%, churn VMs only, `-tags testhooks` | the engine aborts, as it does where its C cannot go on, at a poll drawn up to a quarter past the polls of the render: the render panics and the VM is good only for `Close` | the HTML, or the panic of the abort |
 
-After a stop that is not a kill, a churn VM is closed half of the time, as tifa closes the VM of every failed render, and goes on otherwise. A steady VM always goes on. A VM that goes on must answer `Eval` and `MemoryUsage`, and its later renders must give the right HTML. They may also fail cleanly (an exception the page throws, a result that is not HTML, or work left pending), as [api.md](api.md) allows after a stop. A killed VM must answer `Interrupt`, `MemorySize`, `MemoryFree` and `GCThreshold`, return `ErrKilled` from `Eval` and `ExecutePendingJobs`, and `Close` with no error. Between renders a VM goes to a goroutine of its own, as in tifa's pool, and gets tifa's collection most of the time, and at random a full collection, a young one, a full one with its memory given back, or none.
+After a stop that is not a kill, a churn VM is closed half of the time, as tifa closes the VM of every failed render, and goes on otherwise. A steady VM always goes on. A VM that goes on must answer `Eval` and `MemoryUsage`, and its later renders must give the right HTML. They may also fail cleanly (an exception the page throws, a result that is not HTML, or work left pending), as [api.md](api.md) allows after a stop. A killed VM must answer `Interrupt`, `MemorySize`, `MemoryFree` and `GCThreshold`, return `ErrKilled` from `Eval` and `ExecutePendingJobs`, and `Close` with no error. A VM the engine aborted in, by `-abort` or by a bug, is closed, and `Close` must return no error: the run then counts the renders of the other VMs that gave the right HTML after the first abort, and prints it (an abort that `-abort` did not ask for is a failure all the same). Between renders a VM goes to a goroutine of its own, as in tifa's pool, and gets tifa's collection most of the time, and at random a full collection, a young one, a full one with its memory given back, or none.
 
 What it checks:
 
@@ -363,7 +365,7 @@ What it checks:
 - After the warm-up (`-warmup`, a fifth of the run by default), the mean of each measure over the last third of the rows may grow from its mean over the middle third by at most `-tolerance` (5%) and `-slack` (1 MiB) for what the steady VMs keep, and four times that fraction for the sums that move with the renders in flight. What a steady VM keeps grows while its pages warm up (code made at a function's first call, the caches of the app) and then stays: what still moves is bounded by the shape cache (2048 shapes, `SetShapeCache`), the regexp cache and the atoms, each with its cap.
 - At the end every VM and bundle is closed, and the totals of the host must be what they were before the first VM, with no block or kept memory of a Go function, no leftover VM and no goroutine left.
 
-It exits 1 when any check failed. `-seed` repeats the random choices of a run (the seed is printed at the start), though the moments of the stops come from the clock. `TestStress` runs it for 4 seconds (2 with `-short`), so `go test ./...` keeps it working. Nightly CI runs it for 12 minutes, and for 5 more with `-tags testhooks -refuse 10`.
+It exits 1 when any check failed. `-seed` repeats the random choices of a run (the seed is printed at the start), though the moments of the stops come from the clock. `TestStress` runs it for 4 seconds (2 with `-short`), so `go test ./...` keeps it working. Nightly CI runs it for 12 minutes, and for 5 more with `-tags testhooks -refuse 10 -abort 2`.
 
 For a long run on the build machines, build once and run under `~/bin/heavy`, which pins it to one core under a 5 GB cap (`GOMAXPROCS=4` on that one core makes the goroutines change places more often):
 

@@ -56,6 +56,7 @@ type page struct {
 	took  time.Duration // the shortest of its reference renders
 	grows uintptr       // what a render took from the engine with the collector off
 	push  int           // the calls of Array.prototype.push a render makes
+	polls int64         // the polls of the engine a render makes (-tags testhooks), else 0
 }
 
 // bundle is a bundle compiled once, as tifa compiles it, with its pages.
@@ -386,20 +387,20 @@ func reference(b *bundle, timeout time.Duration) error {
 	defer v.close()
 	for _, p := range b.pages {
 		for i := range 3 {
-			t := time.Now()
+			t, n := time.Now(), polls(v.VM)
 			html, err := v.render(p.input, timeout)
-			d := time.Since(t)
+			d, n := time.Since(t), polls(v.VM)-n
 			if err != nil {
 				return fmt.Errorf("%s: reference render: %w", p.name, err)
 			}
 			h := sha256.Sum256([]byte(html))
 			switch {
 			case i == 0:
-				p.hash, p.took = h, d
+				p.hash, p.took, p.polls = h, d, n
 			case h != p.hash:
 				return fmt.Errorf("%s: the reference renders gave other HTML", p.name)
 			default:
-				p.took = min(p.took, d)
+				p.took, p.polls = min(p.took, d), min(p.polls, n)
 			}
 			if err := v.collect(); err != nil {
 				return err

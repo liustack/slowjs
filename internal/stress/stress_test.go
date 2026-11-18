@@ -110,6 +110,8 @@ func TestAllowed(t *testing.T) {
 				want = o == opOOM
 			case x == outKilled:
 				want = o == opKill
+			case x == outAborted:
+				want = o == opAbort
 			}
 			if got := allowed(o, false, x); got != want {
 				t.Errorf("%s on a VM that never stopped, %s: %v, want %v", opNames[o], outcomeNames[x], got, want)
