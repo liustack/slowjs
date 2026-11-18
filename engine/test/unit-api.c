@@ -3444,6 +3444,125 @@ static void test_settle_depth_fails_call(void)
     }
 }
 
+/* After a stop, async work that was running may never settle, and the VM
+   is kept only to be read and closed: what must hold is that nothing is
+   used after it was freed (the sanitizers), that no call or job ends with
+   a value and an error left pending, and that closing the runtime frees
+   every block (vm_free). Each case sets up its async work, then go runs
+   with a stop at each reading of the flag, in the call and in the jobs
+   that follow it, until a run ends with no stop, and after that a call of
+   after and the rest of the jobs. Some run with an async context set, so
+   that each handler of an await is wrapped in a function of its own. No
+   promise is checked: these are the paths where one stays pending. */
+static void test_stop_async_frees(void)
+{
+    static const struct {
+        const char *what, *setup;
+        int actx;
+    } cases[] = {
+        { "a stop in the jobs of an await of a generator",
+          "globalThis.g = (async function* () {\n"
+          "  await 0;\n"
+          "  for (let i = 0; i < 50; i++) globalThis.n = i;\n"
+          "})();\n"
+          "globalThis.go = () => { g.next(); g.next(); };\n"
+          "globalThis.after = () => g.next();\n", 0 },
+        { "the same, each handler wrapped for its async context",
+          "globalThis.g = (async function* () {\n"
+          "  await 0;\n"
+          "  for (let i = 0; i < 50; i++) globalThis.n = i;\n"
+          "})();\n"
+          "globalThis.go = () => { g.next(); g.next(); };\n"
+          "globalThis.after = () => g.next();\n", 1 },
+        { "a stop in the jobs of an await of an async function",
+          "globalThis.go = () => (async function () {\n"
+          "  let buf = new ArrayBuffer(1 << 20);\n"
+          "  globalThis.keep = () => buf;\n"
+          "  await 0;\n"
+          "  for (let i = 0; i < 50; i++) globalThis.n = i;\n"
+          "})();\n"
+          "globalThis.after = () => 0;\n", 1 },
+        { "a stop in the then of the result a return settles with",
+          "globalThis.g = (async function* () {})(); g.next();\n"
+          "globalThis.go = () => {\n"
+          "  Object.defineProperty(Object.prototype, 'then', { configurable: true,\n"
+          "    get() { for (let i = 0; i < 50; i++) globalThis.n = i; } });\n"
+          "  g.return(Promise.resolve(1)); g.next(); g.next();\n"
+          "};\n"
+          "globalThis.after = () => { delete Object.prototype.then; return g.next(); };\n", 0 },
+        { "a stop in the then of a thenable an await gets",
+          "var res, p = new Promise(r => { res = r; });\n"
+          "globalThis.g = (async function* () { await p; return 1; })();\n"
+          "g.next(); g.next();\n"
+          "globalThis.go = () => res({ then(f) {\n"
+          "  for (let i = 0; i < 50; i++) globalThis.n = i;\n"
+          "  f(1);\n"
+          "} });\n"
+          "globalThis.after = () => g.next();\n", 0 },
+        { "an await of an async function a stop left pending",
+          "async function inner() {\n"
+          "  await { get then() { for (let i = 0; i < 50; i++) globalThis.n = i; } };\n"
+          "  return 1;\n"
+          "}\n"
+          "globalThis.g = (async function* () { await inner(); return 2; })();\n"
+          "globalThis.go = () => { g.next(); g.next(); };\n"
+          "globalThis.after = () => g.next();\n", 1 },
+    };
+    size_t i;
+    long k;
+
+    for (i = 0; i < countof(cases); i++) {
+        for (k = 1; k < 4000; k++) {
+            VM v = vm_new();
+            JSContext *jctx;
+            JSValue r;
+            int stopped = 0, ret;
+
+            if (cases[i].actx) {
+                JSValue ac = JS_NewObject(v.ctx);
+
+                JS_SetAsyncContext(v.ctx, ac);
+                JS_FreeValue(v.ctx, ac);
+            }
+            eval_ok(v.ctx, cases[i].setup);
+            host_poll_reads = 0;
+            host_poll_stop_after(k);
+            r = call_global(v.ctx, "go");
+            CHECK(JS_IsException(r) == JS_HasException(v.ctx),
+                  "%s, stop at %ld: the call returned %s with %s pending", cases[i].what, k,
+                  JS_IsException(r) ? "an exception" : "a value",
+                  JS_HasException(v.ctx) ? "an exception" : "nothing");
+            if (JS_IsException(r)) {
+                stopped = 1;
+                take_stop(&v, cases[i].what, k);
+            }
+            JS_FreeValue(v.ctx, r);
+            while ((ret = JS_ExecutePendingJob(v.rt, &jctx)) != 0) {
+                CHECK((ret < 0) == JS_HasException(v.ctx),
+                      "%s, stop at %ld: a job returned %d with %s pending", cases[i].what, k,
+                      ret, JS_HasException(v.ctx) ? "an exception" : "nothing");
+                if (ret < 0) {
+                    stopped = 1;
+                    take_stop(&v, cases[i].what, k);
+                }
+            }
+            host_poll_stop_after(0);
+            if (*JS_GetInterruptFlag(v.rt)) {
+                /* a stop no step read */
+                stopped = 1;
+                *JS_GetInterruptFlag(v.rt) = 0;
+            }
+            JS_FreeValue(v.ctx, call_global(v.ctx, "after"));
+            CHECK(!JS_HasException(v.ctx), "%s, stop at %ld: after threw", cases[i].what, k);
+            drain_jobs(&v);
+            vm_free(&v);
+            if (!stopped)
+                break;
+        }
+        CHECK(k > 3 && k < 4000, "%s: %ld readings", cases[i].what, k);
+    }
+}
+
 int main(void)
 {
     test_compile_stops();
@@ -3460,6 +3579,7 @@ int main(void)
     test_async_gen_stop_queue();
     test_await_stop_frees_frame();
     test_settle_depth_fails_call();
+    test_stop_async_frees();
     test_for_in_keeps_shape();
     test_plain_objects();
     test_run_gc_threshold();

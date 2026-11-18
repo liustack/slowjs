@@ -4,6 +4,10 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 
 ## [Unreleased]
 
+### Changed
+
+- After a timeout, an interrupt or running out of memory, async work that was in flight may never settle: keep such a VM only to read it and close it, which frees all it held, and do not wait on its promises ([api.md](docs/api.md#errors)).
+
 ### Fixed
 
 - An interrupt or the eval timeout stops the parse and the compile of a script of many short tokens, and the conversion of a long function to register code, within a few polls: a timeout in the compile of a script of 3 MB or more killed the VM (ErrKilled).
