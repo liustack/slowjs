@@ -314,7 +314,7 @@ engine/test/js-fuzz.sh -f 600                   # 10 minutes, from engine/test/o
 engine/test/out/fuzz/js-fuzz -runs=1 crash-...  # one input again
 ```
 
-The first run of `js-fuzz.sh` seeds the corpus with the scripts of `engine/test` and the inputs in `engine/test/js-fuzz-seeds`. Run it for hours on a server, from test262 files made into inputs (a byte 0, or 1 for a module, then the file).
+The first run of `js-fuzz.sh` seeds the corpus with the scripts of `engine/test` and the inputs in `engine/test/js-fuzz-seeds`. Run it for hours on a server, from test262 files made into inputs: a byte 0x20, or 0x21 for a module, then the file. Bit 5 of the first byte runs a small stand-in for the harness of test262 first, so that a file goes on past its first assert.
 
 ## The race detector
 

@@ -18,6 +18,9 @@
      bits 2-3  the memory limit: 32 MiB, 4 MiB, 1 MiB or 384 KiB
      bit 4     a script or module is compiled, written with JS_WriteObject,
                read again with JS_ReadObject and run from that
+     bit 5     a script or module runs after a stand-in for the harness of
+               test262 (prelude_script), so that a test262 file goes on past
+               its first assert
 
    A regexp is a byte of flags (dgimsuvy, one bit each), then the pattern, a
    0 byte and the subject.
@@ -94,6 +97,28 @@ static const char json_script[] =
     "  JSON.parse(filtered)\n"
     "  return s\n"
     "})()";
+
+/* What the files of test262 call from their harness, in a few lines: the
+   asserts throw when they fail, the helpers that check properties do
+   nothing. */
+static const char prelude_script[] =
+    "function Test262Error(m) { this.message = m }\n"
+    "Test262Error.thrower = (m) => { throw new Test262Error(m) }\n"
+    "var assert = (c, m) => { if (c !== true) throw new Test262Error(m) }\n"
+    "assert.sameValue = (a, b, m) => { if (!Object.is(a, b)) throw new Test262Error(m) }\n"
+    "assert.notSameValue = (a, b, m) => { if (Object.is(a, b)) throw new Test262Error(m) }\n"
+    "assert.throws = (C, f, m) => { try { f() } catch (e) { return } throw new Test262Error(m) }\n"
+    "assert.compareArray = (a, b, m) => { if (String(a) !== String(b)) throw new Test262Error(m) }\n"
+    "assert.deepEqual = assert.compareArray\n"
+    "var compareArray = (a, b) => String(a) === String(b)\n"
+    "var verifyProperty = () => true, verifyNotEnumerable = () => {}, verifyNotWritable = () => {},\n"
+    "  verifyNotConfigurable = () => {}, verifyEnumerable = () => {}, verifyWritable = () => {},\n"
+    "  verifyConfigurable = () => {}, verifyPrimordialProperty = () => true, verifyCallableProperty = () => true\n"
+    "var $DONE = (e) => { if (e) throw e }, $DONOTEVALUATE = () => { throw 'Test262: This statement should not be evaluated.' }\n"
+    "var asyncTest = (f) => f().then(() => $DONE(), $DONE)\n"
+    "var print = () => {}, $262 = { global: globalThis, gc() {}, detachArrayBuffer() {}, evalScript: (s) => (0, eval)(s), createRealm() { return $262 }, agent: {} }\n"
+    "var testWithTypedArrayConstructors = (f) => [Int8Array, Uint8Array, Uint8ClampedArray, Int16Array, Uint16Array, Int32Array, Uint32Array, Float32Array, Float64Array].forEach((C) => f(C))\n"
+    "var isConstructor = (f) => { try { Reflect.construct(String, [], f) } catch { return false } return true }\n";
 
 static void die(const char *what)
 {
@@ -271,6 +296,8 @@ static void run_one(const uint8_t *data, size_t size)
             die("no memory");
         memcpy(src, text, n);
         src[n] = 0;
+        if ((data[0] >> 5) & 1)
+            settle(ctx, JS_Eval(ctx, prelude_script, sizeof(prelude_script) - 1, "<harness>", JS_EVAL_TYPE_GLOBAL));
         run_source(rt, ctx, src, n, kind == 1, (data[0] >> 4) & 1);
         free(src);
         break;
