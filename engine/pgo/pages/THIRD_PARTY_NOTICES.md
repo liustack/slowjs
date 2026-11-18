@@ -20,8 +20,8 @@ at commit `8ca9ba5ea52de03308fe8ced94f7b159a44d28ff`, where LICENSE was added.
 
 | Bundle | SHA256 | Source map SHA256 | App lockfile SHA256 |
 | --- | --- | --- | --- |
-| mui | 881a59600aca99c1f5ac00775cf150a807d054bc893fff419461e7be85f5a586 | 110e5de74f7b51ca52360ed5d888069ea7e7b5bb40fe6539d55e42ea904b52ed | 027f7ee721c83c3d013081c377860c4c4583de9c5da27a0df604b7c0992997fc |
-| shop | 656886554a87dae25a2ced650fe8fbf47b83b8eefaecb0d8ff1a8c327576c3a9 | 687fb7fb0f99a7ef212571e9067430beda2eb48ed1c795cb491452689e40735b | a4404a2c5a6898d5b8605a0cfa3aacecd4e57ffab29d62152808681811a0dadc |
+| mui | d075f9293197a0f1410cd71e77b4d687186805d84526b2312cac86c2860ce65c | 89fbcedd3778b63dd628119c03caa90286d9d1cb38d916574d057b112f3a7cae | 63228c7bcc38bed5e8400f83e0eb6a626111d3f1ae941492dcf10ebb72f2f811 |
+| shop | 62063f81d6cb6145bf31117bd03d95e78e1922d1f98b7673dfaaec1dcf55d165 | 323bbcb092372a5a1d6c5c8adda9283b26bf16a00f898ffe07edf340daf2ef5f | 6d6dce3125e32209ee6b2f31b8cb4bb3f9244588837c34235a136d31b7524630 |
 
 ## Packages
 
@@ -98,10 +98,10 @@ at commit `8ca9ba5ea52de03308fe8ced94f7b159a44d28ff`, where LICENSE was added.
 | @react-spring/types | 10.1.2 | MIT | shop | [LICENSE](#text-20) |
 | @react-spring/web | 10.1.2 | MIT | shop | [LICENSE](#text-20) |
 | @tanstack/history | 1.162.5 | MIT | mui, shop | [LICENSE](#text-21) |
-| @tanstack/react-router | 1.170.42 | MIT | mui, shop | [LICENSE](#text-21) |
+| @tanstack/react-router | 1.170.46 | MIT | mui, shop | [LICENSE](#text-21) |
 | @tanstack/react-store | 0.11.2 | MIT | mui, shop | [LICENSE](#text-22) |
 | @tanstack/react-table | 9.3.1 | MIT | shop | [LICENSE](#text-23) |
-| @tanstack/router-core | 1.171.35 | MIT | mui, shop | [LICENSE](#text-21) |
+| @tanstack/router-core | 1.171.39 | MIT | mui, shop | [LICENSE](#text-21) |
 | @tanstack/store | 0.11.2 | MIT | mui, shop | [LICENSE](#text-22) |
 | @tanstack/table-core | 9.3.1 | MIT | shop | [LICENSE](#text-23) |
 | @ungap/structured-clone | 1.4.0 | ISC | shop | [LICENSE](#text-24) |

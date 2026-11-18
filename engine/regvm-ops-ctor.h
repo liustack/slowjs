@@ -191,7 +191,7 @@ static void rv_thisc(RVPass *s)
 /* new out of the loop, pc at the end of NEW w argc: as OP_call_constructor
    of QuickJS's interpreter, the window is its stack. The window is freed on
    every path, the result goes to w, undefined on an exception (NEW owns w). */
-static no_inline int rv_new_slow(JSContext *ctx, JSValue *F, const uint8_t *pc)
+static no_inline __exception int rv_new_slow(JSContext *ctx, JSValue *F, const uint8_t *pc)
 {
     JSRuntime *rt = ctx->rt;
     const uint8_t *ip = pc - 2;
@@ -339,7 +339,7 @@ static no_inline void rv_not_ctor_call(JSContext *ctx)
    the arguments of the frame, as OP_init_ctor. The function has no
    parameters, so they are the extra ones below func, in order
    (regvm-ops-args.h), and argc is in the header (rf->args). */
-static no_inline int rv_init_ctor(JSContext *ctx, JSValue *F, const uint8_t *ip)
+static no_inline __exception int rv_init_ctor(JSContext *ctx, JSValue *F, const uint8_t *ip)
 {
     RVFunc *rf = ((RVHeader *)F)->rf;
     int argc = ((RVHeader *)F)->argc;
@@ -370,7 +370,7 @@ static no_inline void rv_chkret_throw(JSContext *ctx, JSValue *F)
 
 /* THISC, ip at d: as OP_push_this of QuickJS's interpreter for a sloppy
    function, whose this is not an object (the handler copies an object) */
-static no_inline int rv_thisc_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
+static no_inline __exception int rv_thisc_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
 {
     RVFunc *rf = ((RVHeader *)F)->rf;
     JSValue t = F[-(rf->var_count + 1)], v;

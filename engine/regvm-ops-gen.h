@@ -319,7 +319,7 @@ static no_inline void rv_gen_suspend(JSContext *ctx, JSAsyncFunctionState *s,
    it leaves is what the pass counts (rv_w_gen_emit). The throw-injection
    test (engine/regvm-inject.h) fails each at its first call into the
    engine, which leaves the operands as that call does when it fails. */
-static no_inline int rv_w_gen(JSContext *ctx, JSValue *F, const uint8_t *ip)
+static no_inline __exception int rv_w_gen(JSContext *ctx, JSValue *F, const uint8_t *ip)
 {
     JSValue *sp = F + (int8_t)ip[0], method, ret;
     BOOL ret_flag;

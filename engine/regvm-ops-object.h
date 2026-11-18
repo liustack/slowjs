@@ -310,7 +310,7 @@ static no_inline BOOL rv_getel_index(JSContext *ctx, JSValue *F, const uint8_t *
    atom of another kind, is empty, starts with a digit (an index has an int
    atom, which the table never holds) or is long enough that its hash reads
    the interrupt flag (js_new_long_string_atom). */
-static no_inline int rv_key_lookup(JSContext *ctx, JSString *s, JSAtom *patom)
+static no_inline __exception int rv_key_lookup(JSContext *ctx, JSString *s, JSAtom *patom)
 {
     JSAtom atom;
 
@@ -433,7 +433,7 @@ static no_inline BOOL rv_getel_atom(JSContext *ctx, JSValue *F, const uint8_t *i
 /* the slow side of GETEL, ip at d o key|k, as the slow path of
    QuickJS's get_array_el: a key in a temp is freed, o too for the T
    forms */
-static no_inline int rv_getel_slow(JSContext *ctx, JSValue *F, const uint8_t *ip,
+static no_inline __exception int rv_getel_slow(JSContext *ctx, JSValue *F, const uint8_t *ip,
                                    BOOL k, BOOL t)
 {
     JSValue obj = F[(int8_t)ip[1]], key, val;
@@ -469,7 +469,7 @@ static no_inline int rv_getel_slow(JSContext *ctx, JSValue *F, const uint8_t *ip
 }
 
 /* the slow side of GETEL3, ip at d o t, as QuickJS's get_array_el3 */
-static no_inline int rv_getel3_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
+static no_inline __exception int rv_getel3_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
 {
     JSValue *pk = &F[(int8_t)ip[2]], val;
     if (RV_INJ_HIT(ctx))
@@ -607,7 +607,7 @@ static no_inline BOOL rv_putel_index(JSContext *ctx, JSValue *F, const uint8_t *
 /* the slow side of PUTEL, ip at o key v: the end of a fast array, as
    QuickJS's put_array_el, else JS_SetPropertyValue. v and a key in a temp
    are taken, a temp o freed. */
-static no_inline int rv_putel_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
+static no_inline __exception int rv_putel_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
 {
     JSValue obj = F[(int8_t)ip[0]], key = F[(int8_t)ip[1]];
     int ret = 0;
@@ -671,7 +671,7 @@ static no_inline int rv_putel_slow(JSContext *ctx, JSValue *F, const uint8_t *ip
 }
 
 /* define_array_el, ip at o i v */
-static no_inline int rv_defel(JSContext *ctx, JSValue *F, const uint8_t *ip)
+static no_inline __exception int rv_defel(JSContext *ctx, JSValue *F, const uint8_t *ip)
 {
     if (RV_INJ_HIT(ctx)) {
         /* JS_DefinePropertyValueValue takes the value when it fails */
@@ -685,7 +685,7 @@ static no_inline int rv_defel(JSContext *ctx, JSValue *F, const uint8_t *ip)
 }
 
 /* define_field, ip at o v atom, or o k atom (DEFFK, k set) */
-static no_inline int rv_deff(JSContext *ctx, JSValue *F, const uint8_t *ip, BOOL k)
+static no_inline __exception int rv_deff(JSContext *ctx, JSValue *F, const uint8_t *ip, BOOL k)
 {
     JSValue v = k ? JS_DupValue(ctx, ((RVHeader *)F)->k[ip[1]]) :
         rv_take(ctx, F, (int8_t)ip[1]);
@@ -815,7 +815,7 @@ static no_inline int rv_instof(JSContext *ctx, JSValue *F, const uint8_t *ip)
 }
 
 /* regexp, in and instanceof, ip at d a b: both taken */
-static no_inline int rv_obj2_slow(JSContext *ctx, JSValue *F, const uint8_t *ip,
+static no_inline __exception int rv_obj2_slow(JSContext *ctx, JSValue *F, const uint8_t *ip,
                                   int rop)
 {
     JSValue ops[2];
@@ -854,7 +854,7 @@ static no_inline int rv_obj2_slow(JSContext *ctx, JSValue *F, const uint8_t *ip,
 
 /* the slow side of GETVAR, ip at d idx16: the variable is not initialized,
    as QuickJS's OP_get_var */
-static no_inline int rv_getvar_slow(JSContext *ctx, JSValue *F, const uint8_t *ip,
+static no_inline __exception int rv_getvar_slow(JSContext *ctx, JSValue *F, const uint8_t *ip,
                                     BOOL throw_ref_error)
 {
     JSClosureVar *cv = &((RVHeader *)F)->rf->b->closure_var[get_u16(ip + 1)];
@@ -875,7 +875,7 @@ static no_inline int rv_getvar_slow(JSContext *ctx, JSValue *F, const uint8_t *i
 
 /* the slow side of PUTVAR, ip at v idx16: the variable is not initialized
    or is a constant, as QuickJS's OP_put_var. v is taken. */
-static no_inline int rv_putvar_slow(JSContext *ctx, JSValue *F, const uint8_t *ip,
+static no_inline __exception int rv_putvar_slow(JSContext *ctx, JSValue *F, const uint8_t *ip,
                                     BOOL init)
 {
     int idx = get_u16(ip + 1), ret;
@@ -912,7 +912,7 @@ static no_inline int rv_putvar_slow(JSContext *ctx, JSValue *F, const uint8_t *i
 }
 
 /* the slow side of TOPK, ip at d a: a temp a is freed */
-static no_inline int rv_topk_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
+static no_inline __exception int rv_topk_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
 {
     JSValue v = F[(int8_t)ip[1]], r;
     r = RV_INJ_HIT(ctx) ? JS_EXCEPTION : JS_ToPropertyKey(ctx, v);
@@ -1064,7 +1064,8 @@ static no_inline int rv_topk_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
             if (rv_ta_num(p->class_id) && idx < p->u.array.count &&
                 (JS_VALUE_GET_TAG(RV_R(ip[2])) == JS_TAG_INT ||
                  JS_TAG_IS_FLOAT64(JS_VALUE_GET_TAG(RV_R(ip[2]))))) {
-                js_set_fast_array_element_out_of_line(ctx, p, idx, rv_take(ctx, F, (int8_t)ip[2]), 0);
+                /* a number into a typed array in range cannot fail */
+                (void)js_set_fast_array_element_out_of_line(ctx, p, idx, rv_take(ctx, F, (int8_t)ip[2]), 0);
                 if (rv_is_temp(F, (int8_t)ip[0]))
                     JS_FreeValue(ctx, obj);
                 RV_NEXT();

@@ -81,6 +81,8 @@ int white_backtrace_class_has_handlers(JSRuntime *rt);
 int white_pending_needs_data_property(JSContext *ctx, JSValueConst err);
 int64_t white_backtrace_frame_size(void);
 void white_gc_lists(JSRuntime *rt, int *old, int *young, int *bad);
+int white_gc_outside(JSRuntime *rt, int record, int *n);
+void white_young_gc_failing(JSRuntime *rt, int fail, int *nallocs);
 int white_error_nest(JSRuntime *rt, int n);
 JSValue white_bare_function(JSContext *ctx, JSValueConst proto);
 int white_function_set_properties(JSContext *ctx, JSValueConst f, JSAtom name, int len);
@@ -181,10 +183,18 @@ void white_front_drain(JSContext *ctx);
 size_t white_heap_limit(JSContext *ctx);
 size_t white_gc_count(JSRuntime *rt);
 void white_drain_once(void);
+void white_drain_once_then(void (*f)(void *), void *arg);
 int white_kept_shapes(JSRuntime *rt);
+int white_shape_cache_size(JSRuntime *rt);
+JSClassID white_class_object(void);
 void *white_kept_shape(JSRuntime *rt, size_t *size);
 int white_take_slots(JSRuntime *rt, size_t size, void **out, int cap);
 size_t white_found_resize(JSContext *ctx, JSValueConst obj, const char *key);
+int white_array_grow(JSContext *ctx, JSValueConst arr, uint32_t new_len);
+int white_being_freed(JSValueConst obj);
+void white_gc_failing(JSRuntime *rt, int young, int fail, int *nallocs, int *early);
+int white_kept_young_shape(JSRuntime *rt, JSValueConst obj);
+long white_gc_window_count(void);
 
 /* ---- texts of every kind of character ---- */
 
@@ -2282,6 +2292,207 @@ static void test_shape_drop_in_resize(void)
     vm_free(&v);
 }
 
+/* ---- the shape cache and the prototype it holds ---- */
+
+/* The cache holds the prototype of the shapes it keeps. Letting them go in a
+   drain of the heap never frees it, so no finalizer runs inside an
+   allocation. JS_SetShapeCache lets the prototype go after the shapes, once
+   the cache is off, and the finalizer of the prototype may set the cache
+   again: the call that let it go sets its own, and the one of the finalizer
+   goes. */
+static int reenter_finalized;
+static JSContext *reenter_ctx;
+static int reenter_n;
+
+static void reenter_finalizer(JSRuntime *rt, JSValue val)
+{
+    reenter_finalized++;
+    if (reenter_ctx)
+        JS_SetShapeCache(reenter_ctx, reenter_n);
+}
+
+/* the finalizer of put_back, which puts put_back_proto back as the
+   Object.prototype of put_back_ctx while the collector frees objects */
+static JSContext *put_back_ctx;
+static JSValue put_back_proto;
+
+static void put_back_finalizer(JSRuntime *rt, JSValue val)
+{
+    JS_SetClassProto(put_back_ctx, white_class_object(), put_back_proto);
+}
+
+/* reenter_setup makes p, of a class of the host whose finalizer is
+   reenter_finalizer, the Object.prototype of v, turns the shape cache on
+   with n shapes and makes plain objects. Then it lets go of an object whose
+   finalizer puts the Object.prototype back, while the collector frees
+   objects, and of p: the cache keeps its shapes and p, which nothing else
+   holds. It returns the number of kept shapes. */
+static int reenter_setup(VM *v, int n)
+{
+    JSClassDef def = { "Reenter", reenter_finalizer };
+    JSClassDef put_back = { "PutBack", put_back_finalizer };
+    JSClassID class_id = 0, put_back_id = 0;
+    JSValue p, x;
+    int kept;
+
+    reenter_finalized = 0;
+    reenter_ctx = NULL;
+    JS_NewClassID(v->rt, &class_id);
+    CHECK(JS_NewClass(v->rt, class_id, &def) == 0, "JS_NewClass");
+    JS_NewClassID(v->rt, &put_back_id);
+    CHECK(JS_NewClass(v->rt, put_back_id, &put_back) == 0, "JS_NewClass");
+    put_back_ctx = v->ctx;
+    put_back_proto = JS_GetClassProto(v->ctx, white_class_object());
+    p = JS_NewObjectClass(v->ctx, class_id);
+    CHECK(JS_IsObject(p), "the prototype");
+    JS_SetClassProto(v->ctx, white_class_object(), JS_DupValue(v->ctx, p));
+    CHECK(JS_SetShapeCache(v->ctx, n) == 0, "a shape cache of %d shapes", n);
+    CHECK(eval_ok(v->ctx, "function mk() { var o = {}; o.qa = 1; o.qb = 2; return 0 }\nmk(); mk(); void 0"), "the objects");
+    x = JS_NewObjectClass(v->ctx, put_back_id);
+    CHECK(JS_IsObject(x), "the object that puts the prototype back");
+    JS_FreeValue(v->ctx, x);
+    CHECK(eval_is(v->ctx, "String(Object.getPrototypeOf({}) === Object.prototype)", "true"),
+          "the Object.prototype was not put back");
+    /* the shapes of p stay, and the empty one the context held for p may
+       join them */
+    kept = white_kept_shapes(v->rt);
+    CHECK(kept > 0, "no shape kept after the prototype was replaced in a collection");
+    JS_FreeValue(v->ctx, p);
+    CHECK(reenter_finalized == 0, "the prototype the cache holds was finalized");
+    return kept;
+}
+
+/* a drain of the heap lets the shapes go, and not the prototype */
+static void test_shape_cache_set_in_drop(void)
+{
+    VM v = vm_new();
+    void *p;
+    int kept;
+
+    kept = reenter_setup(&v, 1);
+    CHECK(kept == 1, "%d shapes kept in a ring of 1", kept);
+    reenter_ctx = v.ctx;
+    reenter_n = 128;
+    white_drain_once();
+    /* a block too large for an arena is a request to the heap */
+    p = js_malloc_rt(v.rt, 1 << 20);
+    CHECK(p != NULL, "a block of 1 MiB");
+    js_free_rt(v.rt, p);
+    reenter_ctx = NULL;
+    CHECK(reenter_finalized == 0, "the prototype was finalized %d times in a drain of the heap", reenter_finalized);
+    CHECK(white_kept_shapes(v.rt) == 0 && white_shape_cache_size(v.rt) == 1,
+          "%d shapes kept in a cache of %d after the drain, want 0 in 1", white_kept_shapes(v.rt), white_shape_cache_size(v.rt));
+    /* the new objects have the Object.prototype put back, not the one the
+       cache holds */
+    CHECK(eval_ok(v.ctx, "mk(); mk(); void 0") && white_kept_shapes(v.rt) == 0, "the cache keeps a shape of another prototype");
+    vm_free(&v);
+    CHECK(reenter_finalized == 1, "the prototype was finalized %d times in all", reenter_finalized);
+}
+
+/* JS_SetShapeCache lets the shapes go, then the prototype, and the finalizer
+   of the prototype sets a cache of 128 shapes: the call that let it go sets
+   its own, and the one of the finalizer goes */
+static void test_shape_cache_set_in_off(void)
+{
+    VM v = vm_new();
+    int kept, r;
+
+    kept = reenter_setup(&v, 4);
+    CHECK(kept > 0, "no shape kept");
+    reenter_ctx = v.ctx;
+    reenter_n = 128;
+    r = JS_SetShapeCache(v.ctx, 16);
+    reenter_ctx = NULL;
+    CHECK(r == 0, "JS_SetShapeCache: %d", r);
+    CHECK(reenter_finalized == 1, "the prototype was finalized %d times", reenter_finalized);
+    CHECK(white_shape_cache_size(v.rt) == 16, "a cache of %d shapes, after a call that set one of 16", white_shape_cache_size(v.rt));
+    CHECK(eval_ok(v.ctx, "mk(); mk(); void 0") && white_kept_shapes(v.rt) > 0, "the cache keeps no shape");
+    /* the runtime frees with no block left: the ring of the finalizer went */
+    vm_free(&v);
+}
+
+/* JS_SetClassProto replaces the Object.prototype of the context of the
+   cache: the cache lets go of the shapes of the old one, then of the old one,
+   and keeps the shapes of the new one from then on */
+static void test_shape_cache_proto_replaced(void)
+{
+    JSClassDef def = { "Replaced", reenter_finalizer };
+    JSClassID class_id = 0;
+    JSValue o, p;
+    VM v;
+    int kept;
+
+    v = vm_new();
+    reenter_finalized = 0;
+    reenter_ctx = NULL;
+    JS_NewClassID(v.rt, &class_id);
+    CHECK(JS_NewClass(v.rt, class_id, &def) == 0, "JS_NewClass");
+    o = JS_GetClassProto(v.ctx, white_class_object());
+    p = JS_NewObjectClass(v.ctx, class_id);
+    CHECK(JS_IsObject(p), "the prototype");
+    JS_SetClassProto(v.ctx, white_class_object(), JS_DupValue(v.ctx, p));
+    JS_SetShapeCache(v.ctx, 64);
+    CHECK(eval_ok(v.ctx, "function mk() { var o = {}; o.qa = 1; o.qb = 2; return 0 }\nmk(); mk(); void 0"), "the objects");
+    kept = white_kept_shapes(v.rt);
+    CHECK(kept > 0, "no shape of the prototype of the host kept");
+    JS_SetClassProto(v.ctx, white_class_object(), o);
+    JS_FreeValue(v.ctx, p);
+    CHECK(white_kept_shapes(v.rt) == 0, "%d shapes kept after the prototype was replaced, %d before", white_kept_shapes(v.rt), kept);
+    CHECK(reenter_finalized == 1, "the replaced prototype was finalized %d times once the host let it go", reenter_finalized);
+    CHECK(eval_is(v.ctx, "mk(); mk(); String(Object.getPrototypeOf((function () { var o = {}; o.qa = 1; return o })()) === Object.prototype)", "true"),
+          "a plain object after the prototype was replaced");
+    CHECK(white_kept_shapes(v.rt) > 0, "the cache keeps no shape of the new prototype");
+    vm_free(&v);
+    CHECK(reenter_finalized == 1, "the replaced prototype was finalized %d times in all", reenter_finalized);
+}
+
+/* A second context that shares the Object.prototype of the context of the
+   cache, then replaces its own, leaves the cache as it is: only the context
+   given to JS_SetShapeCache moves it */
+static void test_shape_cache_two_contexts(void)
+{
+    JSClassDef def = { "Other", reenter_finalizer };
+    JSClassID class_id = 0;
+    JSContext *b;
+    JSValue oa, ob, q;
+    VM v;
+    void *p;
+    int kept;
+
+    v = vm_new();
+    reenter_finalized = 0;
+    reenter_ctx = NULL;
+    JS_NewClassID(v.rt, &class_id);
+    CHECK(JS_NewClass(v.rt, class_id, &def) == 0, "JS_NewClass");
+    JS_SetShapeCache(v.ctx, 64);
+    CHECK(eval_ok(v.ctx, "function mk() { var o = {}; o.qa = 1; o.qb = 2; return 0 }\nmk(); mk(); void 0"), "the objects");
+    kept = white_kept_shapes(v.rt);
+    CHECK(kept > 0, "no shape kept");
+    b = JS_NewContext(v.rt);
+    CHECK(b != NULL, "the second context");
+    oa = JS_GetClassProto(v.ctx, white_class_object());
+    ob = JS_GetClassProto(b, white_class_object());
+    JS_SetClassProto(b, white_class_object(), oa);
+    q = JS_NewObjectClass(b, class_id);
+    CHECK(JS_IsObject(q), "the prototype of the second context");
+    JS_SetClassProto(b, white_class_object(), JS_DupValue(b, q));
+    CHECK(white_kept_shapes(v.rt) == kept, "%d shapes kept after the second context replaced its prototype, %d before",
+          white_kept_shapes(v.rt), kept);
+    JS_SetClassProto(b, white_class_object(), ob);
+    JS_FreeValue(b, q);
+    CHECK(reenter_finalized == 1, "the prototype of the second context was finalized %d times once it let it go", reenter_finalized);
+    JS_FreeContext(b);
+    JS_RunGC(v.rt);
+    white_drain_once();
+    p = js_malloc_rt(v.rt, 1 << 20);
+    CHECK(p != NULL, "a block of 1 MiB");
+    js_free_rt(v.rt, p);
+    CHECK(white_kept_shapes(v.rt) == 0, "%d shapes kept after the drain", white_kept_shapes(v.rt));
+    CHECK(eval_ok(v.ctx, "mk(); mk(); void 0") && white_kept_shapes(v.rt) > 0, "the cache keeps no shape of its context");
+    vm_free(&v);
+    CHECK(reenter_finalized == 1, "the prototype of the second context was finalized %d times in all", reenter_finalized);
+}
+
 /* each_vm_failing calls the global f of setup with each call of the
    allocator failing in turn, as each_call_failing does, but each call in a VM
    of its own, made and set up again, so that what only a first call
@@ -3114,6 +3325,97 @@ static void test_young_leaves_no_zero_count(void)
     }
 }
 
+/* A young collection treats the record of a weak map whose key and value are
+   young as a reference that holds only once the key is kept: it takes the
+   reference to the value away before the scan and gives it back once, when
+   the key is kept, or before it frees the garbage when the key is not and it
+   deletes the record. Every object it keeps must then have the references
+   from outside the GC objects it had before (white_gc_outside): for records
+   in an old map and in a young one, a key kept before or after its map, a
+   chain of records, a value kept another way and the same key in two maps.
+   The young collection is also run with each of its calls of the allocator
+   failing in turn: when the table of records cannot be made, every record
+   holds its value as before the change (today), and the counts are as before
+   all the same. key is what the WeakRef wr watches, and dead and today say
+   whether the young collection frees it with and without its table. */
+static void young_weak_case(size_t i, int fail, int *nallocs);
+
+static const struct {
+    const char *what, *body, *check;
+    int dead, today; /* the young collection frees the key, with and without the table */
+} young_weak_cases[] = {
+    { "old map, the value holds its key", "let key = {}; wm.set(key, {key, p: [1, 2, 3]});", "true", 1, 0 },
+    { "old map, a key in a cycle, the value kept another way", "let key = {}; key.self = key; hold = {p: [1]}; wm.set(key, hold);", "hold.p.length === 1", 1, 1 },
+    { "old map, the value kept another way holds its key", "let key = {}; hold = {key}; wm.set(key, hold);", "wm.get(hold.key) === hold", 0, 0 },
+    { "old map, a chain kept from its first key", "let a = {}, key = {}; hold = a; wm.set(key, {a, p: [1]}); wm.set(a, {key});", "wm.get(wm.get(hold).key).a === hold", 0, 0 },
+    { "old map, a chain that is garbage", "let a = {}, key = {}; a.self = a; wm.set(a, {key}); wm.set(key, {a});", "true", 1, 0 },
+    { "the same key in two old maps", "let key = {}; wm.set(key, {key}); wm2.set(key, {key});", "true", 1, 0 },
+    { "young map kept, its key garbage", "const m = new WeakMap(); ym = m; let key = {}; m.set(key, {key});", "true", 1, 0 },
+    { "young map kept, its key kept and made before it", "let key = {}; hold = key; const m = new WeakMap(); ym = m; m.set(key, {key, p: [1]});", "ym.get(hold).p.length === 1", 0, 0 },
+    { "young map kept, its key kept and made after it", "const m = new WeakMap(); ym = m; let key = {}; hold = key; m.set(key, {key, p: [1]});", "ym.get(hold).p.length === 1", 0, 0 },
+    { "young map that is garbage", "const m = new WeakMap(); let key = {}; hold = key; m.set(key, {key, m});", "true", 0, 0 },
+    { "key held by an old object", "let key = {}; hold = key; wm.set(key, {key});", "wm.get(hold).key === hold", 0, 0 },
+    { "old key", "let key = oldKey; wm.set(key, {key, p: [1]});", "wm.get(oldKey).p.length === 1", 0, 0 },
+    { "the value is its key", "let key = {}; wm.set(key, key);", "true", 1, 0 },
+    { "a closure of the value holds its key", "let r = {}; const rw = {attach(x) { r = x }}; rw.attach(r); wm.set(r, rw); let key = r;", "true", 1, 0 },
+};
+
+static void young_weak_case(size_t i, int fail, int *nallocs)
+{
+    VM v = vm_new();
+    char src[1024], when[200];
+    int old, young, n, bad;
+
+    JS_SetGCThreshold(v.rt, (size_t)-1);
+    CHECK(eval_ok(v.ctx, "globalThis.wm = new WeakMap(); globalThis.wm2 = new WeakMap(); globalThis.oldKey = {};"
+                         "globalThis.wr = null; globalThis.hold = null; globalThis.ym = null; void 0"),
+          "%s: the setup", young_weak_cases[i].what);
+    JS_ClearKeptObjects(v.rt);
+    JS_RunGC(v.rt);
+    snprintf(src, sizeof(src), "(() => { %s wr = new WeakRef(key); })(); void 0", young_weak_cases[i].body);
+    CHECK(eval_ok(v.ctx, src), "%s: the case", young_weak_cases[i].what);
+    /* the job ends, and with it the hold of the target of the new WeakRef */
+    JS_ClearKeptObjects(v.rt);
+    snprintf(when, sizeof(when), "%s, call %d failing", young_weak_cases[i].what, fail);
+    CHECK(white_gc_outside(v.rt, 1, &n) == 0, "%s: the counts before", when);
+    white_young_gc_failing(v.rt, fail, nallocs);
+    bad = white_gc_outside(v.rt, 0, &n);
+    CHECK(bad == 0 && n > 0, "%s: %d of %d objects kept have another count from outside after the young collection", when, bad, n);
+    lists(&v, &old, &young, when);
+    CHECK(eval_is(v.ctx, young_weak_cases[i].check ? young_weak_cases[i].check : "true", "true"), "%s: the check after the young collection", when);
+    if (fail == 0)
+        CHECK(eval_is(v.ctx, "String(wr.deref() === undefined)", young_weak_cases[i].dead ? "true" : "false"),
+              "%s: the young collection frees the key: want %d", when, young_weak_cases[i].dead);
+    else if (fail == 1)
+        CHECK(eval_is(v.ctx, "String(wr.deref() === undefined)", young_weak_cases[i].today ? "true" : "false"),
+              "%s: without its table the young collection frees the key: want %d", when, young_weak_cases[i].today);
+    JS_ClearKeptObjects(v.rt);
+    CHECK(white_gc_outside(v.rt, 1, &n) == 0, "%s: the counts before the full collection", when);
+    JS_RunGC(v.rt);
+    bad = white_gc_outside(v.rt, 0, &n);
+    CHECK(bad == 0, "%s: %d of %d objects kept have another count from outside after the full collection", when, bad, n);
+    lists(&v, &old, &young, when);
+    CHECK(eval_is(v.ctx, young_weak_cases[i].check, "true"), "%s: the check after the full collection", when);
+    CHECK(eval_is(v.ctx, "String(wr.deref() === undefined)", young_weak_cases[i].dead ? "true" : "false"),
+          "%s: the full collection frees the key: want %d", when, young_weak_cases[i].dead);
+    vm_free(&v);
+}
+
+static void test_young_weak_counts(void)
+{
+    size_t i;
+    int nallocs, fail, n;
+
+    for (i = 0; i < countof(young_weak_cases); i++) {
+        young_weak_case(i, 0, &nallocs);
+        /* the cases with a young key make the table of records */
+        if (strstr(young_weak_cases[i].what, "old key") == NULL)
+            CHECK(nallocs >= 1, "%s: the young collection made no table", young_weak_cases[i].what);
+        for (fail = 1; fail <= nallocs; fail++)
+            young_weak_case(i, fail, &n);
+    }
+}
+
 /* A finalizer that a collection runs as it frees its garbage can drop the
    last reference to an object outside the garbage: here the host holds the
    only strong reference to q, which no gc_mark reports, and the finalizer of
@@ -3369,6 +3671,263 @@ static void test_object_made_in_the_weak_pass(void)
 {
     made_in_gc_case(0);
     made_in_gc_case(1);
+}
+
+/* A finalizer of a class of the host that runs javascript while a collection
+   frees its garbage never gets an object of that garbage from a WeakRef:
+   the collection clears every weak reference to its garbage before it frees
+   any of it, as the spec clears the targets at once. Before, a WeakRef was
+   cleared only after the free, and deref returned a target whose count was
+   not 0, which the garbage gives itself: the kept set and the global then
+   held an object that the collection went on to free. Two such objects run
+   wr.deref(), one made before the target and one after, so that one of them
+   is freed before it whatever the order of the free. */
+static struct {
+    JSContext *ctx;
+    JSClassID class_id;
+    int calls, errors, got, freed;
+} deref_in_gc;
+
+static void deref_in_gc_finalizer(JSRuntime *rt, JSValue val)
+{
+    JSContext *ctx = deref_in_gc.ctx;
+    JSValue r = JS_Eval(ctx, "saved = wr.deref()", 18, "<finalizer>", JS_EVAL_TYPE_GLOBAL);
+
+    deref_in_gc.calls++;
+    if (JS_IsException(r)) {
+        deref_in_gc.errors++;
+        JS_FreeValue(ctx, JS_GetException(ctx));
+    } else if (JS_IsObject(r)) {
+        deref_in_gc.got++;
+        if (white_being_freed(r))
+            deref_in_gc.freed++;
+    }
+    JS_FreeValue(ctx, r);
+}
+
+static JSValue deref_in_gc_new(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+    return JS_NewObjectClass(ctx, deref_in_gc.class_id);
+}
+
+static const struct {
+    const char *what, *body;
+    int young_frees, registered;
+} deref_in_gc_cases[] = {
+    { "a cycle", "k.self = k;", 1, 0 },
+    { "a cycle in a registry", "k.self = k; fr.register(k, 'k');", 1, 1 },
+    { "the key of an old weak map whose value holds it", "wm.set(k, {k});", 1, 0 },
+};
+
+static void deref_in_gc_case(int i, int young)
+{
+    JSClassDef def = { "DerefInGC", deref_in_gc_finalizer };
+    VM v = vm_new();
+    JSContext *jctx;
+    JSValue g;
+    char src[256], *t;
+    int freed;
+
+    memset(&deref_in_gc, 0, sizeof(deref_in_gc));
+    deref_in_gc.ctx = v.ctx;
+    JS_SetGCThreshold(v.rt, (size_t)-1);
+    JS_NewClassID(v.rt, &deref_in_gc.class_id);
+    CHECK(JS_NewClass(v.rt, deref_in_gc.class_id, &def) == 0, "JS_NewClass");
+    g = JS_GetGlobalObject(v.ctx);
+    JS_SetPropertyStr(v.ctx, g, "derefInGC", JS_NewCFunction(v.ctx, deref_in_gc_new, "derefInGC", 0));
+    JS_FreeValue(v.ctx, g);
+    CHECK(eval_ok(v.ctx, "var wr, saved, got = [], fr = new FinalizationRegistry((v) => got.push(v)), wm = new WeakMap(); void 0"), "the setup");
+    JS_RunGC(v.rt);
+    snprintf(src, sizeof(src), "(() => { const f = derefInGC(); f.self = f; const k = {x: 1}; %s"
+             " wr = new WeakRef(k); const f2 = derefInGC(); f2.self = f2 })(); void 0", deref_in_gc_cases[i].body);
+    CHECK(eval_ok(v.ctx, src), "%s: the objects", deref_in_gc_cases[i].what);
+    /* the job ends, and with it the hold of the target of the new WeakRef */
+    JS_ClearKeptObjects(v.rt);
+    if (young)
+        JS_RunYoungGC(v.rt);
+    else
+        JS_RunGC(v.rt);
+    CHECK(deref_in_gc.calls == 2 && deref_in_gc.errors == 0, "%s, young %d: %d finalizers ran, %d threw",
+          deref_in_gc_cases[i].what, young, deref_in_gc.calls, deref_in_gc.errors);
+    CHECK(deref_in_gc.freed == 0, "%s, young %d: a finalizer got the target from the WeakRef %d times while the collection freed it",
+          deref_in_gc_cases[i].what, young, deref_in_gc.freed);
+    if (deref_in_gc.freed)
+        return; /* the global and the kept set hold a freed object */
+    JS_ClearKeptObjects(v.rt);
+    t = eval_text(v.ctx, "String(wr.deref())");
+    CHECK(t != NULL, "%s, young %d: wr.deref() threw", deref_in_gc_cases[i].what, young);
+    freed = t && strcmp(t, "undefined") == 0;
+    free(t);
+    if (young)
+        CHECK(freed == deref_in_gc_cases[i].young_frees, "%s, young %d: the collection freed the target: %d",
+              deref_in_gc_cases[i].what, young, freed);
+    if (!young)
+        CHECK(freed, "%s: the full collection kept the target", deref_in_gc_cases[i].what);
+    if (freed)
+        CHECK(deref_in_gc.got == 0 && eval_is(v.ctx, "String(saved)", "undefined"),
+              "%s, young %d: a finalizer got the freed target %d times", deref_in_gc_cases[i].what, young, deref_in_gc.got);
+    else
+        CHECK(eval_is(v.ctx, "String(saved.x)", "1"), "%s, young %d: the kept target lost its property",
+              deref_in_gc_cases[i].what, young);
+    CHECK(eval_ok(v.ctx, "saved = undefined; void 0"), "the drop");
+    /* a deref above keeps its target to the end of the job */
+    JS_ClearKeptObjects(v.rt);
+    JS_RunGC(v.rt);
+    while (JS_ExecutePendingJob(v.rt, &jctx) > 0)
+        ;
+    CHECK(eval_is(v.ctx, "String(wr.deref())", "undefined"), "%s, young %d: the next full collection kept the target",
+          deref_in_gc_cases[i].what, young);
+    if (deref_in_gc_cases[i].registered)
+        CHECK(eval_is(v.ctx, "got.join()", "k"), "%s, young %d: the callback of the registry", deref_in_gc_cases[i].what, young);
+    vm_free(&v);
+}
+
+static void test_deref_in_gc(void)
+{
+    int i;
+
+    for (i = 0; i < (int)(sizeof(deref_in_gc_cases) / sizeof(deref_in_gc_cases[0])); i++) {
+        deref_in_gc_case(i, 1);
+        deref_in_gc_case(i, 0);
+    }
+}
+
+/* A collection makes the job of a FinalizationRegistry after it has freed its
+   garbage, so the memory of a target is free by then: a runtime at its limit
+   (the run with no failing call) gets the callback of a target that held a
+   lot. Each of the allocations of the collection fails in turn as well:
+   the garbage is freed whatever fails, and the callback is
+   lost only when its own job is the call that fails, as a collection cannot
+   throw. */
+static void test_registry_job_after_free(void)
+{
+    VM v;
+    JSContext *jctx;
+    size_t base;
+    int young, fail, nallocs, early, total, lost;
+    char *t;
+
+    for (young = 1; young >= 0; young--) {
+        total = 1;
+        lost = 0;
+        for (fail = 0; fail <= total; fail++) {
+            v = vm_new();
+            JS_SetGCThreshold(v.rt, (size_t)-1);
+            CHECK(eval_ok(v.ctx, "var calls = [], fr = new FinalizationRegistry((h) => calls.push(h)); void 0"), "the setup");
+            JS_RunGC(v.rt);
+            base = JS_GetMemorySize(v.rt);
+            CHECK(eval_ok(v.ctx, "(() => { const t = { p: 'x'.repeat(1 << 21) }; t.self = t; fr.register(t, 'big') })(); void 0"),
+                  "the target");
+            if (fail == 0)
+                JS_SetMemoryLimit(v.rt, JS_GetMemorySize(v.rt));
+            white_gc_failing(v.rt, young, fail, &nallocs, &early);
+            unlimit(&v);
+            if (fail == 0)
+                total = nallocs;
+            CHECK(early == 0, "young %d, call %d failing: %d allocations before the garbage was freed", young, fail, early);
+            CHECK(JS_GetMemorySize(v.rt) < base + (1 << 20), "young %d, call %d failing: the target was not freed", young, fail);
+            while (JS_ExecutePendingJob(v.rt, &jctx) > 0)
+                ;
+            t = eval_text(v.ctx, "calls.join()");
+            CHECK(t != NULL, "calls");
+            if (fail == 0)
+                CHECK(t && strcmp(t, "big") == 0, "young %d: the callbacks are %s", young, t ? t : "?");
+            else if (t && strcmp(t, "big") != 0)
+                lost++;
+            free(t);
+            vm_free(&v);
+        }
+        CHECK(total >= 1 && lost <= 1, "young %d: %d allocations, the callback lost %d times", young, total, lost);
+    }
+}
+
+/* A collection allocates nothing while it has counts taken away (JS_GC_WINDOW
+   in quickjs.c), here at the memory limit, where a request the heap refuses
+   runs js_heap_drain and the kept shapes go. A young shape the shape cache
+   keeps that a live young object uses has, after the decref pass, the count
+   of the cache only: freed by a drain then, it is read again by the scan of
+   the object (the sanitizer builds see the read). The young collection made
+   the table of its weak map records (young_weak_start) after its decref pass,
+   and 128 records make it a request to the heap. */
+static void test_gc_alloc_at_limit(void)
+{
+    VM v;
+    JSValue live, g;
+    long before;
+    int young, count;
+
+    for (young = 1; young >= 0; young--) {
+        v = vm_new();
+        JS_SetGCThreshold(v.rt, (size_t)-1);
+        JS_SetShapeCache(v.ctx, 64);
+        CHECK(eval_ok(v.ctx,
+                      "var wm = new WeakMap();\n"
+                      "(function () { for (let i = 0; i < 128; i++) { const k = {}; k.self = k; wm.set(k, {k}) } })();\n"
+                      "function mk(v) { var o = {}; o.zq = v; return o }\n"
+                      "mk(1); void 0"),
+              "the setup");
+        live = JS_Eval(v.ctx, "mk(2)", 5, "<live>", JS_EVAL_TYPE_GLOBAL);
+        CHECK(JS_IsObject(live), "mk(2)");
+        count = JS_IsObject(live) ? white_kept_young_shape(v.rt, live) : 0;
+        CHECK(count == 2, "young %d: the shape of the live object has a count of %d, want the cache's and its own", young, count);
+        before = white_gc_window_count();
+        JS_SetMemoryLimit(v.rt, JS_GetMemorySize(v.rt));
+        if (young)
+            JS_RunYoungGC(v.rt);
+        else
+            JS_RunGC(v.rt);
+        unlimit(&v);
+        CHECK(white_gc_window_count() == before, "young %d: %ld allocations while the collection had counts taken away",
+              young, white_gc_window_count() - before);
+        g = JS_GetGlobalObject(v.ctx);
+        JS_SetPropertyStr(v.ctx, g, "live", live);
+        JS_FreeValue(v.ctx, g);
+        CHECK(eval_is(v.ctx, "JSON.stringify(live) + ':' + JSON.stringify(mk(3))", "{\"zq\":2}:{\"zq\":3}"),
+              "young %d: the live object after the collection", young);
+        vm_free(&v);
+    }
+}
+
+/* The request for the table of the young weak records (young_weak_alloc) can
+   run a drain of the heap, and the drain can free an object whose class has a
+   finalizer of the host, which can run javascript: here it makes the record
+   of a young key with the value 0, which the table was not counted for, a
+   record whose young value waits for its key. The records are counted again
+   after the request: with one more, the collection goes without the table,
+   as when there is no memory for it, where it made room for 128 and queued
+   129 (an assert, or a write past the table). */
+static int young_weak_drain_ran;
+
+static void young_weak_set_in_drain(void *arg)
+{
+    VM *v = arg;
+
+    young_weak_drain_ran = eval_ok(v->ctx, "wm.set(k0, v0); void 0") ? 1 : -1;
+}
+
+static void test_young_weak_table_recount(void)
+{
+    VM v = vm_new();
+    long before;
+
+    young_weak_drain_ran = 0;
+    JS_SetGCThreshold(v.rt, (size_t)-1);
+    CHECK(eval_ok(v.ctx, "var wm = new WeakMap(); void 0"), "the map");
+    JS_RunGC(v.rt);
+    CHECK(eval_ok(v.ctx,
+                  "(function () { for (let i = 0; i < 128; i++) { const k = {}; k.self = k; wm.set(k, {k}) } })();\n"
+                  "var k0 = {}, v0 = { x: 1 }; wm.set(k0, 0); void 0"),
+          "the records");
+    before = white_gc_window_count();
+    white_drain_once_then(young_weak_set_in_drain, &v);
+    JS_RunYoungGC(v.rt);
+    CHECK(young_weak_drain_ran == 1, "the code of the drain: %d", young_weak_drain_ran);
+    CHECK(white_gc_window_count() == before, "%ld allocations while the collection had counts taken away",
+          white_gc_window_count() - before);
+    CHECK(eval_is(v.ctx, "String(wm.get(k0) === v0 && v0.x)", "1"), "the record the drain set");
+    JS_RunGC(v.rt);
+    CHECK(eval_is(v.ctx, "String(wm.get(k0) === v0 && v0.x)", "1"), "the record the drain set, after a full collection");
+    vm_free(&v);
 }
 
 /* ---- a collection asked for while objects are freed ----
@@ -9953,6 +10512,51 @@ static void test_define_existing_oom(void)
     vm_free(&v);
 }
 
+/* The growth of the block of a fast array that moves reads the interrupt
+   flag before each MiB it copies, and a stop throws the interrupt and
+   leaves the array as it was. The block of 4M elements (64 MiB) was copied
+   in one go with no read: a stop asked while split filled its result of 2M
+   elements waited for the copy, 11 to 14 polls of the generated engine. The
+   host is told it cannot remap, so the block moves on every system. */
+#define GROW_LEN 4194304
+static void test_array_grow_stops(void)
+{
+    static const char src[] = "var a = []; for (let i = 0; i < 4194304; i++) a.push(i); a";
+    VM v = vm_new();
+    JSValue a, e;
+    long reads;
+    int ret;
+
+    JS_SetHostRemap(v.rt, 0);
+    a = JS_Eval(v.ctx, src, strlen(src), "<grow>", JS_EVAL_TYPE_GLOBAL);
+    CHECK(!JS_IsException(a), "the array threw");
+    host_poll_reads = 0;
+    ret = white_array_grow(v.ctx, a, 2 * GROW_LEN);
+    reads = host_poll_reads;
+    CHECK(ret == 0, "the growth failed");
+    CHECK(reads >= (long)(GROW_LEN * sizeof(JSValue) >> 20) - 1,
+          "the copy of %d elements read the flag %ld times", GROW_LEN, reads);
+    JS_FreeValue(v.ctx, a);
+
+    a = JS_Eval(v.ctx, src, strlen(src), "<grow>", JS_EVAL_TYPE_GLOBAL);
+    CHECK(!JS_IsException(a), "the array threw");
+    host_poll_reads = 0;
+    host_poll_stop_after(2);
+    ret = white_array_grow(v.ctx, a, 2 * GROW_LEN);
+    host_poll_stop_after(0);
+    CHECK(ret < 0, "a stop in the copy did not end the growth");
+    *JS_GetInterruptFlag(v.rt) = 0;
+    if (ret < 0) {
+        e = JS_GetException(v.ctx);
+        JS_FreeValue(v.ctx, e);
+    }
+    JS_FreeValue(v.ctx, a);
+    CHECK(eval_is(v.ctx, "a.length + ',' + a[0] + ',' + a[4194303] + ',' + (a.push(7), a[4194304])",
+                  "4194304,0,4194303,7"), "the array after the stop");
+    vm_free(&v);
+}
+
+
 int main(int argc, char **argv)
 {
     /* one case of test_gc_in_free, in a process of its own */
@@ -10013,6 +10617,10 @@ int main(int argc, char **argv)
     test_putel_atom_shape();
     test_shape_drop_slot();
     test_shape_drop_in_resize();
+    test_shape_cache_set_in_drop();
+    test_shape_cache_set_in_off();
+    test_shape_cache_proto_replaced();
+    test_shape_cache_two_contexts();
     test_putel_atom_each_failing();
     test_object_rest_cache();
     test_object_spread_cache();
@@ -10025,8 +10633,13 @@ int main(int argc, char **argv)
     test_json_plain();
     test_young_lists();
     test_young_leaves_no_zero_count();
+    test_young_weak_counts();
     test_finalizer_frees_a_root();
     test_object_made_in_the_weak_pass();
+    test_deref_in_gc();
+    test_registry_job_after_free();
+    test_gc_alloc_at_limit();
+    test_young_weak_table_recount();
     test_gc_in_free();
     test_error_nest();
     test_function_properties_oom();
@@ -10035,6 +10648,7 @@ int main(int argc, char **argv)
     test_poll_compile();
     test_poll_ret();
     test_poll_checked_read();
+    test_array_grow_stops();
     test_object_lit_read();
     test_tail_c_calls();
     test_fused_ops();
@@ -10104,6 +10718,7 @@ int main(int argc, char **argv)
     test_spread_alloc();
     test_spread_refs();
     test_days_to_date();
+    CHECK(white_gc_window_count() == 0, "%ld allocations while a collection had counts taken away", white_gc_window_count());
     if (failures) {
         printf("unit-white: %d of %ld checks failed\n", failures, checks);
         return 1;

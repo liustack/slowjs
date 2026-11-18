@@ -73,7 +73,7 @@ What a program sees against the previous engine, besides the rows above:
 
 ## The small libc
 
-`memcpy` is not musl's: it is written here (overlapping loads and stores of one width up to 128 bytes, then a loop of 128 bytes with the destination aligned to 16, SSE2 and NEON moves only), because musl's is slow for the strings the engine builds. See its [README](../../engine/libc/README.md).
+`memcpy` is not musl's: it is written here (overlapping loads and stores of one width up to 128 bytes, then a loop of 128 bytes with the destination aligned to 16, SSE2 and NEON moves only), because musl's is slow for the strings the engine builds. `memcmp` is written here too, 8 bytes at a time. See its [README](../../engine/libc/README.md).
 
 The whole engine is built with `-ffp-contract=off` too, and the generator refuses an `llvm.fmuladd` or `llvm.fma` and any fast-math flag (`reassoc`, `nnan`, `ninf`, `nsz`, `arcp`, `contract`, `afn`, or the `unsafe-fp-math` attributes) in the IR, and on arm64 a fused instruction (`fmadd`, `fmsub`, `fnmadd`, `fnmsub`, `fmla`, `fmls`) in llc's text. What is tested, and what is not:
 

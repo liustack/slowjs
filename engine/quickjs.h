@@ -40,11 +40,15 @@ extern "C" {
 #define js_unlikely(x)        __builtin_expect(!!(x), 0)
 #define js_force_inline       inline __attribute__((always_inline))
 #define __js_printf_like(f, a)   __attribute__((format(printf, f, a)))
+/* the answer of the function is checked: -1 (or a negative one) says an
+   exception is pending, which the caller passes on */
+#define __js_must_check          __attribute__((warn_unused_result))
 #else
 #define js_likely(x)     (x)
 #define js_unlikely(x)   (x)
 #define js_force_inline  inline
 #define __js_printf_like(a, b)
+#define __js_must_check
 #endif
 
 #define JS_BOOL int
@@ -440,7 +444,7 @@ int JS_SetInternalDepth(JSRuntime *rt, int depth);
    With on 0 the runtime of ctx makes every call through JS_CallInternal
    again, and with 1 it calls C functions itself. It returns 0, or -1 and
    changes nothing while code runs. */
-int JS_SetDirectCCalls(JSContext *ctx, int on);
+__js_must_check int JS_SetDirectCCalls(JSContext *ctx, int on);
 /* For tests. The compiler joins a few pairs of instructions into one opcode
    that does both (fuse_code in quickjs.c, docs/changes/c-engine.md), and a
    typeof test of any type name into typeof_is, and drops the checks of the
@@ -472,7 +476,7 @@ void JS_SetFusedOps(JSContext *ctx, int on);
    register stack in use so far, 1000 + op the dispatches of register op
    op. In any build, 2000 + op whether the pass takes old opcode op (1), not
    (0), or op is none (-1) */
-int JS_RegvmStat(JSContext *ctx, int what);
+__js_must_check int JS_RegvmStat(JSContext *ctx, int what);
 /* the state of one function in the register loop, for tests: see
    engine/regvm.h */
 int JS_RegvmFuncStat(JSContext *ctx, JSValueConst func, int what);
@@ -508,18 +512,18 @@ JSValue JS_GetClassProto(JSContext *ctx, JSClassID class_id);
 /* the following functions are used to select the intrinsic object to
    save memory */
 JSContext *JS_NewContextRaw(JSRuntime *rt);
-int JS_AddIntrinsicBaseObjects(JSContext *ctx);
-int JS_AddIntrinsicDate(JSContext *ctx);
+__js_must_check int JS_AddIntrinsicBaseObjects(JSContext *ctx);
+__js_must_check int JS_AddIntrinsicDate(JSContext *ctx);
 int JS_AddIntrinsicEval(JSContext *ctx);
-int JS_AddIntrinsicStringNormalize(JSContext *ctx);
+__js_must_check int JS_AddIntrinsicStringNormalize(JSContext *ctx);
 void JS_AddIntrinsicRegExpCompiler(JSContext *ctx);
-int JS_AddIntrinsicRegExp(JSContext *ctx);
-int JS_AddIntrinsicJSON(JSContext *ctx);
-int JS_AddIntrinsicProxy(JSContext *ctx);
-int JS_AddIntrinsicMapSet(JSContext *ctx);
-int JS_AddIntrinsicTypedArrays(JSContext *ctx);
-int JS_AddIntrinsicPromise(JSContext *ctx);
-int JS_AddIntrinsicWeakRef(JSContext *ctx);
+__js_must_check int JS_AddIntrinsicRegExp(JSContext *ctx);
+__js_must_check int JS_AddIntrinsicJSON(JSContext *ctx);
+__js_must_check int JS_AddIntrinsicProxy(JSContext *ctx);
+__js_must_check int JS_AddIntrinsicMapSet(JSContext *ctx);
+__js_must_check int JS_AddIntrinsicTypedArrays(JSContext *ctx);
+__js_must_check int JS_AddIntrinsicPromise(JSContext *ctx);
+__js_must_check int JS_AddIntrinsicWeakRef(JSContext *ctx);
 
 JSValue js_string_codePointRange(JSContext *ctx, JSValueConst this_val,
                                  int argc, JSValueConst *argv);
@@ -884,19 +888,19 @@ JS_BOOL JS_StrictEq(JSContext *ctx, JSValueConst op1, JSValueConst op2);
 JS_BOOL JS_SameValue(JSContext *ctx, JSValueConst op1, JSValueConst op2);
 JS_BOOL JS_SameValueZero(JSContext *ctx, JSValueConst op1, JSValueConst op2);
 
-int JS_ToBool(JSContext *ctx, JSValueConst val); /* return -1 for JS_EXCEPTION */
-int JS_ToInt32(JSContext *ctx, int32_t *pres, JSValueConst val);
+__js_must_check int JS_ToBool(JSContext *ctx, JSValueConst val); /* return -1 for JS_EXCEPTION */
+__js_must_check int JS_ToInt32(JSContext *ctx, int32_t *pres, JSValueConst val);
 static inline int JS_ToUint32(JSContext *ctx, uint32_t *pres, JSValueConst val)
 {
     return JS_ToInt32(ctx, (int32_t*)pres, val);
 }
-int JS_ToInt64(JSContext *ctx, int64_t *pres, JSValueConst val);
-int JS_ToIndex(JSContext *ctx, uint64_t *plen, JSValueConst val);
-int JS_ToFloat64(JSContext *ctx, double *pres, JSValueConst val);
+__js_must_check int JS_ToInt64(JSContext *ctx, int64_t *pres, JSValueConst val);
+__js_must_check int JS_ToIndex(JSContext *ctx, uint64_t *plen, JSValueConst val);
+__js_must_check int JS_ToFloat64(JSContext *ctx, double *pres, JSValueConst val);
 /* return an exception if 'val' is a Number */
-int JS_ToBigInt64(JSContext *ctx, int64_t *pres, JSValueConst val);
+__js_must_check int JS_ToBigInt64(JSContext *ctx, int64_t *pres, JSValueConst val);
 /* same as JS_ToInt64() but allow BigInt */
-int JS_ToInt64Ext(JSContext *ctx, int64_t *pres, JSValueConst val);
+__js_must_check int JS_ToInt64Ext(JSContext *ctx, int64_t *pres, JSValueConst val);
 
 JSValue JS_NewStringLen(JSContext *ctx, const char *str1, size_t len1);
 /* What a host reads and writes in place, by index into js_host_layout, a
@@ -961,7 +965,7 @@ JS_BOOL JS_IsConstructor(JSContext* ctx, JSValueConst val);
 JS_BOOL JS_SetConstructorBit(JSContext *ctx, JSValueConst func_obj, JS_BOOL val);
 
 JSValue JS_NewArray(JSContext *ctx);
-int JS_IsArray(JSContext *ctx, JSValueConst val);
+__js_must_check int JS_IsArray(JSContext *ctx, JSValueConst val);
 
 JSValue JS_NewDate(JSContext *ctx, double epoch_ms);
 
@@ -978,7 +982,7 @@ JSValue JS_GetPropertyStr(JSContext *ctx, JSValueConst this_obj,
 JSValue JS_GetPropertyUint32(JSContext *ctx, JSValueConst this_obj,
                              uint32_t idx);
 
-int JS_SetPropertyInternal(JSContext *ctx, JSValueConst obj,
+__js_must_check int JS_SetPropertyInternal(JSContext *ctx, JSValueConst obj,
                            JSAtom prop, JSValue val, JSValueConst this_obj,
                            int flags);
 static inline int JS_SetProperty(JSContext *ctx, JSValueConst this_obj,
@@ -986,17 +990,17 @@ static inline int JS_SetProperty(JSContext *ctx, JSValueConst this_obj,
 {
     return JS_SetPropertyInternal(ctx, this_obj, prop, val, this_obj, JS_PROP_THROW);
 }
-int JS_SetPropertyUint32(JSContext *ctx, JSValueConst this_obj,
+__js_must_check int JS_SetPropertyUint32(JSContext *ctx, JSValueConst this_obj,
                          uint32_t idx, JSValue val);
-int JS_SetPropertyInt64(JSContext *ctx, JSValueConst this_obj,
+__js_must_check int JS_SetPropertyInt64(JSContext *ctx, JSValueConst this_obj,
                         int64_t idx, JSValue val);
-int JS_SetPropertyStr(JSContext *ctx, JSValueConst this_obj,
+__js_must_check int JS_SetPropertyStr(JSContext *ctx, JSValueConst this_obj,
                       const char *prop, JSValue val);
-int JS_HasProperty(JSContext *ctx, JSValueConst this_obj, JSAtom prop);
+__js_must_check int JS_HasProperty(JSContext *ctx, JSValueConst this_obj, JSAtom prop);
 int JS_IsExtensible(JSContext *ctx, JSValueConst obj);
 int JS_PreventExtensions(JSContext *ctx, JSValueConst obj);
-int JS_DeleteProperty(JSContext *ctx, JSValueConst obj, JSAtom prop, int flags);
-int JS_SetPrototype(JSContext *ctx, JSValueConst obj, JSValueConst proto_val);
+__js_must_check int JS_DeleteProperty(JSContext *ctx, JSValueConst obj, JSAtom prop, int flags);
+__js_must_check int JS_SetPrototype(JSContext *ctx, JSValueConst obj, JSValueConst proto_val);
 JSValue JS_GetPrototype(JSContext *ctx, JSValueConst val);
 
 #define JS_GPN_STRING_MASK  (1 << 0)
@@ -1007,11 +1011,11 @@ JSValue JS_GetPrototype(JSContext *ctx, JSValueConst val);
 /* set theJSPropertyEnum.is_enumerable field */
 #define JS_GPN_SET_ENUM     (1 << 5)
 
-int JS_GetOwnPropertyNames(JSContext *ctx, JSPropertyEnum **ptab,
+__js_must_check int JS_GetOwnPropertyNames(JSContext *ctx, JSPropertyEnum **ptab,
                            uint32_t *plen, JSValueConst obj, int flags);
 void JS_FreePropertyEnum(JSContext *ctx, JSPropertyEnum *tab,
                          uint32_t len);
-int JS_GetOwnProperty(JSContext *ctx, JSPropertyDescriptor *desc,
+__js_must_check int JS_GetOwnProperty(JSContext *ctx, JSPropertyDescriptor *desc,
                       JSValueConst obj, JSAtom prop);
 
 JSValue JS_Call(JSContext *ctx, JSValueConst func_obj, JSValueConst this_obj,
@@ -1032,15 +1036,15 @@ JSValue JS_EvalThis(JSContext *ctx, JSValueConst this_obj,
                     const char *input, size_t input_len,
                     const char *filename, int eval_flags);
 JSValue JS_GetGlobalObject(JSContext *ctx);
-int JS_IsInstanceOf(JSContext *ctx, JSValueConst val, JSValueConst obj);
-int JS_DefineProperty(JSContext *ctx, JSValueConst this_obj,
+__js_must_check int JS_IsInstanceOf(JSContext *ctx, JSValueConst val, JSValueConst obj);
+__js_must_check int JS_DefineProperty(JSContext *ctx, JSValueConst this_obj,
                       JSAtom prop, JSValueConst val,
                       JSValueConst getter, JSValueConst setter, int flags);
-int JS_DefinePropertyValue(JSContext *ctx, JSValueConst this_obj,
+__js_must_check int JS_DefinePropertyValue(JSContext *ctx, JSValueConst this_obj,
                            JSAtom prop, JSValue val, int flags);
-int JS_DefinePropertyValueUint32(JSContext *ctx, JSValueConst this_obj,
+__js_must_check int JS_DefinePropertyValueUint32(JSContext *ctx, JSValueConst this_obj,
                                  uint32_t idx, JSValue val, int flags);
-int JS_DefinePropertyValueStr(JSContext *ctx, JSValueConst this_obj,
+__js_must_check int JS_DefinePropertyValueStr(JSContext *ctx, JSValueConst this_obj,
                               const char *prop, JSValue val, int flags);
 int JS_DefinePropertyGetSet(JSContext *ctx, JSValueConst this_obj,
                             JSAtom prop, JSValue getter, JSValue setter,
@@ -1143,9 +1147,10 @@ void JS_SetAsyncContext(JSContext *ctx, JSValueConst v);
 void JS_SetRegExpCache(JSRuntime *rt, int n, size_t bytes);
 /* the shape cache of the runtime of ctx keeps the last n shapes of plain
    objects of ctx after their objects are gone, 0 for none, the default.
-   Return -1 when there is no memory for it. Turn it off before freeing ctx
-   while the runtime lives on. */
-int JS_SetShapeCache(JSContext *ctx, int n);
+   Return -1 when there is no memory for it. It holds the Object.prototype
+   of ctx, and follows JS_SetClassProto of ctx alone: turn it off or set it
+   to another context to let them go while the runtime lives on. */
+__js_must_check int JS_SetShapeCache(JSContext *ctx, int n);
 
 /* The interrupt flag of rt. The host sets it to a value other than 0 to
    stop the script, from the thread that runs it (in a poll or a callback):
@@ -1213,7 +1218,7 @@ typedef JSValue JSJobFunc(JSContext *ctx, int argc, JSValueConst *argv);
 int JS_EnqueueJob(JSContext *ctx, JSJobFunc *job_func, int argc, JSValueConst *argv);
 
 JS_BOOL JS_IsJobPending(JSRuntime *rt);
-int JS_ExecutePendingJob(JSRuntime *rt, JSContext **pctx);
+__js_must_check int JS_ExecutePendingJob(JSRuntime *rt, JSContext **pctx);
 /* Lets go of the targets the WeakRef constructor and deref kept alive to the
    end of the job (ClearKeptObjects in the specification). The host calls it
    where its job ends, when control comes back to it from javascript: after
@@ -1255,7 +1260,7 @@ JSValue JS_ReadObject(JSContext *ctx, const uint8_t *buf, size_t buf_len,
 JSValue JS_EvalFunction(JSContext *ctx, JSValue fun_obj);
 /* load the dependencies of the module 'obj'. Useful when JS_ReadObject()
    returns a module. */
-int JS_ResolveModule(JSContext *ctx, JSValueConst obj);
+__js_must_check int JS_ResolveModule(JSContext *ctx, JSValueConst obj);
 
 /* only exported for os.Worker() */
 JSAtom JS_GetScriptOrModuleName(JSContext *ctx, int n_stack_levels);
@@ -1398,7 +1403,7 @@ static inline JSValue JS_NewCFunctionMagic(JSContext *ctx, JSCFunctionMagic *fun
     JSCFunctionType ft = { .generic_magic = func };
     return JS_NewCFunction2(ctx, ft.generic, name, length, cproto, magic);
 }
-int JS_SetConstructor(JSContext *ctx, JSValueConst func_obj,
+__js_must_check int JS_SetConstructor(JSContext *ctx, JSValueConst func_obj,
                       JSValueConst proto);
 
 /* C property definition */
@@ -1464,7 +1469,7 @@ typedef struct JSCFunctionListEntry {
 #define JS_ALIAS_DEF(name, from) { name, JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE, JS_DEF_ALIAS, 0, .u = { .alias = { from, -1 } } }
 #define JS_ALIAS_BASE_DEF(name, from, base) { name, JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE, JS_DEF_ALIAS, 0, .u = { .alias = { from, base } } }
 
-int JS_SetPropertyFunctionList(JSContext *ctx, JSValueConst obj,
+__js_must_check int JS_SetPropertyFunctionList(JSContext *ctx, JSValueConst obj,
                                const JSCFunctionListEntry *tab,
                                int len);
 
@@ -1475,13 +1480,13 @@ typedef int JSModuleInitFunc(JSContext *ctx, JSModuleDef *m);
 JSModuleDef *JS_NewCModule(JSContext *ctx, const char *name_str,
                            JSModuleInitFunc *func);
 /* can only be called before the module is instantiated */
-int JS_AddModuleExport(JSContext *ctx, JSModuleDef *m, const char *name_str);
-int JS_AddModuleExportList(JSContext *ctx, JSModuleDef *m,
+__js_must_check int JS_AddModuleExport(JSContext *ctx, JSModuleDef *m, const char *name_str);
+__js_must_check int JS_AddModuleExportList(JSContext *ctx, JSModuleDef *m,
                            const JSCFunctionListEntry *tab, int len);
 /* can only be called after the module is instantiated */
-int JS_SetModuleExport(JSContext *ctx, JSModuleDef *m, const char *export_name,
+__js_must_check int JS_SetModuleExport(JSContext *ctx, JSModuleDef *m, const char *export_name,
                        JSValue val);
-int JS_SetModuleExportList(JSContext *ctx, JSModuleDef *m,
+__js_must_check int JS_SetModuleExportList(JSContext *ctx, JSModuleDef *m,
                            const JSCFunctionListEntry *tab, int len);
 /* associate a JSValue to a C module */
 int JS_SetModulePrivateValue(JSContext *ctx, JSModuleDef *m, JSValue val);

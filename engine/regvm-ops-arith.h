@@ -162,7 +162,7 @@ static const uint8_t rv_un_ops[] = {
 /* the slow side of the ops of rv_bin_ops, ip at d a b, d a k when k has
    1, d k b when it has 2 (KSHL): as QuickJS's binary_arith_slow and the
    slow side of its bit ops */
-static no_inline int rv_bin_slow(JSContext *ctx, JSValue *F, const uint8_t *ip,
+static no_inline __exception int rv_bin_slow(JSContext *ctx, JSValue *F, const uint8_t *ip,
                                  int op, int k)
 {
     JSValue ops[2];
@@ -200,7 +200,7 @@ static no_inline int rv_bin_slow(JSContext *ctx, JSValue *F, const uint8_t *ip,
 }
 
 /* the slow side of the ops of rv_un_ops, ip at d a */
-static no_inline int rv_un_slow(JSContext *ctx, JSValue *F, const uint8_t *ip,
+static no_inline __exception int rv_un_slow(JSContext *ctx, JSValue *F, const uint8_t *ip,
                                 int op)
 {
     JSValue buf[2];
@@ -243,7 +243,7 @@ static no_inline void rv_typeof(JSContext *ctx, JSValue *F, const uint8_t *ip)
 
 /* the strings and the slow side of add_loc, ip at d v|k, as QuickJS's
    OP_add_loc */
-static no_inline int rv_addloc_slow(JSContext *ctx, JSValue *F, const uint8_t *ip,
+static no_inline __exception int rv_addloc_slow(JSContext *ctx, JSValue *F, const uint8_t *ip,
                                     BOOL k)
 {
     JSValue *pv = &F[(int8_t)ip[0]], op2;

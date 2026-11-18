@@ -38,10 +38,21 @@ static long long white_array_from_first;
    counts, as the engine answers it without a block. A call of js_realloc_rt
    that fits the block it has does not count either: the engine answers it
    with the same block and cannot fail it. */
+/* JS_GC_WINDOW sets white_gc_window while a collection has counts taken
+   away, from its decref pass to the end of its scan, and
+   white_gc_window_calls counts the calls of js_malloc_rt and js_realloc_rt
+   and the requests to the heap made then: there must be none (see
+   JS_GC_WINDOW in quickjs.c). */
+static int white_gc_window;
+static long white_gc_window_calls;
+#define JS_GC_WINDOW(on) (white_gc_window = (on))
+
 static long white_alloc_count, white_alloc_fail_at;
 static int white_alloc_calls;
 static int white_alloc_fails(void)
 {
+    if (white_gc_window)
+        white_gc_window_calls++;
     if (white_alloc_calls)
         return 0;
     white_alloc_count++;
@@ -49,17 +60,37 @@ static int white_alloc_fails(void)
 }
 /* With white_drain_next set, the next request to the heap runs js_heap_drain
    first, as a request the heap refused does, and clears it: the request then
-   goes on, and the drain has run inside it. */
+   goes on, and the drain has run inside it. With white_drain_code set too,
+   the drain then runs it, as the finalizer of a class of the host that the
+   drain frees would (white_drain_once_then). */
 static int white_drain_next;
-#define JS_HEAP_FAILS(s, size) \
-    (white_drain_next ? (white_drain_next = 0, js_heap_drain(s), 0) : white_alloc_fails())
+static void (*white_drain_code)(void *);
+static void *white_drain_arg;
+static void white_drain_run(void)
+{
+    void (*f)(void *) = white_drain_code;
 
+    white_drain_code = NULL;
+    if (f)
+        f(white_drain_arg);
+}
+#define JS_HEAP_FAILS(s, size) \
+    (white_drain_next ? (white_drain_next = 0, js_heap_drain(s), white_drain_run(), 0) : white_alloc_fails())
+
+/* white_alloc_early counts the calls made while a collection has garbage it
+   has not freed yet (white_gc_failing, white_gc_garbage) */
+static long white_alloc_early;
+static int white_gc_garbage(JSRuntime *rt);
 static int white_call_fails(JSRuntime *rt, void *ptr, size_t size)
 {
+    if (white_gc_window && size != 0)
+        white_gc_window_calls++;
     if (!white_alloc_calls || size == 0)
         return 0;
     if (ptr && size <= js_malloc_usable_size_rt(rt, ptr))
         return 0;
+    if (white_gc_garbage(rt))
+        white_alloc_early++;
     white_alloc_count++;
     return white_alloc_count == white_alloc_fail_at;
 }
@@ -415,6 +446,118 @@ void white_gc_lists(JSRuntime *rt, int *old, int *young, int *bad)
     }
     *old = counts[0];
     *young = counts[1];
+}
+
+/* ---- the counts a collection leaves ---- */
+
+/* The references to a GC object from outside the GC objects: its count less
+   the references the GC objects report to mark_children (which reports the
+   value of a weak map record and not its key, as the count holds them). A
+   collection takes references away and gives them back between GC objects
+   only, and frees what is garbage, so every object it keeps must have the
+   same number of references from outside after it as before: a reference
+   taken and not given back, or given back twice, changes it.
+
+   white_gc_outside(rt, 1, &n) records that number for every GC object on the
+   two lists (n of them). white_gc_outside(rt, 0, &n) then counts again and
+   returns how many recorded objects still on the lists (n of them) have
+   another number now, or a negative one. -1 when the table is full. */
+#define WHITE_OUT_SIZE (1 << 16)
+typedef struct WhiteOut {
+    void *p;
+    int inside, outside, recorded;
+} WhiteOut;
+static WhiteOut white_out[WHITE_OUT_SIZE];
+static int white_out_used, white_out_full;
+
+static WhiteOut *white_out_slot(void *p)
+{
+    uintptr_t h = (uintptr_t)p >> 3;
+    size_t i;
+
+    h ^= h >> 16;
+    h *= (uintptr_t)0x9e3779b1;
+    h ^= h >> 16;
+    i = h & (WHITE_OUT_SIZE - 1);
+    while (white_out[i].p && white_out[i].p != p)
+        i = (i + 1) & (WHITE_OUT_SIZE - 1);
+    if (!white_out[i].p) {
+        if (white_out_used >= WHITE_OUT_SIZE / 2) {
+            white_out_full = 1;
+            return NULL;
+        }
+        white_out[i].p = p;
+        white_out_used++;
+    }
+    return &white_out[i];
+}
+
+static void white_out_inside(JSRuntime *rt, JSGCObjectHeader *p)
+{
+    WhiteOut *s = white_out_slot(p);
+
+    if (s)
+        s->inside++;
+}
+
+int white_gc_outside(JSRuntime *rt, int record, int *n)
+{
+    struct list_head *heads[2] = { &rt->gc_obj_list, &rt->young_obj_list };
+    struct list_head *el;
+    int k, bad = 0;
+    size_t i;
+
+    if (record) {
+        memset(white_out, 0, sizeof(white_out));
+        white_out_used = 0;
+        white_out_full = 0;
+    } else {
+        for (i = 0; i < WHITE_OUT_SIZE; i++)
+            white_out[i].inside = 0;
+    }
+    for (k = 0; k < 2; k++) {
+        list_for_each(el, heads[k]) {
+            JSGCObjectHeader *p = list_entry(el, JSGCObjectHeader, link);
+
+            white_out_slot(p);
+            mark_children(rt, p, white_out_inside);
+        }
+    }
+    if (white_out_full)
+        return -1;
+    *n = 0;
+    for (k = 0; k < 2; k++) {
+        list_for_each(el, heads[k]) {
+            JSGCObjectHeader *p = list_entry(el, JSGCObjectHeader, link);
+            WhiteOut *s = white_out_slot(p);
+            int outside = js_rc(p)->ref_count - s->inside;
+
+            if (record) {
+                s->outside = outside;
+                s->recorded = 1;
+                (*n)++;
+            } else if (s->recorded) {
+                if (outside != s->outside || outside < 0)
+                    bad++;
+                (*n)++;
+            }
+        }
+    }
+    return bad;
+}
+
+/* A young collection with call number fail of js_malloc_rt and js_realloc_rt
+   failing (0 for none), the others working. *nallocs is how many calls it
+   made. */
+void white_young_gc_failing(JSRuntime *rt, int fail, int *nallocs)
+{
+    white_alloc_calls = 1;
+    white_alloc_count = 0;
+    white_alloc_fail_at = fail;
+    JS_RunYoungGC(rt);
+    *nallocs = white_alloc_count;
+    white_alloc_fail_at = 0;
+    white_alloc_calls = 0;
 }
 
 /* ---- the errors being made ---- */
@@ -2538,7 +2681,10 @@ static int white_by_value_run(JSContext *ctx, const char *src, const char *name,
                     c->closure_var[k].by_value = 0;
             }
         }
-        capture_by_value(ctx, f);
+        if (capture_by_value(ctx, f) < 0) {
+            JS_FreeValue(ctx, v);
+            return -1;
+        }
     }
     for (i = 0; i < f->arg_count + f->var_count; i++) {
         char buf[ATOM_GET_STR_BUF_SIZE];
@@ -2850,10 +2996,52 @@ void white_drain_once(void)
     white_drain_next = 1;
 }
 
+/* white_drain_once_then does the same, and the drain then calls f(arg) */
+void white_drain_once_then(void (*f)(void *), void *arg)
+{
+    white_drain_next = 1;
+    white_drain_code = f;
+    white_drain_arg = arg;
+}
+
 /* the shapes the shape cache keeps */
 int white_kept_shapes(JSRuntime *rt)
 {
     return rt->shape_cache.count;
+}
+
+/* the count of the shape of the object obj when the shape cache keeps that
+   shape and it is young, and 0 otherwise */
+int white_kept_young_shape(JSRuntime *rt, JSValueConst obj)
+{
+    JSShape *sh = JS_VALUE_GET_OBJ(obj)->shape;
+    JSShapeCache *sc = &rt->shape_cache;
+    int i;
+
+    for(i = 0; sc->ring && i < sc->n; i++) {
+        if (sc->ring[i] == sh)
+            return js_rc(sh)->young ? js_rc(sh)->ref_count : 0;
+    }
+    return 0;
+}
+
+/* the calls and requests made while a collection had counts taken away
+   (JS_GC_WINDOW), since the start of the program */
+long white_gc_window_count(void)
+{
+    return white_gc_window_calls;
+}
+
+/* the length of the ring of the shape cache, 0 while it is off */
+int white_shape_cache_size(JSRuntime *rt)
+{
+    return rt->shape_cache.ring ? rt->shape_cache.n : 0;
+}
+
+/* the class of plain objects, for JS_SetClassProto */
+JSClassID white_class_object(void)
+{
+    return JS_CLASS_OBJECT;
 }
 
 /* white_kept_shape gives the block of the first shape the shape cache
@@ -2923,4 +3111,47 @@ size_t white_found_resize(JSContext *ctx, JSValueConst obj, const char *key)
     if (!js_props_inline(p) && size <= js_malloc_usable_size(ctx, p->prop))
         return 0;
     return size;
+}
+
+/* ---- the growth of a fast array (expand_fast_array) ---- */
+
+/* Room for new_len elements in the fast array arr: 0, or -1 with the
+   exception. */
+int white_array_grow(JSContext *ctx, JSValueConst arr, uint32_t new_len)
+{
+    return expand_fast_array(ctx, JS_VALUE_GET_OBJ(arr), new_len);
+}
+
+/* white_being_freed says whether the object obj is garbage that a collection
+   is freeing: its mark is set, or free_object has run on it. */
+int white_being_freed(JSValueConst obj)
+{
+    JSObject *p = JS_VALUE_GET_OBJ(obj);
+
+    return js_rc(p)->mark || p->free_mark;
+}
+
+/* A young collection (young 1) or a full one (young 0) with call number fail
+   of js_malloc_rt and js_realloc_rt failing (0 for none), the others working.
+   *nallocs is how many calls it made, and *early how many of them it made
+   before it freed its garbage. */
+void white_gc_failing(JSRuntime *rt, int young, int fail, int *nallocs, int *early)
+{
+    white_alloc_calls = 1;
+    white_alloc_count = 0;
+    white_alloc_early = 0;
+    white_alloc_fail_at = fail;
+    if (young)
+        JS_RunYoungGC(rt);
+    else
+        JS_RunGC(rt);
+    *nallocs = white_alloc_count;
+    *early = white_alloc_early;
+    white_alloc_fail_at = 0;
+    white_alloc_calls = 0;
+}
+
+static int white_gc_garbage(JSRuntime *rt)
+{
+    return !list_empty(&rt->tmp_obj_list);
 }
