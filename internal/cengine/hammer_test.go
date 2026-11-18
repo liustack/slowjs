@@ -15,8 +15,10 @@ import (
 	"unsafe"
 )
 
-// hammerG returns the runtime's g of the calling goroutine (hammer_g.s).
-func hammerG() uintptr
+// hammerG returns the runtime's g of the calling goroutine (hammer_g.s). A g
+// is a heap object the runtime keeps in allgs and never frees, so a pointer to
+// it stays valid, and as an unsafe.Pointer the collector sees it.
+func hammerG() unsafe.Pointer
 
 // stackPreempt is the runtime's value of a stack guard that asks the next
 // stack check to preempt the goroutine.
@@ -50,7 +52,7 @@ func TestPreemptionHammer(t *testing.T) {
 	}
 	var in atomic.Bool
 	var requests atomic.Int64 // writes of stackPreempt, not preemptions that were made
-	guard := (*uintptr)(unsafe.Pointer(hammerG() + 16))
+	guard := (*uintptr)(unsafe.Add(hammerG(), 16)) // g.stackguard0, the third word
 	stop := make(chan struct{})
 	done := make(chan struct{})
 	go func() {
