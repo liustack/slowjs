@@ -74,6 +74,7 @@ Releases from v0.29.0 run the C engine. Instructions are counted with callgrind 
 | v0.31.5 | The register code of a function taken from the function object for a call, the prototype slot of a method read from an array, young objects told by a bit of their own and the young list walked once, and the profile trained again on them | Against v0.31.4, whose profile was trained the same way on the same pages, on linux/amd64 (an AMD EPYC 7B13 with 4 cores, one core, the mean of 16 code layouts, sums of the pages' medians): React's page takes 2.0% less time, the three MUI pages 1.5% less, the fourteen store pages 1.5% less and the six workbench pages 1.1% less. No page is slower. The V8 suite scores 0.8% lower: NavierStokes 4.6% higher, and Crypto 5.4% and DeltaBlue 5.2% lower with fewer instructions ([v0.31.5 against v0.31.4](#v0315-against-v0314)) |
 | v0.31.6 | Fixes: stop checks while a fast array moves, WeakRefs to the garbage cleared before it is freed, young weak map keys their values hold, the shape cache's prototype, defines that run out of memory; `memcmp` eight bytes at a time; the profile trained again on [the pages of tifa d668f2d9](#the-pages-of-tifa-d668f2d9) | Against v0.31.5, whose profile was trained the same way on the same pages, on linux/amd64 (an AMD EPYC 7B13 with 4 cores, one core, the mean of 16 code layouts, sums of the pages' medians): no change of speed. A render runs the same instructions, within 0.2%, with the same HTML on every page. The store pages, the workbench pages and React's page show no change beyond the delta of 1%, and the three MUI pages' +1.1% lies inside the spread of the new build against itself. The V8 suite scores 1.5% lower with the same instructions, from one build of each side ([v0.31.6 against v0.31.5](#v0316-against-v0315)) |
 | v0.31.7 | Fixes: timeouts, interrupts and running out of memory in the compile, async functions and generators, modules and the jobs of promises, modules found and gathered in time linear in their number. The profile trained again on [the pages of tifa d668f2d9](#the-pages-of-tifa-d668f2d9) | Against v0.31.6, whose profile was trained the same way on the same pages, on linux/amd64 (an AMD EPYC 7B13 with 4 cores, one core, the mean of 16 code layouts, sums of the pages' medians): no change of speed. A render runs 0.02% to 0.11% fewer instructions, with the same HTML on every page. No kind of page is slower beyond the delta of 1%, and no kind is faster by more than it ([v0.31.7 against v0.31.6](#v0317-against-v0316)) |
+| v0.31.8 | A fix: a write near the memory limit that let the engine use a freed shape | Against v0.31.7, counted: the same instructions a render on the store and workbench pages, with the same HTML ([v0.31.8 against v0.31.7](#v0318-against-v0317)) |
 
 ## Measuring in tifa
 
@@ -2222,6 +2223,17 @@ v0.31.7 (the C of 1be7ca76, its profile trained again on [the pages of tifa d668
 | workbench pages of tifa 96232521, with the collection | -0.48% (-1.58% to +0.64%) no regression beyond delta | +1.94% (-0.06% to +3.99%) inconclusive | |
 
 v0.31.7 is a release of fixes, and no change of speed was measured: the instructions move by 0.11% or less on every kind, and the store pages' -0.58% is under the delta of 1%. The spread of a run was 2.1% to 2.8% against 1.4% to 1.6% for v0.31.6, so the formal layout decides nothing on any kind.
+
+#### v0.31.8 against v0.31.7
+
+v0.31.8 is v0.31.7 with one fix of the engine, which takes a reference to a shape a few instructions earlier on the path of a write step. It was counted, not timed: `scripts/count-pages.sh` on 2026-11-19, the C of 2d913031 against v0.31.7 (5c457299), with the same profile on both sides.
+
+| Pages | Instructions a render |
+| --- | ---: |
+| tifa's shop, fourteen store pages | +0.00% (each page -0.02% to +0.05%) |
+| tifa's shop, six workbench pages | +0.00% |
+
+The HTML is the same on all 20 pages. A change under 0.1% is too small for a timing to see ([measuring.md](measuring.md)), so the count stands in for it.
 
 #### The study of 2026-11-13
 
