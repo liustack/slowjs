@@ -9,6 +9,7 @@ package cengine
 
 import (
 	"errors"
+	"fmt"
 	"runtime"
 	"sync/atomic"
 	"testing"
@@ -404,4 +405,53 @@ new ArrayBuffer(1 << 26)`
 		t.Errorf("the engine called the host %d times after the kill broke the VM", n)
 	}
 	closeVM(t, v)
+}
+
+// TestNewRefusedSaysWhy: when the OS refuses every chunk from the nth New asks
+// for on, in JS_NewRuntime, JS_NewContext or the shape cache, New fails with
+// an error that wraps what the OS said, and the host holds nothing of the VM.
+func TestNewRefusedSaysWhy(t *testing.T) {
+	maps := 0
+	hostmem.SetFault(func(call string, addr, size uintptr) error {
+		if call == "map" || call == "remap" {
+			maps++
+		}
+		return nil
+	})
+	closeVM(t, newVM(t, Options{}))
+	hostmem.SetFault(nil)
+	if maps < 2 {
+		t.Fatalf("New mapped %d chunks, want 2 or more to refuse", maps)
+	}
+	errRefused := errors.New("refused by the test")
+	failed := 0
+	for n := 1; n <= maps; n++ {
+		k := 0
+		hostmem.SetFault(func(call string, addr, size uintptr) error {
+			if call == "map" || call == "remap" {
+				if k++; k >= n {
+					return fmt.Errorf("%s: %w", call, errRefused)
+				}
+			}
+			return nil
+		})
+		before := hostmem.ProcessTotals()
+		v, err := New(Options{})
+		hostmem.SetFault(nil)
+		if err == nil {
+			// the engine did without the chunk
+			closeVM(t, v)
+			continue
+		}
+		failed++
+		if !errors.Is(err, errRefused) {
+			t.Errorf("chunk %d refused: New failed with %q, which does not wrap what the OS said", n, err)
+		}
+		if after := hostmem.ProcessTotals(); after != before {
+			t.Errorf("chunk %d refused: the host holds %+v, before New %+v", n, after, before)
+		}
+	}
+	if failed == 0 {
+		t.Fatal("no refusal made New fail")
+	}
 }

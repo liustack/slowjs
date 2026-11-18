@@ -232,6 +232,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Endless recursion throws RangeError | v0.26.6 | [errors-and-stacks.md](errors-and-stacks.md#endless-recursion-throws-rangeerror) |
 | new with a spread says when its callee is not a constructor | v0.30.2 | [errors-and-stacks.md](errors-and-stacks.md#new-with-a-spread-says-when-its-callee-is-not-a-constructor) |
 | Calls through call and bound functions leave no line in the stack | v0.30.2 | [errors-and-stacks.md](errors-and-stacks.md#calls-through-call-and-bound-functions-leave-no-line-in-the-stack) |
+| When the OS refuses memory while `NewVM` makes the context or the shape cache of a VM, the error wraps what the OS said, as it did when the runtime could not be made | Unreleased | [vm.go](../../internal/cengine/vm.go) |
 
 ## Time and Intl
 
