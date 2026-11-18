@@ -1841,6 +1841,10 @@ static void sweep(const char *what, const char *file, const char *setup,
             CHECK(unc && t && (strstr(t, "out of memory") || strcmp(t, "null") == 0),
                   "%s: room %zu: not the uncatchable out of memory error: %s", what, k, t ? t : "?");
         } else {
+            /* a value, and no error left pending behind it */
+            t = exception_text(v.ctx);
+            CHECK(!t, "%s: room %zu: a value with %s pending", what, k, t);
+            free(t);
             t = value_text(v.ctx, r);
             for (i = 0; want[i] && !(t && strcmp(t, want[i]) == 0); i++)
                 ;
@@ -3068,6 +3072,152 @@ static void test_finrec_job_full_heap(void)
     }
 }
 
+/* Built-ins and steps of the interpreter that define a property on the
+   object they made, with too little memory: each fails with the out of
+   memory error. They went on with the error pending and returned the object
+   without the property: the prototype of a generator function or of a
+   function, the length of a class, the length of a String object, the
+   message, cause and errors of an error, the result of Proxy.revocable and
+   the descriptor a defineProperty trap gets. f is called from C, made and
+   converted with memory, so that its first allocations are the ones of the
+   step and no compile before it takes more memory than the step needs. */
+static void test_define_after_make_oom(void)
+{
+    static const struct {
+        const char *what, *expr, *want;
+    } cases[] = {
+        { "generator function", "function* () {}", "function* () {}" },
+        { "function", "function () {}", "function () {}" },
+        { "class", "class { constructor(a, b) {} }", "class { constructor(a, b) {} }" },
+        { "Object of a string", "Object('abc')", "abc" },
+        { "String", "new String('xy')", "xy" },
+        { "Error", "new Error('m', { cause: 1 })", "Error: m" },
+        { "AggregateError", "new AggregateError([1, 2], 'n')", "AggregateError: n" },
+        { "Proxy.revocable", "Proxy.revocable({}, {})", "[object Object]" },
+        { "defineProperty trap",
+          "(Object.defineProperty(p, 'x', { value: 1, writable: true, enumerable: true, configurable: true }), got)",
+          "value,writable,enumerable,configurable" },
+    };
+    FillRoom rm[FILL_ROOMS];
+    size_t nfill = fill_rooms(rm), nbytes = 4096 / 8 + 1, i, k;
+    char setup[512];
+
+    for (i = 0; i < countof(cases); i++) {
+        int failed = 0, worked = 0;
+
+        snprintf(setup, sizeof setup,
+                 "var go = 0, got, p = new Proxy({}, { defineProperty(t, k, d) { got = Object.keys(d).join(); return true; } });\n"
+                 "Object.defineProperty(p, 'y', { value: 0 });\n"
+                 "var f = () => go ? (%s) : 0;\n"
+                 "f(); go = 1;\n", cases[i].expr);
+        for (k = 0; k < nbytes + nfill; k++) {
+            VM v = vm_new();
+            JSValue r;
+            char *t;
+
+            CHECK(eval_ok(v.ctx, setup), "%s: the setup failed", cases[i].what);
+            if (k < nbytes) {
+                room(&v, k * 8);
+            } else {
+                fill_memory(&v);
+                free_blocks(&v, rm[k - nbytes].min, rm[k - nbytes].max, rm[k - nbytes].n);
+            }
+            r = call_global(v.ctx, "f");
+            if (k < nbytes)
+                unlimit(&v);
+            else
+                release_blocks(&v);
+            if (JS_IsException(r)) {
+                failed++;
+                CHECK(JS_IsUncatchableException(v.ctx), "%s: room %zu: a catchable error", cases[i].what, k);
+                t = exception_text(v.ctx);
+                CHECK(t && (strstr(t, "out of memory") || strcmp(t, "null") == 0),
+                      "%s: room %zu: not the out of memory error: %s", cases[i].what, k, t ? t : "?");
+            } else {
+                t = exception_text(v.ctx);
+                CHECK(!t, "%s: room %zu: a value with %s pending", cases[i].what, k, t);
+                free(t);
+                t = value_text(v.ctx, r);
+                CHECK(t && strcmp(t, cases[i].want) == 0, "%s: room %zu: got %s", cases[i].what, k, t ? t : "(no text)");
+                if (t && strcmp(t, cases[i].want) == 0)
+                    worked++;
+            }
+            free(t);
+            JS_FreeValue(v.ctx, r);
+            vm_free(&v);
+        }
+        CHECK(failed > 0, "%s: no room made it fail", cases[i].what);
+        CHECK(worked > 0, "%s: no room let it work", cases[i].what);
+    }
+}
+
+/* A RegExp made from a RegExp with a new target C, called from C as a host
+   does, with too little memory: the object takes the shape of C.prototype,
+   which keep, made with that prototype, holds too, so its lastIndex is a
+   key added to a shape of its own, which takes memory. With none, the call
+   fails with the out of memory error. It went on with the error pending and
+   gave the RegExp without lastIndex. A call that works gives the RegExp,
+   with lastIndex 0 and no error pending. A room where the object itself
+   cannot be made leaves no block (vm_free): it kept a reference to the
+   code of the seed. */
+static void test_regexp_new_target_oom(void)
+{
+    static const char setup[] =
+        "var seed = /x/g; function C() {} C.prototype = Object.create(RegExp.prototype);\n"
+        "var keep = Object.create(C.prototype); 0";
+    FillRoom rm[FILL_ROOMS];
+    size_t nfill = fill_rooms(rm), nbytes = 4096 / 8 + 1, k;
+    int failed = 0, worked = 0;
+
+    for (k = 0; k < nbytes + nfill; k++) {
+        VM v = vm_new();
+        JSValue g, re, c, seed, r;
+        char *t;
+
+        CHECK(eval_ok(v.ctx, setup), "the setup failed");
+        g = JS_GetGlobalObject(v.ctx);
+        re = JS_GetPropertyStr(v.ctx, g, "RegExp");
+        c = JS_GetPropertyStr(v.ctx, g, "C");
+        seed = JS_GetPropertyStr(v.ctx, g, "seed");
+        if (k < nbytes) {
+            room(&v, k * 8);
+        } else {
+            fill_memory(&v);
+            free_blocks(&v, rm[k - nbytes].min, rm[k - nbytes].max, rm[k - nbytes].n);
+        }
+        r = JS_CallConstructor2(v.ctx, re, c, 1, (JSValueConst *)&seed);
+        if (k < nbytes)
+            unlimit(&v);
+        else
+            release_blocks(&v);
+        if (JS_IsException(r)) {
+            failed++;
+            CHECK(JS_IsUncatchableException(v.ctx), "room %zu: a catchable error", k);
+            t = exception_text(v.ctx);
+            CHECK(t && (strstr(t, "out of memory") || strcmp(t, "null") == 0),
+                  "room %zu: not the out of memory error: %s", k, t ? t : "?");
+        } else {
+            t = exception_text(v.ctx);
+            CHECK(!t, "room %zu: a RegExp with %s pending", k, t);
+            free(t);
+            JS_SetPropertyStr(v.ctx, g, "r", JS_DupValue(v.ctx, r));
+            t = eval_text(v.ctx, "[r.source, r.flags, Object.hasOwn(r, 'lastIndex'), r.lastIndex, r instanceof C].join()");
+            CHECK(t && strcmp(t, "x,g,true,0,true") == 0, "room %zu: got %s", k, t ? t : "(exception)");
+            if (t && strcmp(t, "x,g,true,0,true") == 0)
+                worked++;
+        }
+        free(t);
+        JS_FreeValue(v.ctx, r);
+        JS_FreeValue(v.ctx, seed);
+        JS_FreeValue(v.ctx, c);
+        JS_FreeValue(v.ctx, re);
+        JS_FreeValue(v.ctx, g);
+        vm_free(&v);
+    }
+    CHECK(failed > 0, "RegExp with a new target: no room made it fail");
+    CHECK(worked > 0, "RegExp with a new target: no room let it work");
+}
+
 /* ---- the rejections kept for the host ---- */
 
 /* The two allocations of keeping rejections, each with no memory: the list,
@@ -3510,6 +3660,8 @@ int main(void)
     test_syntax_error_stack_oom();
     test_empty_string_full_heap();
     test_finrec_job_full_heap();
+    test_define_after_make_oom();
+    test_regexp_new_target_oom();
     test_rejections_oom();
     test_split_paths_oom();
     test_compile_names_oom();

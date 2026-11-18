@@ -225,7 +225,7 @@ static no_inline JSValue rv_copy_miss(JSContext *ctx, RVCopySite *site,
 /* COPYR: the source and excludeList by the offsets ip[1], the static keys
    left out in the object literal ip[2..3] of the function (0xffff: none),
    the site ip[4..5] (0xffff: none), the result into the temp of ip[0] */
-static no_inline int rv_copy_rest(JSContext *ctx, JSValue *F, const uint8_t *ip)
+static no_inline __exception int rv_copy_rest(JSContext *ctx, JSValue *F, const uint8_t *ip)
 {
     JSValue *sp = F + (int8_t)ip[0];
     int m = ip[1], k = get_u16(ip + 2), site = get_u16(ip + 4), nexcl = 0, i;
@@ -278,7 +278,7 @@ static no_inline int rv_copy_rest(JSContext *ctx, JSValue *F, const uint8_t *ip)
    which has the keys of tsh first, and the slot map[i] of pt takes the
    value of slot i of ps, a key of tsh whose value it replaces or a new
    one. Returns -1 when there is no memory, with pt as it was. */
-static int rv_copy_into(JSContext *ctx, JSObject *pt, JSShape *dst,
+static __exception int rv_copy_into(JSContext *ctx, JSObject *pt, JSShape *dst,
                         const uint8_t *map, uint32_t n, JSObject *ps)
 {
     JSShape *tsh = pt->shape;
@@ -321,7 +321,7 @@ static int rv_copy_into(JSContext *ctx, JSObject *pt, JSShape *dst,
    index and a plain data property: as for a rest, rv_copy_miss. Only
    shapes of the shape hash table whose prototype is null or the
    Object.prototype of the realm and that have no symbol are kept. */
-static no_inline int rv_copy_spread_miss(JSContext *ctx, RVCopySite *site,
+static no_inline __exception int rv_copy_spread_miss(JSContext *ctx, RVCopySite *site,
                                          JSObject *pt, JSObject *ps)
 {
     JSRuntime *rt = ctx->rt;
@@ -387,7 +387,7 @@ static no_inline int rv_copy_spread_miss(JSContext *ctx, RVCopySite *site,
 /* COPYS: the spread of an object literal, OP_copy_data_properties with
    the target, the source and excludeList (null) the three entries under
    the slot ip[0], the site ip[1..2] (0xffff: none) */
-static no_inline int rv_copy_spread(JSContext *ctx, JSValue *F, const uint8_t *ip)
+static no_inline __exception int rv_copy_spread(JSContext *ctx, JSValue *F, const uint8_t *ip)
 {
     JSValue *sp = F + (int8_t)ip[0];
     int site = get_u16(ip + 1), i, ret;

@@ -201,7 +201,7 @@ static int rv_stack_segments(JSRuntime *rt);
 static void rv_measure_frame(JSContext *ctx);
 static int rv_takes_opcode(int op);
 
-int JS_RegvmStat(JSContext *ctx, int what)
+__exception int JS_RegvmStat(JSContext *ctx, int what)
 {
     if (what >= 2000 && what < 2256)
         return rv_takes_opcode(what - 2000);

@@ -272,7 +272,7 @@ static no_inline void rv_close_frame(JSRuntime *rt, JSValue *F)
 /* fclosure, ip at d idx16: the closure takes the closure variables of the
    frame's function and the var_refs of its captured locals, made here when
    it is the first closure of a local, as OP_fclosure does */
-static no_inline int rv_fclosure(JSContext *ctx, JSValue *F, const uint8_t *ip)
+static no_inline __exception int rv_fclosure(JSContext *ctx, JSValue *F, const uint8_t *ip)
 {
     RVHeader *h = (RVHeader *)F;
     JSValue v;
@@ -347,7 +347,7 @@ static no_inline void rv_close_loc(JSContext *ctx, JSValue *F, int idx)
    put_var_ref_check for ADDVRC: -2 when that check fails, the sum freed.
    Two strings go through js_add_string_into, which grows the variable's
    string when it is the left operand. */
-static no_inline int rv_addvr_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
+static no_inline __exception int rv_addvr_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
 {
     JSValue ops[2], *pv, old;
     ops[0] = rv_take(ctx, F, (int8_t)ip[0]);

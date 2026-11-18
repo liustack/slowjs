@@ -140,7 +140,7 @@ static void rv_old_special(RVPass *s, const uint8_t *p)
    put_ref_value), which is_strict_mode would read from the entry frame of
    the loop. A direct eval runs with F as the running frame (rv_eval_enter,
    regvm-ops-eval.h). */
-static no_inline int rv_old(JSContext *ctx, JSValue *F, const uint8_t *ip)
+static no_inline __exception int rv_old(JSContext *ctx, JSValue *F, const uint8_t *ip)
 {
     RVHeader *h = (RVHeader *)F;
     RVFunc *rf = h->rf;

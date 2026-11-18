@@ -73,7 +73,7 @@ static BOOL rv_dst_next(RVPass *s, const uint8_t *p)
    or the iterator of W_FOR_OF_START. When there is no memory to make the
    built-in next, the value stays where it was, as when GetIterator
    throws. */
-static no_inline int rv_w_dstart(JSContext *ctx, JSValue *F, const uint8_t *ip)
+static no_inline __exception int rv_w_dstart(JSContext *ctx, JSValue *F, const uint8_t *ip)
 {
     JSValue *sp = F + (int8_t)ip[0];
     int ok;

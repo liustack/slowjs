@@ -289,7 +289,7 @@ static JSValue rv_inj_take(JSContext *ctx, JSValue *tab, int n)
 
 /* as js_for_of_next when the next method throws: the iterator is freed and
    its slot left undefined, so that no exception closes it */
-static int rv_inj_for_of_next(JSContext *ctx, JSValue *sp, int offset)
+static __exception int rv_inj_for_of_next(JSContext *ctx, JSValue *sp, int offset)
 {
     JS_FreeValue(ctx, sp[offset]);
     sp[offset] = JS_UNDEFINED;
@@ -298,7 +298,7 @@ static int rv_inj_for_of_next(JSContext *ctx, JSValue *sp, int offset)
 
 /* js_for_in_start of upstream's interpreter, with the hook of the throw
    injection: it calls build_for_in_iterator */
-static int rv_for_in_start(JSContext *ctx, JSValue *sp)
+static __exception int rv_for_in_start(JSContext *ctx, JSValue *sp)
 {
     if (RV_INJ_HIT(ctx)) {
         /* build_for_in_iterator takes the value when it fails */
@@ -314,7 +314,7 @@ static int rv_for_in_start(JSContext *ctx, JSValue *sp)
 
 /* a copy of JS_DefineObjectName with js_object_has_name in it
    (quickjs.c:15022 and 15003) */
-static int rv_define_object_name(JSContext *ctx, JSValueConst obj,
+static __exception int rv_define_object_name(JSContext *ctx, JSValueConst obj,
                                  JSAtom name, int flags)
 {
     JSProperty *pr;
@@ -431,7 +431,7 @@ static no_inline int rv_w_for_of_next(JSContext *ctx, JSValue *F, const uint8_t 
     RV_W_END
 }
 
-static no_inline int rv_w_iterator_close(JSContext *ctx, JSValue *F, const uint8_t *ip)
+static no_inline __exception int rv_w_iterator_close(JSContext *ctx, JSValue *F, const uint8_t *ip)
 {
     RV_W_BEGIN
     /* an iterator that is done is not closed: nothing to fail */

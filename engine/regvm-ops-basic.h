@@ -710,7 +710,7 @@ static void rv_call(RVPass *s, int argc, int method, int tail)
    strings of tags. Takes a and b and gives 0 with the result in *pa, or -1
    on an exception. Gives 1 with nothing done for any other pair, an empty
    or a longer string, a wide one or a rope, which go to JS_ConcatString. */
-static force_inline int rv_concat8(JSContext *ctx, JSValue *pa, JSValue b)
+static force_inline __exception int rv_concat8(JSContext *ctx, JSValue *pa, JSValue b)
 {
     JSValue a = *pa;
     JSString *p1, *p2, *p;
@@ -754,7 +754,7 @@ static force_inline int rv_concat8(JSContext *ctx, JSValue *pa, JSValue b)
    Else 0, or -1 on an exception. The loop checks the tag of one operand
    before the call, so that an add of a number and something else does not
    pay it, and this checks both. rv_add_str_k is its body for one k. */
-static force_inline int rv_add_str_k(JSContext *ctx, JSValue *F, const uint8_t *ip, int k)
+static force_inline __exception int rv_add_str_k(JSContext *ctx, JSValue *F, const uint8_t *ip, int k)
 {
     int d = (int8_t)ip[0];
     JSValue a, b;
@@ -790,7 +790,7 @@ static force_inline int rv_add_str_k(JSContext *ctx, JSValue *F, const uint8_t *
     return 0;
 }
 
-static no_inline int rv_add_str(JSContext *ctx, JSValue *F, const uint8_t *ip, int k)
+static no_inline __exception int rv_add_str(JSContext *ctx, JSValue *F, const uint8_t *ip, int k)
 {
     if (k == 0)
         return rv_add_str_k(ctx, F, ip, 0);
@@ -804,7 +804,7 @@ static no_inline int rv_add_str(JSContext *ctx, JSValue *F, const uint8_t *ip, i
    var ref when it has 4 (JSEQVF). Stores the result for arith, returns 0
    or 1 for a compare, -1 on an exception. For a compare and branch, d is
    absent. */
-static no_inline int rv_binop_slow(JSContext *ctx, JSValue *F, const uint8_t *ip,
+static no_inline __exception int rv_binop_slow(JSContext *ctx, JSValue *F, const uint8_t *ip,
                                    int op, int k, BOOL has_d)
 {
     JSValue ops[2];
@@ -885,7 +885,7 @@ static no_inline int rv_binop_slow(JSContext *ctx, JSValue *F, const uint8_t *ip
 /* the truth of a branch operand that is not an int or a bool: a temp is
    freed, a local or an argument read where it is (the truth runs no
    code) */
-static no_inline int rv_tobool_slow(JSContext *ctx, JSValue *F, int slot)
+static no_inline __exception int rv_tobool_slow(JSContext *ctx, JSValue *F, int slot)
 {
     if (rv_is_temp(F, slot))
         return JS_ToBoolFree(ctx, F[slot]);
@@ -950,7 +950,7 @@ static force_inline void rv_getf_keep(JSContext *ctx, const uint8_t *ip, JSObjec
 }
 
 /* the slow side of get_field: an object operand that is a temp is freed */
-static no_inline int rv_getf_slow(JSContext *ctx, JSValue *F, const uint8_t *ip,
+static no_inline __exception int rv_getf_slow(JSContext *ctx, JSValue *F, const uint8_t *ip,
                                   BOOL temp)
 {
     JSValue obj = F[(int8_t)ip[1]], val;
@@ -984,7 +984,7 @@ static no_inline int rv_getf_slow(JSContext *ctx, JSValue *F, const uint8_t *ip,
    p as it was. atom is not an index. No code runs and nothing is freed. rv_put_atom_new is the
    part after the own property of p: p is not exotic, not the global object
    and has no own property atom. */
-static force_inline int rv_put_atom_new(JSContext *ctx, JSObject *p, JSAtom atom,
+static force_inline __exception int rv_put_atom_new(JSContext *ctx, JSObject *p, JSAtom atom,
                                         JSProperty **ppr)
 {
     JSObject *q;
@@ -1010,7 +1010,7 @@ static force_inline int rv_put_atom_new(JSContext *ctx, JSObject *p, JSAtom atom
     return 2;
 }
 
-static force_inline int rv_put_atom_prop(JSContext *ctx, JSObject *p, JSAtom atom,
+static force_inline __exception int rv_put_atom_prop(JSContext *ctx, JSObject *p, JSAtom atom,
                                          JSProperty **ppr)
 {
     JSProperty *pr;
@@ -1088,7 +1088,7 @@ static no_inline int rv_putf_atom(JSContext *ctx, JSValue *F, const uint8_t *ip,
    add_property that finds sh1 does. 1 when done, with v taken and a temp o
    freed, -1 when there is no memory for the properties, with v and a temp o
    freed as when rv_putf_slow fails and p as it was. */
-static no_inline int rv_putf_step(JSContext *ctx, JSValue *F, const uint8_t *ip,
+static no_inline __exception int rv_putf_step(JSContext *ctx, JSValue *F, const uint8_t *ip,
                                   JSObject *p, JSShape *sh1)
 {
     int flags = ip[2];
@@ -1123,7 +1123,7 @@ static no_inline int rv_putf_step(JSContext *ctx, JSValue *F, const uint8_t *ip,
     return 1;
 }
 
-static no_inline int rv_putf_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
+static no_inline __exception int rv_putf_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
 {
     int flags = ip[2], ret;
     JSValue obj = F[(int8_t)ip[0]], val;
@@ -1153,7 +1153,7 @@ static no_inline int rv_putf_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
    gives up first): the call is made, and throws as before. Else the count
    of a poll and the read of the interrupt flag: -1 when the call stops there
    (interrupted thrown, or an uncatchable exception pending), 0 to answer. */
-static force_inline int rv_fast_enter(JSContext *ctx)
+static force_inline __exception int rv_fast_enter(JSContext *ctx)
 {
     JSRuntime *rt = ctx->rt;
 
@@ -1431,7 +1431,7 @@ static inline BOOL rv_unwrap_to(JSContext *ctx, JSValueConst f)
    and leaves no frame of Function.prototype.call ("at call (native)") in a
    stack trace, as in V8. new.target is not involved: NEW does not come
    here. */
-static no_inline int rv_unwrap_call(JSContext *ctx, JSValue *W, int n, JSValue this_v)
+static no_inline __exception int rv_unwrap_call(JSContext *ctx, JSValue *W, int n, JSValue this_v)
 {
     int done = 0;
 

@@ -13,6 +13,7 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 - A timeout or interrupt while an array grows to tens of MB, the result of a `split` into millions of parts or a long loop of pushes, stops at the next MB the engine copies, where it waited for the whole copy.
 - A finalizer of a host class that calls `deref` on a WeakRef while a collection frees its garbage now gets `undefined` for a target in that garbage, where it got an object that was being freed.
 - A young collection now frees a weak map key that only its value holds, which it kept until the next full collection. With the shop bundle of tifa 63a2099e, which keeps such a record for every render, tifa's pool ran a full collection every 192 renders for its memory, and now runs one every 256 renders with 24% less memory after it (19.4 MB where it held 25.6 MB).
+- A function, a class, a `String` object, an error, a `RegExp` made with a new target, the result of `Proxy.revocable` or a template object made with too little memory now fails the call with the out of memory error, where it could come back without one of its properties and with the error left pending.
 
 ## [v0.31.5] - 2026-11-17
 

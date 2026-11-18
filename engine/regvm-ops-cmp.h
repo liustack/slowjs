@@ -568,7 +568,7 @@ static no_inline int rv_case_table(JSValueConst v, const uint8_t *tab)
 
 /* a case whose string the atom does not tell apart from s by its pointer
    and length */
-static no_inline int rv_case_slow(JSContext *ctx, JSValueConst v, JSAtom atom)
+static no_inline __exception int rv_case_slow(JSContext *ctx, JSValueConst v, JSAtom atom)
 {
     JSValue a;
     int res;
@@ -583,7 +583,7 @@ static no_inline int rv_case_slow(JSContext *ctx, JSValueConst v, JSAtom atom)
 }
 
 /* the truth of a branch operand kept in its temp */
-static no_inline int rv_tobool_keep(JSContext *ctx, JSValueConst v)
+static no_inline __exception int rv_tobool_keep(JSContext *ctx, JSValueConst v)
 {
     return JS_ToBool(ctx, v);
 }

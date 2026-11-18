@@ -301,7 +301,7 @@ static no_inline BOOL rv_first_call(JSRuntime *rt, JSFunctionBytecode *b)
    skips it with the rule of the polls (the same bytes were read with the
    checks before), so a SharedBytecode pays it at its first load only. -1
    with an exception: the SyntaxError, or out of memory. */
-static int rv_read_check(JSContext *ctx, JSFunctionBytecode *b)
+static __exception int rv_read_check(JSContext *ctx, JSFunctionBytecode *b)
 {
     JSRuntime *rt = ctx->rt;
     int st[5], op, pos;
