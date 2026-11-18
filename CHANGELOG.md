@@ -4,9 +4,12 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 
 ## [Unreleased]
 
+## [v0.31.6] - 2026-11-18
+
 ### Changed
 
-- Comparing strings and finding keys by name takes fewer instructions: the small libc's `memcmp` compares 8 bytes at a time. tifa's store pages run 0.2% fewer instructions and its workbench pages 0.4% fewer (counted, not timed, against v0.31.5 with the same profile).
+- A release of fixes: stops while an array moves, WeakRefs and young weak map keys in a collection, the shape cache, and built-ins whose steps run out of memory, with `memcmp` comparing 8 bytes at a time and a profile trained again on the pages of tifa d668f2d9. No change of speed was measured against v0.31.5 trained the same way: a render runs the same instructions, and MUI's +1.1% is inside the spread of the build against itself ([performance.md](docs/performance.md#v0316-against-v0315)).
+- The small libc's `memcmp`, which compares strings and finds keys by name, compares 8 bytes at a time where it compared one.
 
 ### Fixed
 
@@ -846,7 +849,8 @@ The first release of the fork, from modernc.org/quickjs v0.25.0 and libquickjs v
 - A VM that runs out of memory inside `JSON.parse`, or anything else that converts a string with non-ASCII characters to UTF-8, no longer leaks that string.
 - `VM.Call` and `VM.CallValue` report the exception thrown while evaluating the function expression instead of `cannot call a non-function`.
 
-[Unreleased]: https://github.com/liustack/slowjs/compare/v0.31.5...main
+[Unreleased]: https://github.com/liustack/slowjs/compare/v0.31.6...main
+[v0.31.6]: https://github.com/liustack/slowjs/compare/v0.31.5...v0.31.6
 [v0.31.5]: https://github.com/liustack/slowjs/compare/v0.31.4...v0.31.5
 [v0.31.4]: https://github.com/liustack/slowjs/compare/v0.31.3...v0.31.4
 [v0.31.3]: https://github.com/liustack/slowjs/compare/v0.31.2...v0.31.3
