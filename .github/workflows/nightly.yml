@@ -13,6 +13,11 @@ on:
     # an hour.
     - cron: "37 18 * * *"
   workflow_dispatch:
+  # A branch nightly/<name> runs it on that branch, to try a change to it
+  # before it is on main.
+  push:
+    branches:
+      - "nightly/**"
 
 # No concurrency group here: gates.yml, called below, takes this workflow's
 # name in its own group, and the same group in both would cancel this run.
