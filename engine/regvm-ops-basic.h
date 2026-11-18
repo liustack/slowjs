@@ -1087,7 +1087,12 @@ static no_inline int rv_putf_atom(JSContext *ctx, JSValue *F, const uint8_t *ip,
    sh1 has room for, or they are in the block of p. This is what the path of
    add_property that finds sh1 does. 1 when done, with v taken and a temp o
    freed, -1 when there is no memory for the properties, with v and a temp o
-   freed as when rv_putf_slow fails and p as it was. */
+   freed as when rv_putf_slow fails and p as it was. The site holds no
+   reference to sh1, and the shape cache may hold the only one, which the
+   request for the properties lets go when the heap refuses it
+   (js_shape_cache_drop): as add_property does, the reference of p is taken
+   before the request, so that sh1 is not freed under it
+   (test_shape_drop_in_step in engine/test/unit-white.c). */
 static no_inline __exception int rv_putf_step(JSContext *ctx, JSValue *F, const uint8_t *ip,
                                   JSObject *p, JSShape *sh1)
 {
@@ -1097,9 +1102,11 @@ static no_inline __exception int rv_putf_step(JSContext *ctx, JSValue *F, const 
 
     if (js_props_inline(p))
         sh->inline_grew = TRUE;
+    js_dup_shape(sh1);
     if (sh1->prop_size != sh->prop_size) {
         JSProperty *new_prop = js_resize_prop(ctx, p, sh->prop_count, sh1->prop_size);
         if (!new_prop) {
+            js_free_shape(ctx->rt, sh1);
             if (flags & RV_PUT_VAL_TEMP)
                 JS_FreeValue(ctx, F[(int8_t)ip[1]]);
             if (flags & RV_PUT_OBJ_TEMP)
@@ -1109,7 +1116,7 @@ static no_inline __exception int rv_putf_step(JSContext *ctx, JSValue *F, const 
         p->prop = new_prop;
     }
     js_shape_found(ctx);
-    p->shape = js_dup_shape(sh1);
+    p->shape = sh1;
     js_shape_release(ctx, sh1, sh);
     pr = &p->prop[sh1->prop_count - 1];
     if (flags & RV_PUT_VAL_K)

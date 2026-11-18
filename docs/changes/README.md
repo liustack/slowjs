@@ -387,6 +387,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A large block of a built-in collects first when it would pass the memory limit | v0.30.5 | [memory-and-allocation.md](memory-and-allocation.md#a-large-block-collects-first-when-it-would-pass-the-memory-limit) |
 | A request the heap refuses lets the kept shapes go before it is tried again, so a VM near its limit fits what it would with the ring empty | v0.31.4 | `js_shape_cache_drop` in [quickjs.c](../../engine/quickjs.c) |
 | The shape cache holds the prototype of the shapes it keeps and follows `JS_SetClassProto` of its own context only, so letting kept shapes go runs no finalizer, and it lets them go from a ring taken out first, so a finalizer that sets the cache again finds it whole | v0.31.6 | `js_shape_cache_proto` in [quickjs.c](../../engine/quickjs.c) |
+| A write of a name that takes the shape its step keeps for an object whose properties must move holds the shape before it asks for the new property array: a refused request let the kept shapes go and the object took a freed shape, which later aborted the engine or corrupted another shape | v0.31.8 | `rv_putf_step` in [regvm-ops-basic.h](../../engine/regvm-ops-basic.h) |
 
 ## Young collection
 

@@ -62,20 +62,25 @@ static int white_alloc_fails(void)
    first, as a request the heap refused does, and clears it: the request then
    goes on, and the drain has run inside it. With white_drain_code set too,
    the drain then runs it, as the finalizer of a class of the host that the
-   drain frees would (white_drain_once_then). */
-static int white_drain_next;
+   drain frees would (white_drain_once_then). With white_drain_refuses set,
+   the request fails after the drain, as one the heap refuses again after
+   the drain does (white_drain_once_refused). */
+static int white_drain_next, white_drain_refuses;
 static void (*white_drain_code)(void *);
 static void *white_drain_arg;
-static void white_drain_run(void)
+static int white_drain_run(void)
 {
     void (*f)(void *) = white_drain_code;
+    int refused = white_drain_refuses;
 
     white_drain_code = NULL;
+    white_drain_refuses = 0;
     if (f)
         f(white_drain_arg);
+    return refused;
 }
 #define JS_HEAP_FAILS(s, size) \
-    (white_drain_next ? (white_drain_next = 0, js_heap_drain(s), white_drain_run(), 0) : white_alloc_fails())
+    (white_drain_next ? (white_drain_next = 0, js_heap_drain(s), white_drain_run()) : white_alloc_fails())
 
 /* white_alloc_early counts the calls made while a collection has garbage it
    has not freed yet (white_gc_failing, white_gc_garbage) */
@@ -3074,6 +3079,15 @@ void white_drain_once_then(void (*f)(void *), void *arg)
     white_drain_next = 1;
     white_drain_code = f;
     white_drain_arg = arg;
+}
+
+/* white_drain_once_refused makes the next request to the heap run
+   js_heap_drain and then fail, as one the heap refuses before and after the
+   drain */
+void white_drain_once_refused(void)
+{
+    white_drain_next = 1;
+    white_drain_refuses = 1;
 }
 
 /* the shapes the shape cache keeps */
