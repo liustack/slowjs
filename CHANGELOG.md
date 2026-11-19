@@ -4,6 +4,16 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 
 ## [Unreleased]
 
+### Changed
+
+- The zero `Value` is `undefined` to `Value.Any` and `Value.IsUndefined` too, as it already was as an argument, as `this` and as a property value: `Any` returned the number 0 and `IsUndefined` false.
+- `RegisterFunc` with a nil function returns the error `NAME is not a function`, where it panicked.
+
+### Fixed
+
+- A nil `*big.Int` passed to `Call` or another call method is `null`, as it is as a result, where it became a syntax error that went on as the argument and stayed pending.
+- An argument that goes to javascript as JSON, such as a struct or a slice, and runs out of memory or is stopped in the parse now fails the call with that error, where the failure went on as the argument.
+
 ## [v0.31.8] - 2026-11-19
 
 ### Fixed
