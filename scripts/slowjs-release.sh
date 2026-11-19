@@ -34,7 +34,7 @@ trap 'rm -rf "$stage"' EXIT
 # The license texts, at their paths in this repository, which NOTICE.md
 # names: those of the engine, then those of intl and temporal, of url, and
 # of fmt.
-notices="NOTICE.md LICENSE LICENSE-LIBQUICKJS LICENSE-TLSF engine/libc/COPYRIGHT
+notices="NOTICE.md LICENSE LICENSE-QUICKJS LICENSE-TLSF engine/libc/COPYRIGHT
 	intl/LICENSE-DATA internal/gointl/LICENSE internal/gointl/qjsdata/NOTICE-ICU internal/gointl/qjsdata/NOTICE-ICU4X
 	internal/gointl/qjsdata/NOTICE-TEMPORAL internal/gointl/qjsdata/NOTICE-V8
 	internal/whatwgurl/LICENSE-WHATWG-URL internal/whatwgurl/LICENSE-GO fmt/LICENSE-GO"

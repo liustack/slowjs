@@ -52,4 +52,4 @@ v0.30.0 to v0.30.7 were published as `github.com/liustack/quickjs`, and from v0.
 
 ## Credits
 
-The engine is Fabrice Bellard's and Charlie Gordon's QuickJS. The Go API began as modernc.org/quickjs, by the quickjs-go authors Jan Mercl and Dan Kortschak, who also translated QuickJS to Go with ccgo as modernc.org/libquickjs. liustack/slowjs thanks them for the API it started from. None of their code remains in the repository. QuickJS's license is in [engine/LICENSE](../engine/LICENSE), also at the root as [LICENSE-LIBQUICKJS](../LICENSE-LIBQUICKJS).
+The engine is Fabrice Bellard's and Charlie Gordon's QuickJS. The Go API began as modernc.org/quickjs, by the quickjs-go authors Jan Mercl and Dan Kortschak, who also translated QuickJS to Go with ccgo as modernc.org/libquickjs. liustack/slowjs thanks them for the API it started from. None of their code remains in the repository. QuickJS's license is in [engine/LICENSE](../engine/LICENSE), also at the root as [LICENSE-QUICKJS](../LICENSE-QUICKJS).
