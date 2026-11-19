@@ -1,18 +1,21 @@
-// Copyright 2025 The quickjs-go Authors. All rights reserved.
-// Use of the source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
+// Copyright (c) 2026 The liustack/slowjs Authors.
+// SPDX-License-Identifier: MIT
+// Use of this source code is governed by the MIT license in LICENSE-MIT at the
+// root of this repository.
 
-package compare // import "github.com/liustack/slowjs/compare"
+// Package compare times QuickJS's micro benchmarks on this engine, on goja
+// and on fastschema/qjs (QuickJS on wazero). make benchmark runs them and
+// benchreport.go makes the table.
+package compare
 
 import (
-	"bytes"
 	"embed"
 	"fmt"
 	"io/fs"
 	"os"
-	"path"
 	"runtime/debug"
-	"slices"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/dop251/goja"
@@ -20,81 +23,58 @@ import (
 	"github.com/liustack/slowjs"
 )
 
-var (
-	//go:embed testdata/*.js
-	embedFS embed.FS
-	files   []fs.DirEntry
-)
+//go:embed testdata/*.js
+var scripts embed.FS
+
+// skipped are the scripts one of the engines fails, which the three leave
+// out alike.
+var skipped = map[string]bool{
+	"date_parse.js":             true,
+	"global_destruct_strict.js": true,
+	"global_write_strict.js":    true,
+	"map_delete.js":             true,
+	"weak_map_delete.js":        true,
+	"weak_map_set.js":           true,
+}
+
+// names are the scripts every engine runs.
+var names []string
 
 func TestMain(m *testing.M) {
-	var err error
-	if files, err = embedFS.ReadDir("testdata"); err != nil {
+	entries, err := fs.ReadDir(scripts, "testdata")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 
-	// --- FAIL: BenchmarkGOJA/date_parse.js
-	//             err=TypeError: Object has no member 'toGMTString' at date_parse (<eval>:40:38(52)) out=<nil>
-	// --- FAIL: BenchmarkQJS/global_destruct_strict.js
-	//             err=ReferenceError: global_v1 is not defined
-	//             at global_destruct_strict (global_destruct_strict.js:35:9)
-	//             at <eval> (global_destruct_strict.js:41:1)
-	// --- FAIL: BenchmarkQJS/global_write_strict.js
-	//             err=ReferenceError: global_var0 is not defined
-	//             at global_write_strict (global_write_strict.js:32:9)
-	//             at <eval> (global_write_strict.js:40:1)
-	// --- FAIL: BenchmarkQJS/map_delete.js
-	//             err=ReferenceError: len is not defined
-	//             at map_delete (map_delete.js:32:5)
-	//             at <eval> (map_delete.js:45:1)
-	//          out=<nil>
-	// --- FAIL: BenchmarkQJS/weak_map_delete.js
-	//             err=ReferenceError: len is not defined
-	//             at weak_map_delete (weak_map_delete.js:32:5)
-	//             at <eval> (weak_map_delete.js:49:1)
-	//          out=<nil>
-	// --- FAIL: BenchmarkQJS/weak_map_set.js
-	//             err=ReferenceError: len is not defined
-	//             at weak_map_set (weak_map_set.js:32:5)
-	//             at <eval> (weak_map_set.js:46:1)
-	//          out=<nil>
-	files = slices.DeleteFunc(files, func(e fs.DirEntry) bool {
-		switch e.Name() {
-		case
-			"date_parse.js",
-			"global_destruct_strict.js",
-			"global_write_strict.js",
-			"map_delete.js",
-			"weak_map_delete.js",
-			"weak_map_set.js":
-
-			return true
-		default:
-			return false
+	for _, e := range entries {
+		if !skipped[e.Name()] {
+			names = append(names, e.Name())
 		}
-	})
-
+	}
 	os.Exit(m.Run())
 }
 
-func getTest(b *testing.B, fn string, bn int) (r string) {
-	buf, err := embedFS.ReadFile(path.Join("testdata", fn))
+// script is the benchmark name, set to run its loop n times.
+func script(b *testing.B, name string, n int) string {
+	src, err := scripts.ReadFile("testdata/" + name)
 	if err != nil {
 		b.Fatal(err)
 	}
 
-	r = string(bytes.Replace(buf, []byte("$N"), []byte(fmt.Sprint(bn)), 1))
+	js := strings.Replace(string(src), "$N", strconv.Itoa(n), 1)
+	// Start each engine from as little garbage of the one before as can be.
 	debug.FreeOSMemory()
-	return r
+	return js
 }
 
 func BenchmarkLIUSTACK(b *testing.B) {
-	for _, v := range files {
-		fn := v.Name()
-		b.Run(fn, func(b *testing.B) {
-			js := getTest(b, fn, b.N)
+	for _, name := range names {
+		b.Run(name, func(b *testing.B) {
+			js := script(b, name, b.N)
 			vm, err := slowjs.NewVM()
 			if err != nil {
-				b.Fatal(fn, err)
+				b.Fatal(err)
 			}
 
 			defer vm.Close()
@@ -102,43 +82,45 @@ func BenchmarkLIUSTACK(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			if out, err := vm.Eval(js, slowjs.EvalGlobal); err != nil {
-				b.Fatalf("err=%v out=%v", err, out)
+				b.Fatalf("%v (%v)", err, out)
 			}
 		})
 	}
 }
 
 func BenchmarkQJS(b *testing.B) {
-	for _, v := range files {
-		fn := v.Name()
-		b.Run(fn, func(b *testing.B) {
-			js := getTest(b, fn, b.N)
+	for _, name := range names {
+		b.Run(name, func(b *testing.B) {
+			js := script(b, name, b.N)
 			vm, err := qjs.New()
 			if err != nil {
-				b.Fatal(fn, err)
+				b.Fatal(err)
 			}
 
 			defer vm.Close()
 
 			b.ReportAllocs()
 			b.ResetTimer()
-			if out, err := vm.Eval(fn, qjs.Code(js)); err != nil {
-				b.Fatalf("err=%v out=%v", err, out)
+			out, err := vm.Eval(name, qjs.Code(js))
+			if err != nil {
+				b.Fatalf("%v (%v)", err, out)
+			}
+			if out != nil {
+				out.Free()
 			}
 		})
 	}
 }
 
 func BenchmarkGOJA(b *testing.B) {
-	for _, v := range files {
-		fn := v.Name()
-		b.Run(fn, func(b *testing.B) {
-			js := getTest(b, fn, b.N)
+	for _, name := range names {
+		b.Run(name, func(b *testing.B) {
+			js := script(b, name, b.N)
 			vm := goja.New()
 			b.ReportAllocs()
 			b.ResetTimer()
 			if out, err := vm.RunString(js); err != nil {
-				b.Fatalf("err=%v out=%v", err, out)
+				b.Fatalf("%v (%v)", err, out)
 			}
 		})
 	}
