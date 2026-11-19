@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"reflect"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -300,6 +301,122 @@ func TestEncodeDirectiveRejects(t *testing.T) {
 		if _, _, err := encodeDirective(bad, 1); err == nil {
 			t.Errorf("%q accepted", bad)
 		}
+	}
+	// Data that would end past maxBlob is an error, and a .zero finds it
+	// before it makes the bytes: the count of .zero is any number in the text
+	// (testdata/fuzz/FuzzEncodeDirective holds one of 333 GB).
+	for _, c := range []struct {
+		line string
+		at   int
+	}{
+		{fmt.Sprintf(".zero %d", maxBlob+1), 0},
+		{".zero 6", maxBlob - 5},
+		{".quad 1", maxBlob - 7},
+		{`.ascii "ab"`, maxBlob - 1},
+	} {
+		if _, _, err := encodeDirective(c.line, c.at); err == nil || !strings.Contains(err.Error(), "limit of the data") {
+			t.Errorf("%q at %d: %v, want past the limit", c.line, c.at, err)
+		}
+	}
+	if b, _, err := encodeDirective(".zero 5", maxBlob-5); err != nil || len(b) != 5 {
+		t.Errorf(".zero up to the limit: %d %v", len(b), err)
+	}
+	// An offset outside the data is an error too: a negative one would move
+	// the limit up by as much. FuzzEncodeDirective turns a negative offset
+	// into a positive one before it calls encodeDirective (its sample with
+	// -140 is a .zero too long at any offset), so this is where a negative
+	// offset is checked.
+	for _, at := range []int{-1, -140, maxBlob + 1} {
+		if _, _, err := encodeDirective(".zero 1", at); err == nil || !strings.Contains(err.Error(), "outside the") {
+			t.Errorf(".zero 1 at %d: %v, want outside the data", at, err)
+		}
+	}
+}
+
+// A string or a list of values finds the limit as it is read: it makes no
+// more bytes than the room left, and no list of all its values first.
+func TestEncodeDirectiveStopsAtRoom(t *testing.T) {
+	for _, l := range []string{
+		`.ascii "` + strings.Repeat("a", 1<<20) + `"`,
+		`.asciz "` + strings.Repeat(`\101`, 1<<20) + `"`,
+		".quad " + strings.Repeat("1,", 1<<17) + "1",
+		".byte " + strings.Repeat("sym,", 1<<18) + "sym",
+	} {
+		var before, after runtime.MemStats
+		runtime.ReadMemStats(&before)
+		_, _, err := encodeDirective(l, maxBlob-16)
+		runtime.ReadMemStats(&after)
+		if err == nil || !strings.Contains(err.Error(), "limit of the data") {
+			t.Errorf("%.20q: %v, want past the limit", l, err)
+		}
+		if n := after.TotalAlloc - before.TotalAlloc; n > 64<<10 {
+			t.Errorf("%.20q: %d bytes made for 16 bytes of room", l, n)
+		}
+	}
+}
+
+// Data placed in the blob stops at maxBlob in all, not only per directive,
+// and so does the data placed in the bodies of the functions (a pool, or an
+// object read by a load), which llvm-mc makes every byte of.
+func TestPlanDataLimit(t *testing.T) {
+	for _, insn := range []string{"leaq", "movq"} {
+		asm := ".text\nf:\n\t" + insn + "\tbig(%rip), %rax\n\tretq\n.Lfunc_end0:\n\t.section\t.rodata\nbig:\n" +
+			strings.Repeat("\t.zero\t1048576\n", maxBlob>>20+1)
+		u, err := SplitAsm(asm, "#")
+		if err != nil {
+			t.Fatal(err)
+		}
+		p := PlanData(u, map[string]bool{"f": true})
+		if len(p.Blob) > maxBlob || !strings.Contains(fmt.Sprint(p.Errors), "limit of the data") {
+			t.Errorf("%s: blob of %d bytes, %d objects in bodies, errors %v", insn, len(p.Blob), p.InBodyObjects+p.DupObjects, p.Errors)
+		}
+	}
+}
+
+// The bodies are held to maxBlob together: once they reach it, every function
+// whose data is not counted yet is rejected, so that the functions a survey
+// (-keep-going) keeps never hold more. 100 functions read one 1 MiB object
+// each, which puts a copy in each body: 64 fit.
+func TestPlanDataBodiesLimit(t *testing.T) {
+	var b strings.Builder
+	funcs := map[string]bool{}
+	b.WriteString(".text\n")
+	for i := range 100 {
+		fn := fmt.Sprintf("f%03d", i)
+		funcs[fn] = true
+		fmt.Fprintf(&b, "%s:\n\tmovq\tbig(%%rip), %%rax\n\tretq\n.Lfunc_end%d:\n", fn, i)
+	}
+	b.WriteString("\t.section\t.rodata\nbig:\n\t.zero\t1048576\n")
+	u, err := SplitAsm(b.String(), "#")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := PlanData(u, funcs)
+	kept := 0
+	for fn := range funcs {
+		if len(p.Errors[fn]) == 0 && len(p.InBody[fn]) > 0 {
+			kept++
+		}
+	}
+	if kept != 64 || len(p.Errors) != 36 {
+		t.Fatalf("%d functions kept with data in their bodies, %d rejected, want 64 and 36", kept, len(p.Errors))
+	}
+}
+
+// Each body places its data from its own start, aligned by FuncPlace: the
+// alignment of one body's data does not count the bytes of another. Here the
+// two bodies hold maxBlob bytes together, which fits.
+func TestPlanDataBodiesApart(t *testing.T) {
+	asm := ".text\nf:\n\tmovb\tone(%rip), %al\n\tretq\n.Lfunc_end0:\ng:\n\tmovq\tbig(%rip), %rax\n\tretq\n.Lfunc_end1:\n" +
+		"\t.section\t.rodata.one\none:\n\t.byte\t1\n" +
+		fmt.Sprintf("\t.section\t.rodata.big\n\t.p2align\t4\nbig:\n\t.zero\t%d\n", maxBlob-1)
+	u, err := SplitAsm(asm, "#")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := PlanData(u, map[string]bool{"f": true, "g": true})
+	if len(p.Errors) != 0 || len(p.InBody["f"]) != 1 || len(p.InBody["g"]) != 1 {
+		t.Fatalf("errors %v, bodies %d and %d objects", p.Errors, len(p.InBody["f"]), len(p.InBody["g"]))
 	}
 }
 

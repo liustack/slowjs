@@ -70,6 +70,10 @@ func TestHostLayout(t *testing.T) {
 		{"long", layoutAsm(append(lines, "\t.quad\t1\n")...), "has 15 entries"},
 		{"not a quad", layoutAsm("\t.long\t1\n"), "is not a quad"},
 		{"part of a quad", layoutAsm("\t.zero\t4\n"), "is not a run of whole quads"},
+		{"negative", layoutAsm("\t.zero\t-8\n"), "is not a run of whole quads"},
+		// Found before the zeros are added, whatever the count.
+		{"many zeros", layoutAsm("\t.zero\t134217728\n"), "runs past the"},
+		{"zeros after quads", layoutAsm(append(lines[:13:13], "\t.zero\t16\n")...), "runs past the"},
 	} {
 		u, err := SplitAsm(c.asm, "#")
 		if err != nil {

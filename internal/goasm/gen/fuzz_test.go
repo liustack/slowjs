@@ -6,7 +6,8 @@ import "testing"
 
 // FuzzEncodeDirective feeds arbitrary bytes to the data-directive parser. It
 // may return an error, but it must never panic: a bad alignment, count,
-// string or number from the input is rejected, not crashed on.
+// string or number from the input is rejected, not crashed on. Data that
+// would end past maxBlob is an error, never bytes.
 func FuzzEncodeDirective(f *testing.F) {
 	for _, s := range []string{
 		".byte 1", ".quad 0x8000000000000000", ".short -2", ".long foo+8",
@@ -20,7 +21,10 @@ func FuzzEncodeDirective(f *testing.F) {
 		if at < 0 || at > 1<<20 {
 			at &= 0xffff
 		}
-		_, _, _ = encodeDirective(line, at)
+		b, _, err := encodeDirective(line, at)
+		if err == nil && len(b) > maxBlob-at {
+			t.Fatalf("%d bytes at %d, past the limit of %d", len(b), at, maxBlob)
+		}
 	})
 }
 
