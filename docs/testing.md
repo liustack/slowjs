@@ -119,7 +119,7 @@ go test -run 'ShapeCache|RegExpCache' .                  # the shape cache and t
 go test -run OnClose .                                   # OnClose runs once, in order, and keeps no VM alive
 go test -run 'Close(Twice|CallbackPanics)' .             # Close again does nothing, and a panicking OnClose function keeps no other step from running
 go test -tags testhooks -run 'CloseUnmap|CloseSharedDrop|MapRefused|ReleaseRefused|RemapRefused' . # Close again frees what the OS refused to unmap, and a refused map ends the call with out of memory
-go test -p 2 -run 'VMClock|MonoNow' .                    # VM.SetClock: Date, Intl and Temporal share one clock, reset, Close and timeouts
+go test -p 2 -run 'VMClock' .                            # VM.SetClock: Date, Intl and Temporal share one clock, reset, Close and timeouts
 go test -tags testhooks ./internal/cengine ./internal/gohost ./internal/hostmem ./internal/idtable # the generated engine's host, with the test hooks
 HOSTMEM_RESIDENCY=1 go test -run StackResidency ./internal/hostmem # exact counts of shadow stack pages in memory, a snapshot the system can change
 go test -p 2 ./temporal -run 'DateTimeFormatTemporal|DurationLocaleString|Chromium' # Temporal formatting against Chromium 156
