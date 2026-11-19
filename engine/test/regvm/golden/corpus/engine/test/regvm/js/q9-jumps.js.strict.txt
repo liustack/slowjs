@@ -1,0 +1,54 @@
+result if a < b: 15 2,3
+result if a < b throws: throws RangeError valueOf
+result if a < 3: 15 2
+result if a < 3 throws: throws RangeError valueOf
+result do while c < b: 4 4,3,4
+result do while c < b throws: throws RangeError valueOf
+result do while c < 3: 4 4,4
+result do while c < 3 throws: throws RangeError valueOf
+result if a <= b: 15 2,3
+result if a <= b throws: throws RangeError valueOf
+result if a <= 3: 15 2
+result if a <= 3 throws: throws RangeError valueOf
+result do while c <= b: 4 4,3,4
+result do while c <= b throws: throws RangeError valueOf
+result do while c <= 3: 4 4,4
+result do while c <= 3 throws: throws RangeError valueOf
+result if a > b: 15 4,3
+result if a > b throws: throws RangeError valueOf
+result if a > 3: 15 4
+result if a > 3 throws: throws RangeError valueOf
+result do while c > b: 2 2,3,2
+result do while c > b throws: throws RangeError valueOf
+result do while c > 3: 2 2,2
+result do while c > 3 throws: throws RangeError valueOf
+result if a >= b: 15 4,3
+result if a >= b throws: throws RangeError valueOf
+result if a >= 3: 15 4
+result if a >= 3 throws: throws RangeError valueOf
+result do while c >= b: 2 2,3,2
+result do while c >= b throws: throws RangeError valueOf
+result do while c >= 3: 2 2,2
+result do while c >= 3 throws: throws RangeError valueOf
+result if a == b: 15
+result if a == b throws: throws RangeError valueOf
+result if a == 3: 13 3
+result if a == 3 throws: throws RangeError valueOf
+result if a != b: 15
+result if a != b throws: throws RangeError valueOf
+result if a != 3: 15 2
+result if a != 3 throws: throws RangeError valueOf
+result if a === b: 15
+result if a === b throws: 14
+result if a === 3: 1
+result if a === 3 throws: 0
+result if a !== b: 15
+result if a !== b throws: 15
+result if a !== 3: 15
+result if a !== 3 throws: 15
+result closure 3: 1
+result closure object: 8
+result closure string: 4
+mem-end obj=188 atom=541 shape=119 prop=943 jsfunc=0 cfunc=126 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=188 atom=541 shape=119 prop=943 jsfunc=0 cfunc=126 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0
