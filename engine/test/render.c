@@ -91,11 +91,19 @@ static JSRuntime *old_runtime(void)
 #define NEW_RUNTIME() old_runtime()
 #define FREE_RUNTIME(rt) JS_FreeRuntime(rt)
 #define END_JOB(rt) ((void)(rt)) /* it kept no target of WeakRef */
+#define START_CALL(rt) ((void)(rt)) /* it has no wait of the block collections */
 #else
 #define NEW_RUNTIME() host_new_runtime()
 #define FREE_RUNTIME(rt) host_free_runtime(rt)
 /* the end of a script or a job, as the Go API ends it */
 #define END_JOB(rt) JS_ClearKeptObjects(rt)
+/* the start of a step of the host that can run a script: an eval, a call,
+   the jobs, or a property set or read, whose accessor is a script. A wait of
+   the block collections that the step before left ends (JS_StartCall), as at
+   each call of the Go API. A step that does several of these, a render from
+   the set of renderResult to its read, starts once: they are one call, as a
+   render of tifa is, and the wait goes on through them. */
+#define START_CALL(rt) JS_StartCall(rt)
 #endif
 
 static const char *arg(int argc, char **argv, const char *name, const char *def)
@@ -211,7 +219,10 @@ static void add_murmur2(JSContext *ctx)
         "    value: (s) => ('string' === typeof s && S.charCodeAt === charCodeAt && N.toString === toString ? hash(s) : void 0),\n"
         "  })\n"
         "}";
-    JSValue define = JS_Eval(ctx, hook, sizeof hook - 1, "<murmur2>", JS_EVAL_TYPE_GLOBAL), b, r;
+    JSValue define, b, r;
+
+    START_CALL(JS_GetRuntime(ctx));
+    define = JS_Eval(ctx, hook, sizeof hook - 1, "<murmur2>", JS_EVAL_TYPE_GLOBAL);
 
     if (JS_IsException(define))
         die(ctx, "murmur2");
@@ -258,7 +269,10 @@ static void run_script(JSContext *ctx, const char *path)
 {
     size_t len;
     char *src = read_file(path, &len);
-    JSValue v = JS_Eval(ctx, src, len, path, JS_EVAL_TYPE_GLOBAL);
+    JSValue v;
+
+    START_CALL(JS_GetRuntime(ctx));
+    v = JS_Eval(ctx, src, len, path, JS_EVAL_TYPE_GLOBAL);
 
     if (JS_IsException(v))
         die(ctx, path);
@@ -298,7 +312,12 @@ static void sentinel_finalizer(JSRuntime *rt, JSValue val)
 
 static void add_sentinel(JSContext *ctx)
 {
-    JSValue o = JS_NewObjectClass(ctx, (int)sentinel_class);
+    JSValue o;
+
+    /* a step of its own, before the render: die reads the exception with
+       the methods the bundle may have changed */
+    START_CALL(JS_GetRuntime(ctx));
+    o = JS_NewObjectClass(ctx, (int)sentinel_class);
 
     if (JS_IsException(o) || JS_SetPropertyStr(ctx, o, "self", JS_DupValue(ctx, o)) < 0)
         die(ctx, "sentinel");
@@ -313,6 +332,7 @@ static JSValue render_value(JSContext *ctx, JSValueConst start, const char *json
     JSValue g = JS_GetGlobalObject(ctx), arg, r, res, flat;
 
     render_count++;
+    START_CALL(rt);
     JS_SetPropertyStr(ctx, g, "renderResult", JS_UNDEFINED);
     arg = JS_NewStringLen(ctx, json, len);
     r = JS_Call(ctx, start, g, 1, &arg);
@@ -512,7 +532,10 @@ static void add_async_context(JSContext *ctx)
         "(get, set) => {\n"
         "  Object.defineProperty(globalThis, '__tifa_async_context__', { value: { get, set }, configurable: true })\n"
         "}";
-    JSValue define = JS_Eval(ctx, hook, sizeof hook - 1, "<asynccontext>", JS_EVAL_TYPE_GLOBAL), f[2], r;
+    JSValue define, f[2], r;
+
+    START_CALL(JS_GetRuntime(ctx));
+    define = JS_Eval(ctx, hook, sizeof hook - 1, "<asynccontext>", JS_EVAL_TYPE_GLOBAL);
 
     if (JS_IsException(define))
         die(ctx, "async context");
@@ -646,6 +669,7 @@ int main(int argc, char **argv)
 #endif
         JS_SetPropertyStr(ctx, g, "__tifa_random_bytes__", JS_NewCFunction(ctx, js_random_bytes, "__tifa_random_bytes__", 1));
         add_async_context(ctx);
+        START_CALL(rt);
         JS_SetPropertyStr(ctx, g, "__tifa_escape", JS_NewEscapeTextFunction(ctx, "__tifa_escape", 13));
         JS_SetPropertyStr(ctx, g, "__tifa_start_tag", JS_NewStartTagFunction(ctx, "__tifa_start_tag", 16));
         JS_SetPropertyStr(ctx, g, "__tifa_end_tag", JS_NewEndTagFunction(ctx, "__tifa_end_tag", 14));
@@ -670,6 +694,7 @@ int main(int argc, char **argv)
     }
     load_inputs(&in, inputs);
     g = JS_GetGlobalObject(ctx);
+    START_CALL(rt);
     start = JS_GetPropertyStr(ctx, g, "startRender");
     JS_FreeValue(ctx, g);
     if (!JS_IsFunction(ctx, start)) {

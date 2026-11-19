@@ -505,6 +505,12 @@ void JS_MarkValue(JSRuntime *rt, JSValueConst val, JS_MarkFunc *mark_func);
    JS_ComputeMemoryUsage and JS_DumpMemoryUsage may be called there. */
 void JS_RunGC(JSRuntime *rt);
 void JS_RunYoungGC(JSRuntime *rt);
+/* The host starts a call of its own into the engine, one that no other call
+   of the engine is below: an Eval, a Call, the run of the jobs. The wait of
+   the collections before large blocks that the last call left ends (see
+   js_trigger_gc_block_run in quickjs.c). It runs no javascript and
+   allocates nothing. */
+void JS_StartCall(JSRuntime *rt);
 JS_BOOL JS_IsLiveObject(JSRuntime *rt, JSValueConst obj);
 
 JSContext *JS_NewContext(JSRuntime *rt);

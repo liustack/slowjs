@@ -122,6 +122,7 @@ func New(stackSize uintptr) (*Memory, error) {
 	if err != nil {
 		return nil, fmt.Errorf("hostmem: reserve a shadow stack of %d bytes: %w", stackSize, err)
 	}
+	countStack(stackSize, 1)
 	return &Memory{chunks: map[uintptr]uintptr{}, stack: base, stackSize: stackSize}, nil
 }
 
@@ -168,6 +169,7 @@ func (m *Memory) free(base, size uintptr) error {
 	}
 	delete(m.chunks, base)
 	m.footprint -= size
+	countChunk(size, -1)
 	return nil
 }
 
@@ -188,6 +190,7 @@ func (m *Memory) Remap(base, size, newSize uintptr) (uintptr, error) {
 	}
 	delete(m.chunks, base)
 	m.footprint -= size
+	countChunk(size, -1)
 	m.add(p, newSize)
 	return p, nil
 }
@@ -279,11 +282,13 @@ func (m *Memory) Close() error {
 		}
 		delete(m.chunks, base)
 		m.footprint -= size
+		countChunk(size, -1)
 	}
 	if m.stackSize != 0 {
 		if err := osFreeStack(m.stack, m.stackSize); err != nil {
 			errs = append(errs, fmt.Errorf("hostmem: unmap the shadow stack at %#x: %w", m.stack, err))
 		} else {
+			countStack(m.stackSize, -1)
 			m.stack, m.stackSize = 0, 0
 		}
 	}
@@ -302,6 +307,7 @@ func (m *Memory) add(base, size uintptr) {
 	}
 	m.chunks[base] = size
 	m.footprint += size
+	countChunk(size, 1)
 }
 
 // mustHold panics unless the VM has a chunk of size bytes at base: the engine

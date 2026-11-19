@@ -1,5 +1,5 @@
 ---
-summary: 'Testing and verification: the checks to run before committing, the Makefile targets, the focused checks, test262 and its 33 known errors, test262 and the sanitizers on the C tree with the native test host, the fuzz targets of the Go API and of the C tree, the race detector subset, building every target, the local go.work, and the make targets that generate the C engine and check that what is checked in is what the generator makes, run its checks in two tiers, time builds at several code positions and do it all on another machine, and what CI on GitHub checks on each push, every night and leaves out'
+summary: 'Testing and verification: the checks to run before committing, the Makefile targets, the focused checks, test262 and its 33 known errors, test262 and the sanitizers on the C tree with the native test host, the fuzz targets of the Go API and of the C tree, the race detector subset, the render stress that runs the pinned pages for hours under random stops, building every target, the local go.work, and the make targets that generate the C engine and check that what is checked in is what the generator makes, run its checks in two tiers, time builds at several code positions and do it all on another machine, and what CI on GitHub checks on each push, every night and leaves out'
 read_when:
   - Getting ready to commit and checking which checks to run
   - Writing a new test or fixing a bug
@@ -10,6 +10,7 @@ read_when:
   - Looking for a leak, or changing how values are duplicated and freed (the sanitizers of the native test host)
   - Fuzzing the engine, the Go API or url, or a fuzz target found an input
   - Changing code that several goroutines or VMs share
+  - Running the render stress, or changing how a VM stops, collects, frees or is closed
   - Setting up a go.work
   - Generating the C engine, running the fast or the full checks of a change to it, or timing one build of it against another
   - Running any of that on the Google Cloud build machine, on chosen cores under a memory cap
@@ -333,6 +334,47 @@ The whole of `./intl` under `-race` takes about 25 minutes on one core of an EPY
 
 The race detector ignores atomic operations on memory outside Go's heap, such as the interrupt flag in C memory. `Interrupt` and `Close` meet at a mutex on Go's heap for that reason (see [architecture.md](architecture.md#the-eval-timeout-and-interrupt)).
 
+## The render stress
+
+`internal/stress` renders tifa's pinned pages (store, wb and MUI, from `engine/pgo/pages`) for a set time, the way tifa's pool runs them, and stops the renders at random points. It answers one question: does a VM, and a pool of them, stay correct and bounded over hours of renders with limits hitting anywhere?
+
+```sh
+go run ./internal/stress -duration 10m -series series.csv                 # a run
+go run -tags testhooks ./internal/stress -duration 10m -refuse 10          # the OS also refuses 10 of every 1000 maps
+go run -tags testhooks ./internal/stress -duration 10m -abort 2           # and the engine aborts in 2% of the renders of churn VMs
+CGO_ENABLED=1 go test -race -run TestStress ./internal/stress -args -stress-duration 10m   # under the race detector
+go run ./internal/stress -duration 1h -stop-on-fail -cpuprofile cpu.prof   # with a CPU profile of the renders
+```
+
+Before the run it compiles each bundle once, as tifa does, and renders every page three times on a VM of its own. Each page must give the same HTML each time, and its hash is the one every later render is held to. All VMs read a fixed clock, so the HTML does not change over a run. Then each worker goroutine (`-workers`, 4 by default) owns a pool: for each bundle, a steady VM that lives the whole run and `-churn` VMs (1 by default) that are killed and replaced. Each VM is set up as tifa sets it up (`tifa.Register`, 128 MiB, a call depth of 10000) and collected between renders as tifa's pool collects it. A worker picks a VM and a page at random, then one of these:
+
+| Step | Share | What it does | What may come out |
+| --- | --- | --- | --- |
+| normal | the rest | a render as tifa makes it | the page's HTML |
+| `-oom` | 12% | a memory limit drawn between what the VM holds and a quarter past what a render takes with no collection, so most renders run out of memory at a random point | the HTML, or an `*Error` with `OutOfMemory` |
+| `-timeout` | 12% | an eval timeout drawn up to 1.5 times the render's time | the HTML, an `*Error` with `Interrupted`, or the time running out between two calls of the render |
+| `-interrupt` | 12% | `Interrupt` from another goroutine at a moment drawn up to 1.5 times the render's time, which may land while the VM collects after the render | the HTML, or an `*Error` with `Interrupted` |
+| `-kill` | 3%, churn VMs only | `Array.prototype.push` wrapped so that its call number n, drawn at random, runs a loop the engine never stops in, under a short timeout and sometimes an `Interrupt`: the kill comes deep inside React's stack | the HTML, an interrupt, or an error that matches `ErrKilled` |
+| `-abort` | 0%, churn VMs only, `-tags testhooks` | the engine aborts, as it does where its C cannot go on, at a poll drawn up to a quarter past the polls of the render: the render panics and the VM is good only for `Close` | the HTML, or the panic of the abort |
+
+After a stop that is not a kill, a churn VM is closed half of the time, as tifa closes the VM of every failed render, and goes on otherwise. A steady VM always goes on. A VM that goes on must answer `Eval` and `MemoryUsage`, and its later renders must give the right HTML. They may also fail cleanly (an exception the page throws, a result that is not HTML, or work left pending), as [api.md](api.md) allows after a stop. A killed VM must answer `Interrupt`, `MemorySize`, `MemoryFree` and `GCThreshold`, return `ErrKilled` from `Eval` and `ExecutePendingJobs`, and `Close` with no error. A VM the engine aborted in, by `-abort` or by a bug, is closed, and `Close` must return no error: the run then counts the renders of the other VMs that gave the right HTML after the first abort, and prints it (an abort that `-abort` did not ask for is a failure all the same). Between renders a VM goes to a goroutine of its own, as in tifa's pool, and gets tifa's collection most of the time, and at random a full collection, a young one, a full one with its memory given back, or none.
+
+What it checks:
+
+- No panic and no crash, every render gives the page's HTML or what its step may give (the table), and every other outcome is printed as a `FAIL` line with the VM, the page and the error.
+- Every `-every` (by default 1/120 of the run) it takes a row of the series (`-series` writes them as CSV): the renders, the goroutines, Go's live heap, the totals of the host (`hostmem.ProcessTotals`: VMs, chunks, heap bytes, read-only copies), the blocks of Go functions, the engine's `MemorySize` of every VM, and what the steady VMs keep after a full collection (`MemorySize` less `MemoryFree`, measured every 64 of their renders). At every row the VMs holding memory are at most those of the pools, the goroutines at most two for each worker and a few more, and the heaps under twice the memory limit of every VM.
+- After the warm-up (`-warmup`, a fifth of the run by default), the mean of each measure over the last third of the rows may grow from its mean over the middle third by at most `-tolerance` (5%) and `-slack` (1 MiB) for what the steady VMs keep, and four times that fraction for the sums that move with the renders in flight. What a steady VM keeps grows while its pages warm up (code made at a function's first call, the caches of the app) and then stays: what still moves is bounded by the shape cache (2048 shapes, `SetShapeCache`), the regexp cache and the atoms, each with its cap.
+- At the end every VM and bundle is closed, and the totals of the host must be what they were before the first VM, with no block or kept memory of a Go function, no leftover VM and no goroutine left.
+
+It exits 1 when any check failed. A render that ends interrupted where its step could not interrupt it prints the JS stack it was in. With `-cpuprofile` every render in the profile carries labels of its worker, VM, step and page, so `go tool pprof -tagfocus 'vm=^ID$'` shows where one VM spent its time (a bare number is read as a range, so anchor it). `-seed` repeats the random choices of a run (the seed is printed at the start), though the moments of the stops come from the clock. `TestStress` runs it for 4 seconds (2 with `-short`), so `go test ./...` keeps it working. Nightly CI runs it for 12 minutes, and for 5 more with `-tags testhooks -refuse 10 -abort 2`.
+
+For a long run on the build machines, build once and run under `~/bin/heavy`, which pins it to one core under a 5 GB cap (`GOMAXPROCS=4` on that one core makes the goroutines change places more often):
+
+```sh
+go build -o stress ./internal/stress
+~/bin/heavy ./stress -duration 6h -every 60s -series a.csv > a.log 2>&1
+```
+
 ## Time in a test
 
 A test does not bound `runtime.GC`, or any other wait for the Go scheduler, by the clock. Before `runtime.GC` returns it sweeps the heap and yields (`Gosched`) after each span. With one P (`GOMAXPROCS=1`, as under `taskset` on one core) a goroutine that keeps the CPU, such as a script in a loop, gets the P back each time and keeps it until the scheduler preempts it, 10 ms later. So the GC takes the number of spans left times 10 ms: about a second in the whole root package, 28 s beside 200,000 small objects of garbage, and the same beside a loop of pure Go. A bound of 1 s on such a GC failed on some Go versions and not others, by the size of the heap the earlier tests left. Judge such a test by the work the engine did, in polls (see `stoppolls_test.go`, `TestLoopWithoutCallsPolls` and `TestGCInTightLoops` of `internal/cengine`), and leave a hang to a parent process (`TestGCStopsLoopWithoutCalls`). A clock bound on something else stays: a timeout, or an `Interrupt` from another goroutine, that must stop a call (the engine reads both at its polls, and that goroutine waits at most one preemption, 10 ms, for the P), a lower bound the kill rule sets, and a guard of seconds or minutes against a hang.
@@ -545,7 +587,7 @@ The job takes about 4 minutes on `ubuntu-24.04`: the install 15 seconds, `make c
 | `native (ubsan)` | the `host-ubsan` and `compare-ubsan` steps, test262 and `heap.sh` under UndefinedBehaviorSanitizer | 28 minutes |
 | `native (asan-heap)` | test262 and `heap.sh` on the engine's own allocator with its poison, and `heap.sh` on `asan-heap-iter` | 13 minutes |
 | `native (tools)` | `libc-test.sh`, `check-symbols.sh` for x86-64 and arm64, `vendor.sh --verify`, `tlsf-edges.sh`, `host-test.sh tsan`, the fuzz target of the allocator for 5 minutes and `js-fuzz` for 10 ([Fuzzing](#fuzzing)) | 11 minutes before `js-fuzz` was added |
-| `go` | `scripts/vet-tags.sh` (`go vet` of every module with every build tag its Go files use, for each system the module builds for, which fails on a tag or a module it does not list), the tests of every package but the root one without `-short`, the tests of `compare` and `compare/engines`, the preemption hammer (`CENGINE_HAMMER_N=3000`), and the `race` step | 14 minutes |
+| `go` | `scripts/vet-tags.sh` (`go vet` of every module with every build tag its Go files use, for each system the module builds for, which fails on a tag or a module it does not list), the tests of every package but the root one without `-short`, the tests of `compare` and `compare/engines`, the preemption hammer (`CENGINE_HAMMER_N=3000`), the `race` step, and the render stress for 12 minutes and with `-tags testhooks -refuse 10 -abort 2` for 5 ([The render stress](#the-render-stress)) | 14 minutes before the render stress was added |
 | `fuzz` | `scripts/fuzz.sh`: every Go fuzz target of the module for 3 minutes, one after another ([Fuzzing](#fuzzing)), and the inputs that failed as an artifact | not measured yet |
 
 Each job keeps its logs as an artifact for 7 days. To start a run by hand: `gh workflow run nightly.yml --ref main` (`--ref` can name another pushed branch), or "Run workflow" on the page of the workflow in the Actions tab. A push of a branch `nightly/<name>` also runs it, to try a change to `nightly.yml` before it is on `main`. `CHECK_SKIP="..." scripts/check.sh full` with the list of `nightly.yml` runs the first native job on your own machine.

@@ -92,6 +92,7 @@ type VM struct {
 	leaked  uintptr       // what JS_FreeRuntime returned
 	timeout time.Duration // of Eval (SetTimeout)
 	placed  [][2]uintptr  // the objects of Place, freed by Close
+	scripts int           // the entries of enterScript that have not left
 }
 
 // Options are the settings of a new VM.
@@ -167,7 +168,7 @@ func New(o Options) (_ *VM, err error) {
 	v.enter(func() { v.rt = JS_NewRuntime(v.sp, uintptr(h.ID()), uintptr(o.Seed)) })
 	if v.rt == 0 {
 		// The engine gave back what it had: the host unmaps the chunks.
-		return nil, fmt.Errorf("cengine: no runtime: %w", h.LastError())
+		return nil, newFailed(h, "no runtime")
 	}
 	if h.AllowRemap() {
 		v.enter(func() { JS_SetHostRemap(v.sp, v.rt, 1) })
@@ -186,7 +187,7 @@ func New(o Options) (_ *VM, err error) {
 	if v.ctx == 0 {
 		var leaked uintptr
 		v.enter(func() { leaked = JS_FreeRuntime(v.sp, v.rt) })
-		return nil, fmt.Errorf("cengine: no context (%d blocks left)", leaked)
+		return nil, newFailed(h, fmt.Sprintf("no context (%d blocks left)", leaked))
 	}
 	var shapes uintptr
 	v.enter(func() { shapes = JS_SetShapeCache(v.sp, v.ctx, DefaultShapeCache) })
@@ -196,10 +197,20 @@ func New(o Options) (_ *VM, err error) {
 			JS_FreeContext(v.sp, v.ctx)
 			leaked = JS_FreeRuntime(v.sp, v.rt)
 		})
-		return nil, fmt.Errorf("cengine: no memory for a shape cache of %d shapes (%d blocks left)", DefaultShapeCache, leaked)
+		return nil, newFailed(h, fmt.Sprintf("no memory for a shape cache of %d shapes (%d blocks left)", DefaultShapeCache, leaked))
 	}
 	handed = true
 	return v, nil
+}
+
+// newFailed is the error of New when the engine could not make what it
+// names: the engine sees only that an allocation failed, and the host keeps
+// what the OS said when it refused a chunk, which the error wraps.
+func newFailed(h *gohost.VM, what string) error {
+	if err := h.LastError(); err != nil {
+		return fmt.Errorf("cengine: %s: %w", what, err)
+	}
+	return errors.New("cengine: " + what)
 }
 
 // Host is the host side of the VM: its clock, interrupt, memory and counts.
@@ -215,10 +226,21 @@ func (v *VM) enter(f func()) {
 }
 
 // enterScript is enter for f that runs a script, with the timeout of the VM.
+// The outermost one is a call of the host into a script: it ends a wait of
+// the block collections that the last call left (JS_StartCall), as the enter
+// of the Go API does. An inner one, a script that a function of the host runs,
+// is part of that call and keeps its wait (TestNestedEvalKeepsBlockWait).
 func (v *VM) enterScript(f func()) {
 	CheckSP(v.sp)
 	v.h.EnterScript(v.timeout)
-	v.run(f)
+	v.scripts++
+	defer func() { v.scripts-- }()
+	v.run(func() {
+		if v.scripts == 1 {
+			JS_StartCall(v.sp, v.rt)
+		}
+		f()
+	})
 }
 
 func (v *VM) run(f func()) {

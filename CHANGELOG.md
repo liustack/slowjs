@@ -16,6 +16,8 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 - An argument that goes to javascript as JSON, such as a struct or a slice, and runs out of memory or is stopped in the parse now fails the call with that error, where the failure went on as the argument.
 - `Array.prototype.toLocaleString` and the `toLocaleString` of typed arrays pass their locales and options on to each element in a VM with package `intl` registered, as ECMA-402 says, so `[1234.5].toLocaleString('de')` gives `1.234,5` and a bad locale throws a `RangeError`, where every element was formatted in the default locale.
 - Package `intl`: `toLocaleString`, `toLocaleDateString` and `toLocaleTimeString` with a locale of `''` throw a `RangeError` also after a call with no locales, which made them take the default locale.
+- When the OS refuses memory while `NewVM` makes the context of a VM, its error wraps what the OS said, where it said only that there was no context.
+- A render whose memory stayed just under the memory limit could run a full collection at each array that grew, run tens of times slower and end at the eval timeout. A collection that frees too little now makes the next ones wait, so the render goes on or ends with out of memory.
 
 ## [v0.31.8] - 2026-11-19
 

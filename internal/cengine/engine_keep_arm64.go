@@ -263,6 +263,7 @@ var goasmKeep = []any{
 	JS_SetStripInfo,
 	JS_SetUncatchableException,
 	JS_SpeciesConstructor,
+	JS_StartCall,
 	JS_StrictEq,
 	JS_StringToBigInt,
 	JS_TakeDroppedRejections,

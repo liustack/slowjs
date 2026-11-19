@@ -1130,6 +1130,15 @@ func (m *VM) jsClearKeptObjects() {
 	m.inEngine--
 }
 
+// jsStartCall tells the engine that the outermost call starts
+// (JS_StartCall): the wait of the collections before large blocks that the
+// last call left ends, inside the entry of the call (enter).
+func (m *VM) jsStartCall() {
+	m.toEngine()
+	cengine.JS_StartCall(m.sp, m.rt)
+	m.inEngine--
+}
+
 // endJob ends the job that ran before the next job of the outermost call.
 // In a call made from a Go function that javascript called, the job of the
 // call below goes on, and the targets stay.

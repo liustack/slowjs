@@ -80,6 +80,7 @@ JS_SetRegExpCache
 JS_SetShapeCache
 JS_SetStripInfo
 JS_SetUncatchableException
+JS_StartCall
 JS_TakeDroppedRejections
 JS_TakeRejection
 JS_Throw

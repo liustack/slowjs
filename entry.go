@@ -36,7 +36,8 @@ func (m *VM) Interrupt() {
 
 // enter marks the start of a call into javascript, leave its end. Only the
 // outermost call arms the eval timeout and clears a pending Interrupt (the
-// host does both). A host function evaluating more javascript runs inside
+// host does both), and ends a wait of the engine's collections before large
+// blocks that the last call left (jsStartCall). A host function evaluating more javascript runs inside
 // the budget of the call that got it there, and an Interrupt requested
 // meanwhile stays pending.
 //
@@ -66,6 +67,9 @@ func (m *VM) enter() error {
 	m.h.EnterScript(m.timeout)
 	m.entered++
 	m.depth++
+	if m.entered == 1 {
+		m.jsStartCall()
+	}
 	return nil
 }
 

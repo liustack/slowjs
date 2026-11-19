@@ -39,13 +39,16 @@ func MapReadOnly(b []byte) (uintptr, error) {
 		}
 		return 0, fmt.Errorf("hostmem: make %d bytes read-only: %w", size, err)
 	}
+	totalReadOnly.Add(int64(size))
 	return p, nil
 }
 
 // UnmapReadOnly unmaps the mapping of MapReadOnly at addr, of n bytes.
 func UnmapReadOnly(addr uintptr, n int) error {
-	if err := osUnmap(addr, ReadOnlySize(n)); err != nil {
+	size := ReadOnlySize(n)
+	if err := osUnmap(addr, size); err != nil {
 		return fmt.Errorf("hostmem: unmap %d read-only bytes at %#x: %w", n, addr, err)
 	}
+	totalReadOnly.Add(-int64(size))
 	return nil
 }

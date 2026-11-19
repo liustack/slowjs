@@ -11,6 +11,7 @@ package gohost
 // build with the tag testhooks (hooks.go has the normal one).
 type hookState struct {
 	interruptAt int64  // Polls at which Poll calls Interrupt, or 0
+	abortAt     int64  // Polls at which Poll aborts as the engine does, or 0
 	stopTrace   func() // runs at each poll that saw the request to stop, or nil
 }
 
@@ -21,7 +22,19 @@ func pollHook(v *VM) {
 		v.hooks.interruptAt = 0
 		v.Interrupt()
 	}
+	if v.hooks.abortAt != 0 && v.polls.Load() >= v.hooks.abortAt {
+		v.hooks.abortAt = 0
+		// what Call does for the engine's abort
+		v.MarkBroken()
+		panic(ErrAbort)
+	}
 }
+
+// AbortAtPoll makes the poll that brings Polls to n end the call as the
+// engine's abort does (CallAbort in Call): the VM is broken and the poll
+// panics with ErrAbort, through the engine's frames. 0 turns it off. Call it
+// from the goroutine that uses the VM, between calls into the engine.
+func (v *VM) AbortAtPoll(n int64) { v.hooks.abortAt = n }
 
 // InterruptAtPoll makes the poll that brings Polls to n call Interrupt, from
 // the goroutine that runs the engine, before it looks for a request to stop:
