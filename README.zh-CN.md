@@ -15,7 +15,7 @@
   <a href="https://pkg.go.dev/github.com/liustack/slowjs"><img src="https://img.shields.io/badge/go.dev-reference-007d9c?style=flat-square&logo=go&logoColor=white" alt="Go 文档"></a>
   <a href="go.mod"><img src="https://img.shields.io/github/go-mod/go-version/liustack/slowjs?style=flat-square" alt="Go 版本"></a>
   <img src="https://img.shields.io/badge/CGO-off-success?style=flat-square" alt="不用 CGO">
-  <a href="LICENSE-MIT"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="许可证"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="许可证"></a>
   <img src="https://img.shields.io/badge/Not%20backed%20by-Y%20Combinator-FF6600?style=flat-square&logo=ycombinator&logoColor=white" alt="没有 Y Combinator 投资">
   <img src="https://img.shields.io/badge/users-unknown-lightgrey?style=flat-square" alt="用户数未知">
 </p>
@@ -171,4 +171,4 @@ liustack/slowjs 不接受 pull request。每一行都由一个维护者审读、
 
 ## 许可证
 
-liustack/slowjs 新建的文件用 [MIT 许可证](LICENSE-MIT)。来自其他项目的代码保留各自的许可证：QuickJS 的 C 代码、modernc.org/quickjs 留下的部分、TLSF 分配器、musl 的 libc 函数，以及 `intl` 和 go-intl 的语言数据。banner 里的 gopher 照 Renée French 画的 Go gopher 画成（CC BY 4.0）。哪条路径用哪个许可证、发布用到本模块的程序要带哪些声明，见 [NOTICE.md](NOTICE.md)。
+liustack/slowjs 新建的文件用 [MIT 许可证](LICENSE)。来自其他项目的代码保留各自的许可证：QuickJS 的 C 代码、modernc.org/quickjs 留下的部分、TLSF 分配器、musl 的 libc 函数，以及 `intl` 和 go-intl 的语言数据。banner 里的 gopher 照 Renée French 画的 Go gopher 画成（CC BY 4.0）。哪条路径用哪个许可证、发布用到本模块的程序要带哪些声明，见 [NOTICE.md](NOTICE.md)。

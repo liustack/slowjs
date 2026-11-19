@@ -1,6 +1,6 @@
 // Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
-// Use of this source code is governed by the MIT license in LICENSE-MIT at the
+// Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 // core-js polyfills for URL, URLSearchParams, structuredClone and the iterator
 // helpers (Iterator.concat), for the engines that lack them. core-js leaves a native one that passes its own

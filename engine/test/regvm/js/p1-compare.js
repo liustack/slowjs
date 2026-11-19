@@ -1,6 +1,6 @@
 // Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
-// Use of this source code is governed by the MIT license in LICENSE-MIT at the
+// Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 // rvdiff: lte, gt, gte, eq, neq, strict_neq and the tests (is_null,
 // is_undefined, is_undefined_or_null, the typeof tests, lnot), each as a

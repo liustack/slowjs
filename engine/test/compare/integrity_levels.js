@@ -1,6 +1,6 @@
 // Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
-// Use of this source code is governed by the MIT license in LICENSE-MIT at the
+// Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 // Object.isFrozen, Object.isSealed, Object.freeze, Object.seal and
 // Object.preventExtensions on every kind of object: ordinary objects of shared

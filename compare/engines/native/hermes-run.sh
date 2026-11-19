@@ -1,7 +1,7 @@
 #!/bin/bash
 # Copyright (c) 2026 The liustack/slowjs Authors.
 # SPDX-License-Identifier: MIT
-# Use of this source code is governed by the MIT license in LICENSE-MIT at the
+# Use of this source code is governed by the MIT license in LICENSE at the
 # root of this repository.
 # hermes-run.sh <src|hbc> <hermes dir> <bytecode dir> name=value ...: one run of
 # native/hermes-ssr.js on the Hermes of native/build.sh (<hermes dir>/build-rel),

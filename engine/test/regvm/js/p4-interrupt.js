@@ -1,6 +1,6 @@
 // Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
-// Use of this source code is governed by the MIT license in LICENSE-MIT at the
+// Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 // An uncatchable exception (an interrupt, stopAfterPolls of jsrun) thrown in
 // a loop of the register loop passes every catch and finally of its frame

@@ -1,6 +1,6 @@
 // Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
-// Use of this source code is governed by the MIT license in LICENSE-MIT at the
+// Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 // The ownKeys trap of a proxy has to return an object, as CreateListFromArrayLike
 // asks. A primitive result is a TypeError wherever the keys are read, and an

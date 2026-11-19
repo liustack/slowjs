@@ -1,6 +1,6 @@
 // Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
-// Use of this source code is governed by the MIT license in LICENSE-MIT at the
+// Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 // Arrays that grow: 0 to 9 elements made by push, by index and by spread, with
 // holes, a length set smaller and larger, concat of sparse arrays and of

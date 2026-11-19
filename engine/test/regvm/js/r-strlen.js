@@ -1,6 +1,6 @@
 // Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
-// Use of this source code is governed by the MIT license in LICENSE-MIT at the
+// Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 // The length of a string read by GETF in the register loop, which answers it
 // in the handler (engine/regvm-ops-basic.h): strings of 8-bit and 16-bit

@@ -60,12 +60,12 @@ liustack/slowjs does not accept pull requests: [CONTRIBUTING.md](CONTRIBUTING.md
   ```go
   // Copyright (c) 2026 The liustack/slowjs Authors.
   // SPDX-License-Identifier: MIT
-  // Use of this source code is governed by the MIT license in LICENSE-MIT at the
+  // Use of this source code is governed by the MIT license in LICENSE at the
   // root of this repository.
   ```
 
 - A file that came from upstream (QuickJS, go-intl), a generated file, and a new file made from one of them keep the upstream header and license, however much liustack/slowjs changes them. No code of modernc.org/quickjs remains: do not bring any back.
-- Add a new author of liustack/slowjs to `AUTHORS-LIUSTACK`.
+- Add a new author of liustack/slowjs to `AUTHORS`.
 - New code or data from a third party keeps its license file next to it and gets a row in [NOTICE.md](NOTICE.md). Say MIT only together with what stays under the upstream licenses.
 
 ## Draft folder

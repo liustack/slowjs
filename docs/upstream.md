@@ -15,7 +15,7 @@ read_when:
 - **The Go side of `Intl` and `Temporal`** (`internal/gointl`) was copied from [go-intl](https://github.com/go-quickjs/go-intl) v0.6.1, commit `59e7b7a9f80bb90458f314e7d99efa4fb592dc3b`, once, and is changed here freely since: no later go-intl code is taken. Only its data is: the packs are made from the `data/` directory of the go-intl release in `internal/gointl/UPSTREAM`, cut to the locales of Chromium, with the time zones of `internal/gointl/qjstz` (see [upgrading.md](upgrading.md#updating-the-data-of-intl-internalgointl)).
 - **Everything else** is written for liustack/slowjs, or comes from a project named in [NOTICE.md](../NOTICE.md): the allocator (TLSF), the small libc of the engine (musl), the locale data and the Go side of `Intl` and `Temporal` (go-intl, ICU, Chromium).
 
-The authors of liustack/slowjs are in [AUTHORS-LIUSTACK](../AUTHORS-LIUSTACK).
+The authors of liustack/slowjs are in [AUTHORS](../AUTHORS).
 
 ## Taking QuickJS commits
 

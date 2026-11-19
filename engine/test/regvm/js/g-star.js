@@ -1,6 +1,6 @@
 // Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
-// Use of this source code is governed by the MIT license in LICENSE-MIT at the
+// Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 // yield* in the register loop (engine/regvm-ops-gen.h, the iterator ops of
 // W_GEN): delegation to a generator and to iterators made by hand, the

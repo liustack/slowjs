@@ -1,6 +1,6 @@
 // Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
-// Use of this source code is governed by the MIT license in LICENSE-MIT at the
+// Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 // The initializer of a for-in head, for (var x = f in o) in sloppy code (Annex
 // B), names an anonymous function, class or arrow function it gives to x, as

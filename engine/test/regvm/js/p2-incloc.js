@@ -1,6 +1,6 @@
 // Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
-// Use of this source code is governed by the MIT license in LICENSE-MIT at the
+// Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 // P2 of the register loop: inc_loc and dec_loc (x++ and x-- on a local, the
 // value unused) are ToNumeric(x) + 1 and - 1, not x + 1: strings, numeric
