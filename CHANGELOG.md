@@ -4,6 +4,8 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 
 ## [Unreleased]
 
+## [v0.31.10] - 2026-11-20
+
 ### Fixed
 
 - An `await` in an async function whose promise has a `constructor` getter that throws, or whose getter the call depth refuses, now throws that error at the `await`, as the specification says, so a `catch` or `finally` around it runs. The function stayed stuck at the `await` with its promise rejected.
