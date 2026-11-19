@@ -1,149 +1,107 @@
-// Copyright 2024 The quickjs-go Authors. All rights reserved.
-// Use of the source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
+// Copyright (c) 2026 The liustack/slowjs Authors.
+// SPDX-License-Identifier: MIT
+// Use of this source code is governed by the MIT license in LICENSE-MIT at the
+// root of this repository.
 
 package slowjs // import "github.com/liustack/slowjs"
 
+// Go functions that javascript calls through reflection: RegisterFunc,
+// RegisterHostFunc and the handlers of Then.
+
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
 )
 
-// goFunc is a Go function of RegisterFunc, RegisterHostFunc or Then, which the
-// engine keeps under an id (keepFunc) for the function objects that call it.
-type goFunc struct {
-	f            reflect.Value
-	in           []reflect.Type
-	name         string
-	out          []reflect.Type
-	variadicType reflect.Type
-	vm           *VM
-
-	minArgs int
-	maxArgs int
-
-	wantThis bool
-	hostFunc bool
-	// refs is set when a result that the call converts can hold a Value,
-	// or itself, by its type (holdsRefs), so that the call walks it.
-	refs bool
-}
-
-// RegisterFunc registers a Go function 'f' and makes it callable from
-// Javascript.
+// RegisterFunc makes the Go function f a function of the global object named
+// name, which javascript calls.
 //
-// The 'f' argument can be a regular Go function, a closure, a method
-// expression or a method value. All of them are called 'Go function' below.
+// f is any Go function: a function, a closure, a method expression or a
+// method value, with any number of parameters, variadic or not. With
+// wantThis, its first parameter gets the this of the call, which may be null
+// or undefined: it is not replaced by the global object.
 //
-// The Go function can have zero or more parameters. If 'wantThis' is true then
-// the first parameter of the Go function will get the Javascript value of
-// 'this'.  Depending on context, 'this' can be Javascript null or undefined.
+// Each argument is converted to the type of its parameter, as [VM.Eval]
+// converts a value: a number that is int32 is an int, other numbers float64,
+// an object an *Object, null a nil of a parameter that takes one. A parameter
+// of type [Value] gets the argument itself, valid only during the call: to
+// keep it, such as a resolve to call later, keep a Dup. An argument that
+// does not convert to its parameter, or a call with too few or too many
+// arguments, throws a TypeError.
 //
-// Go functions with multiple results return them as an Javascript array.
+// The result becomes a javascript value; several results become an array of
+// them. A nil error is null, and a non-nil one the string of its Error:
+// RegisterFunc throws nothing for an error. A result that fails to convert
+// throws a TypeError, as do a Value of another VM in a result and a result
+// that contains itself, such as a slice that is its own element. How the
+// results convert:
 //
-// Go nil errors are converted to Javascript null.
+//   - nil, a nil pointer, interface or map is null, a nil slice [].
+//     UndefinedValue and the zero Value are undefined, and so is [Undefined].
+//   - A bool, an integer, a float and a string become their javascript
+//     value, an integer outside int32 a float. *big.Int is a BigInt.
+//     *Object is its JSON parsed.
+//   - A slice is an array. A map with string or integer keys is an object of
+//     own data properties, in the order of the keys as strings.
+//   - A struct converts through encoding/json, and a value whose type has an
+//     Error method is the string of Error. A String method changes nothing.
+//   - A Value of the VM in a result is handed to the call: the result, an
+//     element of a slice or an array, a key or a value of a map and the
+//     target of a pointer each hand over one reference, which the call frees
+//     when it is done, whether the conversion succeeds, fails or panics. A
+//     copy of a Value is no new reference, only a Dup is, and a slice, map or
+//     pointer the results reach twice is still one. So a Go function that
+//     returns one of its Value arguments returns its Dup. The Values inside a
+//     struct or a value with an Error method stay the caller's.
 //
-// Go non-nil errors are converted to Javascript strings using the Error()
-// method.
-//
-// Any Go <-> Javascript failing type conversion between arguments/return
-// values throws a Javascript type error exception. So does a Value of
-// another VM among the results, which stays its owner's, and a result that
-// contains itself, such as a slice that is one of its own elements.
-//
-// The results hand the call one reference for each place in them that holds
-// a Value of the VM: a result, an element of a slice or an array, a key or a
-// value of a map, the target of a pointer, at any depth and through any
-// interface. The call frees these references when it is done, whether the
-// results convert, fail to convert or panic. A copy of a Value is not a new
-// reference, only Dup makes one, and a place the results reach twice,
-// through the same slice, map or pointer, is one reference. A struct
-// converts through encoding/json, and a value whose type has an Error method,
-// such as a []Value with one, converts to the string of Error: the Values in
-// either stay the caller's. A String method changes nothing. UndefinedValue
-// and the zero Value are undefined.
-//
-// Before it converts anything, the call takes a snapshot of the slices, maps
-// and pointers of the results that can hold a Value and of the references
-// they hold, and checks them for a cycle and for a Value of another VM.
-// Code of the program that the conversion runs, such as an Error or
-// MarshalJSON method, cannot change which references the call takes and
-// frees. The data with no Value in it, such as a string or an []int, is a
-// leaf the walk keeps: setting its place in the result to another leaf
-// afterwards changes nothing, but what the leaf points to, such as the
-// elements of an []int, is read when it converts. When no result type can
-// hold a Value, the call takes no snapshot, and the results are read when
-// they convert.
+// The results are looked at, for the Values they hold, a cycle and a Value of
+// another VM, before the conversion runs any code of the program, such as an
+// Error or a MarshalJSON method, which then cannot change which references
+// are taken and freed. Results whose types can hold no Value are not looked
+// at first: they are read as they convert.
 //
 // A long string argument or result, and a result of many elements or
-// properties, stop converting at Interrupt, the eval timeout or an
-// uncatchable error of the call, which the call then ends with, as a loop
-// of the engine does.
+// properties, stops converting at Interrupt, the eval timeout or an
+// uncatchable error of the call, which then ends with that error.
 //
-// There is a limit on the number of Go functions registered at once: about a
-// billion for each VM.
+// The function becomes the property name of the global object, writable and
+// configurable, not enumerable. It replaces a configurable property, one a
+// script set or a built-in such as Array. A property that is not
+// configurable, such as undefined, NaN, Infinity or a var or function of a
+// script, is kept, and RegisterFunc returns an error, as it does when the
+// global object is not extensible. The length of the function is the number
+// of parameters of f less one, and at least 0.
 //
-// The function becomes the property 'name' of the global object: writable,
-// configurable and not enumerable. A configurable property already there,
-// such as one a script assigned or a built-in like Array, is replaced. A
-// property that is not configurable, such as undefined, NaN, Infinity or one
-// a script declared with var or function, is kept and RegisterFunc returns an
-// error, as it does when the global object is not extensible. Registering a
-// name a Go function of this VM already has returns an error too, even when
-// a script has since deleted or replaced that function. The name is the one
-// javascript sees: invalid UTF-8 is replaced as Go decodes it (see Eval), so
-// two Go strings can be the same name, and a NUL byte, which would end the
-// name, is an error.
+// name is the name javascript sees: invalid UTF-8 in it is U+FFFD a byte, so
+// two Go strings can name one function. A NUL byte is an error. name should
+// be an identifier: it is not checked yet, and may be later. A name is
+// registered once per VM, even after a script deleted or replaced its
+// function. A VM holds about a billion Go functions at a time at most.
 //
-// Note: The 'name' argument should be a valid Javascript identifier. It is not
-// currently enforced but this may change later.
-//
-// For binding host objects (a DOM, console, fetch, …) prefer RegisterHostFunc,
-// which gives the more convenient single-return / error-throws-exception shape.
-//
-// A function javascript calls often, say once per item of a list, or one that
-// has to look like a built-in, is better a [Builtin]: it converts nothing and
-// uses no reflection, so a call costs far less.
+// For a host object prefer [VM.RegisterHostFunc]. A function called often,
+// or one that is to look like a built-in, is better as a [Builtin], which
+// converts nothing and uses no reflection, and costs far less.
 func (m *VM) RegisterFunc(name string, f any, wantThis bool) error {
 	if err := m.usable(); err != nil {
 		return err
 	}
-	return m.registerFunc(name, f, wantThis, false)
+	return m.register(name, f, wantThis, false)
 }
 
-// HostFunc is a Go function exposed to JavaScript by RegisterHostFunc. It
-// receives the call arguments already converted to Go values and returns a
-// single value to convert back to JS, or a non-nil error which is thrown as a
-// JavaScript exception.
-type HostFunc func(args []any) (any, error)
-
-// RegisterHostFunc exposes fn to JavaScript as a global function named name,
-// using the calling convention an embedding host wants: every JS call argument
-// arrives in the single []any slice (already converted to Go values), fn returns
-// exactly one value to convert back to JS, and a non-nil error is thrown as a
-// JavaScript exception.
+// RegisterHostFunc makes fn a function of the global object named name, which
+// javascript calls. Each argument of the call is converted to a Go value, as
+// [VM.Eval] converts a value, into the slice fn gets. The value fn returns is
+// converted back, by the rules of the results of [VM.RegisterFunc], Values
+// and their references too. A non-nil error is thrown as a TypeError with the
+// text of the error, and the value is not converted: the references it holds
+// are freed before the Error method of the error runs. Unlike RegisterFunc,
+// which makes the array [value, error] of the two, fn returns one value or
+// throws. name is as for RegisterFunc.
 //
-// The value fn returns is converted as a result of RegisterFunc is, and
-// hands the call its references to Values of the VM the same way, from a
-// snapshot of the value. A struct and a value whose type has an Error method
-// keep their Values, which stay the caller's. With a non-nil error the value
-// is not converted, and its references are freed before the Error method of
-// the error runs.
-//
-// This differs from RegisterFunc, whose reflection mapping turns a Go
-// multiple-return into a JS array and converts a returned error like any other
-// value (so a (value, error) pair becomes the array [value, error] rather than a
-// value-or-throw). RegisterHostFunc is the better fit for binding host objects;
-// RegisterFunc remains for direct, typed Go calls.
-//
-// Each call converts every argument to a Go value through reflection. A
-// function javascript calls often, or one that has to look like a built-in,
-// is better a [Builtin], which reads only the arguments it wants, as they
-// are.
-//
-// The name is handled as by RegisterFunc, including when the global object
-// already has it.
+// Each call converts every argument by reflection: a function called often
+// is better as a [Builtin].
 func (m *VM) RegisterHostFunc(name string, fn HostFunc) error {
 	if err := m.usable(); err != nil {
 		return err
@@ -151,69 +109,74 @@ func (m *VM) RegisterHostFunc(name string, fn HostFunc) error {
 	if fn == nil {
 		return fmt.Errorf("host func %q cannot be nil", name)
 	}
-
-	// Register a variadic adapter so every JS argument is collected into the one
-	// []any; the host flag makes callGo return fn's value directly and throw on a
-	// non-nil error, instead of array-wrapping the (value, error) pair.
-	return m.registerFunc(name, func(args ...any) (any, error) { return fn(args) }, false, true)
+	return m.register(name, func(args ...any) (any, error) { return fn(args) }, false, true)
 }
 
-func (m *VM) registerFunc(name string, f any, wantThis, host bool) (err error) {
-	if name == "" {
-		return fmt.Errorf("func name cannot be empty")
-	}
+// goFunc is a Go function that javascript calls, with what its calls need to
+// know of its type.
+type goFunc struct {
+	// name is the name the function was registered under in Go, for the
+	// errors of its calls and its panics.
+	name string
+	fn   reflect.Value
+	// in are the types of the parameters, without a variadic one, whose
+	// elements are of type rest.
+	in   []reflect.Type
+	rest reflect.Type
+	// min and max are the fewest and the most arguments of a call, max -1
+	// for no limit.
+	min, max int
+	// wantThis gives the first parameter the this of the call. host is set
+	// for RegisterHostFunc. refs is set when a result can hold a Value, so
+	// that a call takes the snapshot of its results.
+	wantThis, host, refs bool
+	nout                 int
+}
 
+// register makes the Go function f a global function of m named name, a
+// host function when host is set.
+func (m *VM) register(name string, f any, wantThis, host bool) error {
+	if name == "" {
+		return errors.New("func name cannot be empty")
+	}
 	jsName := validUTF8(name)
 	if strings.IndexByte(jsName, 0) >= 0 {
 		return fmt.Errorf("func name cannot contain a NUL byte: %q", name)
 	}
-
-	if _, ok := m.goFuncs[jsName]; ok {
+	if _, ok := m.registered[jsName]; ok {
 		return fmt.Errorf("func already registered: %s", name)
 	}
-
-	val := reflect.ValueOf(f)
-	typ := reflect.TypeOf(f)
-	if typ.Kind() != reflect.Func {
+	fv := reflect.ValueOf(f)
+	if fv.Kind() != reflect.Func || fv.IsNil() {
 		return fmt.Errorf("%s is not a function", name)
 	}
-
-	if wantThis && typ.NumIn() == 0 {
-		return fmt.Errorf("'wantThis' is true but 'f' has zero parameters")
+	ft := fv.Type()
+	if wantThis && ft.NumIn() == 0 {
+		return errors.New("'wantThis' is true but 'f' has zero parameters")
 	}
 
-	minArgs := typ.NumIn()
+	info := &goFunc{name: name, fn: fv, wantThis: wantThis, host: host, nout: ft.NumOut()}
+	n := ft.NumIn()
+	info.in = make([]reflect.Type, n)
+	for i := range n {
+		info.in[i] = ft.In(i)
+	}
+	info.min, info.max = n, n
 	if wantThis {
-		minArgs--
+		info.min--
+		info.max--
 	}
-	maxArgs := minArgs
-	var vt reflect.Type
-	if typ.IsVariadic() {
-		maxArgs = -1
-		sliceT := typ.In(typ.NumIn() - 1)
-		vt = sliceT.Elem()
-		minArgs--
+	if ft.IsVariadic() {
+		info.rest = info.in[n-1].Elem()
+		info.in = info.in[:n-1]
+		info.min--
+		info.max = -1
 	}
-	info := &goFunc{
-		f:            val,
-		maxArgs:      maxArgs,
-		minArgs:      minArgs,
-		name:         name,
-		variadicType: vt,
-		vm:           m,
-		wantThis:     wantThis,
-		hostFunc:     host,
-	}
-	for i := 0; i < typ.NumIn(); i++ {
-		info.in = append(info.in, typ.In(i))
-	}
-	if maxArgs < 0 {
-		info.in = info.in[:len(info.in)-1]
-	}
-	for i := 0; i < typ.NumOut(); i++ {
-		info.out = append(info.out, typ.Out(i))
-		// The error of a host function is not converted.
-		if holdsRefs(typ.Out(i)) && !(host && i == 1) {
+	for i := range info.nout {
+		if host && i == 1 {
+			continue
+		}
+		if holdsRefs(ft.Out(i)) {
 			info.refs = true
 		}
 	}
@@ -222,225 +185,177 @@ func (m *VM) registerFunc(name string, f any, wantThis, host bool) (err error) {
 	if err != nil {
 		return err
 	}
-
-	argc := int32(typ.NumIn()) - 1
-	if argc < 0 {
-		argc = 0
-	}
-	if err := m.defineGoFunc(jsName, id, argc); err != nil {
+	if err := m.defineGoFunc(jsName, id, int32(max(n-1, 0))); err != nil {
 		return fmt.Errorf("cannot register func %s: %w", name, err)
 	}
-
-	if m.goFuncs == nil {
-		m.goFuncs = map[string]int32{}
+	if m.registered == nil {
+		m.registered = map[string]int32{}
 	}
-	m.goFuncs[jsName] = id
+	m.registered[jsName] = id
 	return nil
 }
 
-// defineGoFunc defines the global property name, a valid UTF-8 string without
-// NUL bytes, as a javascript function of length 'length' that calls the Go
-// function kept as id. The property is writable, configurable and not
-// enumerable, and it replaces a configurable property of that name. It does
-// not use JS_SetPropertyFunctionList, which is meant for new objects: it
-// aborts the process when the property already exists. When it fails, the
-// id is given up (goFuncFreed).
-func (m *VM) defineGoFunc(name string, id, length int32) error {
-	// Both the function's name and the atom copy the string. newGoFunction
-	// gives the id up when it makes no function.
-	f, err := m.newGoFunction(name, id, length)
+// defineGoFunc defines the global function name, of length length, that
+// calls the Go function m keeps under handle.
+func (m *VM) defineGoFunc(name string, handle, length int32) error {
+	f, err := m.newGoFunction(name, handle, length)
 	if err != nil {
 		return err
 	}
-
 	if err := m.defineGlobalFunc(name, f); err != nil {
-		m.goFuncFreed(id)
+		m.goFuncFreed(handle)
 		return err
 	}
-
 	return nil
 }
 
-// defineGlobalFunc defines the global property name, a valid UTF-8 string
-// without NUL bytes, as the function f, writable, configurable and not
-// enumerable, replacing a configurable property of that name. It takes f
-// whether it succeeds or not.
+// defineGlobalFunc defines the property name of the global object as f, as
+// Object.defineProperty does: writable, configurable and not enumerable. It
+// takes f, whether it succeeds or not. name is valid UTF-8 with no NUL byte.
 func (m *VM) defineGlobalFunc(name string, f jsValue) error {
 	atom, err := m.jsNewAtom(name)
 	if err != nil {
 		m.jsFreeValue(f)
 		return err
 	}
-
 	if atom == atomNull {
 		m.jsFreeValue(f)
 		return m.errFromException()
 	}
-
 	defer m.jsFreeAtom(atom)
-
-	g := m.globalObject()
-
+	g := m.jsGetGlobalObject()
 	defer m.jsFreeValue(g)
-
-	// JS_DefinePropertyValue takes f, also when it fails.
+	// It takes f, also when it fails.
 	if m.jsDefinePropertyValue(g, atom, f, propWritable|propConfigurable|propThrow) < 0 {
 		return m.errFromException()
 	}
-
 	return nil
 }
 
-var rvt = reflect.TypeOf(Value{})
-
-func isNative(t reflect.Type) bool {
-	return t == rvt
+// callbackFunc is the goFunc of fn, a handler of Then named name: one
+// argument, a Value valid during the call, and no result.
+func callbackFunc(m *VM, name string, fn func(Value)) *goFunc {
+	return &goFunc{name: name, fn: reflect.ValueOf(fn), in: []reflect.Type{rvt}, min: 1, max: 1}
 }
 
-// canBeNil reports whether nil is a valid value of type 't'. Javascript null
-// converts to a Go nil, so it can be passed only to a parameter able to hold
-// one. Coercing it to the zero value of, say, string or int would silently
-// make f(null) indistinguishable from f("") or f(0).
-func canBeNil(t reflect.Type) bool {
+// throwType throws a TypeError of msg and returns the exception.
+func (m *VM) throwType(msg string) jsValue {
+	return m.jsThrowError(errorKindType, msg)
+}
+
+// paramType is the type of the parameter that argument i of a call, counting
+// this, goes to.
+func (info *goFunc) paramType(i int) reflect.Type {
+	if i < len(info.in) {
+		return info.in[i]
+	}
+	return info.rest
+}
+
+// nilable reports whether a value of type t can be nil.
+func nilable(t reflect.Type) bool {
 	switch t.Kind() {
 	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice, reflect.UnsafePointer:
 		return true
 	}
-
 	return false
 }
 
-// callGoFunc converts the arguments of a call of info from javascript,
-// calls it and converts its results.
-func (m *VM) callGoFunc(info *goFunc, this jsValue, argc int32, argv uintptr) (r jsValue) {
-	haveArgs := int(argc)
-	if haveArgs < info.minArgs {
-		return m.jsThrowError(errorKindType, fmt.Sprintf("not enough arguments in call to %s", info.name))
+// callGoFunc calls the Go function of info with the argc arguments at argv,
+// in the memory of the engine, and this, and returns its result or the
+// exception it threw.
+func (m *VM) callGoFunc(info *goFunc, this jsValue, argc int32, argv uintptr) jsValue {
+	n := int(argc)
+	if n < info.min {
+		return m.throwType("not enough arguments in call to " + info.name)
 	}
-
-	if info.maxArgs >= 0 && haveArgs > info.maxArgs {
-		return m.jsThrowError(errorKindType, fmt.Sprintf("too many arguments in call to %s", info.name))
+	if info.max >= 0 && n > info.max {
+		return m.throwType("too many arguments in call to " + info.name)
 	}
-
-	var in []reflect.Value
-	i := 0
+	k := n
 	if info.wantThis {
-		switch {
-		case isNative(info.in[0]):
-			dup := dupValue(this)
-			defer m.jsFreeValue(dup)
-			in = append(in, reflect.ValueOf(Value{vm: m, v: dup}))
-		default:
-			v, err := m.value(this, false)
-			if err != nil {
-				return m.jsThrowError(errorKindType, fmt.Sprintf("calling %s: argument conversion error: %v", info.name, err))
-			}
-
-			rv := reflect.ValueOf(v)
-			switch {
-			case !rv.IsValid(): // Javascript null, m.value returns a nil any for it.
-				if !canBeNil(info.in[0]) {
-					return m.jsThrowError(errorKindType, fmt.Sprintf("calling %s: cannot assign null to %s", info.name, info.in[0]))
-				}
-
-				rv = reflect.Zero(info.in[0])
-			case !rv.Type().AssignableTo(info.in[0]):
-				return m.jsThrowError(errorKindType, fmt.Sprintf("calling %s: cannot assign %s to %s", info.name, rv.Type(), info.in[0]))
-			}
-
-			in = append(in, rv)
-		}
-		i++
+		k++
 	}
-	types := info.in[i:]
-	for i := 0; i < int(argc); i++ {
-		var typ reflect.Type
-		switch {
-		case i < len(types):
-			typ = types[i]
-		default:
-			typ = info.variadicType
-		}
-		switch {
-		case isNative(typ):
-			dup := dupValue(valueAt(argv))
-			defer m.jsFreeValue(dup)
-			in = append(in, reflect.ValueOf(Value{vm: m, v: dup}))
-		default:
-			v, err := m.value(valueAt(argv), false)
-			if err != nil {
-				return m.jsThrowError(errorKindType, fmt.Sprintf("calling %s: argument conversion error: %v", info.name, err))
+	args := make([]reflect.Value, k)
+	// The Dups that the parameters of type Value get, freed when the call is
+	// done.
+	var buf [4]jsValue
+	held := buf[:0]
+	defer func() { m.freeAll(held) }()
+	for i := range k {
+		x := this
+		if info.wantThis {
+			if i > 0 {
+				x = valueAt(argv + uintptr(i-1)*sizeofJsValue)
 			}
-
-			rv := reflect.ValueOf(v)
-			switch {
-			case !rv.IsValid(): // Javascript null, m.value returns a nil any for it.
-				if !canBeNil(typ) {
-					return m.jsThrowError(errorKindType, fmt.Sprintf("calling %s: cannot assign null to %s", info.name, typ))
-				}
-
-				rv = reflect.Zero(typ)
-			case !rv.Type().AssignableTo(typ):
-				return m.jsThrowError(errorKindType, fmt.Sprintf("calling %s: cannot assign %s to %s", info.name, rv.Type(), typ))
-			}
-
-			in = append(in, rv)
+		} else {
+			x = valueAt(argv + uintptr(i)*sizeofJsValue)
 		}
-		argv += sizeofJsValue
+		t := info.paramType(i)
+		if t == rvt {
+			d := dupValue(x)
+			held = append(held, d)
+			args[i] = reflect.ValueOf(Value{vm: m, v: d})
+			continue
+		}
+		g, err := m.value(x, false)
+		if err != nil {
+			return m.throwType(fmt.Sprintf("calling %s: argument conversion error: %v", info.name, err))
+		}
+		if g == nil {
+			if !nilable(t) {
+				return m.throwType(fmt.Sprintf("calling %s: cannot assign null to %v", info.name, t))
+			}
+			args[i] = reflect.Zero(t)
+			continue
+		}
+		a := reflect.ValueOf(g)
+		if !a.Type().AssignableTo(t) {
+			return m.throwType(fmt.Sprintf("calling %s: cannot assign %v to %v", info.name, a.Type(), t))
+		}
+		args[i] = a
 	}
 
-	out := info.f.Call(in)
+	out := info.fn.Call(args)
 
-	// The results hand the call the references they hold, which it frees
-	// once it is done with them, whatever it does. A result whose type can
-	// hold a Value converts from its snapshot (see result.go).
+	var r jsValue
 	var err error
-
-	// A host function (RegisterHostFunc) has the fixed shape func(...any) (any,
-	// error): return its single value, or throw a JS exception for a non-nil
-	// error — rather than array-wrapping the (value, error) pair.
-	if info.hostFunc {
-		if e, _ := out[1].Interface().(error); e != nil {
-			// The value is not converted. Its references are freed before
-			// Error, which can panic, runs.
+	switch {
+	case info.host:
+		if e := out[1]; !e.IsNil() {
 			if info.refs {
+				// Before Error, which may panic: the references go first.
 				m.dropResult(out[0])
 			}
-			return m.jsThrowError(errorKindType, e.Error())
+			return m.throwType(e.Interface().(error).Error())
 		}
-		if info.refs {
-			r, err = m.convertResults(out[:1], false)
-		} else {
-			r, err = m.jsValue(out[0])
+		if r, err = m.oneResult(info, out[:1]); err != nil {
+			return m.throwType(fmt.Sprintf("callback %s: %v", info.name, err))
 		}
-		if err != nil {
-			return m.jsThrowError(errorKindType, fmt.Sprintf("callback %s: %v", info.name, err))
-		}
-		return r
-	}
-
-	switch len(info.out) {
-	case 0:
+	case info.nout == 0:
 		return undefined
-	case 1:
-		if info.refs {
-			r, err = m.convertResults(out, false)
-		} else {
-			r, err = m.jsValue(out[0])
-		}
-		if err != nil {
-			return m.jsThrowError(errorKindType, fmt.Sprintf("cannot convert value: %v", err))
+	case info.nout == 1:
+		if r, err = m.oneResult(info, out[:1]); err != nil {
+			return m.throwType(fmt.Sprintf("cannot convert value: %v", err))
 		}
 	default:
 		if info.refs {
 			r, err = m.convertResults(out, true)
 		} else {
-			r, err = m.jsArray(out)
+			r, err = m.jsArray(len(out), func(i int) reflect.Value { return out[i] })
+		}
+		if err != nil {
+			return m.throwType(fmt.Sprintf("callback %s: %v", info.name, err))
 		}
 	}
-	if err != nil {
-		return m.jsThrowError(errorKindType, fmt.Sprintf("callback %s: %v", info.name, err))
-	}
-
 	return r
+}
+
+// oneResult converts out, the one result of a call of info, or the value of
+// a host function.
+func (m *VM) oneResult(info *goFunc, out []reflect.Value) (jsValue, error) {
+	if info.refs {
+		return m.convertResults(out, false)
+	}
+	return m.jsValue(out[0])
 }

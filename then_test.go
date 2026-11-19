@@ -1,318 +1,301 @@
-// Copyright 2026 The quickjs-go Authors. All rights reserved.
-// Use of the source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
+// Copyright (c) 2026 The liustack/slowjs Authors.
+// SPDX-License-Identifier: MIT
+// Use of this source code is governed by the MIT license in LICENSE-MIT at the
+// root of this repository.
 
-package slowjs
+package slowjs // import "github.com/liustack/slowjs"
 
 import (
-	"errors"
+	"slices"
 	"testing"
 )
 
+// A Go function returns the promise of a capability it made, and settles it
+// later from Go.
 func TestGoFuncReturnsPromise(t *testing.T) {
 	t.Run("eval_value_then", func(t *testing.T) {
 		m := newTestVM(t)
-
 		var pc *PromiseCapability
-		m.RegisterFunc("goDelayed", func() Value {
+		if err := m.RegisterFunc("goDelayed", func() Value {
 			var err error
-			pc, err = m.NewPromiseCapability()
-			if err != nil {
-				t.Fatalf("NewPromiseCapability failed: %v", err)
+			if pc, err = m.NewPromiseCapability(); err != nil {
+				t.Fatal(err)
 			}
 			return pc.Promise
-		}, false)
-
-		v, err := m.EvalValue(`goDelayed().then(v => "ok: " + v)`, EvalGlobal)
-		if err != nil {
-			t.Fatalf("EvalValue failed: %v", err)
+		}, false); err != nil {
+			t.Fatal(err)
 		}
-		defer v.Free()
-
-		var got string
-		res, err := v.Then(func(v Value) {
-			a, _ := v.Any()
-			got = a.(string)
+		p, err := m.EvalValue(`goDelayed().then(v => 'ok: ' + v)`, EvalGlobal)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer p.Free()
+		var got []string
+		r, err := p.Then(func(v Value) {
+			s, err := v.Any()
+			if err != nil {
+				t.Error(err)
+			}
+			got = append(got, s.(string))
 		}, nil)
 		if err != nil {
-			t.Fatalf("Then failed: %v", err)
+			t.Fatal(err)
 		}
-		defer res.Free()
-
+		r.Free()
 		if _, err := pc.Resolve.Call(UndefinedValue, "from Go func"); err != nil {
-			t.Fatalf("Resolve failed: %v", err)
+			t.Fatal(err)
 		}
 		pc.Resolve.Free()
 		pc.Reject.Free()
-
 		if _, err := m.ExecutePendingJobs(); err != nil {
-			t.Fatalf("ExecutePendingJobs failed: %v", err)
+			t.Fatal(err)
 		}
-
-		if got != "ok: from Go func" {
-			t.Fatalf("got %q, want %q", got, "ok: from Go func")
+		if !slices.Equal(got, []string{"ok: from Go func"}) {
+			t.Fatalf("got %q", got)
 		}
 	})
 
 	t.Run("immediate", func(t *testing.T) {
 		m := newTestVM(t)
-
-		m.RegisterFunc("goImmediate", func() Value {
+		if err := m.RegisterFunc("goNow", func() Value {
 			pc, err := m.NewPromiseCapability()
 			if err != nil {
-				t.Fatalf("NewPromiseCapability failed: %v", err)
+				t.Fatal(err)
 			}
-			pc.Resolve.Call(UndefinedValue, "immediate")
-			p := pc.Promise
+			if _, err := pc.Resolve.Call(UndefinedValue, "immediate"); err != nil {
+				t.Fatal(err)
+			}
 			pc.Resolve.Free()
 			pc.Reject.Free()
-			return p
-		}, false)
-
-		m.Eval(`
-			globalThis.out = 'pending';
-			goImmediate().then(v => { globalThis.out = 'ok: ' + v; });
-		`, EvalGlobal)
-
-		m.ExecutePendingJobs()
-
-		v, _ := m.Eval("globalThis.out;", EvalGlobal)
-		if v != "ok: immediate" {
-			t.Fatalf("got %q, want %q", v, "ok: immediate")
+			return pc.Promise
+		}, false); err != nil {
+			t.Fatal(err)
 		}
+		if _, err := m.Eval(`goNow().then(v => { globalThis.out = 'ok: ' + v })`, EvalGlobal); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := m.ExecutePendingJobs(); err != nil {
+			t.Fatal(err)
+		}
+		wantEval(t, m, `out`, "ok: immediate")
 	})
 
 	t.Run("await", func(t *testing.T) {
 		m := newTestVM(t)
-		pc := newPC(t, m)
-
-		m.RegisterFunc("goAsyncFunc", func() Value { return pc.Promise.Dup() }, false)
-
-		m.Eval(`
-			globalThis.out = 'pending';
-			(async () => {
-				var v = await goAsyncFunc();
-				globalThis.out = 'ok: ' + v;
-			})();
-		`, EvalGlobal)
-
-		pc.Resolve.Call(UndefinedValue, "awaited")
-		m.ExecutePendingJobs()
-
-		v, _ := m.Eval("globalThis.out;", EvalGlobal)
-		if v != "ok: awaited" {
-			t.Fatalf("got %q, want %q", v, "ok: awaited")
+		var pc *PromiseCapability
+		if err := m.RegisterFunc("goAwaited", func() Value {
+			var err error
+			if pc, err = m.NewPromiseCapability(); err != nil {
+				t.Fatal(err)
+			}
+			// The function keeps the promise, and so frees it with the rest.
+			return pc.Promise.Dup()
+		}, false); err != nil {
+			t.Fatal(err)
 		}
+		if _, err := m.Eval(`(async () => { globalThis.out = 'ok: ' + await goAwaited() })()`, EvalGlobal); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := pc.Resolve.Call(UndefinedValue, "awaited"); err != nil {
+			t.Fatal(err)
+		}
+		pc.Free()
+		if _, err := m.ExecutePendingJobs(); err != nil {
+			t.Fatal(err)
+		}
+		wantEval(t, m, `out`, "ok: awaited")
 	})
 
 	t.Run("multiple", func(t *testing.T) {
 		m := newTestVM(t)
-
-		var resolveVals, rejectVals []Value
-		m.RegisterFunc("goMulti", func() Value {
+		var pcs []*PromiseCapability
+		if err := m.RegisterFunc("goNext", func() Value {
 			pc, err := m.NewPromiseCapability()
 			if err != nil {
-				t.Fatalf("NewPromiseCapability failed: %v", err)
+				t.Fatal(err)
 			}
-			resolveVals = append(resolveVals, pc.Resolve)
-			rejectVals = append(rejectVals, pc.Reject)
+			pcs = append(pcs, pc)
 			return pc.Promise
-		}, false)
-
-		m.Eval(`
-			globalThis.results = [];
-			goMulti().then(v => globalThis.results.push('p1:' + v));
-			goMulti().then(v => globalThis.results.push('p2:' + v));
-			goMulti().then(v => globalThis.results.push('p3:' + v));
-		`, EvalGlobal)
-
-		for i := range 3 {
-			resolveVals[i].Call(UndefinedValue, i)
-			resolveVals[i].Free()
-			rejectVals[i].Free()
+		}, false); err != nil {
+			t.Fatal(err)
 		}
-
-		m.ExecutePendingJobs()
-
-		v, _ := m.Eval("globalThis.results;", EvalGlobal)
-		var results []string
-		v.(*Object).Into(&results)
-
-		want := []string{"p1:0", "p2:1", "p3:2"}
-		for i, w := range want {
-			if results[i] != w {
-				t.Fatalf("result[%d] = %q, want %q", i, results[i], w)
+		if _, err := m.Eval(`globalThis.results = [];
+			goNext().then(v => results.push('p1:' + v));
+			goNext().then(v => results.push('p2:' + v));
+			goNext().then(v => results.push('p3:' + v));`, EvalGlobal); err != nil {
+			t.Fatal(err)
+		}
+		for i, pc := range pcs {
+			if _, err := pc.Resolve.Call(UndefinedValue, i); err != nil {
+				t.Fatal(err)
 			}
+			pc.Resolve.Free()
+			pc.Reject.Free()
+		}
+		if _, err := m.ExecutePendingJobs(); err != nil {
+			t.Fatal(err)
+		}
+		r, err := m.Eval(`results`, EvalGlobal)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got []string
+		if err := r.(*Object).Into(&got); err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Equal(got, []string{"p1:0", "p2:1", "p3:2"}) {
+			t.Fatalf("got %q", got)
 		}
 	})
 }
 
 func TestThen(t *testing.T) {
-	t.Run("fulfill_and_bypass_reject", func(t *testing.T) {
+	collect := func(out *[]string, tag string) func(Value) {
+		return func(v Value) {
+			s, err := v.Any()
+			if err != nil {
+				panic(err)
+			}
+			*out = append(*out, tag+":"+s.(string))
+		}
+	}
+	for _, c := range []struct {
+		name   string
+		settle func(pc *PromiseCapability) (any, error)
+		want   []string
+	}{
+		{"fulfilled", func(pc *PromiseCapability) (any, error) { return pc.Resolve.Call(UndefinedValue, "good") }, []string{"fulfilled:good"}},
+		{"rejected", func(pc *PromiseCapability) (any, error) { return pc.Reject.Call(UndefinedValue, "fail") }, []string{"rejected:fail"}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			m := newTestVM(t)
+			pc := newPC(t, m)
+			var got []string
+			r, err := pc.Promise.Then(collect(&got, "fulfilled"), collect(&got, "rejected"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer r.Free()
+			if _, err := c.settle(pc); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := m.ExecutePendingJobs(); err != nil {
+				t.Fatal(err)
+			}
+			if !slices.Equal(got, c.want) {
+				t.Fatalf("got %q, want %q", got, c.want)
+			}
+		})
+	}
+	t.Run("no handlers", func(t *testing.T) {
 		m := newTestVM(t)
 		pc := newPC(t, m)
-
-		var fulfillStr, rejectStr string
-		res, err := pc.Promise.Then(
-			func(v Value) { s, _ := v.Any(); fulfillStr = s.(string) },
-			func(v Value) { s, _ := v.Any(); rejectStr = s.(string) },
-		)
+		r, err := pc.Promise.Then(nil, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer res.Free()
-
-		pc.Resolve.Call(UndefinedValue, "good")
+		defer r.Free()
+		if _, err := pc.Resolve.Call(UndefinedValue, 1); err != nil {
+			t.Fatal(err)
+		}
 		if _, err := m.ExecutePendingJobs(); err != nil {
 			t.Fatal(err)
 		}
-
-		if fulfillStr != "good" || rejectStr != "" {
-			t.Fatalf("fulfill=%q reject=%q, want fulfill=%q reject=\"\"", fulfillStr, rejectStr, "good")
-		}
 	})
-
-	t.Run("reject", func(t *testing.T) {
-		m := newTestVM(t)
-		pc := newPC(t, m)
-
-		var got string
-		res, err := pc.Promise.Then(nil, func(v Value) {
-			s, _ := v.Any()
-			got = "err: " + s.(string)
-		})
-		if err != nil {
-			t.Fatal(err)
+	t.Run("no VM", func(t *testing.T) {
+		if _, err := UndefinedValue.Then(nil, nil); err == nil {
+			t.Fatal("Then of a Value of no VM returned no error")
 		}
-		defer res.Free()
-
-		pc.Reject.Call(UndefinedValue, "fail")
-		m.ExecutePendingJobs()
-
-		if got != "err: fail" {
-			t.Fatalf("got %q, want %q", got, "err: fail")
-		}
-	})
-
-	t.Run("nil_callbacks", func(t *testing.T) {
-		m := newTestVM(t)
-		pc := newPC(t, m)
-
-		res, err := pc.Promise.Then(nil, nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer res.Free()
-
-		pc.Resolve.Call(UndefinedValue, "any")
-		m.ExecutePendingJobs()
 	})
 }
 
+// The handler that never runs is let go of with the one that does. When only
+// the one that ran was freed, 16,384 calls used up the 32,767 handles of a
+// VM.
 func TestThenLeak(t *testing.T) {
 	m := newTestVM(t)
-
-	// Each Then call allocates 2 magics (one per handler). The old
-	// release-on-fire approach leaked the unfired sibling handler's magic,
-	// so 2*N magics would pile up and exhaust the pool (MaxInt16=32767).
-	// With the finalizer approach, both magics are freed when the promise
-	// settles, so we can run many more iterations than the pool allows.
-	//
-	// math.MaxInt16 = 32767. Each iteration creates 2 handlers. Without
-	// the fix, iteration 16384 exhausts the pool. Run 40000 iterations to
-	// definitively prove the fix works.
-	const n = 40000
-	for i := range n {
+	for i := range 40000 {
 		pc, err := m.NewPromiseCapability()
 		if err != nil {
-			t.Fatal(err)
+			t.Fatalf("call %d: %v", i, err)
 		}
-
-		res, err := pc.Promise.Then(func(Value) {}, func(Value) {})
+		r, err := pc.Promise.Then(func(Value) {}, func(Value) {})
 		if err != nil {
-			t.Fatalf("Then failed at iteration %d: %v", i, err)
+			t.Fatalf("call %d: %v", i, err)
 		}
-		res.Free()
-
-		if _, err := pc.Resolve.Call(UndefinedValue, "ok"); err != nil {
-			t.Fatalf("Resolve failed at iteration %d: %v", i, err)
+		r.Free()
+		if _, err := pc.Resolve.Call(UndefinedValue, i); err != nil {
+			t.Fatalf("call %d: %v", i, err)
 		}
 		if _, err := m.ExecutePendingJobs(); err != nil {
-			t.Fatalf("ExecutePendingJobs failed at iteration %d: %v", i, err)
+			t.Fatalf("call %d: %v", i, err)
 		}
 		pc.Free()
 	}
 }
 
-// The handlers of Then are let go when the engine frees the functions that
-// call them: once the promise settles and its job ran, the one that did not
-// run as well, and with the promise when it never settles.
+// The Go functions of the handlers are held while the engine holds the
+// functions that call them, and no longer: after the promise settles and its
+// jobs ran, or once a promise that never settles is freed.
 func TestThenReleasesHandlers(t *testing.T) {
 	t.Run("settled", func(t *testing.T) {
 		m := newTestVM(t)
+		pc := newPC(t, m)
 		n := heldFuncs(m)
-		pc, err := m.NewPromiseCapability()
+		fulfilled, rejected := 0, 0
+		r, err := pc.Promise.Then(func(Value) { fulfilled++ }, func(Value) { rejected++ })
 		if err != nil {
 			t.Fatal(err)
 		}
-		ran := 0
-		res, err := pc.Promise.Then(func(Value) { ran++ }, func(Value) { t.Error("onRejected ran") })
-		if err != nil {
-			t.Fatal(err)
-		}
+		r.Free()
 		if got := heldFuncs(m); got != n+2 {
-			t.Fatalf("%d Go functions held after Then, want %d", got, n+2)
+			t.Fatalf("after Then %d Go functions are held, want %d", got, n+2)
 		}
-		res.Free()
-		if _, err := pc.Resolve.Call(UndefinedValue, "ok"); err != nil {
+		if _, err := pc.Resolve.Call(UndefinedValue, 1); err != nil {
 			t.Fatal(err)
 		}
-		pc.Free()
 		if _, err := m.ExecutePendingJobs(); err != nil {
 			t.Fatal(err)
 		}
-		if ran != 1 {
-			t.Fatalf("onFulfilled ran %d times, want 1", ran)
-		}
 		if got := heldFuncs(m); got != n {
-			t.Fatalf("%d Go functions held after the job ran, want %d", got, n)
+			t.Fatalf("after the jobs %d Go functions are held, want %d", got, n)
+		}
+		if fulfilled != 1 || rejected != 0 {
+			t.Fatalf("onFulfilled ran %d times and onRejected %d, want 1 and 0", fulfilled, rejected)
 		}
 	})
-
 	t.Run("pending", func(t *testing.T) {
 		m := newTestVM(t)
-		n := heldFuncs(m)
 		pc, err := m.NewPromiseCapability()
 		if err != nil {
 			t.Fatal(err)
 		}
-		res, err := pc.Promise.Then(func(Value) { t.Error("onFulfilled ran") }, nil)
+		n := heldFuncs(m)
+		r, err := pc.Promise.Then(func(Value) {}, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
-		res.Free()
+		r.Free()
 		if got := heldFuncs(m); got != n+1 {
-			t.Fatalf("%d Go functions held after Then, want %d", got, n+1)
+			t.Fatalf("after Then %d Go functions are held, want %d", got, n+1)
 		}
 		pc.Free()
 		if got := heldFuncs(m); got != n {
-			t.Fatalf("%d Go functions held after the promise was freed, want %d", got, n)
+			t.Fatalf("after the promise was freed %d Go functions are held, want %d", got, n)
 		}
 	})
 }
 
-// Then returns what a getter of the then of the promise throws, and leaves
-// no exception pending.
+// A then getter that throws is the error of Then, and leaves nothing pending.
 func TestThenGetterThrows(t *testing.T) {
 	m := newTestVM(t)
-	p := evalValueOrFatal(t, m, `const p = Promise.resolve(1)
-Object.defineProperty(p, "then", { get() { throw new RangeError("original") } })
-p`)
+	p := evalValueOrFatal(t, m, `(() => {
+		const p = Promise.resolve(1);
+		Object.defineProperty(p, 'then', { get() { throw new RangeError('original') } });
+		return p;
+	})()`)
 	defer p.Free()
 	_, err := p.Then(func(Value) {}, nil)
-	var e *Error
-	if !errors.As(err, &e) || e.Name != "RangeError" || e.Message != "original" {
-		t.Fatalf("got %v, want the RangeError the getter threw", err)
-	}
+	wantError(t, err, "RangeError", "original")
 	wantNoPendingException(t, m)
 }

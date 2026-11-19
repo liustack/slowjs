@@ -1,57 +1,70 @@
-// Copyright 2024 The quickjs-go Authors. All rights reserved.
-// Use of the source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
+// Copyright (c) 2026 The liustack/slowjs Authors.
+// SPDX-License-Identifier: MIT
+// Use of this source code is governed by the MIT license in LICENSE-MIT at the
+// root of this repository.
 
 package slowjs // import "github.com/liustack/slowjs"
 
 import "testing"
 
+// Nothing runs the reactions of promises but ExecutePendingJobs, and it runs
+// them all: chains, awaits, and the siblings of a reaction that throws.
 func TestExecutePendingJobsDrains(t *testing.T) {
-	vm, err := NewVM()
-	if err != nil {
+	t.Run("chain", func(t *testing.T) {
+		m := newTestVM(t)
+		if _, err := m.Eval(`globalThis.x = 0; Promise.resolve().then(() => { x = 1 }).then(() => { x = 2 })`, EvalGlobal); err != nil {
+			t.Fatal(err)
+		}
+		wantEval(t, m, `x`, 0)
+		n, err := m.ExecutePendingJobs()
+		if err != nil || n < 2 {
+			t.Fatalf("ran %d jobs, %v", n, err)
+		}
+		wantEval(t, m, `x`, 2)
+	})
+	t.Run("await", func(t *testing.T) {
+		m := newTestVM(t)
+		if _, err := m.Eval(`globalThis.y = 0; (async () => { y = (await 41) + 1 })()`, EvalGlobal); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := m.ExecutePendingJobs(); err != nil {
+			t.Fatal(err)
+		}
+		wantEval(t, m, `y`, 42)
+	})
+	t.Run("throw", func(t *testing.T) {
+		m := newTestVM(t)
+		// The throw rejects the promise then returned: it is no error of
+		// the drain, and the other reaction runs.
+		if _, err := m.Eval(`globalThis.z = 0;
+			Promise.resolve().then(() => { throw new Error('in a reaction') });
+			Promise.resolve().then(() => { z = 9 })`, EvalGlobal); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := m.ExecutePendingJobs(); err != nil {
+			t.Fatal(err)
+		}
+		wantEval(t, m, `z`, 9)
+	})
+	t.Run("empty", func(t *testing.T) {
+		m := newTestVM(t)
+		if n, err := m.ExecutePendingJobs(); n != 0 || err != nil {
+			t.Fatalf("got %d, %v, want 0, nil", n, err)
+		}
+	})
+}
+
+// A queue that feeds itself is cut, with an error.
+func TestExecutePendingJobsCap(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs a million jobs")
+	}
+	m := newTestVM(t)
+	if _, err := m.Eval(`(function again() { Promise.resolve().then(again) })()`, EvalGlobal); err != nil {
 		t.Fatal(err)
 	}
-	defer vm.Close()
-
-	// Chained Promise reactions run only once the jobs are drained.
-	if _, err := vm.Eval(`globalThis.x = 0; Promise.resolve().then(function(){ globalThis.x = 1; }).then(function(){ globalThis.x = 2; });`, EvalGlobal); err != nil {
-		t.Fatal(err)
-	}
-	if r, _ := vm.Eval(`globalThis.x`, EvalGlobal); r != 0 {
-		t.Fatalf("before drain x=%v, want 0 (reactions must not run on their own)", r)
-	}
-	n, err := vm.ExecutePendingJobs()
-	if err != nil {
-		t.Fatalf("ExecutePendingJobs: %v", err)
-	}
-	if n < 2 {
-		t.Errorf("ran %d jobs, want >= 2 (two chained .then)", n)
-	}
-	if r, _ := vm.Eval(`globalThis.x`, EvalGlobal); r != 2 {
-		t.Errorf("after drain x=%v, want 2", r)
-	}
-
-	// async/await resumes via the job queue.
-	if _, err := vm.Eval(`globalThis.y = 0; (async function(){ globalThis.y = (await 41) + 1; })();`, EvalGlobal); err != nil {
-		t.Fatal(err)
-	}
-	vm.ExecutePendingJobs()
-	if r, _ := vm.Eval(`globalThis.y`, EvalGlobal); r != 42 {
-		t.Errorf("after drain y=%v, want 42 (await resumed)", r)
-	}
-
-	// A .then() that throws is an unhandled rejection, not a drain error; the other
-	// queued jobs still run.
-	if _, err := vm.Eval(`globalThis.z = 0; Promise.resolve().then(function(){ throw new Error("boom"); }); Promise.resolve().then(function(){ globalThis.z = 9; });`, EvalGlobal); err != nil {
-		t.Fatal(err)
-	}
-	vm.ExecutePendingJobs()
-	if r, _ := vm.Eval(`globalThis.z`, EvalGlobal); r != 9 {
-		t.Errorf("after a throwing .then, z=%v, want 9 (sibling jobs still run)", r)
-	}
-
-	// Draining an empty queue is a no-op.
-	if got, err := vm.ExecutePendingJobs(); err != nil || got != 0 {
-		t.Errorf("empty drain = (%d, %v), want (0, nil)", got, err)
+	n, err := m.ExecutePendingJobs()
+	if n != maxPendingJobs || err == nil || err.Error() != "slowjs: aborted draining after 1048576 pending jobs" {
+		t.Fatalf("got %d, %v", n, err)
 	}
 }

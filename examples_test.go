@@ -1,252 +1,238 @@
-// Copyright 2024 The quickjs-go Authors. All rights reserved.
-// Use of the source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
+// Copyright (c) 2026 The liustack/slowjs Authors.
+// SPDX-License-Identifier: MIT
+// Use of this source code is governed by the MIT license in LICENSE-MIT at the
+// root of this repository.
 
-package slowjs // import "github.com/liustack/slowjs"
-
-// https://sangupta.com/tech/parsing-typescript-in-go-with-quickjs.html
+package slowjs_test
 
 import (
+	"errors"
 	"fmt"
 	"time"
+
+	"github.com/liustack/slowjs"
 )
 
-// JSON marshalling.
+// newVM is NewVM for an example, which stops at an error.
+func newVM() *slowjs.VM {
+	m, err := slowjs.NewVM()
+	if err != nil {
+		panic(err)
+	}
+	return m
+}
+
+// object is the result of an object literal, as the examples of Object use it.
+func object() *slowjs.Object {
+	m := newVM()
+	defer m.Close()
+	v, err := m.Eval(`({a: 42 + 314, b: 'foo'})`, slowjs.EvalGlobal)
+	if err != nil {
+		panic(err)
+	}
+	return v.(*slowjs.Object)
+}
+
 func ExampleObject_MarshalJSON() {
-	m, _ := NewVM()
-	defer m.Close()
-	obj, _ := m.Eval("obj = {a: 42+314, b: 'foo'}; obj;", EvalGlobal)
-	s, _ := (obj.(*Object).MarshalJSON())
-	fmt.Printf("%s\n", s)
+	b, err := object().MarshalJSON()
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(string(b))
 	// Output:
 	// {"a":356,"b":"foo"}
 }
 
-// JSON marshalling.
 func ExampleObject_String() {
-	m, _ := NewVM()
-	defer m.Close()
-	obj, _ := m.Eval("obj = {a: 42+314, b: 'foo'}; obj;", EvalGlobal)
-	fmt.Printf("%s\n", obj)
+	fmt.Printf("%s\n", object())
 	// Output:
 	// {"a":356,"b":"foo"}
 }
 
-// JSON unmarshalling into native Go struct.
 func ExampleObject_Into() {
-	m, _ := NewVM()
-	defer m.Close()
-	obj, _ := m.Eval("obj = {a: 42+314, b: 'foo'}; obj;", EvalGlobal)
-	var dst struct {
+	var s struct {
 		A int    `json:"a"`
 		B string `json:"b"`
 	}
-	obj.(*Object).Into(&dst)
-	fmt.Printf("%#v\n", dst)
+	if err := object().Into(&s); err != nil {
+		panic(err)
+	}
+	fmt.Printf("%#v\n", s)
 	// Output:
 	// struct { A int "json:\"a\""; B string "json:\"b\"" }{A:356, B:"foo"}
 }
 
-// Call a Javascript function.
 func ExampleVM_Call_function() {
-	m, _ := NewVM()
+	m := newVM()
 	defer m.Close()
 	fmt.Println(m.Call("parseInt", "1234"))
 	// Output:
 	// 1234 <nil>
 }
 
-// Call a Javascript method.
 func ExampleVM_Call_method() {
-	m, _ := NewVM()
+	m := newVM()
 	defer m.Close()
 	fmt.Println(m.Call("Math.abs", -1234))
 	// Output:
 	// 1234 <nil>
 }
 
-// Getting exception.
 func ExampleVM_Eval_exception() {
-	m, _ := NewVM()
+	m := newVM()
 	defer m.Close()
-	fmt.Println(m.Eval("throw new Error('failed');", EvalGlobal))
+	fmt.Println(m.Eval(`throw new Error('failed')`, slowjs.EvalGlobal))
 	// Output:
 	// <nil> Error: failed
 }
 
-// Evaluate a simple Javascript expression.
 func ExampleVM_Eval_expression() {
-	m, _ := NewVM()
+	m := newVM()
 	defer m.Close()
-	fmt.Println(m.Eval("1+2", EvalGlobal))
+	fmt.Println(m.Eval(`1 + 2`, slowjs.EvalGlobal))
 	// Output:
 	// 3 <nil>
 }
 
-// Object example.
 func ExampleVM_Eval_object() {
-	m, _ := NewVM()
+	m := newVM()
 	defer m.Close()
-	fmt.Println(m.Eval("obj = {a: 42+314, b: 'foo'}; obj;", EvalGlobal))
+	fmt.Println(m.Eval(`({a: 42 + 314, b: 'foo'})`, slowjs.EvalGlobal))
 	// Output:
 	// {"a":356,"b":"foo"} <nil>
 }
 
-// Call error returning Go function from Javascript.
+// A Go error a function returns is a string to javascript, not a throw.
 func ExampleVM_RegisterFunc_error() {
-	m, _ := NewVM()
+	m := newVM()
 	defer m.Close()
-	m.RegisterFunc("gofunc", func(a int) error {
+	if err := m.RegisterFunc("check", func(a int) error {
 		if a < 0 {
-			return fmt.Errorf("negative")
+			return errors.New("negative")
 		}
 		return nil
-	}, false)
-	fmt.Println(m.Eval("gofunc(-1)", EvalGlobal))
-	fmt.Println(m.Eval("gofunc(1)", EvalGlobal))
+	}, false); err != nil {
+		panic(err)
+	}
+	fmt.Println(m.Eval(`check(-1)`, slowjs.EvalGlobal))
+	fmt.Println(m.Eval(`check(1)`, slowjs.EvalGlobal))
 	// Output:
 	// negative <nil>
 	// <nil> <nil>
 }
 
-// Call multiple return Go function from Javascript.
+// Several results are an array.
 func ExampleVM_RegisterFunc_multipleReturn() {
-	m, _ := NewVM()
+	m := newVM()
 	defer m.Close()
-	m.RegisterFunc("gofunc", func(a, b int) (int, int) { return 10 * a, 100 * b }, false)
-	fmt.Println(m.Eval("gofunc(2, 3)", EvalGlobal))
+	if err := m.RegisterFunc("scale", func(a, b int) (int, int) { return 10 * a, 100 * b }, false); err != nil {
+		panic(err)
+	}
+	fmt.Println(m.Eval(`scale(2, 3)`, slowjs.EvalGlobal))
 	// Output:
 	// [20,300] <nil>
 }
 
-// Call single return Go function from Javascript.
 func ExampleVM_RegisterFunc_singleReturn() {
-	m, _ := NewVM()
+	m := newVM()
 	defer m.Close()
-	m.RegisterFunc("gofunc", func(a, b, c int) int { return a + b*c }, false)
-	fmt.Println(m.Eval("gofunc(2, 3, 5)", EvalGlobal))
+	if err := m.RegisterFunc("madd", func(a, b, c int) int { return a + b*c }, false); err != nil {
+		panic(err)
+	}
+	fmt.Println(m.Eval(`madd(2, 3, 5)`, slowjs.EvalGlobal))
 	// Output:
 	// 17 <nil>
 }
 
-// Call void Go function from Javascript.
+// A function with no result returns undefined.
 func ExampleVM_RegisterFunc_void() {
-	m, _ := NewVM()
+	m := newVM()
 	defer m.Close()
-	m.RegisterFunc("gofunc", func(a, b, c int) { fmt.Println(a + b*c) }, false)
-	fmt.Println(m.Eval("gofunc(2, 3, 5)", EvalGlobal))
+	if err := m.RegisterFunc("show", func(a, b, c int) { fmt.Println(a + b*c) }, false); err != nil {
+		panic(err)
+	}
+	fmt.Println(m.Eval(`show(2, 3, 5)`, slowjs.EvalGlobal))
 	// Output:
 	// 17
 	// undefined <nil>
 }
 
-// Passing undefined Javascript 'this' to a Go function.
+// Called on its own, a function that wants this gets undefined.
 func ExampleVM_RegisterFunc_thisNull() {
-	m, _ := NewVM()
+	m := newVM()
 	defer m.Close()
-	m.RegisterFunc("gofunc", func(this any) any { return this }, true)
-	fmt.Println(m.Eval("gofunc()", EvalGlobal))
+	if err := m.RegisterFunc("gofunc", func(this any) any { return this }, true); err != nil {
+		panic(err)
+	}
+	fmt.Println(m.Eval(`gofunc()`, slowjs.EvalGlobal))
 	// Output:
 	// undefined <nil>
 }
 
-// Passing undefined Javascript 'this' to a Go function.
+// Undefined in an array is null in its JSON.
 func ExampleVM_RegisterFunc_thisNull2() {
-	m, _ := NewVM()
+	m := newVM()
 	defer m.Close()
-	m.RegisterFunc("gofunc", func(this any, n int) (any, int) { return this, 10 * n }, true)
-	fmt.Println(m.Eval("gofunc(42)", EvalGlobal))
+	if err := m.RegisterFunc("gofunc", func(this any, a int) (any, int) { return this, 10 * a }, true); err != nil {
+		panic(err)
+	}
+	fmt.Println(m.Eval(`gofunc(42)`, slowjs.EvalGlobal))
 	// Output:
 	// [null,420] <nil>
 }
 
-// Passing Javascript 'this' to a Go function.
+// Called as a method, it gets the object, here as its JSON.
 func ExampleVM_RegisterFunc_thisNonNull() {
-	m, _ := NewVM()
+	m := newVM()
 	defer m.Close()
-	m.RegisterFunc("gofunc", func(this any) any { return this }, true)
-	fmt.Println(m.Eval("var obj = { foo: 314, method: gofunc }; obj.method()", EvalGlobal))
+	if err := m.RegisterFunc("gofunc", func(this any) any { return this }, true); err != nil {
+		panic(err)
+	}
+	fmt.Println(m.Eval(`({foo: 314, gofunc}).gofunc()`, slowjs.EvalGlobal))
 	// Output:
 	// {"foo":314} <nil>
 }
 
-// Passing Javascript 'this' to a Go function.
 func ExampleVM_RegisterFunc_thisNonNull2() {
-	m, _ := NewVM()
+	m := newVM()
 	defer m.Close()
-	m.RegisterFunc("gofunc", func(this any, n int) (any, int) { return this, 10 * n }, true)
-	fmt.Println(m.Eval("var obj = { foo: 314, method: gofunc }; obj.method(42)", EvalGlobal))
+	if err := m.RegisterFunc("gofunc", func(this any, a int) (any, int) { return this, 10 * a }, true); err != nil {
+		panic(err)
+	}
+	fmt.Println(m.Eval(`({foo: 314, gofunc}).gofunc(42)`, slowjs.EvalGlobal))
 	// Output:
 	// [{"foo":314},420] <nil>
 }
 
+// Each call has the whole timeout, and a loop that never ends stops when it
+// runs out.
 func ExampleVM_SetEvalTimeout() {
-	m, _ := NewVM()
+	m := newVM()
 	defer m.Close()
-
-	for _, timeout := range []time.Duration{100 * time.Millisecond, time.Second, 3 * time.Second} {
-		m.SetEvalTimeout(timeout)
-		t0 := time.Now()
-		r, err := m.Eval(`
-function f() {
-	var sink;
-	for (var i = 0; i < 10000; i++) {
-		sink += 42;
-		sink -= 42;
+	for _, d := range []time.Duration{100 * time.Millisecond, time.Second, 3 * time.Second} {
+		m.SetEvalTimeout(d)
+		start := time.Now()
+		v, err := m.Eval(`for (;;) {}`, slowjs.EvalGlobal)
+		took := time.Since(start)
+		fmt.Println(v, err, d, took >= d/2 && took <= d*3/2)
 	}
-}
-
-(function() {
-	for (var i = 0; i < 1000000; i++) {
-		f();
-	}
-	return 42;
-})();
-`, EvalGlobal)
-		d := time.Since(t0)
-		min := timeout / 2
-		max := timeout * 3 / 2
-		fmt.Println(r, err, timeout, d >= min && d <= max)
-	}
-
 	// Output:
 	// <nil> InternalError: interrupted 100ms true
 	// <nil> InternalError: interrupted 1s true
 	// <nil> InternalError: interrupted 3s true
 }
 
+// Another goroutine stops a script that would run for ever.
 func ExampleVM_Interrupt() {
-	const timeout = time.Second
-	m, _ := NewVM()
+	m := newVM()
 	defer m.Close()
-
+	start := time.Now()
 	go func() {
-		time.Sleep(timeout)
+		time.Sleep(time.Second)
 		m.Interrupt()
 	}()
-
-	t0 := time.Now()
-	r, err := m.Eval(`
-function f() {
-	var sink;
-	for (var i = 0; i < 10000; i++) {
-		sink += 42;
-		sink -= 42;
-	}
-}
-
-(function() {
-	for (var i = 0; i < 10000; i++) {
-		f();
-	}
-	return 42;
-})();
-`, EvalGlobal)
-	d := time.Since(t0)
-	step := timeout / 5
-	d = d / step * step
-	fmt.Println(r, err, d)
-
+	v, err := m.Eval(`for (;;) {}`, slowjs.EvalGlobal)
+	fmt.Println(v, err, time.Since(start).Truncate(200*time.Millisecond))
 	// Output:
 	// <nil> InternalError: interrupted 1s
 }

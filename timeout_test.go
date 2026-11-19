@@ -1,6 +1,7 @@
-// Copyright 2024 The quickjs-go Authors. All rights reserved.
-// Use of the source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
+// Copyright (c) 2026 The liustack/slowjs Authors.
+// SPDX-License-Identifier: MIT
+// Use of this source code is governed by the MIT license in LICENSE-MIT at the
+// root of this repository.
 
 package slowjs // import "github.com/liustack/slowjs"
 
@@ -8,244 +9,106 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 )
 
-// TestCallRearmsEvalTimeout is the regression test for a spurious "InternalError:
-// interrupted" after an idle period. The eval-timeout deadline is absolute
-// and was re-armed only by the Eval* functions, not Call/CallValue/ExecutePendingJobs.
-// So once the timeout elapsed after the last Eval — even while nothing ran — the next
-// Call was interrupted, and stayed interrupted. Those entry points now re-arm the
-// deadline like Eval; the runaway guard still interrupts a Call that genuinely runs
-// past the timeout.
-func TestCallRearmsEvalTimeout(t *testing.T) {
-	m, err := NewVM()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer m.Close()
+// pastDeadline is how far past a deadline a test sleeps to be sure it has
+// passed.
+const pastDeadline = 10 * time.Millisecond
 
-	// quick loops enough to reach an interrupt check, so the deadline is
-	// actually consulted while it runs. Its absolute runtime is deliberately kept out
-	// of the pass/fail decision below (see the widen step): on a slow emulated builder
-	// the loop alone can take >100ms, which must not be confused with a stale deadline.
-	if _, err := m.Eval("globalThis.quick = function(){ var s=0; for (var i=0;i<100000;i++) s+=i; return s }", EvalGlobal); err != nil {
-		t.Fatal(err)
-	}
-
-	// Arm a short deadline, then idle well past it. SetEvalTimeout only records the
-	// duration; the live deadline is (re-)armed by configureInterrupt inside the
-	// eval-family entry points, so after this idle the live deadline is in the past
-	// and the next such entry point is born already interrupted unless it re-arms.
-	const short = 50 * time.Millisecond
-	if err := m.SetEvalTimeout(short); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := m.Eval("0", EvalGlobal); err != nil { // cheapest way to arm the deadline
-		t.Fatal(err)
-	}
-	time.Sleep(short + 70*time.Millisecond)
-
-	// Widen the budget before dispatching. Because the live deadline is untouched by
-	// SetEvalTimeout, a regressed Call/ExecutePendingJobs keeps the stale, already
-	// elapsed short deadline and is interrupted, while a correct one re-arms to this
-	// wide budget. quick's own runtime cannot make that fail spuriously now: any
-	// bounded loop finishes far inside a multi-second budget even on the slowest
-	// emulated builders. (Before widening, quick racing the 50ms budget is exactly
-	// what made this test fail on slow hardware, e.g. linux/s390x.)
-	const wide = 10 * time.Second
-	if err := m.SetEvalTimeout(wide); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := m.Call("quick"); err != nil {
-		t.Fatalf("Call after idle was interrupted: %v", err)
-	}
-	if _, err := m.ExecutePendingJobs(); err != nil {
-		t.Fatalf("ExecutePendingJobs after idle errored: %v", err)
-	}
-
-	// The guard is preserved: re-arming grants a fresh budget, it does not remove the
-	// limit. Under a short budget a genuinely runaway Call is still interrupted.
-	if err := m.SetEvalTimeout(short); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := m.Eval("globalThis.runaway = function(){ for (;;) {} }", EvalGlobal); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := m.Call("runaway"); err == nil {
-		t.Error("a runaway Call was not interrupted — the timeout guard is gone")
-	}
-}
-
-// TestValueCallRearmsEvalTimeout is the [Value.Call]/[Value.CallValue] analog of
-// TestCallRearmsEvalTimeout. Those methods run JS just like VM.Call does, so they
-// have to re-arm the absolute deadline too. Without that they inherit
-// whatever deadline the last Eval left behind — after an idle period typically one
-// already in the past — and every callee reaching an interrupt check is interrupted
-// before doing any work. Only the trivial ones, finishing before the first check,
-// appear to work, which is what makes the omission easy to miss.
-func TestValueCallRearmsEvalTimeout(t *testing.T) {
-	m, err := NewVM()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	defer m.Close()
-
-	// Loops enough to reach an interrupt check. Its absolute runtime is deliberately
-	// kept out of the pass/fail decision below, see TestCallRearmsEvalTimeout.
-	quick, err := m.EvalValue("(function() { var s = 0; for (var i = 0; i < 100000; i++) s += i; return s; });", EvalGlobal)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	defer quick.Free()
-
-	const (
-		short = 50 * time.Millisecond
-		wide  = 10 * time.Second
-	)
-
-	// staleDeadline leaves the live deadline in the past while the configured budget
-	// is wide: a method that re-arms runs under the wide budget, one that does not
-	// keeps the elapsed short deadline and is interrupted immediately.
-	staleDeadline := func() {
-		t.Helper()
-		if err := m.SetEvalTimeout(short); err != nil {
-			t.Fatal(err)
-		}
-
-		if _, err := m.Eval("0", EvalGlobal); err != nil { // cheapest way to arm the deadline
-			t.Fatal(err)
-		}
-
-		time.Sleep(short + 70*time.Millisecond)
-		if err := m.SetEvalTimeout(wide); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	staleDeadline()
-	if _, err := quick.Call(UndefinedValue); err != nil {
-		t.Errorf("Value.Call after idle was interrupted: %v", err)
-	}
-
-	staleDeadline()
-	switch w, err := quick.CallValue(UndefinedValue); {
-	case err != nil:
-		t.Errorf("Value.CallValue after idle was interrupted: %v", err)
-	default:
-		w.Free()
-	}
-
-	// The guard is preserved: re-arming grants a fresh budget, it does not remove
-	// the limit. Under a short budget a genuinely runaway call is still interrupted.
-	if err := m.SetEvalTimeout(short); err != nil {
-		t.Fatal(err)
-	}
-
-	runaway, err := m.EvalValue("(function() { for (;;) {} });", EvalGlobal)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	defer runaway.Free()
-
-	if _, err := runaway.Call(UndefinedValue); err == nil {
-		t.Error("a runaway Value.Call was not interrupted — the timeout guard is gone")
-	}
-}
-
-// hookJS defines the objects the entries that go through a getter, a setter,
-// toJSON, toString and the reading of an error use: each runs the global
-// function loop. A test that uses nestedEntries runs it after it defines loop.
+// hookJS defines, after a script that defines loop, the values whose use from
+// Go runs loop: the getter and the setter of hook.x and hook's toJSON, the
+// name getter of hookErr, and the toString of every BigInt, which hookBig is.
+// It starts with a semicolon, to go right after that script.
 const hookJS = `;
-globalThis.hook = { get x() { loop(); return 1 }, set x(v) { loop() }, toJSON() { loop(); return 1 } };
+globalThis.hook = {
+	get x() { loop(); return 1 },
+	set x(v) { loop() },
+	toJSON() { loop(); return 1 },
+};
 globalThis.hookErr = new Error("e");
 Object.defineProperty(hookErr, "name", { get() { loop(); return "N" } });
 globalThis.hookBig = 12345678901234567890n;
-BigInt.prototype.toString = function () { loop(); return "1" };`
+BigInt.prototype.toString = function () { loop(); return "1" };
+`
 
-// hookValue returns the global hook, hookErr or hookBig. Reading a global runs
-// no javascript, so it works after the deadline.
+// hookValue reads the global name, a plain data property, which runs no
+// javascript: it works past a deadline too.
 func hookValue(m *VM, name string) (Value, error) {
 	g := m.GlobalObject()
 	defer g.Free()
-	a, err := m.NewAtom(name)
+	atom, err := m.NewAtom(name)
 	if err != nil {
 		return Value{}, err
 	}
-	return m.GetPropertyValue(g, a)
+	return m.GetPropertyValue(g, atom)
 }
 
-// nestedEntries are the ways a host function can run more javascript on the
-// VM that called it. Each runs the global function loop, which the test
-// defines.
+// nestedEntries are the ways a Go function that javascript called runs
+// javascript on its own VM again. Each runs the global loop, through what
+// hookJS defined, and returns the error it got.
 var nestedEntries = map[string]func(m *VM) error{
 	"GetProperty": func(m *VM) error {
-		h, err := hookValue(m, "hook")
+		hook, err := hookValue(m, "hook")
 		if err != nil {
 			return err
 		}
-		defer h.Free()
-		x, err := m.NewAtom("x")
+		defer hook.Free()
+		atom, err := m.NewAtom("x")
 		if err != nil {
 			return err
 		}
-		_, err = m.GetProperty(h, x)
+		_, err = m.GetProperty(hook, atom)
 		return err
 	},
 	"SetProperty": func(m *VM) error {
-		h, err := hookValue(m, "hook")
+		hook, err := hookValue(m, "hook")
 		if err != nil {
 			return err
 		}
-		defer h.Free()
-		x, err := m.NewAtom("x")
+		defer hook.Free()
+		atom, err := m.NewAtom("x")
 		if err != nil {
 			return err
 		}
-		return m.SetProperty(h, x, 1)
+		return m.SetProperty(hook, atom, 1)
 	},
 	"Value.Any of an object": func(m *VM) error {
-		h, err := hookValue(m, "hook")
+		hook, err := hookValue(m, "hook")
 		if err != nil {
 			return err
 		}
-		defer h.Free()
-		_, err = h.Any()
+		defer hook.Free()
+		_, err = hook.Any()
 		return err
 	},
 	"Value.Any of a BigInt": func(m *VM) error {
-		h, err := hookValue(m, "hookBig")
+		big, err := hookValue(m, "hookBig")
 		if err != nil {
 			return err
 		}
-		defer h.Free()
-		_, err = h.Any()
+		defer big.Free()
+		_, err = big.Any()
 		return err
 	},
 	"MarshalJSON": func(m *VM) error {
-		h, err := hookValue(m, "hook")
+		hook, err := hookValue(m, "hook")
 		if err != nil {
 			return err
 		}
-		defer h.Free()
-		_, err = h.MarshalJSON()
+		defer hook.Free()
+		_, err = hook.MarshalJSON()
 		return err
 	},
 	"ErrorFromValue": func(m *VM) error {
-		// The name getter runs loop, which the timeout, the interrupt or the
-		// kill stops. ErrorFromValue then returns the error that stopped it.
-		h, err := hookValue(m, "hookErr")
+		e, err := hookValue(m, "hookErr")
 		if err != nil {
 			return err
 		}
-		defer h.Free()
-		if e := ErrorFromValue(h); e.Uncatchable {
-			return e
+		defer e.Free()
+		if got := ErrorFromValue(e); got.Uncatchable {
+			return got
 		}
 		return errors.New("the read of the name was not stopped")
 	},
@@ -262,230 +125,222 @@ var nestedEntries = map[string]func(m *VM) error{
 		if err != nil {
 			return err
 		}
-
 		_, err = m.EvalBytecode(code)
 		return err
 	},
 	"EvalBytecode of a module": func(m *VM) error {
-		// Compiled in a VM of its own (see moduleBytecode), and run in a job.
 		c, err := NewVM()
 		if err != nil {
 			return err
 		}
-
-		defer c.Close()
 		code, err := c.Compile("await null; loop()\n", EvalModule)
+		c.Close()
 		if err != nil {
 			return err
 		}
-
 		_, err = m.EvalBytecode(code)
 		return err
 	},
 	"ExecutePendingJobs": func(m *VM) error {
-		// A job that throws rejects its promise, so the catch reports it.
 		if _, err := m.Eval(`globalThis.jobError = ''; Promise.resolve().then(loop).catch(e => { jobError = String(e) })`, EvalGlobal); err != nil {
 			return err
 		}
-
 		if _, err := m.ExecutePendingJobs(); err != nil {
 			return err
 		}
-
-		if v, err := m.Eval(`jobError`, EvalGlobal); err != nil || v != "" {
-			return fmt.Errorf("job: %v %v", v, err)
+		v, err := hookValue(m, "jobError")
+		if err != nil {
+			return err
+		}
+		defer v.Free()
+		if s, err := v.Any(); err != nil || s != "" {
+			return fmt.Errorf("a script caught the stop of the job: %v, %v", s, err)
 		}
 		return nil
 	},
 }
 
-// pastDeadline is how long after the deadline of the outer call
-// TestNestedEvalKeepsTimeout starts the nested one.
-const pastDeadline = 10 * time.Millisecond
+// finiteLoop is a loop that ends, many polls long.
+const finiteLoop = `globalThis.loop = function () { for (let i = 0; i < 1e5; i++) {} }`
 
-// TestNestedEvalKeepsTimeout runs javascript from a host function after the
-// outer call's time is up. The nested call runs inside the outer call's
-// budget instead of starting a new one, so it and the outer call are
-// interrupted.
+// The deadline of a call is a point in time, set when the outermost call
+// starts. A Call or ExecutePendingJobs that kept the one an Eval set before a
+// long idle time was interrupted at once.
+func TestCallRearmsEvalTimeout(t *testing.T) {
+	m := newTestVM(t)
+	if _, err := m.Eval(`function quick() { for (let i = 0; i < 1e5; i++) {} } function runaway() { for (;;) {} }`, EvalGlobal); err != nil {
+		t.Fatal(err)
+	}
+	m.SetEvalTimeout(50 * time.Millisecond)
+	if _, err := m.Eval(`0`, EvalGlobal); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(120 * time.Millisecond)
+	// The setting changes, the deadline of the last call is long past.
+	m.SetEvalTimeout(10 * time.Second)
+	if _, err := m.Call("quick"); err != nil {
+		t.Fatalf("Call after an idle time: %v", err)
+	}
+	if _, err := m.ExecutePendingJobs(); err != nil {
+		t.Fatalf("ExecutePendingJobs after an idle time: %v", err)
+	}
+	m.SetEvalTimeout(50 * time.Millisecond)
+	if _, err := m.Call("runaway"); err == nil {
+		t.Fatal("a call that runs forever returned")
+	}
+}
+
+// The same for Value.Call and Value.CallValue.
+func TestValueCallRearmsEvalTimeout(t *testing.T) {
+	m := newTestVM(t)
+	quick := evalValueOrFatal(t, m, `(function () { for (let i = 0; i < 1e5; i++) {} })`)
+	defer quick.Free()
+	runaway := evalValueOrFatal(t, m, `(function () { for (;;) {} })`)
+	defer runaway.Free()
+	stale := func() {
+		t.Helper()
+		m.SetEvalTimeout(50 * time.Millisecond)
+		if _, err := m.Eval(`0`, EvalGlobal); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(50*time.Millisecond + pastDeadline)
+		m.SetEvalTimeout(10 * time.Second)
+	}
+	stale()
+	if _, err := quick.Call(UndefinedValue); err != nil {
+		t.Fatalf("Value.Call after an idle time: %v", err)
+	}
+	stale()
+	v, err := quick.CallValue(UndefinedValue)
+	if err != nil {
+		t.Fatalf("Value.CallValue after an idle time: %v", err)
+	}
+	v.Free()
+	m.SetEvalTimeout(50 * time.Millisecond)
+	if _, err := runaway.Call(UndefinedValue); err == nil {
+		t.Fatal("a call that runs forever returned")
+	}
+}
+
+// Javascript a host function runs on its VM has the time left to the outer
+// call, not a timeout of its own: past the deadline both fail. The next
+// outer call has the whole timeout again.
 func TestNestedEvalKeepsTimeout(t *testing.T) {
-	for name, nested := range nestedEntries {
+	for name, entry := range nestedEntries {
 		t.Run(name, func(t *testing.T) {
-			m, err := NewVM()
-			if err != nil {
+			m := newTestVM(t)
+			if _, err := m.Eval(finiteLoop+hookJS, EvalGlobal); err != nil {
 				t.Fatal(err)
 			}
-
-			defer m.Close()
-
 			const timeout = 300 * time.Millisecond
-			if err := m.SetEvalTimeout(timeout); err != nil {
-				t.Fatal(err)
-			}
-
 			var nestedErr error
 			mustHost(t, m, "nested", func([]any) (any, error) {
 				time.Sleep(timeout + pastDeadline)
-				nestedErr = nested(m)
+				nestedErr = entry(m)
 				return nil, nil
 			})
-			if _, err := m.Eval(`globalThis.loop = function() { for (let i = 0; i < 1e5; i++) {} }`+hookJS, EvalGlobal); err != nil {
-				t.Fatal(err)
+			m.SetEvalTimeout(timeout)
+			_, err := m.Eval(`nested(); loop(); 'done'`, EvalGlobal)
+			if nestedErr == nil {
+				t.Error("the nested call ran past the deadline of the outer one")
 			}
-
-			_, err = m.Eval(`nested(); loop(); 'done'`, EvalGlobal)
-			if nestedErr == nil || err == nil {
-				t.Fatalf("past the outer call's time: nested call got %v, outer call got %v, want both interrupted", nestedErr, err)
+			if err == nil {
+				t.Error("the outer call ran past its deadline")
 			}
-
-			// The next outer call starts a new budget: a wide one, which a
-			// busy machine cannot pass in the loop, while the deadline of the
-			// call before, if it were kept, has passed.
-			if err := m.SetEvalTimeout(10 * time.Second); err != nil {
-				t.Fatal(err)
-			}
+			m.SetEvalTimeout(10 * time.Second)
 			if _, err := m.Eval(`loop(); 'done'`, EvalGlobal); err != nil {
-				t.Fatal(err)
+				t.Fatalf("the next call: %v", err)
 			}
 		})
 	}
 }
 
-// TestNestedEvalKeepsInterrupt calls Interrupt and then runs javascript from
-// a host function, before the engine has looked at the request. The nested
-// call leaves the request pending, so the outer call stops.
+// An Interrupt asked before a host function runs javascript stays pending
+// through that nested call: the nested call does not clear it, and the outer
+// script stops at it, well before the watchdog.
 func TestNestedEvalKeepsInterrupt(t *testing.T) {
-	for name, nested := range nestedEntries {
+	for name, entry := range nestedEntries {
 		t.Run(name, func(t *testing.T) {
-			m, err := NewVM()
-			if err != nil {
+			m := newTestVM(t)
+			if _, err := m.Eval(finiteLoop+hookJS, EvalGlobal); err != nil {
 				t.Fatal(err)
 			}
-
-			defer m.Close()
-
 			mustHost(t, m, "nested", func([]any) (any, error) {
 				m.Interrupt()
-				nested(m)
+				entry(m)
 				return nil, nil
 			})
-			if _, err := m.Eval(`globalThis.loop = function() { for (let i = 0; i < 1e5; i++) {} }`+hookJS, EvalGlobal); err != nil {
-				t.Fatal(err)
+			const watchdog = 5 * time.Second
+			start := time.Now()
+			w := time.AfterFunc(watchdog, m.Interrupt)
+			_, err := m.Eval(`nested(); for (;;) {}`, EvalGlobal)
+			w.Stop()
+			if err == nil {
+				t.Fatal("the outer call returned")
 			}
-
-			// A lost request leaves the loop below running: stop it after a
-			// while, and fail.
-			done := make(chan struct{})
-			defer close(done)
-			var lost atomic.Bool
-			go func() {
-				select {
-				case <-done:
-				case <-time.After(5 * time.Second):
-					lost.Store(true)
-					m.Interrupt()
-				}
-			}()
-
-			_, err = m.Eval(`nested(); for (;;) {}`, EvalGlobal)
-			if err == nil || lost.Load() {
-				t.Fatalf("got %v, lost the interrupt request: %v", err, lost.Load())
+			if time.Since(start) >= watchdog {
+				t.Fatal("only the watchdog stopped the outer call: the nested call cleared the Interrupt")
 			}
-
-			// The next outer call starts afresh.
 			if _, err := m.Eval(`loop(); 'done'`, EvalGlobal); err != nil {
-				t.Fatal(err)
+				t.Fatalf("the next call: %v", err)
 			}
 		})
 	}
 }
 
-// The eval timeout and Interrupt stop a loop of regexps that find nothing
-// in a long string as soon as they fire. lreSkip and lreRun look for where
-// a match can start in Go, not in the backtracking machine, and must check
-// for an interrupt as the machine does: when no position can start a
-// match, and when each can but the match fails there.
-func TestRegexScanStops(t *testing.T) {
-	for _, c := range []struct {
-		name string
-		arm  func(m *VM) (stop func())
-	}{
-		{"timeout", func(m *VM) func() {
-			m.SetEvalTimeout(10 * time.Millisecond)
-			return func() {}
-		}},
-		{"interrupt", func(m *VM) func() { return interruptAfter(m, 10*time.Millisecond) }},
-	} {
-		for _, w := range []struct{ name, s, re string }{
-			{"8bit", `'a'`, `/["&<>]/`}, {"16bit", `'中'`, `/["&<>]/`},
-			{"8bit/each", `'a'`, `/ab/`}, {"16bit/each", `'中'`, `/中b/`},
-			{"8bit/set", `'a'`, `/(?:a|c)b/`}, {"16bit/set", `'中'`, `/(?:中|c)b/`},
-		} {
-			t.Run(c.name+"/"+w.name, func(t *testing.T) {
-				m := newTestVM(t)
-				if _, err := m.Eval(`var s = `+w.s+`.repeat(1 << 22); var re = `+w.re+`; 0`, EvalGlobal); err != nil {
-					t.Fatal(err)
-				}
-				stop := c.arm(m)
-				defer stop()
-				start := time.Now()
-				_, err := m.Eval(`for (;;) re.test(s)`, EvalGlobal)
-				took := time.Since(start)
-				if err == nil || !strings.Contains(err.Error(), "interrupted") {
-					t.Fatalf("got %v, want interrupted", err)
-				}
-				if took > 500*time.Millisecond {
-					t.Errorf("stopped %v after the call started, want about 10ms", took)
-				}
-			})
+// stopRegexp runs src on a new VM after setup, stopped 'after' later by the
+// eval timeout or Interrupt, and requires an interrupted error within
+// 500 ms.
+func stopRegexp(t *testing.T, setup, src string, after time.Duration) {
+	t.Helper()
+	for _, how := range []string{"timeout", "Interrupt"} {
+		m := newTestVM(t)
+		if _, err := m.Eval(setup, EvalGlobal); err != nil {
+			t.Fatal(err)
+		}
+		if how == "timeout" {
+			m.SetEvalTimeout(after)
+		} else {
+			defer time.AfterFunc(after, m.Interrupt).Stop()
+		}
+		start := time.Now()
+		_, err := m.Eval(src, EvalGlobal)
+		took := time.Since(start)
+		if err == nil || !strings.Contains(err.Error(), "interrupted") {
+			t.Errorf("%s %s: got %v, want interrupted", how, src, err)
+		}
+		if took > 500*time.Millisecond {
+			t.Errorf("%s %s: stopped after %v", how, src, took)
 		}
 	}
 }
 
-// The eval timeout and Interrupt stop one call of a regexp whose match runs
-// long, as soon as they fire. A greedy x+ jumps back by a split op, so over
-// a long string the machine counts steps toward its interrupt check only
-// through the pops of the states its splits push, and the split ops that
-// lreSplit lets push nothing must count and check themselves. Each string
-// starts with the literal every match of its regexp holds (head), so that
-// the scan for it (lre_literal in engine/libregexp.c) finds it at once and
-// the matches run long: without it the scan alone tells there is none.
-func TestRegexMatchStops(t *testing.T) {
-	for _, c := range []struct {
-		name string
-		arm  func(m *VM) (stop func())
-	}{
-		{"timeout", func(m *VM) func() {
-			m.SetEvalTimeout(20 * time.Millisecond)
-			return func() {}
-		}},
-		{"interrupt", func(m *VM) func() { return interruptAfter(m, 20*time.Millisecond) }},
-	} {
-		for _, w := range []struct{ name, head, s, re string }{
-			{"plus", "b", `'a'`, `/a+b/`},
-			{"plus/unicode", "b", `'a'`, `/a+b/u`},
-			{"plus/16bit", "b", `'中'`, `/中+b/`},
-			{"plus/ignore case", "b", `'a'`, `/A+b/i`},
-			{"class", "@", `'a'`, `/\w+@/`},
-			{"capture", "b", `'a'`, `/(a)+b/`},
-			{"alternatives", "b", `'a'`, `/(?:a|c)+b/`},
-		} {
-			t.Run(c.name+"/"+w.name, func(t *testing.T) {
-				m := newTestVM(t)
-				if _, err := m.Eval(`var s = '`+w.head+`' + `+w.s+`.repeat(1 << 17); var re = `+w.re+`; 0`, EvalGlobal); err != nil {
-					t.Fatal(err)
-				}
-				stop := c.arm(m)
-				defer stop()
-				start := time.Now()
-				_, err := m.Eval(`re.test(s)`, EvalGlobal)
-				took := time.Since(start)
-				if err == nil || !strings.Contains(err.Error(), "interrupted") {
-					t.Fatalf("got %v, want interrupted", err)
-				}
-				if took > 500*time.Millisecond {
-					t.Errorf("stopped %v after the call started, want about 20ms", took)
-				}
-			})
+// A regexp looks for where a match can start, past the backtracking
+// matcher, and that search reads the interrupt flag as the matcher does.
+func TestRegexScanStops(t *testing.T) {
+	for _, c := range []string{"a", "中"} {
+		for _, re := range []string{`/["&<>]/`, `/ab/`, `/中b/`, `/(?:a|c)b/`, `/(?:中|c)b/`} {
+			stopRegexp(t, `globalThis.s = '`+c+`'.repeat(2 ** 22)`, `const re = `+re+`; for (;;) re.test(s)`, 10*time.Millisecond)
 		}
+	}
+}
+
+// A greedy x+ that pushes no state counts its steps and reads the interrupt
+// flag too. The string starts with the literal that ends every match, so the
+// search for it finds one and the matcher runs, and then holds only the
+// repeated character: from each start x+ takes the rest of the string and
+// gives it back one step at a time, and one test runs long.
+func TestRegexMatchStops(t *testing.T) {
+	for _, c := range []struct{ re, lit, char string }{
+		{`/a+b/`, "b", "a"},
+		{`/a+b/u`, "b", "a"},
+		{`/中+b/`, "b", "中"},
+		{`/A+b/i`, "b", "a"},
+		{`/\w+@/`, "@", "a"},
+		{`/(a)+b/`, "b", "a"},
+		{`/(?:a|c)+b/`, "b", "a"},
+	} {
+		setup := `globalThis.s = '` + c.lit + `' + '` + c.char + `'.repeat(2 ** 17)`
+		stopRegexp(t, setup, c.re+`.test(s)`, 20*time.Millisecond)
 	}
 }
