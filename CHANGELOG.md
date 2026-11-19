@@ -4,6 +4,8 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 
 ## [Unreleased]
 
+## [v0.31.9] - 2026-11-19
+
 ### Changed
 
 - The zero `Value` is `undefined` to `Value.Any` and `Value.IsUndefined` too, as it already was as an argument, as `this` and as a property value: `Any` returned the number 0 and `IsUndefined` false.
