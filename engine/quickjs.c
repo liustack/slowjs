@@ -61792,7 +61792,7 @@ static const JSCFunctionListEntry js_math_obj[] = {
 
 /* OS dependent. d = argv[0] is in ms from 1970. Return the difference
    between UTC time and local time 'd' in minutes */
-/* quickjs-go: local time is UTC in every VM, whatever zone TZ or the host
+/* local time is UTC in every VM, whatever zone TZ or the host
    gives the process, so that a script computes the same dates on every
    machine. The process's own zone, which Go and the rest of libc keep
    using, is left alone. A script that wants a zone names it with Intl's
