@@ -1,6 +1,6 @@
 // Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
-// Use of this source code is governed by the MIT license in LICENSE-MIT at the
+// Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 // rvdiff: direct eval in a function with an arguments object of its own,
 // and the locals an eval or a closure can change while the function runs.

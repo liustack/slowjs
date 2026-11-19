@@ -1,6 +1,6 @@
 // Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
-// Use of this source code is governed by the MIT license in LICENSE-MIT at the
+// Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 // typeof compared with a string, which the compiler turns into one opcode:
 // ==, ===, != and !== with each name of a type and with strings that are

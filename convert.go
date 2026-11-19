@@ -1,498 +1,331 @@
-// Copyright 2024 The quickjs-go Authors. All rights reserved.
-// Use of the source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
+// Copyright (c) 2026 The liustack/slowjs Authors.
+// SPDX-License-Identifier: MIT
+// Use of this source code is governed by the MIT license in LICENSE at the
+// root of this repository.
 
 package slowjs // import "github.com/liustack/slowjs"
+
+// Converting javascript values to Go values, the leaves of the results of Go
+// functions to javascript values, and Go strings on their way to the engine.
 
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"math"
 	"math/big"
 	"reflect"
-	"sort"
-	"strconv"
+	"slices"
+	"strings"
 	"unicode/utf8"
 	"unsafe"
 )
 
-// NewInt returns a new Value from 'n'.
-//
-// Note: See the [Value] documentation for details about manual memory
-// management of Value objects.
-func (m *VM) NewInt(n int) Value {
-	if n >= math.MinInt32 && n <= math.MaxInt32 {
-		return Value{vm: m, v: newInt32(int32(n))}
+// value returns the Go value of v (see [VM.Eval]), and frees v when free is
+// set, whether it converts or not. An object and a BigInt run javascript to
+// convert: a caller is inside a call (enter).
+func (m *VM) value(v jsValue, free bool) (any, error) {
+	switch tag(v) {
+	case tagException:
+		return nil, m.errFromException()
+	case tagNull:
+		return nil, nil
+	case tagUndefined:
+		return Undefined{}, nil
+	case tagInt:
+		return int(jsvToInt32(v)), nil
+	case tagBool:
+		return jsvToInt32(v) != 0, nil
+	case tagFloat64:
+		return jsvToFloat64(v), nil
 	}
-
-	return m.NewFloat64(float64(n))
-}
-
-// NewFloat64 returns a new Value from 'n'.
-//
-// Note: See the [Value] documentation for details about manual memory
-// management of Value objects.
-func (m *VM) NewFloat64(n float64) Value {
-	return Value{vm: m, v: newFloat(n)}
-}
-
-// NewString returns a new Value from 's'. In a Go function that javascript
-// called, a long string ends at Interrupt, the eval timeout or an
-// uncatchable error of the call, with that error, as a loop of the engine
-// does.
-//
-// Note: See the [Value] documentation for details about manual memory
-// management of Value objects.
-func (m *VM) NewString(s string) (r Value, err error) {
-	v, err := m.newString(s)
-	if err != nil {
-		return r, err
+	if free {
+		// Deferred: converting an object or a BigInt runs javascript, and a
+		// Go function it calls may panic through here.
+		defer m.jsFreeValue(v)
 	}
-
-	return Value{vm: m, v: v}, nil
-}
-
-// NewObjectValue returns a new Value representing '{}'.
-func (m *VM) NewObjectValue() (r Value, err error) {
-	if err := m.usable(); err != nil {
-		return r, err
-	}
-	v := m.jsNewObject()
-	if isException(v) {
-		return r, m.errFromException()
-	}
-	return Value{vm: m, v: v}, nil
-}
-
-// newString makes the string of NewString, and of the Go strings of the
-// other methods. It refuses a VM a kill left good only for Close here, not in
-// NewString, which stays small enough to inline (Builtins return strings).
-// When the engine has no memory for the string, the error is its exception.
-func (m *VM) newString(s string) (r jsValue, err error) {
-	if err := m.usable(); err != nil {
-		return r, err
-	}
-	r = m.newStringFast(s)
-	if isException(r) {
-		return r, m.errFromException()
-	}
-	return r, nil
-}
-
-func jsInt(n int64) jsValue {
-	switch {
-	case n >= math.MinInt32 && n <= math.MaxInt32:
-		return newInt32(int32(n))
+	var r any
+	var err error
+	switch tag(v) {
+	case tagString, tagStringRope:
+		var s string
+		if s, err = m.goString(v); err == nil {
+			r = s
+		}
+	case tagBigInt, tagShortBigInt:
+		var n *big.Int
+		if n, err = m.bigInt(v); err == nil {
+			r = n
+		}
+	case tagObject:
+		var o *Object
+		if o, err = m.objectJSON(v); err == nil {
+			r = o
+		}
 	default:
-		return newFloat(float64(n))
+		r = Unsupported{}
 	}
+	return r, err
 }
 
-func jsUint(n uint64) jsValue {
-	switch {
-	case n <= math.MaxInt32:
-		return newInt32(int32(n))
-	default:
-		return newFloat(float64(n))
+// bigInt returns the Go value of the BigInt v: its toString(16), which a page
+// may have replaced, read in base 16.
+func (m *VM) bigInt(v jsValue) (*big.Int, error) {
+	f := m.settled(m.jsGetProperty(v, atomToString))
+	if isException(f) {
+		return nil, m.errFromException()
 	}
-}
-
-func (m *VM) parseJSON(s string, flags int32) (r jsValue, err error) {
-	r, err = m.jsParseJSON2(s, true, flags)
+	defer m.jsFreeValue(f)
+	if tag(f) != tagObject {
+		return nil, errors.New("failed to get BigInt.toString()")
+	}
+	s, err := m.jsCall(f, v, []jsValue{newInt32(16)})
 	if err != nil {
-		return r, err
+		return nil, err
 	}
+	if s = m.settled(s); isException(s) {
+		return nil, m.errFromException()
+	}
+	// A replaced toString may return an object, whose string runs
+	// javascript.
+	defer m.jsFreeValue(s)
+	text, err := m.goString(s)
+	if err != nil {
+		return nil, err
+	}
+	n, ok := new(big.Int).SetString(text, 16)
+	if !ok {
+		return nil, errors.New("big.Int.SetString failed")
+	}
+	return n, nil
+}
 
-	if isException(r) {
+// objectJSON returns the Object of v, its JSON.
+func (m *VM) objectJSON(v jsValue) (*Object, error) {
+	j := m.settled(m.jsJSONStringify(v))
+	if isException(j) {
+		return nil, m.errFromException()
+	}
+	defer m.jsFreeValue(j)
+	s, err := m.goString(j)
+	if err != nil {
+		return nil, err
+	}
+	return &Object{json: s}, nil
+}
+
+// The types the conversion of a leaf looks for.
+var (
+	rvt           = reflect.TypeFor[Value]()
+	undefinedType = reflect.TypeFor[Undefined]()
+	objectPtrType = reflect.TypeFor[*Object]()
+	bigIntPtrType = reflect.TypeFor[*big.Int]()
+)
+
+// jsValue converts in, a leaf of the results of a Go function (result.go),
+// one that holds no Value, to a new javascript value:
+//
+//   - nil, a nil pointer, interface or map: null. A nil slice: [].
+//   - Undefined: undefined. A value whose type has an Error method, a nil
+//     one too: the string of Error.
+//   - *Object: its JSON parsed. *big.Int: the BigInt. Another pointer: the
+//     value it points to, unless that is a pointer too.
+//   - A bool, an integer and a float: a boolean and a number, an integer
+//     outside int32 a float. A string: the string.
+//   - A struct: its JSON of encoding/json parsed.
+//   - A slice: an array of its elements. A map with string or integer keys:
+//     an object of own data properties in the order of the keys as strings.
+//   - Anything else, an array, a channel, a function, a complex or an
+//     uintptr, is an error.
+func (m *VM) jsValue(in reflect.Value) (jsValue, error) {
+	r, err := m.leafValue(in)
+	if err == nil && isException(r) {
 		err = m.errFromException()
 	}
 	return r, err
 }
 
-// wellFormed returns the UTF-8 b as a Go string with U+FFFD for each lone
-// surrogate, as Go's utf16.Decode, TextEncoder and Node's Buffer make a string
-// of UTF-16 valid. JS_ToCStringLen2 joins the halves of a surrogate pair into
-// one character, but writes a lone surrogate as the three bytes of its code
-// point, 0xED then 0xA0 to 0xBF, which is not UTF-8. They are the only bytes
-// it writes in that form, and U+FFFD takes three bytes too.
-func wellFormed(b []byte) string {
-	var fixed []byte
-	for i := 0; i < len(b); {
-		j := bytes.IndexByte(b[i:], 0xED)
-		if j < 0 {
-			break
-		}
-		i += j
-		if i+2 < len(b) && b[i+1] >= 0xA0 {
-			if fixed == nil {
-				fixed = bytes.Clone(b)
-			}
-			copy(fixed[i:], "\uFFFD")
-		}
-		i++
-	}
-	if fixed == nil {
-		return string(b)
-	}
-	return unsafe.String(unsafe.SliceData(fixed), len(fixed))
-}
-
-// validUTF8 returns s with U+FFFD for each byte that does not start a valid
-// UTF-8 sequence, the Go -> JS counterpart of wellFormed. That is how Go
-// itself decodes a string (for range, []rune, utf16.Encode) and how
-// encoding/json writes one, so a Go string reaches javascript the same way
-// whether it is passed as it is or inside a struct, which goes as JSON. The
-// engine's JS_NewStringLen skipped the bytes after an invalid one, ASCII
-// included ("\x80a" became a lone U+FFFD), and took the three bytes of a
-// surrogate (0xED 0xA0 to 0xBF) as that surrogate. A sequence cut short
-// ("\xe4\xb8") gives one U+FFFD per byte here, where a browser's TextDecoder
-// gives one for the sequence.
-func validUTF8(s string) string {
-	if utf8.ValidString(s) {
-		return s
-	}
-
-	b := make([]byte, 0, len(s)+2*utf8.UTFMax)
-	for _, r := range s {
-		b = utf8.AppendRune(b, r) // an invalid byte comes as utf8.RuneError
-	}
-	return unsafe.String(unsafe.SliceData(b), len(b))
-}
-
-// goString converts the JS value 'v' to a Go string. When the conversion
-// throws, it takes the exception out of the context and returns it as the
-// error, for example the engine's out of memory error.
-func (m *VM) goString(v jsValue) (string, error) {
-	s, ok := m.argString(v, false)
-	if !ok {
-		return "", m.errFromException()
-	}
-
-	return s, nil
-}
-
-// errString converts the JS value 'v' to a Go string for readError, which
-// errFromException calls, so it cannot turn a failure into an error the way
-// goString does without recursing. When the conversion throws what the
-// script throws, errString drops that new exception and returns "": the
-// exception being read is the one to report, and a second one left pending
-// would be found by the next JS_GetException of an unrelated call. ok is
-// false when the conversion threw an uncatchable exception, which stays
-// pending (dropCatchable). With t, the string is cut as cutString does.
-func (m *VM) errString(v jsValue, t *textCut) (s string, ok bool) {
-	if t != nil {
-		s, ok = m.cutString(v, t)
-	} else {
-		s, ok = m.argString(v, false)
-	}
-	if !ok {
-		return "", m.dropCatchable()
-	}
-
-	return s, true
-}
-
-// dropCatchable drops the exception that a read of an error threw, and
-// reports true, when the script threw it. An uncatchable one (an interrupt,
-// the eval timeout, running out of memory, a panic in a Go function) ends
-// the call whatever reads what: it stays pending, and dropCatchable reports
-// false.
-func (m *VM) dropCatchable() bool {
-	if m.uncatchablePending() {
-		return false
-	}
-	m.dropException()
-	return true
-}
-
-// dropException frees the exception pending in m's context.
-func (m *VM) dropException() {
-	m.jsFreeValue(m.jsGetException())
-}
-
-func (m *VM) newObject(v jsValue) (r *Object, err error) {
-	json := m.jsJSONStringify(v)
-
-	defer m.jsFreeValue(json)
-
-	if isException(json) {
-		return nil, m.errFromException()
-	}
-
-	s, err := m.goString(json)
-	if err != nil {
-		return nil, err
-	}
-
-	return &Object{json: s}, nil
-}
-
-// value "unpacks" 'v'. FreeValue(v) is called before returning, 'v' must not
-// be used afterwards.
-func (m *VM) value(v jsValue, free bool) (r any, err error) {
-	if free && tag(v) < 0 {
-		// all tags with a reference count are negative
-		defer m.jsFreeValue(v)
-	}
-
-	switch tag(v) {
-	case
-		tagBigInt,      // -9,
-		tagShortBigInt: // 7,
-
-		ps := m.jsGetProperty(v, atomToString)
-		if isException(ps) {
-			return nil, m.errFromException()
-		}
-
-		defer m.jsFreeValue(ps)
-
-		if tag(ps) != tagObject {
-			return nil, fmt.Errorf("failed to get BigInt.toString()")
-		}
-
-		jsString, err := m.jsCall(ps, v, []jsValue{newInt32(16)})
-		if err != nil {
-			return nil, err
-		}
-		if isException(jsString) {
-			return nil, m.errFromException()
-		}
-
-		defer m.jsFreeValue(jsString)
-
-		s, err := m.goString(jsString)
-		if err != nil {
-			return nil, err
-		}
-
-		n := big.NewInt(0)
-		if _, ok := n.SetString(s, 16); !ok {
-			return nil, fmt.Errorf("big.Int.SetString failed")
-		}
-
-		return n, nil
-	case
-		tagStringRope, // -6,
-		tagString:     // -7,
-
-		return m.goString(v)
-	case tagObject: // -1
-		return m.newObject(v)
-	case tagInt: //  0,
-		return int(jsvToInt32(v)), nil
-	case tagBool: //  1,
-		return jsvToInt32(v) != 0, nil
-	case tagNull: //  2,
-		return nil, nil
-	case tagUndefined: //  3,
-		return Undefined{}, nil
-	case tagException: // 6,
-		return nil, m.errFromException()
-	case tagFloat64: // 8,
-		return jsvToFloat64(v), nil
-	}
-	return Unsupported{}, nil
-}
-
-func (m *VM) jsValue(in reflect.Value) (out jsValue, err error) {
-	defer func() {
-		if isException(out) && err == nil {
-			err = m.errFromException()
-		}
-	}()
-
-	// A Value is a node of the snapshot of a result (result.go), never a leaf
-	// that jsValue converts.
-	switch x := in.Interface().(type) {
-	case nil:
+func (m *VM) leafValue(in reflect.Value) (jsValue, error) {
+	if !in.IsValid() {
 		return null, nil
-	case Value:
-		return out, fmt.Errorf("internal error: a Value outside the snapshot of a result (%v:)", origin(1))
-	case Undefined:
-		return undefined, nil
-	case error:
-		return m.newString(x.Error())
 	}
-
-	switch in.Kind() {
+	if in.Kind() == reflect.Interface {
+		if in.IsNil() {
+			return null, nil
+		}
+		in = in.Elem()
+	}
+	t := in.Type()
+	switch {
+	case t == rvt:
+		return exception, errors.New("internal error: a Value outside the snapshot of a result")
+	case t == undefinedType:
+		return undefined, nil
+	case t.Implements(errorType):
+		return m.newString(in.Interface().(error).Error())
+	}
+	switch k := in.Kind(); k {
 	case reflect.Pointer:
-		return m.jsPtrValue(in)
+		switch {
+		case in.IsNil():
+			return null, nil
+		case t == objectPtrType:
+			return m.jsParseJSON2(in.Interface().(*Object).json, true, 0)
+		case t == bigIntPtrType:
+			return m.bigIntValue(in.Interface().(*big.Int))
+		}
+		elem := in.Elem()
+		if elem.Kind() == reflect.Pointer {
+			return exception, fmt.Errorf("type not supported: %T", in.Interface())
+		}
+		return m.leafValue(elem)
 	case reflect.Bool:
 		return newBool(in.Bool()), nil
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		return jsInt(in.Int()), nil
+		return intValue(in.Int()), nil
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		return jsUint(in.Uint()), nil
-	case reflect.Float64, reflect.Float32:
+		return uintValue(in.Uint()), nil
+	case reflect.Float32, reflect.Float64:
 		return newFloat(in.Float()), nil
 	case reflect.String:
 		return m.newString(in.String())
 	case reflect.Struct:
 		b, err := json.Marshal(in.Interface())
 		if err != nil {
-			return out, err
+			return exception, err
 		}
-
-		v, err := m.jsParseJSON2(string(b), false, 0)
-		if err != nil {
-			return out, err
-		}
-
-		if isException(v) {
-			return out, m.errFromException()
-		}
-
-		return v, nil
-	case reflect.Interface:
-		return m.jsInterfaceValue(in)
+		return m.jsParseJSON2(string(b), false, 0)
 	case reflect.Map:
 		return m.jsMap(in)
 	case reflect.Slice:
-		var a []reflect.Value
-		for i := 0; i < in.Len(); i++ {
-			a = append(a, in.Index(i))
-		}
-		return m.jsArray(a)
+		return m.jsArray(in.Len(), in.Index)
 	default:
-		return out, fmt.Errorf("internal error: %v (%v:)", in.Kind(), origin(1))
+		return exception, fmt.Errorf("internal error: %v", k)
 	}
 }
 
-func (m *VM) jsInterfaceValue(in reflect.Value) (out jsValue, err error) {
-	if in.IsNil() {
-		return null, nil
+// jsArray returns an array of the n values that at gives, converted. Each
+// element counts toward the stop of the call (elemStop).
+func (m *VM) jsArray(n int, at func(int) reflect.Value) (jsValue, error) {
+	if n == 0 {
+		return m.jsNewArray(), nil
 	}
-
-	return m.jsValue(in.Elem())
+	vals := make([]jsValue, 0, n)
+	defer func() { m.freeAll(vals) }()
+	for i := range n {
+		if m.elemStop() {
+			return exception, m.errFromException()
+		}
+		v, err := m.jsValue(at(i))
+		if err != nil {
+			return exception, err
+		}
+		vals = append(vals, v)
+	}
+	return m.jsArrayOfValues(vals)
 }
 
-func (m *VM) jsPtrValue(in reflect.Value) (out jsValue, err error) {
-	if in.IsNil() {
-		return null, nil
-	}
-
-	switch x := in.Interface().(type) {
-	case *Object:
-		return m.parseJSON(x.json, 0)
-	case *big.Int:
-		s := x.String() + "n"
-		return m.eval(s, EvalGlobal)
-	default:
-		ev := in.Elem()
-		if ev.Kind() == reflect.Pointer { // avoid unbound recursion
-			return out, fmt.Errorf("type not supported: %T", x)
-		}
-
-		return m.jsValue(ev)
-	}
+// mapEntry is a property of the object of a map, before it is defined.
+type mapEntry struct {
+	key string
+	val reflect.Value
 }
 
-// jsMap converts a Go map that can hold no Value to a Javascript object.
-// Like jsArray, and unlike the JSON round trip used for structs, it converts
-// every value with jsValue, so a *big.Int stays a BigInt. A map that can
-// hold a Value goes through the snapshot of its result (result.go).
-func (m *VM) jsMap(in reflect.Value) (out jsValue, err error) {
+// jsMap returns an object of the entries of the map in, each an own data
+// property, in the order of the keys as strings: the order of the properties
+// of an object can be seen, and the order of a Go map changes from one range
+// to the next. A key is defined, not assigned, with all its bytes: no setter
+// runs, and __proto__ is a key like another.
+func (m *VM) jsMap(in reflect.Value) (jsValue, error) {
 	if in.IsNil() {
 		return null, nil
 	}
-
-	// Javascript property names are strings. Integer keys stringify the same way
-	// they do in JSON and the same way obj[1] and obj["1"] are the same property
-	// in Javascript. Check the type of the keys before creating the object so a
-	// bad key needs no cleanup.
-	var key func(k reflect.Value) string
-	switch in.Type().Key().Kind() {
-	case reflect.String:
-		key = reflect.Value.String
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		key = func(k reflect.Value) string { return strconv.FormatInt(k.Int(), 10) }
-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		key = func(k reflect.Value) string { return strconv.FormatUint(k.Uint(), 10) }
-	default:
-		// An empty map needs no name for a key.
-		if in.Len() > 0 {
-			return out, fmt.Errorf("unsupported map key type: %s", in.Type().Key())
+	key := mapKey(in.Type().Key())
+	if key == nil {
+		if in.Len() == 0 {
+			// No key needs a name.
+			return m.jsNewObject(), nil
 		}
+		return exception, fmt.Errorf("unsupported map key type: %s", in.Type().Key())
 	}
-	type kv struct {
-		key string
-		val reflect.Value
-	}
-	a := make([]kv, 0, in.Len())
+	entries := make([]mapEntry, 0, in.Len())
 	for it := in.MapRange(); it.Next(); {
-		a = append(a, kv{key(it.Key()), it.Value()})
+		entries = append(entries, mapEntry{key(it.Key()), it.Value()})
 	}
-
-	// Javascript property order is observable, via Object.keys, JSON.stringify or
-	// for-in, while Go map iteration order is randomized. Sort so the same map
-	// always produces the same object, which is what encoding/json does too.
-	sort.Slice(a, func(i, j int) bool { return a[i].key < a[j].key })
+	slices.SortFunc(entries, func(a, b mapEntry) int { return strings.Compare(a.key, b.key) })
 
 	obj := m.jsNewObject()
 	if isException(obj) {
-		return out, m.errFromException()
+		return exception, nil
 	}
-	// The object is freed when a value fails to convert, or panics.
 	done := false
 	defer func() {
 		if !done {
 			m.jsFreeValue(obj)
 		}
 	}()
-
-	for _, kv := range a {
+	for _, e := range entries {
 		if m.elemStop() {
-			return out, m.errFromException()
+			return exception, m.errFromException()
 		}
-		jv, err := m.jsValue(kv.val)
+		v, err := m.jsValue(e.val)
 		if err != nil {
-			return out, err
+			return exception, err
 		}
-
-		// The key is an atom of all its bytes, NULs too, and an own data
-		// property as in an object literal: no setter runs, and __proto__ is
-		// a key. JS_DefinePropertyValue takes jv, also when it fails.
-		atom, err := m.atomOf(kv.key)
+		atom, err := m.atomOf(e.key)
 		if err != nil {
-			m.jsFreeValue(jv)
-			return out, err
+			m.jsFreeValue(v)
+			return exception, err
 		}
-		rc := m.jsDefinePropertyValue(obj, atom, jv, propCWE|propThrow)
+		// It takes v, also when it fails.
+		rc := m.jsDefinePropertyValue(obj, atom, v, propCWE|propThrow)
 		m.jsFreeAtom(atom)
 		if rc < 0 {
-			return out, m.errFromException()
+			return exception, m.errFromException()
 		}
 	}
-
 	done = true
 	return obj, nil
 }
 
-// jsArray converts the elements a to a javascript array.
-func (m *VM) jsArray(a []reflect.Value) (out jsValue, err error) {
-	// What is converted is freed when an element fails to convert or
-	// panics, and once the array has its own references.
-	s := make([]jsValue, 0, len(a))
-	defer func() {
-		for _, v := range s {
-			m.jsFreeValue(v)
-		}
-	}()
-	for _, v := range a {
-		if m.elemStop() {
-			return out, m.errFromException()
-		}
-		jv, err := m.jsValue(v)
-		if err != nil {
-			return out, err
-		}
-		s = append(s, jv)
+// validUTF8 returns s when it is valid UTF-8, and else s with each byte that
+// starts no valid sequence, as a range over s reads it, made U+FFFD.
+func validUTF8(s string) string {
+	if utf8.ValidString(s) {
+		return s
 	}
-	out, err = m.jsArrayOfValues(s)
-	if err == nil && isException(out) {
-		err = m.errFromException()
+	b := make([]byte, 0, len(s)+len(s)/2)
+	for _, c := range s {
+		b = utf8.AppendRune(b, c)
 	}
-	return out, err
+	return unsafe.String(unsafe.SliceData(b), len(b))
+}
+
+// wellFormed returns the string of b, UTF-8 the engine wrote, with each lone
+// surrogate made U+FFFD. The engine writes a lone surrogate as the three
+// bytes of its code point, 0xED then 0xA0 to 0xBF then one more, which is
+// not UTF-8. U+FFFD takes three bytes too, so the string keeps its length.
+func wellFormed(b []byte) string {
+	var out []byte
+	for i := 0; i < len(b); {
+		j := bytes.IndexByte(b[i:], 0xED)
+		if j < 0 {
+			break
+		}
+		i += j
+		if i+2 >= len(b) || b[i+1] < 0xA0 {
+			i++
+			continue
+		}
+		if out == nil {
+			out = make([]byte, len(b))
+			copy(out, b)
+		}
+		out[i], out[i+1], out[i+2] = 0xEF, 0xBF, 0xBD
+		i += 3
+	}
+	if out == nil {
+		return string(b)
+	}
+	return unsafe.String(unsafe.SliceData(out), len(out))
 }

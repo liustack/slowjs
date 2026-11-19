@@ -1,6 +1,6 @@
 // Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
-// Use of this source code is governed by the MIT license in LICENSE-MIT at the
+// Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 // Regexps of many capture groups, past the 255 of upstream QuickJS: the count
 // at each side of 256 and of the limit, which is that of V8 (32767 groups

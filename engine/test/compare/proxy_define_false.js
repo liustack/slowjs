@@ -1,6 +1,6 @@
 // Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
-// Use of this source code is governed by the MIT license in LICENSE-MIT at the
+// Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 // A store to a proxy with no set trap whose defineProperty trap returns false:
 // the [[Set]] of the proxy returns false, so a store in strict code throws a

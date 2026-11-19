@@ -1,6 +1,6 @@
 // Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
-// Use of this source code is governed by the MIT license in LICENSE-MIT at the
+// Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 // rvdiff: generators whose stack folds (engine/regvm-fold.h), suspended with
 // ranges of it folded and resumed at the bottom of a recursion of large

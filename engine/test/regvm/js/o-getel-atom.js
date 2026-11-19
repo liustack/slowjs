@@ -1,6 +1,6 @@
 // Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
-// Use of this source code is governed by the MIT license in LICENSE-MIT at the
+// Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 // rvdiff: o[k] with a string key (GETEL, GETELT, GETELK and a key in a temp)
 // on every kind of object, against two reads that cannot take the path of a

@@ -1,6 +1,6 @@
 // Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
-// Use of this source code is governed by the MIT license in LICENSE-MIT at the
+// Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 // Calls of more arguments than the compiler leaves on the operand stack
 // (JS_CALL_ARGS_ON_STACK of engine/quickjs.c, 32): past it they go in an

@@ -1,6 +1,6 @@
 // Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
-// Use of this source code is governed by the MIT license in LICENSE-MIT at the
+// Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 // rvdiff: o.name (GETF, GETFL, GETFT and the read of a method before CALLM)
 // at a site that has read the key before, where the site's cache (the slot

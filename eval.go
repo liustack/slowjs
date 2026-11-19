@@ -1,275 +1,144 @@
-// Copyright 2024 The quickjs-go Authors. All rights reserved.
-// Use of the source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
+// Copyright (c) 2026 The liustack/slowjs Authors.
+// SPDX-License-Identifier: MIT
+// Use of this source code is governed by the MIT license in LICENSE at the
+// root of this repository.
 
 package slowjs // import "github.com/liustack/slowjs"
+
+// Evaluating source and bytecode, compiling, and the queue of jobs.
 
 import (
 	"errors"
 	"fmt"
-	"strings"
 	"unicode/utf8"
 )
 
-// Eval flags.
-const (
-	EvalGlobal = 0 // global code
-	EvalModule = 1 // module code
-)
-
-// Eval evaluates a script or module source in 'javascript'.
+// Eval evaluates javascript, a script or, with EvalModule in flags, a module,
+// and returns its value as a Go value:
 //
-//	Javascript result type  Go result type                          Go result error
-//	-------------------------------------------------------------------------------
-//	exception               nil                                     non-nil
-//	null                    nil                                     nil
-//	undefined               Undefined                               nil
-//	string                  string                                  nil
-//	int                     int                                     nil
-//	bool                    bool                                    nil
-//	float64                 float64                                 nil
-//	BigInt                  *math/big.Int                           nil
-//	object                  *Object                                 nil
-//	any other type          Unsupported                             nil
+//	javascript              Go
+//	----------              --
+//	null                    nil
+//	undefined               Undefined{}
+//	a boolean               bool
+//	a number that is int32  int
+//	any other number        float64
+//	a string                string, a lone surrogate as U+FFFD
+//	a BigInt                *big.Int
+//	an object, an array     *Object, its JSON
+//	a symbol and the rest   Unsupported{}
+//
+// A number the engine holds as a float, such as the result of some
+// arithmetic, is a float64 even when its value is whole. A module's value is
+// the promise of its evaluation, which Eval does not wait for. An exception
+// is returned as an [*Error].
+//
+// flags are given to the engine as they are, so other flag bits of QuickJS
+// work too.
 func (m *VM) Eval(javascript string, flags int) (r any, err error) {
 	if err = m.enter(); err != nil {
-		return
+		return nil, err
 	}
 	defer m.leave(&err)
 	v, err := m.jsEval(evalName, javascript, int32(flags))
 	if err != nil {
 		return nil, err
 	}
-
 	return m.value(m.settled(v), true)
 }
 
-// ExecutePendingJobs runs queued Javascript jobs — Promise reactions (the
-// .then/.catch/.finally callbacks) and async/await continuations — until the
-// queue is empty, returning the number of jobs executed. The runtime does not run
-// these itself: an embedding event loop calls ExecutePendingJobs at the end of
-// each turn to drain the microtask queue (so a resolved Promise's .then runs, a
-// pending await resumes, etc.). An exception thrown by a job is returned as an
-// error — the first one — while the remaining jobs still run; a self-feeding job
-// queue is bounded so it cannot hang the host.
-func (m *VM) ExecutePendingJobs() (n int, err error) {
-	// Re-arm the eval-timeout deadline, as the Eval* functions do. Draining runs JS
-	// (Promise reactions and async continuations), so without this the whole drain
-	// inherits a stale deadline from the last Eval — one that has kept
-	// ticking through idle time — and is spuriously interrupted.
+// EvalValue is [VM.Eval] that returns the value as a [Value], which the caller
+// frees.
+func (m *VM) EvalValue(javascript string, flags int) (r Value, err error) {
 	if err = m.enter(); err != nil {
-		return
+		return r, err
 	}
 	defer m.leave(&err)
-
-	const maxJobs = 1 << 20 // bound a self-feeding microtask loop so it cannot hang the host
-	for n < maxJobs {
-		m.endJob()
-		r := m.jsExecutePendingJob()
-		if r == 0 {
-			return n, err // queue drained
-		}
-
-		n++
-		if r > 0 && m.uncatchablePending() {
-			r = -1 // the job stopped at an uncatchable exception without failing
-		}
-		if r < 0 {
-			e, uncatchable := m.takeException()
-			if uncatchable {
-				// An interrupt or out of memory ends the drain: the
-				// jobs left are page code that must not run now.
-				return n, e
-			}
-			if err == nil {
-				err = e // report the first failure, keep draining the rest
-			}
-		}
-	}
-
-	if err == nil {
-		err = fmt.Errorf("slowjs: aborted draining after %d pending jobs", maxJobs)
-	}
-	return n, err
+	return m.evalValue(evalName, javascript, flags)
 }
 
-// EvalThis is like eval but sets javascript 'this' to 'obj'. It takes obj:
-// obj is freed when EvalThis returns. A Value of another VM is an error, and
-// it is not freed.
+// EvalFile is [VM.EvalValue] with name as the file of the script: its stack
+// frames and its syntax errors show name where those of the other Eval
+// methods show <eval>, and a module has name as its module name. No file is
+// read. name is cleaned first: to valid UTF-8 of one line, with no control
+// character, U+2028 or U+2029 (each becomes U+FFFD), of at most 1,024 bytes
+// (cut where a character starts). An empty name is <eval>.
+//
+// The name of a module is what tells it apart, so a module name the cleaning
+// would change is an error, and nothing runs. Two modules of the same name
+// both run, and import.meta and an import of that name find the first.
+func (m *VM) EvalFile(name, javascript string, flags int) (r Value, err error) {
+	clean := cleanEvalName(name)
+	if flags&evalTypeMask == EvalModule && name != "" && clean != name {
+		return r, fmt.Errorf("slowjs: EvalFile: the module name %.64q is not usable: %s", name, evalNameFault(name))
+	}
+	if err = m.enter(); err != nil {
+		return r, err
+	}
+	defer m.leave(&err)
+	return m.evalValue(clean, javascript, flags)
+}
+
+// evalValue evaluates javascript as the file name, inside a call (enter).
+func (m *VM) evalValue(name, javascript string, flags int) (Value, error) {
+	v, err := m.jsEval(name, javascript, int32(flags))
+	if err != nil {
+		return Value{}, err
+	}
+	if v = m.settled(v); isException(v) {
+		return Value{}, m.errFromException()
+	}
+	return Value{vm: m, v: v}, nil
+}
+
+// EvalThis is [VM.Eval] with obj as this. It takes obj and frees it when it
+// returns, whatever happens. A Value of another VM is an error, and is
+// neither used nor freed.
 func (m *VM) EvalThis(obj Value, javascript string, flags int) (r any, err error) {
 	if m.foreign(obj) {
 		return nil, errForeignValue
 	}
 	defer obj.Free()
-
 	if err = m.enter(); err != nil {
-		return
+		return nil, err
 	}
 	defer m.leave(&err)
 	v, err := m.jsEvalThis(obj.jsValue(), javascript, int32(flags))
 	if err != nil {
 		return nil, err
 	}
-
 	return m.value(m.settled(v), true)
 }
 
-// EvalValue evaluates a script or module source in 'javascript' and returns
-// the resulting Value, or an error, if any.
-//
-// Exceptions thrown during evaluation of the script are returned as Go errors.
-//
-// If no error is returned, the caller must properly handle the returned Value
-// using Dup/Free.
-//
-// Note: See the [Value] documentation for details about manual memory
-// management of Value objects.
-func (m *VM) EvalValue(javascript string, flags int) (r Value, err error) {
-	if err = m.enter(); err != nil {
-		return
-	}
-	defer m.leave(&err)
-	v, err := m.jsEval(evalName, javascript, int32(flags))
-	if err != nil {
-		return r, err
-	}
-
-	v = m.settled(v)
-	if isException(v) {
-		m.jsFreeValue(v)
-		return r, m.errFromException()
-	}
-
-	return Value{vm: m, v: v}, nil
-}
-
-// EvalFile is like EvalValue, with name as the file of the script: its stack
-// frames and its syntax errors show name where those of EvalValue show
-// <eval>, and a module of EvalModule gets name as its name. It reads no file:
-// javascript is the source.
-//
-// The name is cleaned first, so that each frame stays on a line of its own:
-// bytes that are not UTF-8, the control characters (a newline or a 0 byte
-// among them), U+2028 and U+2029 become U+FFFD, and a name longer than 1024
-// bytes is cut at the last character that fits. An empty name is <eval>.
-//
-// The name of a module is its identity, which a cleaned name would lose: two
-// names could clean to one. So with EvalModule, a name the cleaning would
-// change, other than the empty one, is an error, and nothing runs. Two
-// modules given the same name both run, and import.meta and an import of
-// that name find the first, as for the modules of Eval, which are all
-// named <eval>.
-func (m *VM) EvalFile(name, javascript string, flags int) (r Value, err error) {
-	clean := cleanEvalName(name)
-	if flags&evalTypeMask == EvalModule && name != "" && clean != name {
-		return r, fmt.Errorf("slowjs: EvalFile: the module name %.64q is not usable: %s", name, evalNameProblem(name))
-	}
-	if err = m.enter(); err != nil {
-		return
-	}
-	defer m.leave(&err)
-	v, err := m.jsEval(clean, javascript, int32(flags))
-	if err != nil {
-		return r, err
-	}
-
-	v = m.settled(v)
-	if isException(v) {
-		m.jsFreeValue(v)
-		return r, m.errFromException()
-	}
-
-	return Value{vm: m, v: v}, nil
-}
-
-// maxEvalName is the most bytes of the file name of EvalFile.
-const maxEvalName = 1024
-
-// evalTypeMask is the bits of the flags of an eval that say its type
-// (JS_EVAL_TYPE_MASK).
-const evalTypeMask = 3
-
-// evalNameProblem says why cleanEvalName changes name.
-func evalNameProblem(name string) string {
-	switch {
-	case !utf8.ValidString(name):
-		return "it is not valid UTF-8"
-	case strings.IndexFunc(name, evalNameBad) >= 0:
-		return "it has a control character, U+2028 or U+2029"
-	default:
-		return fmt.Sprintf("it is longer than %d bytes", maxEvalName)
-	}
-}
-
-// evalNameBad reports whether c becomes U+FFFD in a file name.
-func evalNameBad(c rune) bool {
-	return c < 0x20 || c == 0x7f || (c >= 0x80 && c < 0xa0) || c == '\u2028' || c == '\u2029'
-}
-
-// cleanEvalName is name as EvalFile uses it: at most maxEvalName bytes of
-// valid UTF-8, with no control character, U+2028 or U+2029, which become
-// U+FFFD. A name that is already so is returned as it is, with no
-// allocation.
-func cleanEvalName(name string) string {
-	if name == "" {
-		return evalName
-	}
-	clean := len(name) <= maxEvalName
-	for i := 0; clean && i < len(name); i++ {
-		clean = name[i] >= 0x20 && name[i] < 0x7f
-	}
-	if clean {
-		return name
-	}
-	var b strings.Builder
-	for _, c := range name {
-		if evalNameBad(c) {
-			c = utf8.RuneError
-		}
-		if b.Len()+utf8.RuneLen(c) > maxEvalName {
-			break
-		}
-		b.WriteRune(c)
-	}
-	return b.String()
-}
-
-// EvalThisValue is like EvalValue but sets javascript 'this' to obj. It
-// takes obj as EvalThis does.
+// EvalThisValue is [VM.EvalThis] that returns the value as a [Value], which
+// the caller frees. It takes obj as EvalThis does.
 func (m *VM) EvalThisValue(obj Value, javascript string, flags int) (r Value, err error) {
 	if m.foreign(obj) {
 		return r, errForeignValue
 	}
 	defer obj.Free()
-
 	if err = m.enter(); err != nil {
-		return
+		return r, err
 	}
 	defer m.leave(&err)
 	v, err := m.jsEvalThis(obj.jsValue(), javascript, int32(flags))
 	if err != nil {
 		return r, err
 	}
-
-	v = m.settled(v)
-	if isException(v) {
-		m.jsFreeValue(v)
+	if v = m.settled(v); isException(v) {
 		return r, m.errFromException()
 	}
-
 	return Value{vm: m, v: v}, nil
 }
 
-// EvalBytecode is like Eval but uses QuickJS bytecode.
+// EvalBytecode loads bytecode that [VM.Compile] made, runs it and returns its
+// value as [VM.Eval] does. this is the global object. A module's top-level
+// await is waited for. Loading, running and converting the value are one
+// call, inside the eval timeout.
 //
-// Note: The bytecode format is linked to a given QuickJS version. Moreover, no security check is done before
-// its execution. Hence the bytecode should not be loaded from untrusted sources.
-//
-// Note: Javascript 'this' is always set to the global context.
-//
-// Loading the bytecode, running it and converting its result to a Go value
-// (which runs toJSON, getters and BigInt.prototype.toString) are one call
-// into javascript, inside the eval timeout.
+// The format of bytecode belongs to the release of QuickJS the engine is, and
+// nothing in it is checked: never load bytecode from a source you do not
+// trust.
 func (m *VM) EvalBytecode(bytecode []byte) (r any, err error) {
 	if err = m.enter(); err != nil {
 		return nil, err
@@ -279,19 +148,11 @@ func (m *VM) EvalBytecode(bytecode []byte) (r any, err error) {
 	if err != nil {
 		return nil, err
 	}
-
 	return m.value(v, true)
 }
 
-// EvalBytecodeValue is like EvalValue but operates on QuickJS bytecode.
-//
-// Exceptions thrown during evaluation of the script are returned as Go errors.
-//
-// If no error is returned, the caller must properly handle the returned Value
-// using Dup/Free.
-//
-// Note: See the [Value] documentation for details about manual memory
-// management of Value objects.
+// EvalBytecodeValue is [VM.EvalBytecode] that returns the value as a
+// [Value], which the caller frees.
 func (m *VM) EvalBytecodeValue(bytecode []byte) (r Value, err error) {
 	if err = m.enter(); err != nil {
 		return r, err
@@ -301,85 +162,65 @@ func (m *VM) EvalBytecodeValue(bytecode []byte) (r Value, err error) {
 	if err != nil {
 		return r, err
 	}
-
 	return Value{vm: m, v: v}, nil
 }
 
-// runBytecode reads bytecode and runs it, inside a call into javascript
-// (enter).
+// runBytecode reads bytecode and runs it, inside a call (enter).
 func (m *VM) runBytecode(bytecode []byte) (jsValue, error) {
-	// https://github.com/bellard/quickjs/blob/eb2c89087def1829ed99630cb14b549d7a98408c/quickjs-libc.c#L4292
 	obj, err := m.jsReadObject(bytecode, readObjBytecode)
 	if err != nil {
-		return obj, err
+		return exception, err
 	}
-
 	return m.evalBytecode(obj)
 }
 
-// evalBytecode runs obj, what JS_ReadObject read, which it takes, inside a
-// call into javascript (enter).
+// evalBytecode runs obj, a script or a module that was read from bytecode,
+// and returns its value. It takes obj. It runs inside a call (enter).
 func (m *VM) evalBytecode(obj jsValue) (jsValue, error) {
 	if isException(obj) {
-		return obj, m.errFromException()
+		return exception, m.errFromException()
 	}
-
 	var v jsValue
 	if tag(obj) == tagModule {
 		if m.jsResolveModule(obj) < 0 {
 			m.jsFreeValue(obj)
 			return exception, m.errFromException()
 		}
-
+		// What fails here stays pending, as qjs leaves it.
 		m.setImportMeta(obj)
-		// JS_EvalFunction takes obj. The hold kept here lets freeTopLevel
-		// reach the module after it ran.
+		// JS_EvalFunction takes obj: the Dup keeps the module for
+		// freeTopLevel once it has run.
 		dupValue(obj)
 		defer m.jsFreeValue(obj)
-		// 'this' is set to ctx->global_obj
-		// see https://github.com/bellard/quickjs/blob/eb2c89087def1829ed99630cb14b549d7a98408c/quickjs.c#L36045
 		v = m.settled(m.jsEvalFunction(obj))
 		if !isException(v) {
 			var err error
 			if v, err = m.await(v); err != nil {
 				return exception, err
 			}
+			// A module that failed or still waits keeps its top level.
 			m.freeTopLevel(obj)
 		}
 	} else {
 		v = m.settled(m.jsEvalFunction(obj))
 	}
-
 	if isException(v) {
-		m.jsFreeValue(v)
 		return exception, m.errFromException()
 	}
-
 	return v, nil
 }
 
-// errAwaitPending is the error of EvalBytecode and EvalBytecodeValue for a
-// module whose top-level await is still pending when no job is left to run.
-// What it waits for may still settle from outside the job queue, such as a
-// promise that a Go function returned and Go resolves later. Then
-// ExecutePendingJobs runs the rest of the module.
+// errAwaitPending is the error of a module whose top-level await is still
+// pending once no job is left to run.
 var errAwaitPending = errors.New("slowjs: the module's top-level await is still pending and no job is left to run")
 
-// await runs pending jobs until the promise v, which it frees, settles, and
-// returns its result, or the exception of a rejected promise. It follows the
-// rule of ExecutePendingJobs: a job that throws does not stop it, and the
-// first such error is what it returns when v is fulfilled, joined with
-// errAwaitPending when no job is left and v is still pending. A rejected v
-// is the error, as it is what the module itself ended with. An uncatchable
-// exception (an interrupt, the eval timeout, out of memory, a panic in a Go
-// function) ends the wait at once, and the jobs left stay queued.
-//
-// It replaces js_std_await of quickjs-libc.c, which the qjs shell calls. That
-// one prints a failed job and goes on, and when the queue is empty it reads
-// the state js_std_init_handlers sets up, which a VM has not got.
+// await runs the jobs of m until the promise v settles, and returns its value
+// or its error. It takes v. The first job that fails is the error, once v is
+// fulfilled. An uncatchable error ends it at once, and the jobs after it stay
+// queued. It does not use js_std_await of qjs, which read state a VM never
+// made when the queue ran dry, and printed the jobs that failed to stderr.
 func (m *VM) await(v jsValue) (jsValue, error) {
 	defer m.jsFreeValue(v)
-
 	var jobErr error
 	for {
 		switch m.jsPromiseState(v) {
@@ -395,84 +236,168 @@ func (m *VM) await(v jsValue) (jsValue, error) {
 			m.endJob()
 			r := m.jsExecutePendingJob()
 			if r == 0 {
-				if jobErr != nil {
-					return exception, errors.Join(errAwaitPending, jobErr)
-				}
-				return exception, errAwaitPending
-			}
-			if r > 0 && m.uncatchablePending() {
-				r = -1 // the job stopped at an uncatchable exception without failing
-			}
-			if r < 0 {
-				e, uncatchable := m.takeException()
-				if uncatchable {
-					return exception, e
-				}
 				if jobErr == nil {
-					jobErr = e
+					return exception, errAwaitPending
 				}
+				return exception, errors.Join(errAwaitPending, jobErr)
 			}
-		default: // not a promise
+			if r > 0 && !m.uncatchablePending() {
+				continue
+			}
+			e, uncatchable := m.takeException()
+			if uncatchable {
+				return exception, e
+			}
+			if jobErr == nil {
+				jobErr = e
+			}
+		default:
+			// Not a promise.
 			return dupValue(v), nil
 		}
 	}
 }
 
-// Compile compiles the bytecode representation of the passed script.
-//
-// The returned bytecode can be later executed using EvalBytecode or EvalBytecodeValue.
-//
-// Note: The bytecode format is linked to a given QuickJS version.
+// Compile compiles javascript, a script or with EvalModule a module, to
+// bytecode, which [VM.EvalBytecode] or [VM.EvalBytecodeValue] runs. The
+// format of the bytecode belongs to the release of QuickJS the engine is.
+// Compiling is inside the eval timeout.
 func (m *VM) Compile(javascript string, flags int) ([]byte, error) {
-	// https://github.com/bellard/quickjs/blob/eb2c89087def1829ed99630cb14b549d7a98408c/qjsc.c#L346-L360
-
-	flags |= evalFlagCompileOnly
-
-	v, err := m.eval(javascript, flags)
+	v, err := m.eval(javascript, flags|evalFlagCompileOnly)
 	if err != nil {
 		return nil, err
 	}
-
 	defer m.jsFreeValue(v)
-
 	if isException(v) {
 		return nil, m.errFromException()
 	}
-
 	return m.writeBytecode(v)
 }
 
-// writeBytecode returns the bytecode of the compiled script v.
+// eval evaluates javascript as the eval methods do, in a call of its own, and
+// returns its value, the exception marker when it threw.
+func (m *VM) eval(javascript string, flags int) (r jsValue, err error) {
+	if err = m.enter(); err != nil {
+		return exception, err
+	}
+	defer m.leave(&err)
+	v, err := m.jsEval(evalName, javascript, int32(flags))
+	if err != nil {
+		return exception, err
+	}
+	return m.settled(v), nil
+}
+
+// writeBytecode returns the bytecode of v, a compiled script or module.
 func (m *VM) writeBytecode(v jsValue) ([]byte, error) {
 	b, ok := m.jsWriteObject(v)
 	if !ok {
 		return nil, m.errFromException()
 	}
-
 	return b, nil
 }
 
-func (m *VM) eval(js string, flags int) (r jsValue, err error) {
+// maxPendingJobs is how many jobs ExecutePendingJobs runs at most in one call.
+const maxPendingJobs = 1 << 20
+
+// ExecutePendingJobs runs the jobs queued in m, the reactions of promises and
+// what follows an await, until the queue is empty, and returns how many it
+// ran. Nothing runs them on its own: a program that uses promises calls it,
+// such as at the end of each turn of its event loop.
+//
+// A job that throws does not stop the others, and the first such exception
+// is the error. A throw in a then callback is no such job: it rejects the
+// promise then returned. An uncatchable error, such as the eval timeout,
+// ends the call at once, and the jobs after it stay queued. A queue that
+// keeps feeding itself is cut after 1,048,576 jobs, with an error.
+func (m *VM) ExecutePendingJobs() (n int, err error) {
 	if err = m.enter(); err != nil {
-		return
+		return 0, err
 	}
 	defer m.leave(&err)
-	v, err := m.jsEval(evalName, js, int32(flags))
-	if err != nil {
-		return r, err
+	for n < maxPendingJobs {
+		m.endJob()
+		r := m.jsExecutePendingJob()
+		if r == 0 {
+			return n, err
+		}
+		n++
+		if r > 0 && !m.uncatchablePending() {
+			continue
+		}
+		e, uncatchable := m.takeException()
+		if uncatchable {
+			return n, e
+		}
+		if err == nil {
+			err = e
+		}
 	}
-
-	return m.settled(v), nil
+	if err == nil {
+		err = fmt.Errorf("slowjs: aborted draining after %d pending jobs", maxPendingJobs)
+	}
+	return n, err
 }
 
-// GlobalObject returns m's global object.
-//
-// Note: See the [Value] documentation for details about manual memory
-// management of Value objects.
+// GlobalObject returns the global object of m, which the caller frees.
 func (m *VM) GlobalObject() (r Value) {
-	return Value{vm: m, v: m.globalObject()}
+	return Value{vm: m, v: m.jsGetGlobalObject()}
 }
 
-func (m *VM) globalObject() jsValue {
-	return m.jsGetGlobalObject()
+// maxEvalName is the most bytes of the name of an eval (cleanEvalName).
+const maxEvalName = 1024
+
+// cleanEvalName returns the file name the engine is given for name: <eval>
+// for none, and else name as valid UTF-8 of one line, each character that is
+// a control character (U+0000 to U+001F, U+007F, U+0080 to U+009F), U+2028
+// or U+2029, and each byte that starts no valid character, made U+FFFD, cut
+// before the first character that would take it past maxEvalName bytes. A
+// stack takes a line for each frame, and the engine reads the name as a C
+// string. A name that needs none of it is returned as it is.
+func cleanEvalName(name string) string {
+	if name == "" {
+		return evalName
+	}
+	if len(name) <= maxEvalName && printableASCII(name) {
+		return name
+	}
+	b := make([]byte, 0, min(len(name)+8, maxEvalName))
+	for _, c := range name {
+		if badNameChar(c) {
+			c = utf8.RuneError
+		}
+		if len(b)+utf8.RuneLen(c) > maxEvalName {
+			break
+		}
+		b = utf8.AppendRune(b, c)
+	}
+	return string(b)
+}
+
+// printableASCII reports whether every byte of s is from 0x20 to 0x7e.
+func printableASCII(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] < 0x20 || s[i] > 0x7e {
+			return false
+		}
+	}
+	return true
+}
+
+// badNameChar reports whether c has no place in a file name of a stack.
+func badNameChar(c rune) bool {
+	return c < 0x20 || c == 0x7f || (c >= 0x80 && c < 0xa0) || c == 0x2028 || c == 0x2029
+}
+
+// evalNameFault says why cleanEvalName changes name.
+func evalNameFault(name string) string {
+	if !utf8.ValidString(name) {
+		return "it is not valid UTF-8"
+	}
+	for _, c := range name {
+		if badNameChar(c) {
+			return "it has a control character, U+2028 or U+2029"
+		}
+	}
+	return fmt.Sprintf("it is longer than %d bytes", maxEvalName)
 }

@@ -1,53 +1,48 @@
-// Copyright 2026 The quickjs-go Authors. All rights reserved.
-// Use of the source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
+// Copyright (c) 2026 The liustack/slowjs Authors.
+// SPDX-License-Identifier: MIT
+// Use of this source code is governed by the MIT license in LICENSE at the
+// root of this repository.
 
 package intl // import "github.com/liustack/slowjs/intl"
 
 import (
+	"errors"
 	"fmt"
 	"math"
-	"slices"
 
-	"github.com/liustack/slowjs"
+	gointl "github.com/liustack/slowjs/internal/gointl"
 )
 
-// part is one element of an Intl formatToParts result.
-type part struct {
-	Type  string `json:"type"`
-	Value string `json:"value"`
-}
+// Reading the options of a request. intl.js has already read every option
+// of a constructor and converted it to a string, a number or a boolean, so
+// these only check the values, in the order ECMA-402 reads the options.
 
-// request is what the javascript shim sends when constructing a formatter.
-type request struct {
-	Locales []string       `json:"locales"`
-	Options map[string]any `json:"options"`
-	// vm is the VM whose Builtin resolves the request, which a long list of
-	// locales stops at its eval timeout (see goLocales).
-	vm *slowjs.VM
-}
-
-// jsError is an error that crosses into javascript as a particular error type.
-// ECMA-402 is specific about which one: a value outside a valid range is a
-// RangeError, an unusable options argument a TypeError, and real code does
-// catch them apart.
+// A jsError is an error javascript gets as an error of its constructor,
+// such as a RangeError, with msg as its message (see jsErr in bridge.go).
 type jsError struct {
-	ctor string
-	msg  string
+	ctor, msg string
 }
 
 func (e *jsError) Error() string { return e.msg }
 
-func rangeError(s string, args ...any) error {
-	return &jsError{"RangeError", fmt.Sprintf(s, args...)}
+// rangeError is a RangeError with a formatted message.
+func rangeError(format string, args ...any) error {
+	return &jsError{"RangeError", fmt.Sprintf(format, args...)}
 }
 
-func typeError(s string, args ...any) error {
-	return &jsError{"TypeError", fmt.Sprintf(s, args...)}
+// typeError is a TypeError with a formatted message.
+func typeError(format string, args ...any) error {
+	return &jsError{"TypeError", fmt.Sprintf(format, args...)}
 }
 
-// optString returns the string valued option key, "" if it is absent, or an
-// error if its value is not one of allowed.
+// badOption is the RangeError of option key given the value v, which the
+// option does not take.
+func badOption(key string, v any) error {
+	return rangeError("value %v out of range for Intl options property %s", v, key)
+}
+
+// optString returns the string option key of o, "" when it is not there.
+// With allowed, the value has to be one of them.
 func optString(o map[string]any, key string, allowed ...string) (string, error) {
 	v, ok := o[key]
 	if !ok {
@@ -56,19 +51,31 @@ func optString(o map[string]any, key string, allowed ...string) (string, error) 
 
 	s, ok := v.(string)
 	if !ok {
-		return "", rangeError("value %v out of range for Intl options property %s", v, key)
+		return "", badOption(key, v)
 	}
 
-	if slices.Contains(allowed, s) {
+	if len(allowed) == 0 {
 		return s, nil
 	}
 
-	return "", rangeError("value %s out of range for Intl options property %s", s, key)
+	for _, a := range allowed {
+		if s == a {
+			return s, nil
+		}
+	}
+	return "", badOption(key, s)
 }
 
-// optInt returns the integer valued option key and whether it was present:
-// ECMA-402's DefaultNumberOption, which checks that the value is within
-// [min, max] before it floors it, so that 3.9 is out of [0, 3].
+// optBool returns the boolean option key of o, and whether it was given as
+// one.
+func optBool(o map[string]any, key string) (bool, bool) {
+	b, ok := o[key].(bool)
+	return b, ok
+}
+
+// optInt is ECMA-402's DefaultNumberOption for option key of o: a number
+// from min to max, floored once it is known to be in that range, so that
+// 3.9 is out of 1 to 3. It is false when the option was not given.
 func optInt(o map[string]any, key string, min, max int) (int, bool, error) {
 	v, ok := o[key]
 	if !ok {
@@ -76,31 +83,49 @@ func optInt(o map[string]any, key string, min, max int) (int, bool, error) {
 	}
 
 	f, ok := v.(float64)
-	if !ok || math.IsNaN(f) {
-		return 0, false, rangeError("value %v out of range for Intl options property %s", v, key)
-	}
-
-	if f < float64(min) || f > float64(max) {
-		return 0, false, rangeError("value %v out of range for Intl options property %s", v, key)
+	if !ok || math.IsNaN(f) || f < float64(min) || f > float64(max) {
+		return 0, false, badOption(key, v)
 	}
 
 	return int(math.Floor(f)), true, nil
 }
 
-// optBool returns the boolean valued option key and whether it was present.
-func optBool(o map[string]any, key string) (bool, bool) {
+// enumOption returns the option key of o as the value from first to last
+// whose String it is, the zero value when it was not given.
+func enumOption[T interface {
+	~int
+	String() string
+}](o map[string]any, key string, first, last T) (T, error) {
+	var zero T
 	v, ok := o[key]
 	if !ok {
-		return false, false
+		return zero, nil
 	}
 
-	b, ok := v.(bool)
-	return b, ok
+	if s, ok := v.(string); ok {
+		for n := first; n <= last; n++ {
+			if n.String() == s {
+				return n, nil
+			}
+		}
+	}
+	return zero, badOption(key, v)
 }
 
+// formatOptionError is err as javascript is to see it: go-intl refusing a
+// combination of options is a RangeError.
+func formatOptionError(err error) error {
+	if errors.Is(err, gointl.ErrOption) {
+		return rangeError("%s", err.Error())
+	}
+	return err
+}
+
+// isAlpha, isDigit and isAlnum report whether every byte of s is an ASCII
+// letter, a digit, or either. They are true for "".
 func isAlpha(s string) bool {
 	for i := 0; i < len(s); i++ {
-		if c := s[i]; (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') {
+		if c := s[i] | 0x20; c < 'a' || c > 'z' {
 			return false
 		}
 	}
@@ -109,7 +134,7 @@ func isAlpha(s string) bool {
 
 func isDigit(s string) bool {
 	for i := 0; i < len(s); i++ {
-		if c := s[i]; c < '0' || c > '9' {
+		if s[i] < '0' || s[i] > '9' {
 			return false
 		}
 	}
@@ -118,7 +143,8 @@ func isDigit(s string) bool {
 
 func isAlnum(s string) bool {
 	for i := 0; i < len(s); i++ {
-		if c := s[i]; (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (c < '0' || c > '9') {
+		c := s[i]
+		if (c < '0' || c > '9') && (c|0x20 < 'a' || c|0x20 > 'z') {
 			return false
 		}
 	}

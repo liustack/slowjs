@@ -1,47 +1,195 @@
-// Copyright 2024 The quickjs-go Authors. All rights reserved.
-// Use of the source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
+// Copyright (c) 2026 The liustack/slowjs Authors.
+// SPDX-License-Identifier: MIT
+// Use of this source code is governed by the MIT license in LICENSE at the
+// root of this repository.
 
 package slowjs // import "github.com/liustack/slowjs"
 
-import (
-	"errors"
-	"fmt"
-)
+// Value, a javascript value held from Go, its properties, and the
+// constructors of values.
 
-var (
-	// UndefinedValue is a Value representing Javascript value 'undefined'. It is
-	// not associated with any particular VM: every method that takes a Value
-	// takes it, and the zero Value, as undefined.
-	UndefinedValue = Value{v: undefined}
-)
+import "errors"
 
-// errForeignValue is the error of a method given a Value of another VM.
-var errForeignValue = errors.New("slowjs: a Value of another VM")
+// Value is a javascript value that Go holds a reference to. The value lives as
+// long as a reference to it does, and the javascript GC frees it once none
+// does, so Go code that holds a Value keeps to these rules:
+//
+//   - Each Value is freed with Free once, and not used after. Dropping one
+//     unfreed leaks it, until the VM closes.
+//   - A copy of a Value, by an assignment, is not a new reference. Dup makes
+//     one, which is freed on its own. Hand a Value on as a Dup, which the
+//     receiver frees, typically with defer.
+//   - A Value does not outlive its VM.
+//
+// Dup and Free pair up, and the pairs nest as calls do. That is easy to get
+// wrong across goroutines or channels: say g1 hands a Value to g2 by
+// assignment, not by Dup, and both free it when they are done. If g1 frees
+// first, g2 then uses a value that may be gone, and frees it a second time.
+// The fix is for g1 to wait until g2 is done before it frees, or to hand g2 a
+// Dup.
+//
+// Where a Go value does, as with Eval and Call, use it: it needs none of
+// this.
+//
+// UndefinedValue and the zero Value belong to no VM, hold no reference and
+// are undefined to every VM: freeing one does nothing, and Dup of one panics,
+// as that is most often a Value used after its Free.
+type Value struct {
+	vm *VM
+	v  jsValue
+}
 
-// foreign reports whether v belongs to a VM other than m: every method that
-// takes a Value refuses it before it reaches the engine, where it would keep
-// a pointer into the memory of the other VM, or free it with the wrong
-// allocator. It is neither used nor freed then: it stays its owner's. A
-// Value of no VM, UndefinedValue or the zero Value, holds no reference and
-// is every VM's.
-func (m *VM) foreign(v Value) bool { return v.vm != m && v.vm != nil }
+// VM returns the VM of v, nil for UndefinedValue and the zero Value.
+func (v *Value) VM() *VM { return v.vm }
 
-// Atom is an unique identifier of, for example, a string value. Atom values
-// are VM-specific.
-type Atom = uint32
+// SetProperty sets the property prop of v to val (see [VM.SetProperty]).
+func (v Value) SetProperty(prop Atom, val any) (err error) {
+	return v.vm.SetProperty(v, prop, val)
+}
 
-// NewAtom returns an unique indentifier of 's' or an error, if any.
+// SetPropertyValue sets the property prop of v to val (see
+// [VM.SetPropertyValue]).
+func (v Value) SetPropertyValue(prop Atom, val Value) (err error) {
+	return v.vm.SetPropertyValue(v, prop, val)
+}
+
+// GetPropertyValue returns the property prop of v (see
+// [VM.GetPropertyValue]).
+func (v Value) GetPropertyValue(prop Atom) (r Value, err error) {
+	return v.vm.GetPropertyValue(v, prop)
+}
+
+// GetProperty returns the property prop of v as a Go value.
+//
+// Deprecated: this is not used: the property is read on v. Use
+// [Value.Property].
+func (v Value) GetProperty(this Value, prop Atom) (r any, err error) {
+	return v.Property(prop)
+}
+
+// Property returns the property prop of v as a Go value (see
+// [VM.GetProperty]).
+func (v Value) Property(prop Atom) (r any, err error) {
+	return v.vm.GetProperty(v, prop)
+}
+
+// MarshalJSON returns the JSON of v, as JSON.stringify makes it, so that
+// encoding/json writes a Value as the javascript value. For a value
+// JSON.stringify gives undefined for, such as a function, it is the text
+// undefined, which is not JSON. It runs javascript, such as toJSON, inside
+// the eval timeout.
+func (v Value) MarshalJSON() (r []byte, err error) {
+	m := v.vm
+	if err = m.enter(); err != nil {
+		return nil, err
+	}
+	defer m.leave(&err)
+	j := m.settled(m.jsJSONStringify(v.v))
+	if isException(j) {
+		return nil, m.errFromException()
+	}
+	defer m.jsFreeValue(j)
+	s, err := m.goString(j)
+	if err != nil {
+		return nil, err
+	}
+	// A copy of its own: the string of the engine is freed as this returns.
+	return []byte(s), nil
+}
+
+// Dup returns a new reference to v, which is freed on its own. It panics for
+// a Value of no VM, which is most often one used after its Free.
+func (v Value) Dup() Value {
+	_ = v.vm.id // the panic of a Value of no VM
+	return Value{vm: v.vm, v: dupValue(v.v)}
+}
+
+// Free gives up the reference v holds, and makes v the zero Value. It does
+// nothing for UndefinedValue and the zero Value.
+func (v *Value) Free() {
+	v.vm.jsFreeValue(v.v)
+	*v = Value{}
+}
+
+// Any returns v as a Go value, as [VM.Eval] converts it. v stays the
+// caller's. Converting an object or a BigInt runs javascript, inside the eval
+// timeout. UndefinedValue and the zero Value are Undefined{}.
+func (v Value) Any() (r any, err error) {
+	m := v.vm
+	if m == nil {
+		return Undefined{}, nil
+	}
+	if err = m.enter(); err != nil {
+		return nil, err
+	}
+	defer m.leave(&err)
+	return m.value(v.v, false)
+}
+
+// IsUndefined reports whether v is undefined. UndefinedValue and the zero
+// Value are.
+func (v Value) IsUndefined() bool {
+	return tag(v.jsValue()) == tagUndefined
+}
+
+// errCallNoVM is the error of calling a Value of no VM.
+var errCallNoVM = errors.New("cannot call a Value not associated with a VM")
+
+// Call calls v with this and args and returns its value as a Go value, as
+// [VM.Call] does with the same arguments. this is used as it is, not replaced
+// by the global object: UndefinedValue is undefined.
+//
+// A Go error is not among the types an argument converts by, so it goes as
+// its JSON, which for an error of the standard library is {}: pass
+// err.Error(). A Value that a function of [VM.RegisterFunc] gets, such as the
+// resolve of a promise, is valid only during the call it got it in: to call
+// it later, keep a Dup and free it when done.
+func (v Value) Call(this Value, args ...any) (r any, err error) {
+	m := v.vm
+	if m == nil {
+		return nil, errCallNoVM
+	}
+	if m.foreign(this) {
+		return nil, errForeignValue
+	}
+	if err = m.enter(); err != nil {
+		return nil, err
+	}
+	defer m.leave(&err)
+	return m.call(v.v, this.jsValue(), args)
+}
+
+// CallValue is [Value.Call] that returns the value as a [Value], which the
+// caller frees.
+func (v Value) CallValue(this Value, args ...any) (r Value, err error) {
+	m := v.vm
+	if m == nil {
+		return r, errCallNoVM
+	}
+	if m.foreign(this) {
+		return r, errForeignValue
+	}
+	if err = m.enter(); err != nil {
+		return r, err
+	}
+	defer m.leave(&err)
+	return m.callValue(v.v, this.jsValue(), args)
+}
+
+// NewAtom returns the atom of the property name s, a number the VM knows the
+// name by, the same for the same name. Invalid UTF-8 in s is U+FFFD a byte.
+// An atom is never freed.
 func (m *VM) NewAtom(s string) (r Atom, err error) {
-	if err := m.usable(); err != nil {
+	if err = m.usable(); err != nil {
 		return atomNull, err
 	}
 	return m.atomOf(s)
 }
 
-// SetPropertyValue sets this.prop = val. A setter, or the set trap of a proxy,
-// runs javascript: it runs inside the eval timeout like [VM.Eval], and its
-// exception is the error.
+// SetPropertyValue sets the property prop of this to val, as an assignment in
+// strict code does: a setter runs, and a write the object refuses, as a
+// Proxy can, is a TypeError. val stays the caller's. UndefinedValue and the
+// zero Value are undefined. A Value of another VM is an error.
 func (m *VM) SetPropertyValue(this Value, prop Atom, val Value) (err error) {
 	if m.foreign(this) || m.foreign(val) {
 		return errForeignValue
@@ -50,20 +198,11 @@ func (m *VM) SetPropertyValue(this Value, prop Atom, val Value) (err error) {
 		return err
 	}
 	defer m.leave(&err)
-	return m.setPropertyValue(this, prop, val)
+	return m.setProperty(this.jsValue(), prop, dupValue(val.jsValue()))
 }
 
-// setPropertyValue is SetPropertyValue inside a call into javascript.
-func (m *VM) setPropertyValue(this Value, prop Atom, val Value) error {
-	if m.jsSetProperty(this.jsValue(), prop, dupValue(val.jsValue())) < 0 {
-		return m.errFromException()
-	}
-
-	return nil
-}
-
-// SetProperty sets this.prop = val. It runs javascript as [VM.SetPropertyValue]
-// does, inside the eval timeout.
+// SetProperty sets the property prop of this to val, converted as an argument
+// of [VM.Call] is, as [VM.SetPropertyValue] does.
 func (m *VM) SetProperty(this Value, prop Atom, val any) (err error) {
 	if m.foreign(this) {
 		return errForeignValue
@@ -72,28 +211,23 @@ func (m *VM) SetProperty(this Value, prop Atom, val any) (err error) {
 		return err
 	}
 	defer m.leave(&err)
-	jsArgs, free, err := m.convertArgs(val)
+	v, err := m.callArg(val)
 	if err != nil {
 		return err
 	}
-
-	if len(free) != 0 {
-		defer func() {
-			for _, v := range free {
-				m.jsFreeValue(v)
-			}
-		}()
-	}
-
-	return m.setPropertyValue(this, prop, Value{vm: m, v: jsArgs[0]})
+	return m.setProperty(this.jsValue(), prop, v)
 }
 
-// GetPropertyValue returns this.prop. A getter, or the get trap of a proxy,
-// runs javascript: it runs inside the eval timeout like [VM.Eval], and its
-// exception is the error.
-//
-// Note: See the [Value] documentation for details about manual memory
-// management of Value objects.
+// setProperty sets the property prop of this to v, which it takes.
+func (m *VM) setProperty(this jsValue, prop Atom, v jsValue) error {
+	if m.jsSetProperty(this, prop, v) < 0 || m.uncatchablePending() {
+		return m.errFromException()
+	}
+	return nil
+}
+
+// GetPropertyValue returns the property prop of this, which the caller frees.
+// A getter runs, inside the eval timeout. A Value of another VM is an error.
 func (m *VM) GetPropertyValue(this Value, prop Atom) (r Value, err error) {
 	if m.foreign(this) {
 		return r, errForeignValue
@@ -102,17 +236,15 @@ func (m *VM) GetPropertyValue(this Value, prop Atom) (r Value, err error) {
 		return r, err
 	}
 	defer m.leave(&err)
-	v := m.jsGetProperty(this.jsValue(), prop)
+	v := m.settled(m.jsGetProperty(this.jsValue(), prop))
 	if isException(v) {
 		err = m.errFromException()
 	}
 	return Value{vm: m, v: v}, err
 }
 
-// GetProperty returns this.prop. It runs javascript as [VM.GetPropertyValue]
-// does, and so does the conversion of the result to a Go value (a BigInt
-// through its toString, an object through toJSON and its getters), inside the
-// same eval timeout.
+// GetProperty returns the property prop of this as a Go value, as [VM.Eval]
+// converts it. Reading it and converting it run inside one eval timeout.
 func (m *VM) GetProperty(this Value, prop Atom) (r any, err error) {
 	if m.foreign(this) {
 		return nil, errForeignValue
@@ -121,223 +253,62 @@ func (m *VM) GetProperty(this Value, prop Atom) (r any, err error) {
 		return nil, err
 	}
 	defer m.leave(&err)
-	return m.value(m.jsGetProperty(this.jsValue(), prop), true)
+	return m.value(m.settled(m.jsGetProperty(this.jsValue(), prop)), true)
 }
 
-// Value represents a native Javascript value. Values are reference counted and
-// their lifetime is managed by an independent Javascript garbage collector.
-// To avoid memory corruption/leaks caused by tripping the Javascript GC, a
-// Value must not
-//
-//   - be copied. Use the Dup method instead.
-//   - become unreachable without calling its Free method.
-//   - be used after its Free() method was called.
-//   - outlive its VM.
-//
-// It is recommended to use native Go values instead of Value where possible.
-//
-// When passing a Value down the call stack use Dup. For example in main
-//
-//	v, _ := EvalValue(someScript)
-//	defer v.Free()
-//	foo(v.Dup()) // Instead of foo(v)
-//
-// In 'foo' Free must be used. For example
-//
-//	func foo(v Value) {
-//	        defer v.Free()
-//	        ...
-//	}
-//
-// This ensures the/only topmost Free marks 'v' eligible for garbage collection.
-//
-// Beware that the correct setup/handling becomes more complicated when using
-// closures, Values are sent through a channel etc. In particular, if a
-// goroutine 1 passes a Dup of 'v' to goroutine 2 and goroutine 1 completes and
-// thus frees 'v' before goroutine 2 completes, the reference counting
-// mechanism will fail. In other words, every Free must be strictly paired with
-// the Dup that preceded obtaining the Value and the Dup/Free calls must
-// respect the original nesting. This is correct.
-//
-//	Dup             // in main
-//	        Dup     // in foo
-//	        Free    // in foo
-//	Free            // in main
-//
-// This will fail, for example in the above discussed goroutines scenario.
-//
-//	Dup            // in g1
-//	        Dup    // in g2
-//	Free           // in g1
-//	        Free   // in g2
-//
-// The fix might be in this case to arrange goroutine 1 to wait for goroutine 2
-// to complete before executing Free in goroutine 1.
-//
-// See TestMemgrind for an example of how to detect memory leaks caused not
-// only by improper Value use.
-type Value struct {
-	vm *VM
-	v  jsValue
+// NewInt returns the number n. Outside int32 it is a float, which loses
+// precision past 2^53.
+func (m *VM) NewInt(n int) Value {
+	return Value{vm: m, v: intValue(int64(n))}
 }
 
-// VM returns the VM associated with 'v'.
-func (v *Value) VM() *VM {
-	return v.vm
+// NewFloat64 returns the number n.
+func (m *VM) NewFloat64(n float64) Value {
+	return Value{vm: m, v: newFloat(n)}
 }
 
-// SetProperty sets v.prop = val.
-func (v Value) SetProperty(prop Atom, val any) (err error) {
-	return v.vm.SetProperty(v, prop, val)
-}
-
-// SetPropertyValue sets v.prop = val.
-func (v Value) SetPropertyValue(prop Atom, val Value) (err error) {
-	return v.vm.SetPropertyValue(v, prop, val)
-}
-
-// GetPropertyValue returns v.prop.
-func (v Value) GetPropertyValue(prop Atom) (r Value, err error) {
-	return v.vm.GetPropertyValue(v, prop)
-}
-
-// GetProperty returns v.prop. The 'this' argument is ignored.
-//
-// Deprecated: The 'this' argument is vestigial, the property is always looked
-// up on 'v'. Use [Value.Property] instead.
-func (v Value) GetProperty(this Value, prop Atom) (r any, err error) {
-	return v.vm.GetProperty(v, prop)
-}
-
-// Property returns v.prop. It is [Value.GetProperty] without the vestigial
-// 'this' argument.
-func (v Value) Property(prop Atom) (r any, err error) {
-	return v.vm.GetProperty(v, prop)
-}
-
-// MarshalJSON implements encoding/json.Marshaler. A toJSON method, a getter or
-// a proxy trap runs javascript inside the eval timeout, like [VM.Eval].
-func (v Value) MarshalJSON() (r []byte, err error) {
-	m := v.vm
-	if err = m.enter(); err != nil {
-		return nil, err
-	}
-	defer m.leave(&err)
-	json := m.jsJSONStringify(v.v)
-
-	defer m.jsFreeValue(json)
-
-	if isException(json) {
-		return nil, v.vm.errFromException()
-	}
-
-	// A copy: the JS buffer is released before this returns.
-	s, err := v.vm.goString(json)
+// NewString returns the string s, with U+FFFD for each byte of invalid UTF-8,
+// which the caller frees. In a Go function that javascript called, a long
+// string stops at Interrupt, the eval timeout or an uncatchable error of the
+// call, and NewString returns that error, as a loop of the engine stops.
+func (m *VM) NewString(s string) (r Value, err error) {
+	v, err := m.newString(s)
 	if err != nil {
-		return nil, err
-	}
-
-	return []byte(s), nil
-}
-
-// Dup returns a copy of 'v' while updating its reference count.
-func (v Value) Dup() Value {
-	_ = v.vm.id // a Value of no VM, such as the zero Value, panics
-	return Value{
-		vm: v.vm,
-		v:  dupValue(v.v),
-	}
-}
-
-// Free marks 'v' as no longer used and updates its reference count. 'v' must
-// not be used afterwards.
-func (v *Value) Free() {
-	v.vm.jsFreeValue(v.v)
-	*v = Value{}
-}
-
-// Any attemtps to convert 'v' to any using the same rules as there are for
-// the return value of VM.Eval. An object becomes JSON, which runs toJSON and
-// getters, and a BigInt goes through its toString: that javascript runs inside
-// the eval timeout, like [VM.Eval].
-func (v Value) Any() (r any, err error) {
-	// A Value of no VM, such as UndefinedValue, converts without one.
-	if v.vm != nil {
-		if err = v.vm.enter(); err != nil {
-			return nil, err
-		}
-		defer v.vm.leave(&err)
-	}
-	return v.vm.value(v.v, false)
-}
-
-// IsUndefined reports whether 'v' represents the Javascript value 'undefined'.
-func (v Value) IsUndefined() bool {
-	return tag(v.v) == tagUndefined
-}
-
-// Call evaluates 'v(args...)' with 'this' as the receiver and returns the
-// resulting (value, error). 'v' must be a Javascript function. Pass
-// [UndefinedValue] as 'this' when the function does not use it.
-//
-//	resolve.Call(slowjs.UndefinedValue, "done")
-//	reject.Call(slowjs.UndefinedValue, err.Error())
-//
-// Argument types are converted using the same rules as in [VM.Call] and the
-// result is unpacked using the same rules as there are for the return value of
-// [VM.Eval]. Note that a Go error is not one of the recognized types, so it is
-// marshaled to JSON like any other value — and because the standard error
-// types have no exported fields that yields '{}'. Pass err.Error() instead.
-//
-// Note: A Value passed to a Go function registered by [VM.RegisterFunc] is
-// valid only for the duration of that call. To call it later, for example to
-// settle a promise after the Go function has returned, retain it using
-// [Value.Dup] and release it using [Value.Free] when done.
-//
-// Note: See the [Value] documentation for details about manual memory
-// management of Value objects.
-func (v Value) Call(this Value, args ...any) (r any, err error) {
-	if err = v.checkCall(this); err != nil {
-		return nil, err
-	}
-
-	// Re-arm the eval-timeout deadline, as the Eval* functions do (see VM.Call).
-	if err = v.vm.enter(); err != nil {
-		return
-	}
-	defer v.vm.leave(&err)
-	return v.vm.call(v.v, this.jsValue(), args...)
-}
-
-// CallValue is like [Value.Call] but returns (Value, error) like
-// [VM.EvalValue].
-//
-// Note: See the [Value] documentation for details about manual memory
-// management of Value objects.
-func (v Value) CallValue(this Value, args ...any) (r Value, err error) {
-	if err = v.checkCall(this); err != nil {
 		return r, err
 	}
-
-	// Re-arm the eval-timeout deadline, as the Eval* functions do (see VM.Call).
-	if err = v.vm.enter(); err != nil {
-		return
-	}
-	defer v.vm.leave(&err)
-	return v.vm.callValue(v.v, this.jsValue(), args...)
+	return Value{vm: m, v: v}, nil
 }
 
-// checkCall validates the receiver and 'this' of the Value call methods. It
-// reports the problem as an error rather than panicking in v.vm because both
-// callers already return one.
-func (v Value) checkCall(this Value) error {
-	if v.vm == nil {
-		return fmt.Errorf("cannot call a Value not associated with a VM")
+// newString returns the string s, or the error that stopped it.
+func (m *VM) newString(s string) (jsValue, error) {
+	if err := m.usable(); err != nil {
+		return exception, err
 	}
-
-	if v.vm.foreign(this) {
-		return errForeignValue
+	v := m.newStringFast(s)
+	if isException(v) {
+		return v, m.errFromException()
 	}
+	return v, nil
+}
 
-	return nil
+// goString returns the Go string of v, which it borrows: a lone surrogate is
+// U+FFFD and a NUL stays.
+func (m *VM) goString(v jsValue) (string, error) {
+	s, ok := m.argString(v, false)
+	if !ok {
+		return "", m.errFromException()
+	}
+	return s, nil
+}
+
+// NewObjectValue returns a new empty object, which the caller frees.
+func (m *VM) NewObjectValue() (r Value, err error) {
+	if err = m.usable(); err != nil {
+		return r, err
+	}
+	v := m.jsNewObject()
+	if isException(v) {
+		return r, m.errFromException()
+	}
+	return Value{vm: m, v: v}, nil
 }

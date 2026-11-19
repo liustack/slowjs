@@ -1,6 +1,7 @@
-// Copyright 2024 The quickjs-go Authors. All rights reserved.
-// Use of the source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
+// Copyright (c) 2026 The liustack/slowjs Authors.
+// SPDX-License-Identifier: MIT
+// Use of this source code is governed by the MIT license in LICENSE at the
+// root of this repository.
 
 package slowjs // import "github.com/liustack/slowjs"
 
@@ -9,1297 +10,917 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"os"
-	goruntime "runtime"
-	"runtime/debug"
+	"reflect"
 	"strings"
 	"testing"
 )
 
-var (
-	goarch = goruntime.GOARCH
-	goos   = goruntime.GOOS
-	target = fmt.Sprintf("%s/%s", goos, goarch)
-)
+// goString of a Go value, for messages: its type and value.
+func show(v any) string { return fmt.Sprintf("%T(%v)", v, v) }
 
-//lint:ignore U1000 debug helper
-func stack() []byte { return debug.Stack() }
-
-func TestMain(m *testing.M) {
-	os.Exit(m.Run())
+// sameGo reports whether got is want, comparing an *Object by its JSON and a
+// *big.Int by its value.
+func sameGo(got, want any) bool {
+	switch w := want.(type) {
+	case *Object:
+		g, ok := got.(*Object)
+		return ok && g.json == w.json
+	case *big.Int:
+		g, ok := got.(*big.Int)
+		return ok && g.Cmp(w) == 0
+	}
+	return reflect.DeepEqual(got, want)
 }
 
 func TestEval(t *testing.T) {
-	t.Run("eval1", testEval1)
-	t.Run("eval2", testEval2)
-	t.Run("eval3", testEval3)
-}
-
-func testEval1(t *testing.T) {
-	m, err := NewVM()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	defer m.Close()
-
-	for _, test := range []struct {
-		js string
-		v  any
-	}{
-		{"42*314;", 42 * 314},
-		{"'foo'+'bar';", "foobar"},
-		{"42 < 314;", true},
-		{"null;", nil},
-		{"undefined;", Undefined{}},
-		{"throw new Error('FAIL')", fmt.Errorf("Error: FAIL")},
-	} {
-		v, err := m.Eval(test.js, EvalGlobal)
-		t.Logf("%s: %T(%[1]v) %v", test.js, v, err)
-		if err != nil {
-			switch x := test.v.(type) {
-			case error:
-				if g, e := err.Error(), x.Error(); g != e {
-					t.Fatalf("FAIL %s: %v %v", test.js, g, e)
-				}
-
-				continue
-			default:
-				t.Errorf("FAIL %s: %v", test.js, err)
-				continue
-			}
-		}
-
-		if g, e := v, test.v; g != e {
-			t.Fatalf("FAIL %s: %T(%[1]v) %T(%[2]v)", test.js, g, e)
-		}
-	}
-}
-
-func testEval2(t *testing.T) {
-	m, err := NewVM()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	defer m.Close()
-
-	for _, test := range []struct {
-		js string
-		v  any
-		sv string
-	}{
-		{"BigInt('1234567890123456789')", newBigInt(t, "1234567890123456789"), "1234567890123456789"},
-		{"BigInt('-1234567890123456789')", newBigInt(t, "-1234567890123456789"), "-1234567890123456789"},
-		{"1234567890123456789n", newBigInt(t, "1234567890123456789"), "1234567890123456789"},
-		{"-1234567890123456789n", newBigInt(t, "-1234567890123456789"), "-1234567890123456789"},
-	} {
-		v, err := m.Eval(test.js, EvalGlobal)
-		t.Logf("%s: %T(%[1]v) %v", test.js, v, err)
-		if err != nil {
-			t.Errorf("FAIL %s: %v", test.js, err)
-			continue
-		}
-
-		if g, e := fmt.Sprintf("%T", v), fmt.Sprintf("%T", test.v); g != e {
-			t.Errorf("FAIL %s: %T(%[1]v) %T(%[2]v)", test.js, g, e)
-			continue
-		}
-
-		if g, e := fmt.Sprint(v), test.sv; g != e {
-			t.Errorf("FAIL %v: %T(%[1]v) %T(%[2]v)", test.js, g, e)
-			continue
-		}
-	}
-}
-
-func testEval3(t *testing.T) {
-	m, err := NewVM()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	defer m.Close()
-
-	for _, test := range []struct {
-		js string
-		v  string
-	}{
-		{`a = {}; a;`, `{}`},
-		{`a = {foo: 'bar', baz: "qux", i: 42}; a;`, `{"foo":"bar","baz":"qux","i":42}`},
-		{`a = []; a;`, `[]`},
-		{`a = [1, 2, 3]; a;`, `[1,2,3]`},
-	} {
-		v, err := m.Eval(test.js, EvalGlobal)
-		t.Logf("js=`%s`: v=%T(%[2]v) err=%T(%[3]v)", test.js, v, err)
-		if err != nil {
-			t.Errorf("FAIL js=`%s`: err=%v", test.js, err)
-			continue
-		}
-
-		switch x := v.(type) {
-		case *Object:
-			if g, e := string(x.json), test.v; g != e {
-				t.Errorf("got=`%s` expected=`%s`", g, e)
-			}
-		default:
-			t.Errorf("unexpected result type: %T", x)
-		}
-	}
-}
-
-func TestCall0(t *testing.T) {
-	t.Run("call1", testCall1)
-	t.Run("call2", testCall2)
-	t.Run("call3", testCall3)
-	t.Run("call4", testCall4)
-}
-
-func testCall1(t *testing.T) {
-	m, err := NewVM()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	defer m.Close()
-
-	for _, test := range []struct {
-		js string
-	}{
-		{`42;`},
-		{`var a = 42; a;`},
-		{`var a = { }; a;`},
-	} {
-		v, err := m.Call(test.js)
-		t.Logf("js=`%s`: v=%T(%[2]v) err=%T(%[3]v)", test.js, v, err)
-		if err == nil {
-			t.Errorf("FAIL js=`%s`: expected non nil err", test.js)
-		}
-	}
-}
-
-func testCall2(t *testing.T) {
-	m, err := NewVM()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	defer m.Close()
-
-	for _, test := range []struct {
-		js string
-		v  any
-	}{
-		{`function f() { return null; }; f`, nil},
-		{`function f() { return undefined; }; f`, Undefined{}},
-		{`function f() { return "foo"; }; f`, "foo"},
-		{`function f() { return 42; }; f`, 42},
-		{`function f() { return true; }; f`, true},
-		{`function f() { return 3.14; }; f`, 3.14},
-		{`function f() { return 1n; }; f`, 1},
-		{`function f() { return {1:2,3:4}; }; f`, `{"1":2,"3":4}`},
-	} {
-		v, err := m.Call(test.js)
-		t.Logf("js=`%s`: v=%T(%[2]v) err=%T(%[3]v)", test.js, v, err)
-		if err != nil {
-			t.Errorf("FAIL js=`%s`: err=%v", test.js, err)
-		}
-
-		switch x := v.(type) {
-		case nil:
-			if test.v != nil {
-				t.Errorf("expected nil")
-			}
-		case Undefined, string, int, bool, float64:
-			if g, e := x, test.v; g != e {
-				t.Errorf("got %v, expected %v", g, e)
-			}
-		case *big.Int:
-			if g, e := x, big.NewInt(int64(test.v.(int))); g.Cmp(e) != 0 {
-				t.Errorf("got %v, expected %v", g, e)
-			}
-		case *Object:
-			if g, e := x.json, test.v; g != e {
-				t.Errorf("got %v, expected %v", g, e)
-			}
-		default:
-			panic(todo("%T", x))
-		}
-	}
-}
-
-func testCall3(t *testing.T) {
-	m, err := NewVM()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	defer m.Close()
-
-	type T struct {
-		A int
-		B string
-	}
-
-	for _, test := range []struct {
-		js   string
-		args []any
-		v    any
-	}{
-		{`function f(a) { return a; }; f`, nil, Undefined{}},
-		{`function f(a) { return a; }; f`, []any{nil}, nil},
-		{`function f(a) { return a; }; f`, []any{Undefined{}}, Undefined{}},
-		{`function f(a) { return a; }; f`, []any{123}, 123},
-		{`function f(a) { return a; }; f`, []any{int64(1234567890123)}, 1.234567890123e+12},
-		{`function f(a) { return a; }; f`, []any{true}, true},
-		{`function f(a) { return a; }; f`, []any{"foo"}, "foo"},
-		{`function f(a) { return a; }; f`, []any{big.NewInt(42)}, 42},
-		{`function f(a, b, c, d) { return {a: a, b: b, c: c, d: d}; }; f`, []any{"aa", 11, "cc", 22}, `{"a":"aa","b":11,"c":"cc","d":22}`},
-		{`function f(a) { return a; }; f`, []any{T{11, "aa"}}, `{"A":11,"B":"aa"}`},
-		{`function f(a) { return a.A; }; f`, []any{T{11, "aa"}}, 11},
-		{`function f(a) { return a; }; f`, []any{&T{11, "aa"}}, `{"A":11,"B":"aa"}`},
-		{`var obj={"a":42, foo() { return obj.a; }}; obj.foo`, nil, 42},
-	} {
-		v, err := m.Call(test.js, test.args...)
-		t.Logf("js=`%s`: v=%T(%[2]v) err=%T(%[3]v)", test.js, v, err)
-		if err != nil {
-			t.Errorf("FAIL js=`%s`: err=%v", test.js, err)
-		}
-
-		switch x := v.(type) {
-		case nil:
-			if test.v != nil {
-				t.Errorf("expected nil")
-			}
-		case Undefined, string, int, bool, float64:
-			if g, e := x, test.v; g != e {
-				t.Errorf("got %v, expected %v", g, e)
-			}
-		case *big.Int:
-			if g, e := x, big.NewInt(int64(test.v.(int))); g.Cmp(e) != 0 {
-				t.Errorf("got %v, expected %v", g, e)
-			}
-		case *Object:
-			if g, e := x.json, test.v; g != e {
-				t.Errorf("got %v, expected %v", g, e)
-			}
-		default:
-			panic(todo("%T", x))
-		}
-	}
-}
-
-func testCall4(t *testing.T) {
-	m, err := NewVM()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	defer m.Close()
-
-	v, err := m.EvalValue(`
-function f(o) {
-	return o.a;
-}
-
-obj = {a:42,g:function(){return this;}};
-obj;
-`, EvalGlobal)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	defer v.Free()
-
-	w, err := m.Call("f", v)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if g, e := w, 42; g != e {
-		t.Fatal(g, e)
-	}
-
-	x, err := m.CallValue("obj.g", v)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	defer x.Free()
-
-	if g, e := tag(x.v), tagObject; g != int32(e) {
-		t.Fatal(g, e)
-	}
-
-	y, err := m.value(x.v, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if g, e := fmt.Sprint(y), `{"obj":{"a":42}}`; g != e {
-		t.Fatal(g, e)
-	}
-}
-
-func newBigInt(t *testing.T, s string) *big.Int {
-	n := big.NewInt(0)
-	if _, ok := n.SetString(s, 10); !ok {
-		t.Fatalf("big.Int.SetString(%q, 10) failed", s)
-	}
-
-	return n
-}
-
-func TestRegisterGoFunc(t *testing.T) {
-	t.Run("fnFail", testRegisterGoFuncMustFail)
-	t.Run("fnOK", testRegisterGoFuncOK)
-}
-
-func testRegisterGoFuncMustFail(t *testing.T) {
-	m, err := NewVM()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	defer m.Close()
-
-	for _, test := range []struct {
-		wantThis bool
-		f        any
-	}{
-		{false, 42},       // Not a function
-		{true, func() {}}, // Wants this but no parameters
-	} {
-		switch err := m.RegisterFunc("myfunc", test.f, test.wantThis); {
-		case err != nil:
-			t.Logf("registering function '%T(%[1]v)' failed as expected: err=%v", test, err)
-		default:
-			t.Errorf("registering should have failed: %T", test.f)
-		}
-	}
-}
-
-func testRegisterGoFuncOK(t *testing.T) {
-	m, err := NewVM()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	defer m.Close()
-
-	obj, err := m.Eval("obj = {a: 463, b: 'foo'}; obj;", EvalGlobal)
-	if err != nil {
-		t.Fatalf("obj: %v", err)
-	}
-
-	foo, err := m.NewAtom("foo")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	type T struct {
-		A int
-		B string
-	}
-
-	for i, test := range []struct {
-		nm       string
-		wantThis bool
-		f        any
-		args     []any
-		call     string
-		v        any
-	}{
-		{"", false, func() {}, nil, "", Undefined{}},
-		{"", false, func() any { return nil }, nil, "", nil},
-		{"", false, func() any { return Undefined{} }, nil, "", Undefined{}},
-		{"", false, func() any { return fmt.Errorf("abc") }, nil, "", "abc"},
-		{"", false, func() any { return error(nil) }, nil, "", nil},
-		{"", false, func() error { return fmt.Errorf("abc") }, nil, "", "abc"},
-		{"", false, func() error { return nil }, nil, "", nil},
-		{"", false, func() *int { return nil }, nil, "", nil},
-		{"", false, func() any { i := 495; return &i }, nil, "", 495},
-		{"", false, func() *int { i := 496; return &i }, nil, "", 496},
-		{"", false, func() bool { return true }, nil, "", true},
-		{"", false, func() bool { return false }, nil, "", false},
-		{"", false, func() any { return true }, nil, "", true},
-		{"", false, func() float64 { return 0.5 }, nil, "", 0.5},
-		{"", false, func() float32 { return 2.5 }, nil, "", 2.5},
-		{"", false, func() string { return "2.5" }, nil, "", "2.5"},
-		{"", false, func() any { return big.NewInt(500) }, nil, "", 500},
-		{"", false, func() *big.Int { return big.NewInt(501) }, nil, "", 501},
-		{"", false, func() any { return obj }, nil, "", `{"a":463,"b":"foo"}`},
-		{"", false, func() any { return []any{42, "foo"} }, nil, "", `[42,"foo"]`},
-		{"", false, func() []any { return []any{42, "foo"} }, nil, "", `[42,"foo"]`},
-		{"", false, func() []int { return []int{42, 314} }, nil, "", `[42,314]`},
-		{"", false, func() []any { return []any{42, obj, "foo"} }, nil, "", `[42,{"a":463,"b":"foo"},"foo"]`},
-		{"", false, func() (int, string) { return 42, "foo" }, nil, "", `[42,"foo"]`},
-		{"", true, func(any) {}, nil, "", Undefined{}},
-		{"", false, func() any { return T{511, "foo"} }, nil, "", `{"A":511,"B":"foo"}`},
-		{"g1", true, func(this any) any { return this }, nil, "var a = {foo: 512, bar: g1}; a.bar();", `{"foo":512}`},
-		{"g2", false, func(in any) any { return in }, nil, "g2(obj)", `{"a":463,"b":"foo"}`},
-		{"g3", false, func(i int, s string) (string, int) { return s, i }, nil, "g3(514, 'foo')", `["foo",514]`},
-		{"g4", false, func(in ...any) []any { return in }, nil, "g4(515, 'foo')", `[515,"foo"]`},
-		{"g5", false, func(s string, args ...any) string { return fmt.Sprintf(s, args...) }, nil, "g5('hello %v %q', 516, 'foo')", `hello 516 "foo"`},
-		{"g6", false, func(in ...any) []any { return in }, nil, "g6()", `[]`},
-		{"g7", false, func(s string, args ...any) string { return fmt.Sprintf(s, args...) }, nil, "g7('hello %v')", `hello %!v(MISSING)`},
-		{"g8", true, func(this Value) (any, error) {
-			this.SetProperty(foo, 522)
-			return this.Any()
-		}, nil, "var a = {foo: 5220, bar: g8}; a.bar();", `[{"foo":522},null]`},
-		{"g9", false, func(v Value) (any, error) {
-			v.SetProperty(foo, 526)
-			return v.Any()
-		}, nil, "var a = {foo: 5260, bar: g9}; g9(a);", `[{"foo":526},null]`},
-		{"g10", true, func(this Value) Value {
-			this.SetProperty(foo, 530)
-			return this.Dup()
-		}, nil, "var a = {foo: 5300, bar: g10}; a.bar();", `{"foo":530}`},
-		{"g11", false, func(a Value) (int, Value) {
-			a.SetProperty(foo, 533)
-			return 534, a.Dup()
-		}, nil, "var a = {foo: 42, bar: g11}; g11(a);", `[534,{"foo":533}]`},
-
-		// A Go boolean/integer must be a boolean/number for Javascript itself,
-		// not merely a value that decodes back to the Go original. Both
-		// payloads live in the low 32 bits of the JSValue union, which on a big
-		// endian target is not where its first four bytes are.
-		{"g12", false, func() bool { return true }, nil, "g12() === true;", true},
-		{"g13", false, func() bool { return false }, nil, "g13() === false;", true},
-		{"g14", false, func() int { return 542 }, nil, "g14() === 542;", true},
-	} {
-		nm := test.nm
-		if nm == "" {
-			nm = fmt.Sprintf("f%v", i)
-		}
-		if err := m.RegisterFunc(nm, test.f, test.wantThis); err != nil {
-			t.Errorf("registering function '%T(%[1]v)': %v", test, err)
-			continue
-		}
-
-		call := test.call
-		if call == "" {
-			call = fmt.Sprintf("%s()", nm)
-		}
-		rv, err := m.Eval(call, EvalGlobal)
-		t.Logf("%s: %T(%[2]v)", call, rv)
-		if err != nil {
-			t.Errorf("calling %s: err=%v", nm, err)
-			continue
-		}
-
-		switch x := rv.(type) {
-		case nil:
-			if test.v != nil {
-				t.Errorf("expected nil")
-			}
-		case Undefined, string, int, bool, float64:
-			if g, e := x, test.v; g != e {
-				t.Errorf("got %v, expected %v", g, e)
-			}
-		case *big.Int:
-			if g, e := x, big.NewInt(int64(test.v.(int))); g.Cmp(e) != 0 {
-				t.Errorf("got %v, expected %v", g, e)
-			}
-		case *Object:
-			if g, e := x.json, test.v; g != e {
-				t.Errorf("%s: got %v, expected %v", nm, g, e)
-			}
-		default:
-			panic(todo("%T", x))
-		}
-	}
-}
-
-func TestEvalValue(t *testing.T) {
-	m, err := NewVM()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	defer m.Close()
-
-	v, err := m.EvalValue("obj = {foo:42,bar:'baz'}; obj;", EvalGlobal)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	defer v.Free()
-}
-
-func TestAtom(t *testing.T) {
-	m, err := NewVM()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	defer m.Close()
-
-	n, err := m.NewAtom("foo")
-	t.Logf("n=%v err=%v", n, err)
-	if n == atomNull || err != nil {
-		t.Fatal("FAIL")
-	}
-
-	n2, err := m.NewAtom("bar")
-	t.Logf("n2=%v err=%v", n2, err)
-	if n2 == atomNull || n2 == n || err != nil {
-		t.Fatal("FAIL")
-	}
-}
-
-func TestSetPropertyValue(t *testing.T) {
-	m, err := NewVM()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	defer m.Close()
-
-	obj, err := m.EvalValue("var obj = {}; obj;", EvalGlobal)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	defer obj.Free()
-
-	atom, err := m.NewAtom("foo")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	n, err := m.NewString("bar")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	defer n.Free()
-
-	if err := m.SetPropertyValue(obj, atom, n); err != nil {
-		t.Fatal(err)
-	}
-
-	v, err := m.Eval("obj.foo;", EvalGlobal)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if g, e := v, "bar"; g != e {
-		t.Fatal(g, e)
-	}
-}
-
-func TestSetProperty(t *testing.T) {
-	m, err := NewVM()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	defer m.Close()
-
-	obj, err := m.EvalValue("var obj = {}; obj;", EvalGlobal)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	defer obj.Free()
-
-	atom, err := m.NewAtom("foo")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if err := m.SetProperty(obj, atom, "bar"); err != nil {
-		t.Fatal(err)
-	}
-
-	v, err := m.Eval("obj.foo;", EvalGlobal)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if g, e := v, "bar"; g != e {
-		t.Fatal(g, e)
-	}
-}
-
-// SetProperty and SetPropertyValue on a proxy whose defineProperty trap
-// refuses the store return its TypeError, for a property the target already
-// has as for a new one, and the target keeps its value.
-func TestSetPropertyRefused(t *testing.T) {
 	m := newTestVM(t)
-	p, err := m.EvalValue(`var t = { x: 0 }; new Proxy(t, { defineProperty() { return false } })`, EvalGlobal)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer p.Free()
-	one, err := m.EvalValue(`1`, EvalGlobal)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer one.Free()
-	for _, name := range []string{"x", "y"} {
-		atom, err := m.NewAtom(name)
+	for _, c := range []struct {
+		src  string
+		want any
+	}{
+		{`42*314;`, 13188},
+		{`'foo'+'bar';`, "foobar"},
+		{`42 < 314;`, true},
+		{`null;`, nil},
+		{`undefined;`, Undefined{}},
+		{`0.5 * 3;`, 1.5},
+		{`Symbol('s');`, Unsupported{}},
+		{`a = {}; a;`, &Object{json: `{}`}},
+		{`({foo:'bar',baz:"qux",i:42});`, &Object{json: `{"foo":"bar","baz":"qux","i":42}`}},
+		{`[];`, &Object{json: `[]`}},
+		{`[1,2,3];`, &Object{json: `[1,2,3]`}},
+	} {
+		got, err := m.Eval(c.src, EvalGlobal)
 		if err != nil {
+			t.Errorf("%s: %v", c.src, err)
+			continue
+		}
+		if !sameGo(got, c.want) {
+			t.Errorf("%s: got %s, want %s", c.src, show(got), show(c.want))
+		}
+	}
+	_, err := m.Eval(`throw new Error('FAIL')`, EvalGlobal)
+	if err == nil || err.Error() != "Error: FAIL" {
+		t.Errorf("throw: got %v, want Error: FAIL", err)
+	}
+}
+
+func TestEvalBigInt(t *testing.T) {
+	m := newTestVM(t)
+	for _, c := range []struct{ src, want string }{
+		{`BigInt('1234567890123456789')`, "1234567890123456789"},
+		{`BigInt('-1234567890123456789')`, "-1234567890123456789"},
+		{`1234567890123456789n`, "1234567890123456789"},
+		{`-1234567890123456789n`, "-1234567890123456789"},
+		{`0n`, "0"},
+		{`-1n`, "-1"},
+	} {
+		got, err := m.Eval(c.src, EvalGlobal)
+		if err != nil {
+			t.Fatalf("%s: %v", c.src, err)
+		}
+		if _, ok := got.(*big.Int); !ok || fmt.Sprint(got) != c.want {
+			t.Errorf("%s: got %s, want *big.Int %s", c.src, show(got), c.want)
+		}
+	}
+}
+
+func TestCallNotAFunction(t *testing.T) {
+	m := newTestVM(t)
+	for _, src := range []string{`42;`, `var a = 42; a;`, `var a = { }; a;`} {
+		if _, err := m.Call(src); err == nil {
+			t.Errorf("Call(%q): no error", src)
+		} else if err.Error() != "cannot call a non-function" {
+			t.Errorf("Call(%q): %v", src, err)
+		}
+	}
+}
+
+func TestCallResults(t *testing.T) {
+	m := newTestVM(t)
+	for _, c := range []struct {
+		ret  string
+		want any
+	}{
+		{`null`, nil},
+		{`undefined`, Undefined{}},
+		{`"foo"`, "foo"},
+		{`42`, 42},
+		{`true`, true},
+		{`3.14`, 3.14},
+		{`1n`, big.NewInt(1)},
+		{`{1:2,3:4}`, &Object{json: `{"1":2,"3":4}`}},
+	} {
+		got, err := m.Call(`function f() { return ` + c.ret + `; }; f`)
+		if err != nil {
+			t.Errorf("%s: %v", c.ret, err)
+			continue
+		}
+		if !sameGo(got, c.want) {
+			t.Errorf("%s: got %s, want %s", c.ret, show(got), show(c.want))
+		}
+	}
+}
+
+type pairT struct {
+	A int
+	B string
+}
+
+func TestCallArgs(t *testing.T) {
+	m := newTestVM(t)
+	const id = `function f(a) { return a }; f`
+	for _, c := range []struct {
+		fn   string
+		args []any
+		want any
+	}{
+		{id, nil, Undefined{}},
+		{id, []any{nil}, nil},
+		{id, []any{Undefined{}}, Undefined{}},
+		{id, []any{123}, 123},
+		{id, []any{int64(1234567890123)}, 1.234567890123e12},
+		{id, []any{uint64(1 << 31)}, float64(1 << 31)},
+		{id, []any{int8(-8), uint8(8)}, -8},
+		{id, []any{true}, true},
+		{id, []any{"foo"}, "foo"},
+		{id, []any{big.NewInt(42)}, big.NewInt(42)},
+		{id, []any{pairT{11, "aa"}}, &Object{json: `{"A":11,"B":"aa"}`}},
+		{id, []any{&pairT{11, "aa"}}, &Object{json: `{"A":11,"B":"aa"}`}},
+		{id, []any{float32(2.5)}, 2.5},
+		{id, []any{[]byte("hi")}, "aGk="},
+		{`function f(a) { return a.A }; f`, []any{pairT{11, "aa"}}, 11},
+		{`function f(a, b, c, d) { return {a:a, b:b, c:c, d:d} }; f`, []any{"aa", 11, "cc", 22}, &Object{json: `{"a":"aa","b":11,"c":"cc","d":22}`}},
+		{`var obj = {"a": 42, foo() { return obj.a }}; obj.foo`, nil, 42},
+	} {
+		got, err := m.Call(c.fn, c.args...)
+		if err != nil {
+			t.Errorf("%s %v: %v", c.fn, c.args, err)
+			continue
+		}
+		if !sameGo(got, c.want) {
+			t.Errorf("%s %v: got %s, want %s", c.fn, c.args, show(got), show(c.want))
+		}
+	}
+}
+
+// A nil *big.Int is null, as it is as a result. It used to be the source
+// "<nil>n", whose syntax error went on as the argument.
+func TestCallNilBigInt(t *testing.T) {
+	m := newTestVM(t)
+	got, err := m.Call(`(a => a === null)`, (*big.Int)(nil))
+	if err != nil || got != true {
+		t.Fatalf("got %v, %v, want true", got, err)
+	}
+	wantNoPendingException(t, m)
+}
+
+// An argument that goes as JSON and fails to parse, here for want of memory,
+// is the error of the call, with nothing left pending.
+func TestCallJSONArgFails(t *testing.T) {
+	m := newTestVM(t)
+	big := make([]struct{}, 200000)
+	m.SetMemoryLimit(m.MemorySize() + 1<<20)
+	_, err := m.Call(`(a => a.length)`, big)
+	wantKind(t, err, outOfMemory)
+	wantNoPendingException(t, m)
+	m.SetMemoryLimit(^uintptr(0))
+	wantEval(t, m, `1 + 1`, 2)
+}
+
+func TestCallValueThis(t *testing.T) {
+	m := newTestVM(t)
+	v, err := m.EvalValue(`var obj = {a: 42, g() { return this }}; obj`, EvalGlobal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer v.Free()
+	got, err := m.Call(`function f(o) { return o.a }; f`, v)
+	if err != nil || got != 42 {
+		t.Fatalf("Call: got %v, %v", got, err)
+	}
+	// this is the global object, not obj.
+	r, err := m.CallValue(`obj.g`, v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Free()
+	if got, err := r.Any(); err != nil || !sameGo(got, &Object{json: `{"obj":{"a":42}}`}) {
+		t.Fatalf("CallValue: got %s, %v", show(got), err)
+	}
+}
+
+// An exception of the function expression is the error, not "cannot call a
+// non-function".
+func TestCallExpressionThrows(t *testing.T) {
+	m := newTestVM(t)
+	_, err := m.Call(`nope`)
+	var e *Error
+	if !errors.As(err, &e) || e.Name != "ReferenceError" {
+		t.Fatalf("got %v, want a ReferenceError", err)
+	}
+	wantNoPendingException(t, m)
+}
+
+func TestRegisterFuncRefused(t *testing.T) {
+	m := newTestVM(t)
+	for _, c := range []struct {
+		name     string
+		f        any
+		wantThis bool
+		want     string
+	}{
+		{"myfunc", 42, false, "myfunc is not a function"},
+		{"myfunc", func() {}, true, "'wantThis' is true but 'f' has zero parameters"},
+		{"myfunc", nil, false, "myfunc is not a function"},
+		{"myfunc", (func())(nil), false, "myfunc is not a function"},
+		{"", func() {}, false, "func name cannot be empty"},
+		{"a\x00b", func() {}, false, `func name cannot contain a NUL byte: "a\x00b"`},
+	} {
+		err := m.RegisterFunc(c.name, c.f, c.wantThis)
+		if err == nil || err.Error() != c.want {
+			t.Errorf("RegisterFunc(%q, %T, %v): got %v, want %s", c.name, c.f, c.wantThis, err, c.want)
+		}
+	}
+	if err := m.RegisterFunc("myfunc", func() {}, false); err != nil {
+		t.Fatalf("the name after the refusals: %v", err)
+	}
+	if err := m.RegisterFunc("myfunc", func() {}, false); err == nil || err.Error() != "func already registered: myfunc" {
+		t.Fatalf("again: %v", err)
+	}
+}
+
+// The length of a Go function is its parameters less one.
+func TestRegisterFuncLength(t *testing.T) {
+	m := newTestVM(t)
+	for name, f := range map[string]any{
+		"l0": func() {},
+		"l1": func(int) {},
+		"l2": func(a, b, c int) {},
+		"l3": func(s string, args ...any) {},
+	} {
+		if err := m.RegisterFunc(name, f, false); err != nil {
 			t.Fatal(err)
 		}
+	}
+	wantEval(t, m, `[l0.length, l1.length, l2.length, l3.length].join()`, "0,0,2,1")
+}
+
+type T struct {
+	A int
+	B string
+}
+
+func TestRegisterFuncResults(t *testing.T) {
+	m := newTestVM(t)
+	obj, err := m.Eval(`({x: [1, "y"]})`, EvalGlobal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	i := 495
+	funcs := map[string]any{
+		"r0":  func() {},
+		"r1":  func() any { return nil },
+		"r2":  func() any { return Undefined{} },
+		"r3":  func() any { return fmt.Errorf("abc") },
+		"r4":  func() any { return error(nil) },
+		"r5":  func() error { return errors.New("abc") },
+		"r6":  func() error { return nil },
+		"r7":  func() *int { return nil },
+		"r8":  func() any { return &i },
+		"r9":  func() bool { return true },
+		"r10": func() bool { return false },
+		"r11": func() float64 { return 0.5 },
+		"r12": func() float32 { return 2.5 },
+		"r13": func() string { return "2.5" },
+		"r14": func() any { return big.NewInt(500) },
+		"r15": func() *big.Int { return big.NewInt(501) },
+		"r16": func() any { return obj },
+		"r17": func() any { return []any{42, "foo"} },
+		"r18": func() []any { return []any{42, "foo"} },
+		"r19": func() []int { return []int{42, 314} },
+		"r20": func() (int, string) { return 42, "foo" },
+		"r21": func() T { return T{511, "foo"} },
+		"r22": func() int { return 542 },
+	}
+	for name, f := range funcs {
+		if err := m.RegisterFunc(name, f, false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, c := range []struct {
+		src  string
+		want any
+	}{
+		{`r0()`, Undefined{}},
+		{`r1()`, nil},
+		{`r2()`, Undefined{}},
+		{`r3()`, "abc"},
+		{`r4()`, nil},
+		{`r5()`, "abc"},
+		{`r6()`, nil},
+		{`r7()`, nil},
+		{`r8()`, 495},
+		{`r9()`, true},
+		{`r10()`, false},
+		{`r11()`, 0.5},
+		{`r12()`, 2.5},
+		{`r13()`, "2.5"},
+		{`r14()`, big.NewInt(500)},
+		{`r15()`, big.NewInt(501)},
+		{`r16()`, &Object{json: `{"x":[1,"y"]}`}},
+		{`r17()`, &Object{json: `[42,"foo"]`}},
+		{`r18()`, &Object{json: `[42,"foo"]`}},
+		{`r19()`, &Object{json: `[42,314]`}},
+		{`r20()`, &Object{json: `[42,"foo"]`}},
+		{`r21()`, &Object{json: `{"A":511,"B":"foo"}`}},
+		{`r9() === true && r10() === false && r22() === 542`, true},
+	} {
+		got, err := m.Eval(c.src, EvalGlobal)
+		if err != nil {
+			t.Errorf("%s: %v", c.src, err)
+			continue
+		}
+		if !sameGo(got, c.want) {
+			t.Errorf("%s: got %s, want %s", c.src, show(got), show(c.want))
+		}
+	}
+}
+
+func TestRegisterFuncArgs(t *testing.T) {
+	m := newTestVM(t)
+	funcs := []struct {
+		name     string
+		f        any
+		wantThis bool
+	}{
+		{"g1", func(this any) any { return this }, true},
+		{"g3", func(i int, s string) (string, int) { return s, i }, false},
+		{"g4", func(in ...any) []any { return in }, false},
+		{"g7", func(s string, args ...any) string { return fmt.Sprintf(s, args...) }, false},
+		{"g8", func(this Value) (any, error) {
+			if err := this.SetProperty(atomOrFatal(t, m, "foo"), 522); err != nil {
+				return nil, err
+			}
+			return this.Any()
+		}, true},
+		{"g9", func(this Value) Value {
+			if err := this.SetProperty(atomOrFatal(t, m, "foo"), 530); err != nil {
+				t.Error(err)
+			}
+			return this.Dup()
+		}, true},
+		{"g10", func(a Value) (int, Value) { return 534, a.Dup() }, false},
+	}
+	for _, f := range funcs {
+		if err := m.RegisterFunc(f.name, f.f, f.wantThis); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, c := range []struct {
+		src  string
+		want any
+	}{
+		{`var a = {foo: 512, bar: g1}; a.bar()`, &Object{json: `{"foo":512}`}},
+		{`g3(514, 'foo')`, &Object{json: `["foo",514]`}},
+		{`g4(515, 'foo')`, &Object{json: `[515,"foo"]`}},
+		{`g4()`, &Object{json: `[]`}},
+		{`g7('hello %v')`, "hello %!v(MISSING)"},
+		{`var b = {foo: 521, g8}; b.g8()`, &Object{json: `[{"foo":522},null]`}},
+		{`var c = {foo: 529, g9}; c.g9()`, &Object{json: `{"foo":530}`}},
+		{`g10({foo: 533})`, &Object{json: `[534,{"foo":533}]`}},
+	} {
+		got, err := m.Eval(c.src, EvalGlobal)
+		if err != nil {
+			t.Errorf("%s: %v", c.src, err)
+			continue
+		}
+		if !sameGo(got, c.want) {
+			t.Errorf("%s: got %s, want %s", c.src, show(got), show(c.want))
+		}
+	}
+	for _, c := range []struct{ src, want string }{
+		{`g3()`, "not enough arguments in call to g3"},
+		{`g3(1, 'a', 2)`, "too many arguments in call to g3"},
+		{`g3(3.5, 'a')`, "calling g3: cannot assign float64 to int"},
+		{`g3(1, undefined)`, "calling g3: cannot assign slowjs.Undefined to string"},
+		{`g3(1, {})`, "calling g3: cannot assign *slowjs.Object to string"},
+	} {
+		_, err := m.Eval(c.src, EvalGlobal)
+		wantError(t, err, "TypeError", c.want)
+	}
+}
+
+func TestObjectValueFree(t *testing.T) {
+	m := newTestVM(t)
+	v, err := m.EvalValue(`({a: 1})`, EvalGlobal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v.Free()
+	if v != (Value{}) {
+		t.Fatal("Free left the Value set")
+	}
+	v.Free() // the zero Value: nothing to do
+}
+
+func TestAtoms(t *testing.T) {
+	m := newTestVM(t)
+	foo, err := m.NewAtom("foo")
+	if err != nil || foo == atomNull {
+		t.Fatalf("NewAtom(foo): %v, %v", foo, err)
+	}
+	bar, err := m.NewAtom("bar")
+	if err != nil || bar == atomNull || bar == foo {
+		t.Fatalf("NewAtom(bar): %v, %v (foo %v)", bar, err, foo)
+	}
+	if again, err := m.NewAtom("foo"); err != nil || again != foo {
+		t.Fatalf("NewAtom(foo) again: %v, %v", again, err)
+	}
+}
+
+func TestProperties(t *testing.T) {
+	m := newTestVM(t)
+	obj, err := m.EvalValue(`globalThis.obj = {}; obj`, EvalGlobal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer obj.Free()
+	foo := atomOrFatal(t, m, "foo")
+
+	s, err := m.NewString("bar")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.SetPropertyValue(obj, foo, s); err != nil {
+		t.Fatal(err)
+	}
+	s.Free()
+	wantEval(t, m, `obj.foo;`, "bar")
+
+	if err := m.SetProperty(obj, foo, "baz"); err != nil {
+		t.Fatal(err)
+	}
+	wantEval(t, m, `obj.foo;`, "baz")
+	if err := obj.SetProperty(foo, "bar"); err != nil {
+		t.Fatal(err)
+	}
+
+	v, err := m.GetPropertyValue(obj, foo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := v.Any(); err != nil || got != "bar" {
+		t.Fatalf("GetPropertyValue: %v, %v", got, err)
+	}
+	v.Free()
+	if got, err := m.GetProperty(obj, foo); err != nil || got != "bar" {
+		t.Fatalf("GetProperty: %v, %v", got, err)
+	}
+	if got, err := obj.Property(foo); err != nil || got != "bar" {
+		t.Fatalf("Property: %v, %v", got, err)
+	}
+	if got, err := obj.GetProperty(UndefinedValue, foo); err != nil || got != "bar" {
+		t.Fatalf("Value.GetProperty: %v, %v", got, err)
+	}
+	if err := obj.SetPropertyValue(foo, UndefinedValue); err != nil {
+		t.Fatal(err)
+	}
+	wantEval(t, m, `'foo' in obj && obj.foo === undefined`, true)
+	if v, err := obj.GetPropertyValue(foo); err != nil || !v.IsUndefined() {
+		t.Fatalf("Value.GetPropertyValue: %v, %v", v, err)
+	}
+}
+
+// A write a Proxy refuses is a TypeError, as in strict code, and leaves the
+// target as it was.
+func TestSetPropertyRefused(t *testing.T) {
+	m := newTestVM(t)
+	p := evalValueOrFatal(t, m, `globalThis.t = {x: 0}; new Proxy(t, {defineProperty() { return false }})`)
+	defer p.Free()
+	for _, name := range []string{"x", "y"} {
+		atom := atomOrFatal(t, m, name)
 		var e *Error
 		if err := m.SetProperty(p, atom, 1); !errors.As(err, &e) || e.Name != "TypeError" {
 			t.Errorf("SetProperty %s: got %v, want a TypeError", name, err)
 		}
-		if err := m.SetPropertyValue(p, atom, one); !errors.As(err, &e) || e.Name != "TypeError" {
+		if err := m.SetPropertyValue(p, atom, m.NewInt(1)); !errors.As(err, &e) || e.Name != "TypeError" {
 			t.Errorf("SetPropertyValue %s: got %v, want a TypeError", name, err)
 		}
 	}
-	if v, err := m.Eval(`JSON.stringify(t)`, EvalGlobal); err != nil || v != `{"x":0}` {
-		t.Errorf("target: %v, %v", v, err)
-	}
+	wantEval(t, m, `JSON.stringify(t)`, `{"x":0}`)
 }
 
-func TestGetPropertyValue(t *testing.T) {
-	m, err := NewVM()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	defer m.Close()
-
-	obj, err := m.EvalValue("var obj = {}; obj;", EvalGlobal)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	defer obj.Free()
-
-	atom, err := m.NewAtom("foo")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	n, err := m.NewString("bar")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	defer n.Free()
-
-	if err := m.SetPropertyValue(obj, atom, n); err != nil {
-		t.Fatal(err)
-	}
-
-	v, err := m.GetPropertyValue(obj, atom)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	gv, err := m.value(v.v, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if g, e := gv, "bar"; g != e {
-		t.Fatal(g, e)
-	}
-}
-
-func TestGetProperty(t *testing.T) {
-	m, err := NewVM()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	defer m.Close()
-
-	obj, err := m.EvalValue("var obj = {}; obj;", EvalGlobal)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	defer obj.Free()
-
-	atom, err := m.NewAtom("foo")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	n, err := m.NewString("bar")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	defer n.Free()
-
-	if err := m.SetPropertyValue(obj, atom, n); err != nil {
-		t.Fatal(err)
-	}
-
-	v, err := m.GetProperty(obj, atom)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if g, e := v, "bar"; g != e {
-		t.Fatal(g, e)
-	}
-}
-
+// The bytecode of a script is what the engine writes. When the engine changes
+// its format, the expected bytes change with it.
 func TestBytecode(t *testing.T) {
-	m, err := NewVM()
+	m := newTestVM(t)
+	code, err := m.Compile(`42 * 314;`, EvalGlobal)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	defer m.Close()
-
-	bytecode, err := m.Compile("42 * 314;", EvalGlobal)
+	const want = "0f000c000600a801000100020000000801aa0100000000bd2abe3a019acd29a8010400001b0600"
+	if got := hex.EncodeToString(code); got != want {
+		t.Errorf("bytecode\n got %s\nwant %s", got, want)
+	}
+	got, err := m.EvalBytecode(code)
+	if err != nil || got != 13188 {
+		t.Fatalf("EvalBytecode: %v, %v", got, err)
+	}
+	v, err := m.EvalBytecodeValue(code)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	// Hello future reader: this will change if you update the QuickJS version.
-	// You just need to update the expected value below!
-	// You can also use this chance to document that something changed.
-	// See: https://gitlab.com/cznic/quickjs/-/merge_requests/3#note_2862847634
-	//
-	// 2026-07-27, QuickJS release 2026-06-04 (libquickjs v0.13.0): The
-	// serialized function header gained a var_ref_count field, that's the extra
-	// zero byte, and variable definitions now record var_ref_idx instead of
-	// scope_level. Opcodes were renumbered, so the code of this script,
-	// push_i8 42; push_i16 314; mul; set_loc0; return, is now encoded as
-	// bb 2a bc 3a 01 98 cb 28, previously bd 2a be 3a 01 9a cd 28.
-	//
-	// 2026-10-29, version 6: object literals that start with static keys are
-	// made by OP_object_lit, whose keys follow the closure variables (the zero
-	// byte before the code, with none), and the opcodes after OP_object moved
-	// by one: bc 2a bd 3a 01 99 cc 29.
-	//
-	// 2026-10-30, version 7: the compiler joins a read of an argument or a
-	// local and the get_field after it, the case of a switch on a string, and
-	// a typeof test of any type name, into opcodes added at the end of the
-	// table. The code of this script is the same.
-	//
-	// 2026-11-10, version 8: the case of a switch on a string also takes the
-	// cases that end with if_true8, if_false and if_true. The code of this
-	// script is the same.
-	//
-	// 2026-11-12, version 9: a regexp keeps where it starts to look in 36 bytes
-	// after its bytecode, which the bytecode of a function holds for its
-	// regexp literals. The code of this script is the same.
-	//
-	// 2026-11-12, version 10: a regexp keeps, after its plan, a table of the
-	// first characters of each long run of literal alternatives. The code of
-	// this script is the same.
-	//
-	// 2026-11-13, version 11: the flags of each closure variable carry a bit
-	// (9) that says the closure holds its value, not a reference to it. The
-	// code of this script is the same.
-	//
-	// 2026-11-13, version 12: OP_copy_rest, the rest of an object
-	// destructuring with the keys it leaves out in a list, comes after
-	// OP_copy_data_properties, and the opcodes after it moved by one: bd 2a be
-	// 3a 01 9a cd 29.
-	//
-	// 2026-11-15, version 13: the plan after the bytecode of a regexp is 74
-	// bytes, with the literal every match holds. The code of this script is the
-	// same.
-	//
-	// 2026-11-16, version 14: the plan is 36 bytes again, and only a regexp
-	// with a literal every match holds carries it, after the chains. The code of
-	// this script is the same.
-	//
-	// 2026-11-16, version 15: the header of the bytecode of a regexp holds
-	// its capture count in 2 bytes, and every op that names a group a
-	// capture index of 2 bytes. The code of this script is the same.
-	hex := hex.EncodeToString(bytecode)
-	if g, e := hex, "0f000c000600a801000100020000000801aa0100000000bd2abe3a019acd29a8010400001b0600"; g != e {
-		t.Fatalf("got %s, expected %s", g, e)
-	}
-
-	v, err := m.EvalBytecode(bytecode)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if g, e := v, 42*314; g != e {
-		t.Fatal(g, e)
+	defer v.Free()
+	if got, err := v.Any(); err != nil || got != 13188 {
+		t.Fatalf("EvalBytecodeValue: %v, %v", got, err)
 	}
 }
 
+// Value.Call keeps the this it is given.
 func TestValueCall(t *testing.T) {
-	m, err := NewVM()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	defer m.Close()
-
-	f, err := m.EvalValue("(function(a, b) { return this.base + a + b; });", EvalGlobal)
-	if err != nil {
-		t.Fatal(err)
-	}
-
+	m := newTestVM(t)
+	f := evalValueOrFatal(t, m, `(function (a, b) { return this.base + a + b })`)
 	defer f.Free()
-
-	this, err := m.EvalValue("({base: 100});", EvalGlobal)
-	if err != nil {
-		t.Fatal(err)
+	for _, c := range []struct {
+		base, want int
+	}{{100, 123}, {1000, 1023}} {
+		this := evalValueOrFatal(t, m, fmt.Sprintf(`({base: %d})`, c.base))
+		got, err := f.Call(this, 20, 3)
+		if err != nil || got != c.want {
+			t.Errorf("base %d: got %v, %v, want %d", c.base, got, err, c.want)
+		}
+		v, err := f.CallValue(this, 20, 3)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, err := v.Any(); err != nil || got != c.want {
+			t.Errorf("CallValue base %d: got %v, %v", c.base, got, err)
+		}
+		v.Free()
+		this.Free()
 	}
-
-	defer this.Free()
-
-	v, err := f.Call(this, 20, 3)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if g, e := v, 123; g != e {
-		t.Fatal(g, e)
-	}
-
-	// 'this' is honored, not silently replaced by the global object.
-	other, err := m.EvalValue("({base: 1000});", EvalGlobal)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	defer other.Free()
-
-	if v, err = f.Call(other, 20, 3); err != nil {
-		t.Fatal(err)
-	}
-
-	if g, e := v, 1023; g != e {
-		t.Fatal(g, e)
-	}
-
-	// CallValue returns a Value, like EvalValue does.
-	w, err := f.CallValue(this, 20, 3)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	defer w.Free()
-
-	x, err := w.Any()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if g, e := x, 123; g != e {
-		t.Fatal(g, e)
-	}
-
-	// UndefinedValue is accepted as 'this'.
-	h, err := m.EvalValue("(function(s) { return 'got ' + s; });", EvalGlobal)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	defer h.Free()
-
-	if v, err = h.Call(UndefinedValue, "it"); err != nil {
-		t.Fatal(err)
-	}
-
-	if g, e := v, "got it"; g != e {
-		t.Fatal(g, e)
+	g := evalValueOrFatal(t, m, `(function (s) { return 'got ' + s })`)
+	defer g.Free()
+	if got, err := g.Call(UndefinedValue, "it"); err != nil || got != "got it" {
+		t.Fatalf("got %v, %v", got, err)
 	}
 }
 
 func TestValueCallErrors(t *testing.T) {
-	m, err := NewVM()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	defer m.Close()
-
-	m2, err := NewVM()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	defer m2.Close()
-
-	// A Value not associated with a VM, eg. UndefinedValue, reports an error
-	// instead of panicking on the nil vm.
+	m := newTestVM(t)
 	if _, err := UndefinedValue.Call(UndefinedValue); err == nil {
-		t.Error("expected an error calling a Value not associated with a VM")
+		t.Error("Call of a Value of no VM: no error")
 	}
-
 	if _, err := UndefinedValue.CallValue(UndefinedValue); err == nil {
-		t.Error("expected an error calling a Value not associated with a VM")
+		t.Error("CallValue of a Value of no VM: no error")
 	}
-
-	obj, err := m.EvalValue("({});", EvalGlobal)
-	if err != nil {
-		t.Fatal(err)
-	}
-
+	obj := evalValueOrFatal(t, m, `({})`)
 	defer obj.Free()
-
-	if _, err := obj.Call(UndefinedValue); err == nil {
-		t.Error("expected an error calling a non-function")
+	if _, err := obj.Call(UndefinedValue); err == nil || err.Error() != "cannot call a non-function" {
+		t.Errorf("Call of an object: %v", err)
 	}
-
-	if _, err := obj.CallValue(UndefinedValue); err == nil {
-		t.Error("expected an error calling a non-function")
+	if _, err := obj.CallValue(UndefinedValue); err == nil || err.Error() != "cannot call a non-function" {
+		t.Errorf("CallValue of an object: %v", err)
 	}
-
-	// A reference counted 'this' from a different VM is rejected the same way
-	// convertArgs rejects such an argument.
-	f, err := m.EvalValue("(function() { return this.x; });", EvalGlobal)
-	if err != nil {
-		t.Fatal(err)
-	}
-
+	f := evalValueOrFatal(t, m, `(function () { return 1 })`)
 	defer f.Free()
-
-	alien, err := m2.EvalValue("({x: 42});", EvalGlobal)
-	if err != nil {
-		t.Fatal(err)
+	other := newTestVM(t)
+	this := evalValueOrFatal(t, other, `({})`)
+	defer this.Free()
+	if _, err := f.Call(this); !errors.Is(err, errForeignValue) {
+		t.Errorf("Call with the this of another VM: %v", err)
 	}
-
-	defer alien.Free()
-
-	if _, err := f.Call(alien); err == nil {
-		t.Error("expected an error using a 'this' from a different VM")
-	}
-
-	if _, err := f.CallValue(alien); err == nil {
-		t.Error("expected an error using a 'this' from a different VM")
+	if _, err := f.CallValue(this); !errors.Is(err, errForeignValue) {
+		t.Errorf("CallValue with the this of another VM: %v", err)
 	}
 }
 
-// TestValueCallPromise covers the use case Value.Call was added for: settling a
-// promise from Go using the resolve/reject functions handed to a registered Go
-// function. They outlive that function only because it retains them using Dup.
+// A Go function keeps the resolve and reject of a promise, and Go calls one
+// later.
 func TestValueCallPromise(t *testing.T) {
-	m, err := NewVM()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	defer m.Close()
-
+	m := newTestVM(t)
 	var resolve, reject Value
 	if err := m.RegisterFunc("goAsync", func(res, rej Value) {
-		resolve = res.Dup()
-		reject = rej.Dup()
+		resolve, reject = res.Dup(), rej.Dup()
 	}, false); err != nil {
 		t.Fatal(err)
 	}
-
-	if _, err := m.Eval(`
-globalThis.out = 'pending';
-new Promise(function(res, rej) { goAsync(res, rej); }).then(
-	function(v) { globalThis.out = 'ok: ' + v; },
-	function(e) { globalThis.out = 'err: ' + e; }
-);
-`, EvalGlobal); err != nil {
+	if _, err := m.Eval(`new Promise((res, rej) => goAsync(res, rej)).then(v => { globalThis.out = 'ok: ' + v }, e => { globalThis.out = 'err: ' + e })`, EvalGlobal); err != nil {
 		t.Fatal(err)
 	}
-
-	defer reject.Free()
 	defer resolve.Free()
-
+	defer reject.Free()
 	if _, err := resolve.Call(UndefinedValue, "done"); err != nil {
 		t.Fatal(err)
 	}
-
 	if _, err := m.ExecutePendingJobs(); err != nil {
 		t.Fatal(err)
 	}
-
-	v, err := m.Eval("globalThis.out;", EvalGlobal)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if g, e := v, "ok: done"; g != e {
-		t.Fatal(g, e)
-	}
+	wantEval(t, m, `globalThis.out`, "ok: done")
 }
 
-func TestValueProperty(t *testing.T) {
-	m, err := NewVM()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	defer m.Close()
-
-	obj, err := m.EvalValue("var obj = {}; obj;", EvalGlobal)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	defer obj.Free()
-
-	atom, err := m.NewAtom("foo")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	n, err := m.NewString("bar")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	defer n.Free()
-
-	if err := m.SetPropertyValue(obj, atom, n); err != nil {
-		t.Fatal(err)
-	}
-
-	v, err := obj.Property(atom)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if g, e := v, "bar"; g != e {
-		t.Fatal(g, e)
-	}
-}
-
-// TestRegisterFuncNullArg covers passing Javascript null to a function registered
-// by RegisterFunc. That used to panic in reflect for every parameter type except
-// Value, and the panic leaked memory even when recovered, so there was no way to
-// work around it. null now converts to a Go nil where nil is a valid value of the
-// parameter type and is a type error otherwise, like undefined already was.
+// A null argument is the nil of a parameter that has one, and a TypeError
+// for any other.
 func TestRegisterFuncNullArg(t *testing.T) {
-	type T struct{ A int }
-
-	for i, test := range []struct {
+	type S struct{ A int }
+	isNil := func(v any) bool { return v == nil }
+	for _, c := range []struct {
 		f        any
 		wantThis bool
-		call     string
-		v        any
+		src      string
+		want     any
 		err      string
 	}{
-		// nil is a valid value of the parameter type: null converts to it.
-		{func(v any) bool { return v == nil }, false, "f(null)", true, ""},
-		{func(v *T) bool { return v == nil }, false, "f(null)", true, ""},
-		{func(v map[string]any) bool { return v == nil }, false, "f(null)", true, ""},
-		{func(v []int) bool { return v == nil }, false, "f(null)", true, ""},
-		{func(v error) bool { return v == nil }, false, "f(null)", true, ""},
-		{func(v ...any) bool { return len(v) == 1 && v[0] == nil }, false, "f(null)", true, ""},
-		{func(a, b any) bool { return a == nil && b == 42 }, false, "f(null, 42)", true, ""},
-
-		// 'this' can be null as well, a registered function does not coerce it
-		// to the global object.
-		{func(this any) bool { return this == nil }, true, "f.call(null)", true, ""},
-
-		// undefined stays distinct from null.
-		{func(v any) bool { return v == Undefined{} }, false, "f(undefined)", true, ""},
-
-		// nil is not a valid value of the parameter type: a catchable type
-		// error, neither a silent zero value nor a panic.
-		{func(string) {}, false, "f(null)", nil, "cannot assign null to string"},
-		{func(int) {}, false, "f(null)", nil, "cannot assign null to int"},
-		{func(bool) {}, false, "f(null)", nil, "cannot assign null to bool"},
-		{func(float64) {}, false, "f(null)", nil, "cannot assign null to float64"},
-		{func(T) {}, false, "f(null)", nil, "cannot assign null to"},
-		{func(this string) {}, true, "f.call(null)", nil, "cannot assign null to string"},
+		{f: func(v any) bool { return v == nil }, src: `f(null)`, want: true},
+		{f: func(v *S) bool { return v == nil }, src: `f(null)`, want: true},
+		{f: func(v map[string]any) bool { return v == nil }, src: `f(null)`, want: true},
+		{f: func(v []int) bool { return v == nil }, src: `f(null)`, want: true},
+		{f: func(v error) bool { return v == nil }, src: `f(null)`, want: true},
+		{f: func(v ...any) bool { return len(v) == 1 && v[0] == nil }, src: `f(null)`, want: true},
+		{f: func(a, b any) bool { return a == nil && b == 42 }, src: `f(null, 42)`, want: true},
+		{f: func(this any) bool { return isNil(this) }, wantThis: true, src: `f.call(null)`, want: true},
+		{f: func(v any) bool { return v == Undefined{} }, src: `f(undefined)`, want: true},
+		{f: func(string) {}, src: `f(null)`, err: "cannot assign null to string"},
+		{f: func(int) {}, src: `f(null)`, err: "cannot assign null to int"},
+		{f: func(bool) {}, src: `f(null)`, err: "cannot assign null to bool"},
+		{f: func(float64) {}, src: `f(null)`, err: "cannot assign null to float64"},
+		{f: func(S) {}, src: `f(null)`, err: "cannot assign null to"},
+		{f: func(this string) {}, wantThis: true, src: `f.call(null)`, err: "cannot assign null to string"},
 	} {
-		func() {
-			m, err := NewVM()
-			if err != nil {
-				t.Fatal(err)
+		m := newTestVM(t)
+		if err := m.RegisterFunc("f", c.f, c.wantThis); err != nil {
+			t.Fatal(err)
+		}
+		got, err := m.Eval(c.src, EvalGlobal)
+		if c.err != "" {
+			if err == nil || !strings.Contains(err.Error(), c.err) {
+				t.Errorf("%T %s: got %v, %v, want an error with %q", c.f, c.src, got, err, c.err)
 			}
-
-			defer m.Close()
-
-			if err := m.RegisterFunc("f", test.f, test.wantThis); err != nil {
-				t.Errorf("%v: %s: RegisterFunc: %v", i, test.call, err)
-				return
-			}
-
-			v, err := m.Eval(test.call, EvalGlobal)
-			switch {
-			case test.err != "":
-				if err == nil {
-					t.Errorf("%v: %s: expected an error containing %q, got %v", i, test.call, test.err, v)
-					return
-				}
-
-				if !strings.Contains(err.Error(), test.err) {
-					t.Errorf("%v: %s: got error %q, expected it to contain %q", i, test.call, err, test.err)
-				}
-			default:
-				if err != nil {
-					t.Errorf("%v: %s: %v", i, test.call, err)
-					return
-				}
-
-				if g, e := v, test.v; g != e {
-					t.Errorf("%v: %s: got %v, expected %v", i, test.call, g, e)
-				}
-			}
-		}()
+			continue
+		}
+		if err != nil || got != c.want {
+			t.Errorf("%T %s: got %v, %v, want %v", c.f, c.src, got, err, c.want)
+		}
 	}
 }
 
-// TestRegisterHostFuncNullArg is TestRegisterFuncNullArg for the RegisterHostFunc
-// shape, func(args []any) (any, error). Every argument lands in an any there, so
-// null is always valid and must stay distinct from undefined.
 func TestRegisterHostFuncNullArg(t *testing.T) {
-	m, err := NewVM()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	defer m.Close()
-
+	m := newTestVM(t)
 	var got []any
-	if err := m.RegisterHostFunc("h", func(args []any) (any, error) {
+	mustHost(t, m, "h", func(args []any) (any, error) {
 		got = args
 		return len(args), nil
-	}); err != nil {
-		t.Fatal(err)
+	})
+	if n, err := m.Eval(`h(null, 42, undefined, null, 1.5)`, EvalGlobal); err != nil || n != 5 {
+		t.Fatalf("got %v, %v", n, err)
 	}
-
-	v, err := m.Eval("h(null, 42, undefined, null)", EvalGlobal)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if g, e := v, 4; g != e {
-		t.Fatal(g, e)
-	}
-
-	if g, e := len(got), 4; g != e {
-		t.Fatal(g, e)
-	}
-
-	if got[0] != nil || got[3] != nil {
-		t.Errorf("null arguments did not arrive as nil: %#v", got)
-	}
-
-	if g, e := got[1], 42; g != e {
-		t.Error(g, e)
-	}
-
-	if g, e := got[2], (Undefined{}); g != e {
-		t.Errorf("undefined must stay distinct from null: got %#v, expected %#v", g, e)
+	if want := []any{nil, 42, Undefined{}, nil, 1.5}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %#v, want %#v", got, want)
 	}
 }
 
-// TestRegisterFuncMapResult covers returning a Go map from a registered function.
-// That used to fail with "internal error: map". Map values are converted one by
-// one, the way slice elements are and unlike struct fields, which go through a
-// JSON round trip that turns a *big.Int into a double and fails outright on a
-// Value.
+// A map result is an object of its entries, in the order of its keys as
+// strings.
 func TestRegisterFuncMapResult(t *testing.T) {
-	big62 := new(big.Int).Lsh(big.NewInt(1), 62) // exceeds 2**53, unrepresentable as a double
-
-	for i, test := range []struct {
+	for _, c := range []struct {
 		f    any
-		call string
-		v    any
+		src  string
+		want any
 		err  string
 	}{
-		{func() map[string]int { return map[string]int{"a": 1, "b": 2} }, "JSON.stringify(f())", `{"a":1,"b":2}`, ""},
-		{func() map[string]int { return map[string]int{} }, "JSON.stringify(f())", "{}", ""},
-		{func() any { return map[string]int{"a": 1} }, "JSON.stringify(f())", `{"a":1}`, ""},
-		{func() map[string]map[string]int { return map[string]map[string]int{"in": {"q": 7}} }, "JSON.stringify(f())", `{"in":{"q":7}}`, ""},
-
-		// A nil map is null, like a nil pointer and a nil interface are.
-		{func() map[string]int { return nil }, "f() === null", true, ""},
-
-		// A nil map value is null too.
-		{func() map[string]any { return map[string]any{"z": nil} }, "f().z === null", true, ""},
-
-		// Integer keys stringify the way they do in JSON.
-		{func() map[int]string { return map[int]string{1: "x", -2: "y"} }, "JSON.stringify(f())", `{"1":"x","-2":"y"}`, ""},
-
-		// Property order is observable in Javascript while Go map iteration order
-		// is randomized, so keys are sorted. With six of them an unsorted result
-		// would match by chance once in 720 runs.
-		{
-			func() map[string]int {
-				return map[string]int{"e": 5, "b": 2, "d": 4, "a": 1, "c": 3, "f": 6}
-			},
-			"Object.keys(f()).join(',')", "a,b,c,d,e,f", "",
-		},
-
-		// Converted one by one: a *big.Int stays a BigInt and keeps its precision.
-		// The same value in a struct field comes back as a lossy double.
-		{func() map[string]any { return map[string]any{"n": big62} }, "typeof f().n + ' ' + String(f().n)", "bigint " + big62.String(), ""},
-
-		// A key Javascript has no name for is a catchable error, not a panic.
-		{func() map[[2]int]int { return map[[2]int]int{{1, 2}: 3} }, "f()", nil, "unsupported map key type"},
+		{f: func() map[string]int { return map[string]int{"a": 1, "b": 2} }, src: `JSON.stringify(f())`, want: `{"a":1,"b":2}`},
+		{f: func() map[string]int { return map[string]int{} }, src: `JSON.stringify(f())`, want: `{}`},
+		{f: func() any { return map[string]int{"a": 1} }, src: `JSON.stringify(f())`, want: `{"a":1}`},
+		{f: func() map[string]map[string]int { return map[string]map[string]int{"in": {"q": 7}} }, src: `JSON.stringify(f())`, want: `{"in":{"q":7}}`},
+		{f: func() map[string]int { return nil }, src: `f() === null`, want: true},
+		{f: func() map[string]any { return map[string]any{"z": nil} }, src: `f().z === null`, want: true},
+		{f: func() map[int]string { return map[int]string{1: "x", -2: "y"} }, src: `JSON.stringify(f())`, want: `{"1":"x","-2":"y"}`},
+		{f: func() map[string]int { return map[string]int{"f": 6, "c": 3, "a": 1, "e": 5, "b": 2, "d": 4} }, src: `Object.keys(f()).join(',')`, want: "a,b,c,d,e,f"},
+		{f: func() map[string]*big.Int { return map[string]*big.Int{"n": new(big.Int).Lsh(big.NewInt(1), 62)} }, src: `typeof f().n + ' ' + String(f().n)`, want: "bigint 4611686018427387904"},
+		{f: func() map[[2]int]int { return map[[2]int]int{{1, 2}: 3} }, src: `f()`, err: "unsupported map key type"},
 	} {
+		m := newTestVM(t)
+		if err := m.RegisterFunc("f", c.f, false); err != nil {
+			t.Fatal(err)
+		}
+		got, err := m.Eval(c.src, EvalGlobal)
+		if c.err != "" {
+			if err == nil || !strings.Contains(err.Error(), c.err) {
+				t.Errorf("%T: got %v, %v, want an error with %q", c.f, got, err, c.err)
+			}
+			continue
+		}
+		if err != nil || got != c.want {
+			t.Errorf("%T %s: got %v, %v, want %v", c.f, c.src, got, err, c.want)
+		}
+	}
+}
+
+// A function in a map result stays callable: each call hands over a Dup of
+// it, and the function keeps its own.
+func TestRegisterFuncMapValueResult(t *testing.T) {
+	m := newTestVM(t)
+	fn := evalValueOrFatal(t, m, `(() => 'called')`)
+	defer fn.Free()
+	if err := m.RegisterFunc("f", func() map[string]any { return map[string]any{"cb": fn.Dup()} }, false); err != nil {
+		t.Fatal(err)
+	}
+	wantEval(t, m, `typeof f().cb + ' ' + f().cb() + ' ' + f().cb()`, "function called called")
+}
+
+// The zero Value and UndefinedValue are undefined everywhere: as arguments,
+// as this, and to Any and IsUndefined.
+func TestZeroValueIsUndefined(t *testing.T) {
+	m := newTestVM(t)
+	for name, v := range map[string]Value{"zero": {}, "UndefinedValue": UndefinedValue} {
+		if !v.IsUndefined() {
+			t.Errorf("%s: IsUndefined is false", name)
+		}
+		if got, err := v.Any(); err != nil || got != (Undefined{}) {
+			t.Errorf("%s: Any is %v, %v", name, got, err)
+		}
+		if got, err := m.Call(`(function (a) { return a === undefined && this === globalThis })`, v); err != nil || got != true {
+			t.Errorf("%s as an argument: %v, %v", name, got, err)
+		}
+	}
+	if m.NewInt(0).IsUndefined() {
+		t.Error("the number 0 of a VM is undefined")
+	}
+	if got, err := m.NewInt(0).Any(); err != nil || got != 0 {
+		t.Errorf("the number 0: %v, %v", got, err)
+	}
+}
+
+// Dup of a Value of no VM panics: it is most often a Value used after Free.
+func TestDupOfNoVMPanics(t *testing.T) {
+	for _, v := range []Value{{}, UndefinedValue} {
 		func() {
-			m, err := NewVM()
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			defer m.Close()
-
-			if err := m.RegisterFunc("f", test.f, false); err != nil {
-				t.Errorf("%v: %s: RegisterFunc: %v", i, test.call, err)
-				return
-			}
-
-			v, err := m.Eval(test.call, EvalGlobal)
-			switch {
-			case test.err != "":
-				if err == nil {
-					t.Errorf("%v: %s: expected an error containing %q, got %v", i, test.call, test.err, v)
-					return
+			defer func() {
+				if recover() == nil {
+					t.Error("Dup of a Value of no VM did not panic")
 				}
-
-				if !strings.Contains(err.Error(), test.err) {
-					t.Errorf("%v: %s: got error %q, expected it to contain %q", i, test.call, err, test.err)
-				}
-			default:
-				if err != nil {
-					t.Errorf("%v: %s: %v", i, test.call, err)
-					return
-				}
-
-				if g, e := v, test.v; g != e {
-					t.Errorf("%v: %s: got %v, expected %v", i, test.call, g, e)
-				}
-			}
+			}()
+			v.Dup()
 		}()
 	}
 }
 
-// TestRegisterFuncMapValueResult is TestRegisterFuncMapResult for a Value in a
-// map. It stays a live reference, so a function put in a map is still callable
-// from Javascript. Like jsArray, jsMap takes over the reference it is given, so
-// the Go function has to Dup per call.
-func TestRegisterFuncMapValueResult(t *testing.T) {
-	m, err := NewVM()
+func TestNewValues(t *testing.T) {
+	m := newTestVM(t)
+	for _, c := range []struct {
+		v    Value
+		want any
+	}{
+		{m.NewInt(7), 7},
+		{m.NewInt(1 << 40), float64(1 << 40)},
+		{m.NewFloat64(0.25), 0.25},
+	} {
+		if got, err := c.v.Any(); err != nil || got != c.want {
+			t.Errorf("got %s, %v, want %s", show(got), err, show(c.want))
+		}
+	}
+	s, err := m.NewString("a\xffb")
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	defer m.Close()
-
-	fn, err := m.EvalValue("(function() { return 'called'; });", EvalGlobal)
+	defer s.Free()
+	if got, err := s.Any(); err != nil || got != "a�b" {
+		t.Errorf("NewString: %q, %v", got, err)
+	}
+	o, err := m.NewObjectValue()
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	defer fn.Free()
-
-	if err := m.RegisterFunc("f", func() map[string]any {
-		return map[string]any{"cb": fn.Dup()}
-	}, false); err != nil {
-		t.Fatal(err)
+	defer o.Free()
+	if b, err := o.MarshalJSON(); err != nil || string(b) != "{}" {
+		t.Errorf("NewObjectValue: %s, %v", b, err)
 	}
+	g := m.GlobalObject()
+	defer g.Free()
+	if g.VM() != m || o.VM() != m || UndefinedValue.VM() != nil {
+		t.Error("VM is not the VM of the value")
+	}
+}
 
-	// Called more than once to show the per-call Dup keeps 'fn' usable.
-	v, err := m.Eval("typeof f().cb + ' ' + f().cb() + ' ' + f().cb()", EvalGlobal)
+func TestStaticValues(t *testing.T) {
+	if Version() != engineVersion {
+		t.Errorf("Version is %q", Version())
+	}
+	if (Undefined{}).String() != "undefined" || (Unsupported{}).String() != "unsupported Javascript type" {
+		t.Error("the strings of Undefined and Unsupported")
+	}
+	o := &Object{json: `{"a":1}`}
+	var into struct{ A int }
+	if err := o.Into(&into); err != nil || into.A != 1 || o.String() != `{"a":1}` {
+		t.Errorf("Object: %v, %v", into, err)
+	}
+	for _, c := range []struct {
+		e    *Error
+		want string
+	}{
+		{&Error{}, "Error"},
+		{&Error{Name: "TypeError"}, "TypeError"},
+		{&Error{Message: "m"}, "Error: m"},
+		{&Error{Name: "RangeError", Message: "m"}, "RangeError: m"},
+		{&Error{engine: true, raw: "42", Name: "x"}, "42"},
+	} {
+		if got := c.e.Error(); got != c.want {
+			t.Errorf("%#v: Error() is %q, want %q", c.e, got, c.want)
+		}
+	}
+	if errors.Is(&Error{}, ErrKilled) || !errors.Is(killedError(), ErrKilled) || !errors.Is(errKilledVM, ErrKilled) {
+		t.Error("Is of ErrKilled")
+	}
+}
+
+func TestValidUTF8(t *testing.T) {
+	for _, c := range []struct{ in, want string }{
+		{"", ""},
+		{"abc", "abc"},
+		{"日本", "日本"},
+		{"\x80a", "�a"},
+		{"\xc0\x80", "��"},
+		{"\xe4\xb8", "��"},
+		{"a\xed\xa0\x80", "a���"},
+	} {
+		if got := validUTF8(c.in); got != c.want {
+			t.Errorf("validUTF8(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+	s := "valid string"
+	if testing.AllocsPerRun(10, func() { s = validUTF8(s) }) != 0 {
+		t.Error("validUTF8 of a valid string allocates")
+	}
+}
+
+func TestWellFormed(t *testing.T) {
+	for _, c := range []struct{ in, want string }{
+		{"", ""},
+		{"abc", "abc"},
+		{"\xed", "\xed"},
+		{"a\xed", "a\xed"},
+		{"\xed\xa0", "\xed\xa0"},
+		{"a\xed\xa0", "a\xed\xa0"},
+		{"\xed\x95\x9c\xed", "\xed\x95\x9c\xed"},
+		{"\xed\xa0\x80\xed", "�\xed"},
+		{"x\xed\xbf\xbfy\xed\xa0\x80", "x�y�"},
+	} {
+		if got := wellFormed([]byte(c.in)); got != c.want {
+			t.Errorf("wellFormed(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// SetMemoryLimit of 0 is the smallest limit, not none, and ^uintptr(0) is
+// none.
+func TestSetMemoryLimitZero(t *testing.T) {
+	m := newTestVM(t)
+	m.SetMemoryLimit(0)
+	if m.memoryLimit != 128<<10 {
+		t.Fatalf("the limit of 0 is %d", m.memoryLimit)
+	}
+	_, err := m.Eval(`'x'.repeat(1 << 20)`, EvalGlobal)
+	wantKind(t, err, outOfMemory)
+	m.SetMemoryLimit(^uintptr(0))
+	if m.memoryLimit != 0 {
+		t.Fatalf("no limit is %d", m.memoryLimit)
+	}
+	wantEval(t, m, `'x'.repeat(1 << 20).length`, 1<<20)
+}
+
+func TestGlobalObject(t *testing.T) {
+	m := newTestVM(t)
+	g := m.GlobalObject()
+	defer g.Free()
+	if got, err := m.Call(`(o => o === globalThis)`, g); err != nil || got != true {
+		t.Fatalf("got %v, %v", got, err)
+	}
+}
+
+// EvalThis runs with this set to obj, and takes obj.
+func TestEvalThis(t *testing.T) {
+	m := newTestVM(t)
+	obj := evalValueOrFatal(t, m, `({a: 5})`)
+	if got, err := m.EvalThis(obj, `this.a`, EvalGlobal); err != nil || got != 5 {
+		t.Fatalf("EvalThis: %v, %v", got, err)
+	}
+	obj = evalValueOrFatal(t, m, `({a: 6})`)
+	v, err := m.EvalThisValue(obj, `this`, EvalGlobal)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	if g, e := v, "function called called"; g != e {
-		t.Fatal(g, e)
+	defer v.Free()
+	if got, err := v.Any(); err != nil || got.(*Object).json != `{"a":6}` {
+		t.Fatalf("EvalThisValue: %v, %v", got, err)
+	}
+	other := newTestVM(t)
+	foreign := evalValueOrFatal(t, other, `({})`)
+	defer foreign.Free()
+	if _, err := m.EvalThis(foreign, `1`, EvalGlobal); !errors.Is(err, errForeignValue) {
+		t.Fatalf("EvalThis of a Value of another VM: %v", err)
+	}
+	if _, err := m.EvalThisValue(foreign, `1`, EvalGlobal); !errors.Is(err, errForeignValue) {
+		t.Fatalf("EvalThisValue of a Value of another VM: %v", err)
 	}
 }

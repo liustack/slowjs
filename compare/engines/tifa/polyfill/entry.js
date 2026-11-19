@@ -1,6 +1,6 @@
 // Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
-// Use of this source code is governed by the MIT license in LICENSE-MIT at the
+// Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 // FormatJS polyfills, forced in (polyfill-force), with zh and en data and
 // the golden time zone set. Order follows the FormatJS docs: each polyfill

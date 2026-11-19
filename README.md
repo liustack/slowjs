@@ -15,7 +15,7 @@
   <a href="https://pkg.go.dev/github.com/liustack/slowjs"><img src="https://img.shields.io/badge/go.dev-reference-007d9c?style=flat-square&logo=go&logoColor=white" alt="Go reference"></a>
   <a href="go.mod"><img src="https://img.shields.io/github/go-mod/go-version/liustack/slowjs?style=flat-square" alt="Go version"></a>
   <img src="https://img.shields.io/badge/CGO-off-success?style=flat-square" alt="CGO off">
-  <a href="LICENSE-MIT"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="License"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="License"></a>
   <img src="https://img.shields.io/badge/Not%20backed%20by-Y%20Combinator-FF6600?style=flat-square&logo=ycombinator&logoColor=white" alt="Not backed by Y Combinator">
   <img src="https://img.shields.io/badge/users-unknown-lightgrey?style=flat-square" alt="Users unknown">
 </p>
@@ -171,4 +171,4 @@ A security problem goes in a private report, as [SECURITY.md](SECURITY.md) says.
 
 ## License
 
-The files liustack/slowjs created are under the [MIT license](LICENSE-MIT). Code that came from other projects keeps its own license: the C of QuickJS, what remains from modernc.org/quickjs, the TLSF allocator, musl's libc functions and the locale data of `intl` and go-intl. The gopher of the banner is drawn after the Go gopher by Renée French (CC BY 4.0). [NOTICE.md](NOTICE.md) says which license covers which path, and which notices a program that ships this module has to carry.
+liustack/slowjs is under the [MIT license](LICENSE). Code that came from other projects keeps its own license: the C of QuickJS, the TLSF allocator, musl's libc functions, the Go side and the locale data of `Intl` and `Temporal` from go-intl, ICU and Chromium, the URL parser from nlnwa/whatwg-url and a few files of Go. The gopher of the banner is drawn after the Go gopher by Renée French (CC BY 4.0). [NOTICE.md](NOTICE.md) says which license covers which path, and which notices a program that ships this module has to carry.

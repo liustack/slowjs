@@ -1,6 +1,6 @@
 // Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
-// Use of this source code is governed by the MIT license in LICENSE-MIT at the
+// Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 // rvdiff: an interrupt (stopAfterPolls of jsrun) read where a with_* op jumps
 // to the code after it, as the old loop reads it there: the value it found

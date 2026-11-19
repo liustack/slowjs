@@ -1,6 +1,6 @@
 // Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
-// Use of this source code is governed by the MIT license in LICENSE-MIT at the
+// Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 // The exceptions of the register loop (engine/regvm-ops-except.h): throw of a
 // temp, a local, an argument, this and a constant, throw_error, a catch with

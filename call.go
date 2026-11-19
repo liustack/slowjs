@@ -1,253 +1,247 @@
-// Copyright 2024 The quickjs-go Authors. All rights reserved.
-// Use of the source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
+// Copyright (c) 2026 The liustack/slowjs Authors.
+// SPDX-License-Identifier: MIT
+// Use of this source code is governed by the MIT license in LICENSE at the
+// root of this repository.
 
 package slowjs // import "github.com/liustack/slowjs"
 
+// Calling javascript functions from Go, and the arguments of such a call.
+
 import (
 	"encoding/json"
-	"fmt"
+	"errors"
 	"math"
 	"math/big"
 )
 
-// Call evaluates 'function(args...)' and returns the resulting (value, error).
+// errNotFunction is the error of a call of a value that is not a function.
+var errNotFunction = errors.New("cannot call a non-function")
+
+// Call evaluates function, source that gives a function, such as "parseInt"
+// or "obj.method", calls it with args and returns its value as [VM.Eval]
+// does. this is the global object, also for "obj.method". function is run as
+// a script: "var a = 42; a" runs, and the call fails as 42 is not a function.
+// What function throws is the error, such as a ReferenceError for a name that
+// is not defined.
 //
-// Argument types must be one of:
+// Each argument becomes a javascript value by its dynamic Go type:
 //
-//	Go argument type                        Javascript argument type
-//	----------------------------------------------------------------
-//	nil                                     null
-//	Undefined                               undefined
-//	string                                  string
-//	int*/uint* (value in int32 range)       int
-//	int*/uint* (value out of int32 range)   float
-//	bool                                    bool
-//	float64                                 float64
-//	*math/big.Int                           BigInt
-//	*Object                                 object
-//	Value                                   native Javascript Value
-//	any other type                          object from JSON produced by encoding.json/Marshall(arg)
+//	Go                                         javascript
+//	--                                         ----------
+//	nil                                        null
+//	Value                                      the value, borrowed
+//	Undefined                                  undefined
+//	int8, uint8, int16, uint16, int32          a number
+//	int, int64, uint, uint32, uint64           a number, a float when
+//	                                           outside int32 (past 2^53
+//	                                           it loses precision)
+//	float64                                    a number
+//	bool                                       a boolean
+//	string                                     a string, U+FFFD for each
+//	                                           byte of invalid UTF-8
+//	*big.Int                                   a BigInt, null for nil
+//	anything else                              the JSON of encoding/json
+//
+// A type of its own, such as time.Duration, and float32, []byte (base64),
+// structs, maps and *Object go through JSON. So does an error, which most
+// often has no exported field and becomes {}: pass err.Error() instead. A
+// Value of another VM is an error.
 func (m *VM) Call(function string, args ...any) (r any, err error) {
-	// Re-arm the eval-timeout deadline, as the Eval* functions do: Call runs JS (it
-	// evaluates the function reference and invokes it), so without this the
-	// deadline set by the last Eval keeps ticking through idle time and interrupts a
-	// later Call that has not itself run long.
 	if err = m.enter(); err != nil {
-		return
+		return nil, err
 	}
 	defer m.leave(&err)
-
-	f, err := m.jsEval(evalName, function, EvalGlobal)
+	f, g, err := m.evalFunction(function)
 	if err != nil {
 		return nil, err
 	}
-
-	f = m.settled(f)
-	if isException(f) {
-		// Evaluating the function expression threw, eg. out of memory or an
-		// unresolvable name. Report that exception, not a non-function.
-		return nil, m.errFromException()
-	}
-
 	defer m.jsFreeValue(f)
-
-	g := m.globalObject()
-
 	defer m.jsFreeValue(g)
-
-	return m.call(f, g, args...)
+	return m.call(f, g, args)
 }
 
-// CallValue is like Call but returns (Value, error) like EvalValue
-//
-// Note: See the [Value] documentation for details about manual memory
-// management of Value objects.
+// CallValue is [VM.Call] that returns the value as a [Value], which the
+// caller frees.
 func (m *VM) CallValue(function string, args ...any) (r Value, err error) {
-	// Re-arm the eval-timeout deadline, as the Eval* functions do (see Call).
 	if err = m.enter(); err != nil {
-		return
+		return r, err
 	}
 	defer m.leave(&err)
-
-	f, err := m.jsEval(evalName, function, EvalGlobal)
+	f, g, err := m.evalFunction(function)
 	if err != nil {
 		return r, err
 	}
-
-	f = m.settled(f)
-	if isException(f) {
-		return r, m.errFromException()
-	}
-
 	defer m.jsFreeValue(f)
-
-	g := m.globalObject()
-
 	defer m.jsFreeValue(g)
-
-	return m.callValue(f, g, args...)
+	return m.callValue(f, g, args)
 }
 
-func (m *VM) convertArgs(goArgs ...any) (jsArgs, free []jsValue, err error) {
-
-	defer func() {
-		if err != nil && len(free) != 0 {
-			for _, v := range free {
-				m.jsFreeValue(v)
-			}
-			free = nil
-		}
-	}()
-
-	for _, v := range goArgs {
-		switch x := v.(type) {
-		case nil:
-			jsArgs = append(jsArgs, null)
-		case Value:
-			if m.foreign(x) {
-				return nil, free, errForeignValue
-			}
-
-			dup := dupValue(x.jsValue())
-			free = append(free, dup)
-			jsArgs = append(jsArgs, dup)
-		case Undefined:
-			jsArgs = append(jsArgs, undefined)
-		case int8:
-			jsArgs = append(jsArgs, newInt32(int32(x)))
-		case uint8:
-			jsArgs = append(jsArgs, newInt32(int32(x)))
-		case int16:
-			jsArgs = append(jsArgs, newInt32(int32(x)))
-		case uint16:
-			jsArgs = append(jsArgs, newInt32(int32(x)))
-		case int32:
-			jsArgs = append(jsArgs, newInt32(int32(x)))
-		case uint32:
-			switch {
-			case x <= math.MaxInt32:
-				jsArgs = append(jsArgs, newInt32(int32(x)))
-			default:
-				jsArgs = append(jsArgs, newFloat(float64(x)))
-			}
-		case int:
-			switch {
-			case x >= math.MinInt32 && x <= math.MaxInt32:
-				jsArgs = append(jsArgs, newInt32(int32(x)))
-			default:
-				jsArgs = append(jsArgs, newFloat(float64(x)))
-			}
-		case uint:
-			switch {
-			case x <= math.MaxInt32:
-				jsArgs = append(jsArgs, newInt32(int32(x)))
-			default:
-				jsArgs = append(jsArgs, newFloat(float64(x)))
-			}
-		case int64:
-			switch {
-			case x >= math.MinInt32 && x <= math.MaxInt32:
-				jsArgs = append(jsArgs, newInt32(int32(x)))
-			default:
-				jsArgs = append(jsArgs, newFloat(float64(x)))
-			}
-		case uint64:
-			switch {
-			case x <= math.MaxInt32:
-				jsArgs = append(jsArgs, newInt32(int32(x)))
-			default:
-				jsArgs = append(jsArgs, newFloat(float64(x)))
-			}
-		case bool:
-			jsArgs = append(jsArgs, newBool(x))
-		case string:
-			jv, err := m.newString(x)
-			if err != nil {
-				return nil, free, err
-			}
-
-			free = append(free, jv)
-			jsArgs = append(jsArgs, jv)
-		case *big.Int:
-			s := x.String() + "n"
-			jv, err := m.eval(s, EvalGlobal)
-			if err != nil {
-				return nil, free, err
-			}
-
-			free = append(free, jv)
-			jsArgs = append(jsArgs, jv)
-		default:
-			b, err := json.Marshal(x)
-			if err != nil {
-				return nil, free, err
-			}
-
-			jv, err := m.jsParseJSON2(string(b), false, 0)
-			if err != nil {
-				return nil, free, err
-			}
-
-			free = append(free, jv)
-			jsArgs = append(jsArgs, jv)
-		}
+// evalFunction evaluates the source of a function for Call, and returns the
+// value and the global object, for the caller to free.
+func (m *VM) evalFunction(function string) (f, g jsValue, err error) {
+	f, err = m.jsEval(evalName, function, EvalGlobal)
+	if err != nil {
+		return f, g, err
 	}
-	return jsArgs, free, nil
+	if f = m.settled(f); isException(f) {
+		return f, g, m.errFromException()
+	}
+	return f, m.jsGetGlobalObject(), nil
 }
 
-// Note: See the [Value] documentation for details about manual memory
-// management of Value objects.
-func (m *VM) callValue(f, this jsValue, args ...any) (r Value, err error) {
-	if !m.jsIsFunction(f) {
-		return r, fmt.Errorf("cannot call a non-function")
-	}
-
-	jsArgs, free, err := m.convertArgs(args...)
+// call calls f with this and args, as Call does, and returns its value as a
+// Go value. It runs inside a call (enter).
+func (m *VM) call(f, this jsValue, args []any) (any, error) {
+	v, err := m.invoke(f, this, args)
 	if err != nil {
-		return r, err
+		return nil, err
 	}
+	return m.value(v, true)
+}
 
-	if len(free) != 0 {
-		defer func() {
-			for _, v := range free {
-				m.jsFreeValue(v)
-			}
-		}()
-	}
-	v, err := m.jsCall(f, this, jsArgs)
+// callValue is call that returns a Value.
+func (m *VM) callValue(f, this jsValue, args []any) (Value, error) {
+	v, err := m.invoke(f, this, args)
 	if err != nil {
-		return r, err
+		return Value{}, err
 	}
-	v = m.settled(v)
 	if isException(v) {
-		m.jsFreeValue(v)
-		return r, m.errFromException()
+		return Value{}, m.errFromException()
 	}
-
 	return Value{vm: m, v: v}, nil
 }
 
-func (m *VM) call(f, this jsValue, args ...any) (r any, err error) {
+// invoke calls f, which it borrows, with this and args converted, and
+// returns its settled result, the exception marker when it threw.
+func (m *VM) invoke(f, this jsValue, args []any) (jsValue, error) {
 	if !m.jsIsFunction(f) {
-		return nil, fmt.Errorf("cannot call a non-function")
+		return exception, errNotFunction
 	}
-
-	jsArgs, free, err := m.convertArgs(args...)
+	vals, err := m.callArgs(args)
 	if err != nil {
-		return nil, err
+		return exception, err
 	}
-
-	if len(free) != 0 {
-		defer func() {
-			for _, v := range free {
-				m.jsFreeValue(v)
-			}
-		}()
-	}
-	v, err := m.jsCall(f, this, jsArgs)
+	defer m.freeAll(vals)
+	r, err := m.jsCall(f, this, vals)
 	if err != nil {
-		return nil, err
+		return exception, err
 	}
-	return m.value(m.settled(v), true)
+	return m.settled(r), nil
+}
+
+// freeAll frees each of vals.
+func (m *VM) freeAll(vals []jsValue) {
+	for _, v := range vals {
+		m.jsFreeValue(v)
+	}
+}
+
+// callArgs converts the arguments of a call (see VM.Call). The values are new
+// or Dups, for the caller to free once the call is done. When one fails to
+// convert, or panics, as a MarshalJSON may, those before it are freed.
+func (m *VM) callArgs(args []any) ([]jsValue, error) {
+	if len(args) == 0 {
+		return nil, nil
+	}
+	vals := make([]jsValue, 0, len(args))
+	done := false
+	defer func() {
+		if !done {
+			m.freeAll(vals)
+		}
+	}()
+	for _, a := range args {
+		v, err := m.callArg(a)
+		if err != nil {
+			return nil, err
+		}
+		vals = append(vals, v)
+	}
+	done = true
+	return vals, nil
+}
+
+// callArg converts one argument of a call, or the value of SetProperty.
+func (m *VM) callArg(a any) (jsValue, error) {
+	switch x := a.(type) {
+	case nil:
+		return null, nil
+	case Value:
+		if m.foreign(x) {
+			return exception, errForeignValue
+		}
+		return dupValue(x.jsValue()), nil
+	case Undefined:
+		return undefined, nil
+	case string:
+		return m.newString(x)
+	case int:
+		return intValue(int64(x)), nil
+	case bool:
+		return newBool(x), nil
+	case float64:
+		return newFloat(x), nil
+	case int8:
+		return newInt32(int32(x)), nil
+	case uint8:
+		return newInt32(int32(x)), nil
+	case int16:
+		return newInt32(int32(x)), nil
+	case uint16:
+		return newInt32(int32(x)), nil
+	case int32:
+		return newInt32(x), nil
+	case int64:
+		return intValue(x), nil
+	case uint32:
+		return uintValue(uint64(x)), nil
+	case uint:
+		return uintValue(uint64(x)), nil
+	case uint64:
+		return uintValue(x), nil
+	case *big.Int:
+		if x == nil {
+			return null, nil
+		}
+		return m.bigIntValue(x)
+	}
+	b, err := json.Marshal(a)
+	if err != nil {
+		return exception, err
+	}
+	return m.parseJSON(string(b))
+}
+
+// intValue is the number n: an int32 when it fits, else a float.
+func intValue(n int64) jsValue {
+	if n >= math.MinInt32 && n <= math.MaxInt32 {
+		return newInt32(int32(n))
+	}
+	return newFloat(float64(n))
+}
+
+// uintValue is the number n: an int32 when it fits, else a float.
+func uintValue(n uint64) jsValue {
+	if n <= math.MaxInt32 {
+		return newInt32(int32(n))
+	}
+	return newFloat(float64(n))
+}
+
+// bigIntValue is the BigInt of x, which the engine makes of its literal.
+func (m *VM) bigIntValue(x *big.Int) (jsValue, error) {
+	v, err := m.eval(x.String()+"n", EvalGlobal)
+	if err == nil && isException(v) {
+		err = m.errFromException()
+	}
+	return v, err
+}
+
+// parseJSON parses the JSON text s, with the file name <eval> for its errors.
+func (m *VM) parseJSON(s string) (jsValue, error) {
+	v, err := m.jsParseJSON2(s, false, 0)
+	if err == nil && isException(v) {
+		err = m.errFromException()
+	}
+	return v, err
 }

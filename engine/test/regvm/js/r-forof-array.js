@@ -1,6 +1,6 @@
 // Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
-// Use of this source code is governed by the MIT license in LICENSE-MIT at the
+// Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 // for of and array destructuring over Arrays, where js_for_of_next reads the
 // element of a fast Array itself (js_for_of_array_next in quickjs.c): plain

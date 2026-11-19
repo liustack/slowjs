@@ -1,6 +1,6 @@
 // Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
-// Use of this source code is governed by the MIT license in LICENSE-MIT at the
+// Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 // ArrayBuffer.prototype.resize reads its length as ToIndex does: a value that
 // wraps around 2**64 is not a small length, and a length past the maximum

@@ -1,6 +1,6 @@
 // Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
-// Use of this source code is governed by the MIT license in LICENSE-MIT at the
+// Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 // toWellFormed puts U+FFFD for each lone surrogate and keeps the pairs. Its
 // loops count their work to read the interrupt flag every 4096 characters,

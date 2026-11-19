@@ -1,93 +1,70 @@
-// Copyright 2024 The quickjs-go Authors. All rights reserved.
-// Use of the source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
+// Copyright (c) 2026 The liustack/slowjs Authors.
+// SPDX-License-Identifier: MIT
+// Use of this source code is governed by the MIT license in LICENSE at the
+// root of this repository.
 
 package slowjs // import "github.com/liustack/slowjs"
+
+// The errors of calls into javascript: reading an exception into an *Error,
+// the exceptions no script can catch, and the panic of a Go function that
+// javascript called.
 
 import (
 	"errors"
 	"fmt"
 )
 
-// Error holds structured information from a JavaScript exception. The error
-// returned by [VM.Eval], [VM.Call] and the other eval-family methods is an
-// *Error; recover the fields with [errors.As]:
+// Error is a javascript exception that ended a call, read into Go. Get it from
+// the error of a call with errors.As:
 //
-//	var e *slowjs.Error
-//	if errors.As(err, &e) {
-//		fmt.Println(e.Stack)
+//	if _, err := m.Eval(js, slowjs.EvalGlobal); err != nil {
+//		var e *slowjs.Error
+//		if errors.As(err, &e) && e.Interrupted {
+//			// the eval timeout or Interrupt stopped the script
+//		}
 //	}
 //
-// Its Error method reports the same message string the engine has always
-// returned, so existing code comparing the error text keeps working.
-//
-// Only parse/syntax errors carry the FileName, LineNumber and ColumnNumber
-// properties. For runtime errors those fields are zero and the source location
-// is available only from Stack.
-//
-// Uncatchable, OutOfMemory and Interrupted tell an error the engine ended the
-// call with from one the script threw, without comparing names or messages,
-// which a script can copy:
-//
-//	if errors.As(err, &e) && e.OutOfMemory {
-//		// the script needs a higher SetMemoryLimit
-//	}
+// The text of Error() is what the engine has always given for the exception,
+// such as "TypeError: x is not a function", or the string of a value that is
+// not an error, such as "42" for throw 42.
 type Error struct {
+	// raw is the text of the exception as the engine gave it, which Error
+	// returns when engine is set: the error was read from javascript. killed
+	// is set on the error of a call whose script was killed.
 	raw    string
-	engine bool // made of an exception, raw is the engine's text
-	killed bool // the script was killed (ErrKilled)
+	engine bool
+	killed bool
 
-	Name         string // e.g. "ReferenceError", "TypeError"
-	Message      string // the error message
-	Stack        string // stack trace, one "    at ...\n" frame per line
-	LineNumber   int    // line where the error occurred (parse errors only)
-	ColumnNumber int    // column where the error occurred (parse errors only)
-	FileName     string // file name where the error occurred (parse errors only)
+	// Name and Message are the name and message properties of the exception,
+	// empty when it has none, as for throw 42. Stack is its stack property.
+	Name    string
+	Message string
+	Stack   string
+	// LineNumber, ColumnNumber and FileName are set for a syntax error only.
+	// The error of a script that ran has its place in Stack alone.
+	LineNumber   int
+	ColumnNumber int
+	FileName     string
 
-	// Uncatchable reports that the call ended with an exception no catch
-	// or finally block of the script ran for: the VM ran out of memory
-	// (OutOfMemory), Interrupt or the eval timeout stopped it
-	// (Interrupted), or a Go function that javascript called panicked
-	// (neither of the two). Whatever a script throws itself is never
+	// Uncatchable reports that the call ended with an exception that no
+	// catch or finally of the script got to see: the VM ran out of memory
+	// (OutOfMemory is set too), Interrupt or the eval timeout stopped the
+	// script (Interrupted is set too), or a Go function that javascript
+	// called panicked (neither is set). Nothing a script throws is
 	// uncatchable, whatever its name and message.
 	Uncatchable bool
-	OutOfMemory bool // the VM ran out of memory (Uncatchable is true)
-	Interrupted bool // Interrupt or the eval timeout stopped the script (Uncatchable is true)
+	OutOfMemory bool
+	Interrupted bool
 }
 
-// ErrKilled is what [errors.Is] finds in the error of a call whose script
-// was killed, and in the error of each method called on its VM after that.
-// A script that runs on 50 ms past its eval timeout or an [VM.Interrupt], and
-// has kept the engine at work for 1000 of its polls since (6 to 30 ms of a
-// loop on a fast core), is killed, as happens in a loop of the engine that
-// does not look for the interrupt or in a long collection. Time in which the
-// engine does no work, in a Go function the script called or while the OS or
-// the Go scheduler runs something else, counts toward the 50 ms but not the
-// polls. The call returns an *Error with Uncatchable and Interrupted set, and
-// the VM is good only for Close. Its methods that return an error return one
-// that matches ErrKilled, the others panic, and [Value.Free] does nothing.
-// The exceptions are [VM.MemorySize] and [VM.GCThreshold], which only read a
-// counter and answer as they do on any VM.
-var ErrKilled = errors.New("slowjs: the script did not stop in time and was killed")
-
-// errKilledVM is the error of a method called after a kill.
-var errKilledVM = fmt.Errorf("slowjs: the VM is good only for Close: %w", ErrKilled)
-
-// Is reports whether e is the error of a killed call, for target ErrKilled.
-func (e *Error) Is(target error) bool {
-	return e.killed && target == ErrKilled
-}
-
-// Error implements the error interface. It returns the same string the engine
-// produces for the exception, unchanged from earlier releases. For an Error
-// made in Go, say to throw from a [Builtin], it returns what javascript's
-// Error.prototype.toString does: Name, or "Error" when Name is empty, then
-// ": " and Message when Message is not empty.
+// Error returns the text of the exception. For an Error made in Go, which
+// was not read from javascript, it is what Error.prototype.toString makes of
+// Name and Message: Name, "Error" when Name is empty, followed by ": " and
+// Message unless Message is empty.
 func (e *Error) Error() string {
 	if e.engine {
 		return e.raw
 	}
-
 	name := e.Name
 	if name == "" {
 		name = "Error"
@@ -95,184 +72,99 @@ func (e *Error) Error() string {
 	if e.Message == "" {
 		return name
 	}
-
 	return name + ": " + e.Message
 }
 
-// errStrProp reads the string-valued property 'name' from error value 'v'
-// for readError, returning "" when the property is absent or not a string,
-// when reading it throws, or when converting it does. ok is false when that
-// was an uncatchable exception, which stays pending (see readError). 'v' is
-// borrowed.
-func (m *VM) errStrProp(v jsValue, name uint32, t *textCut) (r string, ok bool) {
-	vr := m.jsGetProperty(v, name)
-	if isException(vr) {
-		return "", m.dropCatchable()
-	}
-
-	defer m.jsFreeValue(vr)
-
-	if tag(vr) == tagString || tag(vr) == tagStringRope {
-		return m.errString(vr, t)
-	}
-
-	return "", true
+// Is reports whether target is [ErrKilled] and e is the error of a call whose
+// script was killed.
+func (e *Error) Is(target error) bool {
+	return e.killed && target == ErrKilled
 }
 
-// errIntProp reads the integer-valued property 'name' from error value 'v'
-// for readError, returning 0 when the property is absent or not numeric, or
-// when reading it throws. ok is as for errStrProp. 'v' is borrowed.
-func (m *VM) errIntProp(v jsValue, name uint32) (r int, ok bool) {
-	vr := m.jsGetProperty(v, name)
-	if isException(vr) {
-		return 0, m.dropCatchable()
-	}
-
-	defer m.jsFreeValue(vr)
-
-	switch tag(vr) {
-	case tagInt:
-		return int(jsvToInt32(vr)), true
-	case tagFloat64:
-		return int(jsvToFloat64(vr)), true
-	}
-
-	return 0, true
-}
-
-// ErrorFromValue extracts structured error information from JavaScript error
-// value 'v', typically an Error instance caught from a JS exception.
-//
-// 'v' is borrowed: ErrorFromValue does not free it and the caller remains
-// responsible for its lifetime. Like all VM operations it must be called from
-// the VM's own goroutine. See [Error] for which fields are populated.
-//
-// A field that cannot be read because of what the script throws is left
-// empty: the string form of 'v' (the result of Error) when its toString
-// throws, and a property whose getter throws. That exception is dropped, so
-// ErrorFromValue leaves no exception pending.
-//
-// Reading runs javascript (a getter, or a toString that a script replaced), so
-// it runs inside the eval timeout like [VM.Eval]. When the read is stopped
-// by what ends a call, the eval timeout, [VM.Interrupt] or running out of
-// memory, ErrorFromValue returns that error in place of the fields of 'v':
-// Uncatchable is set, and Interrupted or OutOfMemory says which, as in the
-// error of a call. The read stops there. Inside a Go function that
-// javascript called, that error also stays pending and ends the javascript
-// that called the function, as every call into javascript does then.
-//
-// A panic of a Go function that the read calls is not returned: it goes on
-// to the caller of ErrorFromValue, as from any call into javascript. On a VM
-// a kill left good only for Close, ErrorFromValue panics.
+// ErrorFromValue reads the error value v, such as an exception a script
+// caught, as the error of a call is read. It borrows v. Reading it runs
+// javascript, a getter of its message or a toString of the page, inside the
+// eval timeout (see [VM.SetEvalTimeout]). A field it cannot read stays
+// empty. It panics when v belongs to no VM, and on a VM a kill left good only
+// for Close.
 func ErrorFromValue(v Value) *Error {
 	return v.vm.errorFrom(v.v, nil)
 }
 
-// errorFrom is ErrorFromValue of v, borrowed, which can also be the
-// exception takeException took. A script cannot make an *Error with
-// Uncatchable set: only an uncatchable exception and a kill give one. With
-// t, each text is cut as cutString does.
-func (m *VM) errorFrom(v jsValue, t *textCut) (e *Error) {
-	var err error
-	if err = m.enter(); err != nil {
-		panic(brokenPanic)
-	}
-	defer func() {
-		if err != nil {
-			// A poll killed the script that read the error.
-			e = killedError()
-		}
-	}()
-	defer m.leave(&err)
+var (
+	// errForeignValue is the error of a method given a Value of another VM,
+	// which it neither uses nor frees.
+	errForeignValue = errors.New("slowjs: a Value of another VM")
+	// errKilledVM is the error of a method on a VM a kill left good only for
+	// Close.
+	errKilledVM = fmt.Errorf("slowjs: the VM is good only for Close: %w", ErrKilled)
+)
 
-	e, ok := m.readError(v, t)
-	if !ok {
-		e, _ = m.takeExceptionCut(t)
-	}
-	return e
+// foreign reports whether v belongs to a VM other than m. A Value of no VM,
+// UndefinedValue or the zero Value, belongs to every VM.
+func (m *VM) foreign(v Value) bool {
+	return v.vm != m && v.vm != nil
 }
 
-// readError reads the fields of 'v', borrowed, as ErrorFromValue says. ok is
-// false when a read met an uncatchable exception: it stays pending, for the
-// caller to take as the error in place of 'v', and the fields are not read
-// further. So is one that javascript the read ran left pending without
-// failing (see settled). With t, each text is cut as cutString does.
-func (m *VM) readError(v jsValue, t *textCut) (e *Error, ok bool) {
-	e = &Error{engine: true}
-	if e.raw, ok = m.errString(v, t); !ok {
-		return nil, false
-	}
-	if e.Name, ok = m.errStrProp(v, atomName, t); !ok {
-		return nil, false
-	}
-	if e.Message, ok = m.errStrProp(v, atomMessage, t); !ok {
-		return nil, false
-	}
-	if e.Stack, ok = m.errStrProp(v, atomStack, t); !ok {
-		return nil, false
-	}
-	if e.LineNumber, ok = m.errIntProp(v, atomLineNumber); !ok {
-		return nil, false
-	}
-	if e.ColumnNumber, ok = m.errIntProp(v, atomColumnNumber); !ok {
-		return nil, false
-	}
-	if e.FileName, ok = m.errStrProp(v, atomFileName, t); !ok {
-		return nil, false
-	}
-	if m.uncatchablePending() {
-		return nil, false
-	}
-	return e, true
+// uncatchablePending reports whether the exception pending in m is one no
+// script can catch.
+func (m *VM) uncatchablePending() bool {
+	return m.jsIsUncatchableException()
 }
 
+// settled is v, the result of javascript that ran, unless the run left an
+// uncatchable exception pending: then v is freed and the exception marker
+// takes its place. A built-in that runs out of memory in a step it does not
+// check returns as if it had not failed, and the code after it goes on until
+// its next call fails, but the call that ran it has failed all the same.
+func (m *VM) settled(v jsValue) jsValue {
+	if isException(v) || !m.uncatchablePending() {
+		return v
+	}
+	m.jsFreeValue(v)
+	return exception
+}
+
+// errFromException takes the pending exception out of m and returns it as an
+// error.
 func (m *VM) errFromException() error {
 	err, _ := m.takeException()
 	return err
 }
 
-// takeException takes the pending exception out of the context and returns
-// it as an *Error, and whether it was uncatchable (an interrupt, running out
-// of memory, or a panic in a Go function). Reading an exception the script
-// threw runs javascript: when that meets an uncatchable exception, the
-// uncatchable one is what takeException takes and returns, as the call
-// ends with it.
+// takeException takes the pending exception out of m, reads it into an
+// *Error and reports whether it was uncatchable.
 func (m *VM) takeException() (err *Error, uncatchable bool) {
 	return m.takeExceptionCut(nil)
 }
 
-// takeExceptionCut is takeException with each text of the error cut as
-// cutString does, with t, for the error a read of the rejections ends with
-// (see UnhandledRejections). With nil, nothing is cut.
+// takeExceptionCut is takeException with the texts cut as t says, nil for
+// whole.
+//
+// The uncatchable flag is cleared as the exception is taken: it outlives the
+// exception in the engine, and left set it would make the next exception that
+// the engine fails to throw look uncatchable. An uncatchable exception is
+// read without running javascript (uncatchableError). Inside a Go function
+// that javascript called it is thrown again, flag and all, so that it also
+// ends the javascript that called the function when the function returns.
 func (m *VM) takeExceptionCut(t *textCut) (err *Error, uncatchable bool) {
 	uncatchable = m.uncatchablePending()
 	e := m.jsGetException()
-	// The flag outlives the exception. Clear it, so that it does not stay
-	// with the next exception the engine fails to throw.
 	m.jsSetUncatchableException(false)
-	// Deferred: a Go function that panics while e is read goes on panicking
-	// through here (repanic).
+	// Deferred: reading e runs Go code that may panic, and the panic goes on
+	// through here.
 	defer m.jsFreeValue(e)
-
 	if !uncatchable {
-		// Reading e runs javascript, inside the eval timeout. When that
-		// met an uncatchable exception, it is the error (errorFrom).
 		err = m.errorFrom(e, t)
+		// An uncatchable exception met while e was read is the error.
 		return err, err.Uncatchable
 	}
-
 	if tag(e) == tagNull {
-		// The engine throws null when it runs out of memory building an
-		// error.
+		// What the engine throws when it has no memory to make the error.
 		err = outOfMemoryError()
 	} else {
 		err = m.uncatchableError(e, t)
 	}
-	// No script can throw an uncatchable exception, and none runs between
-	// the engine making it and here (uncatchableError runs none either), so
-	// this is one of the errors the engine or the VM ends a call with, with
-	// the message it was made with: an interrupt, running out of memory, or
-	// a panic in a Go function (hostPanicked).
 	err.Uncatchable = true
 	switch err.Message {
 	case "out of memory":
@@ -280,66 +172,158 @@ func (m *VM) takeExceptionCut(t *textCut) (err *Error, uncatchable bool) {
 	case "interrupted":
 		err.Interrupted = true
 	}
+	// A Go function's panic goes on here, before e is freed.
 	defer m.repanic()
 	if m.host > 0 {
-		// Inside a Go function called from javascript, the exception ends
-		// that javascript too: it stays pending, so that every call into
-		// javascript fails until callGo returns it to the engine.
 		m.jsThrow(dupValue(e))
 		m.jsSetUncatchableException(true)
 	}
 	return err, true
 }
 
-// hostPanicked keeps p, what the Go function name called from javascript
-// panicked with, and throws an uncatchable error in its place. A panic must
-// not unwind through the engine: the engine would keep pointing at stack
-// frames that are gone, and the next error it made would walk them, forever
-// when the new frame took the old one's place. The javascript ends as for an
-// interrupt, and the panic goes on when the Go code that called javascript
-// takes the exception or returns (repanic).
-func (m *VM) hostPanicked(name string, p any) {
-	m.panicked = p
-	m.jsThrowError(errorKindInternal, fmt.Sprintf("panic in Go function %s: %v", name, p))
-	m.jsSetUncatchableException(true)
+// outOfMemoryError is the error of running out of memory, for an exception
+// the engine could not make. The caller sets Uncatchable.
+func outOfMemoryError() *Error {
+	return &Error{engine: true, raw: "InternalError: out of memory", Name: "InternalError", Message: "out of memory"}
 }
 
-// repanic goes on with the panic hostPanicked kept.
-func (m *VM) repanic() {
-	if p := m.panicked; p != nil {
-		m.panicked = nil
-		panic(p)
+// errorFrom reads v into an *Error, inside a call into javascript of its own:
+// the reads run javascript, which the eval timeout bounds. It borrows v. When
+// the read meets an uncatchable exception, that is the error.
+func (m *VM) errorFrom(v jsValue, t *textCut) (e *Error) {
+	var err error
+	if m.enter() != nil {
+		panic(brokenPanic)
 	}
+	// Registered first, so that it runs after leave: leave sets err when the
+	// script of the read was killed.
+	defer func() {
+		if err != nil {
+			e = killedError()
+		}
+	}()
+	defer m.leave(&err)
+	e, ok := m.readError(v, t)
+	if !ok {
+		e, _ = m.takeExceptionCut(t)
+	}
+	return e
 }
 
-// uncatchableError returns e, an uncatchable error the engine or the VM
-// made, without running javascript. Once the exception is out of the
-// context, javascript can run again, and ErrorFromValue would run what page
-// code installed with e as 'this': Error.prototype.toString for the string
-// form, and a getter for the name, which comes from the prototype. Either
-// could rewrite the message, which tells the errors apart. So only the own
-// data properties message and stack are read, the name is InternalError,
-// the class the engine and hostPanicked make all of them with, and the
-// string form is the one Error.prototype.toString makes of the two. With t,
-// the two are cut as cutString does.
+// readError reads the text of v and its properties name, message, stack,
+// lineNumber, columnNumber and fileName, in that order, each once. ok is
+// false, with the uncatchable exception pending, when the read met one: what
+// it read so far is dropped. An exception the javascript of a read throws is
+// dropped, and the field stays empty: v is the error to report.
+func (m *VM) readError(v jsValue, t *textCut) (e *Error, ok bool) {
+	e = &Error{engine: true}
+	if e.raw, ok = m.errString(v, t); !ok {
+		return nil, false
+	}
+	if e.Name, ok = m.stringProp(v, atomName, t); !ok {
+		return nil, false
+	}
+	if e.Message, ok = m.stringProp(v, atomMessage, t); !ok {
+		return nil, false
+	}
+	if e.Stack, ok = m.stringProp(v, atomStack, t); !ok {
+		return nil, false
+	}
+	if e.LineNumber, ok = m.intProp(v, atomLineNumber); !ok {
+		return nil, false
+	}
+	if e.ColumnNumber, ok = m.intProp(v, atomColumnNumber); !ok {
+		return nil, false
+	}
+	if e.FileName, ok = m.stringProp(v, atomFileName, t); !ok {
+		return nil, false
+	}
+	// The javascript of a read can leave an uncatchable exception pending and
+	// return as if it had not failed.
+	if m.uncatchablePending() {
+		return nil, false
+	}
+	return e, true
+}
+
+// errString is the string of v, as String(v) makes it, cut as t says.
+func (m *VM) errString(v jsValue, t *textCut) (string, bool) {
+	var s string
+	var ok bool
+	if t != nil {
+		s, ok = m.cutString(v, t)
+	} else {
+		s, ok = m.argString(v, false)
+	}
+	if !ok {
+		return "", m.dropCatchable()
+	}
+	return s, true
+}
+
+// stringProp reads the property atom of v when it is a string, and "" for
+// any other value.
+func (m *VM) stringProp(v jsValue, atom uint32, t *textCut) (string, bool) {
+	x := m.jsGetProperty(v, atom)
+	if isException(x) {
+		return "", m.dropCatchable()
+	}
+	defer m.jsFreeValue(x)
+	switch tag(x) {
+	case tagString, tagStringRope:
+		return m.errString(x, t)
+	}
+	return "", true
+}
+
+// intProp reads the property atom of v when it is a number, cut to an int,
+// and 0 for any other value.
+func (m *VM) intProp(v jsValue, atom uint32) (int, bool) {
+	x := m.jsGetProperty(v, atom)
+	switch tag(x) {
+	case tagException:
+		return 0, m.dropCatchable()
+	case tagInt:
+		return int(jsvToInt32(x)), true
+	case tagFloat64:
+		return int(jsvToFloat64(x)), true
+	}
+	m.jsFreeValue(x)
+	return 0, true
+}
+
+// dropCatchable drops the exception pending in m, one the javascript of a
+// read threw, and returns true. An uncatchable one stays, as it is to end the
+// call, and dropCatchable returns false. Left pending, an exception the read
+// threw would be taken by the next call into m, which has nothing to do with
+// it.
+func (m *VM) dropCatchable() bool {
+	if m.uncatchablePending() {
+		return false
+	}
+	m.jsFreeValue(m.jsGetException())
+	return true
+}
+
+// uncatchableError reads the uncatchable exception e, an InternalError that
+// the engine or hostPanicked made, without running javascript: the moment e
+// leaves the engine javascript could run, and a toString or a name getter of
+// the page could rewrite the message, which tells what ended the call. It
+// reads only the own data properties message and stack.
 func (m *VM) uncatchableError(e jsValue, t *textCut) *Error {
-	message := m.ownString(e, atomMessage, t)
+	msg := m.ownString(e, atomMessage, t)
+	stack := m.ownString(e, atomStack, t)
 	raw := "InternalError"
-	if message != "" {
-		raw += ": " + message
+	if msg != "" {
+		raw += ": " + msg
 	}
-	return &Error{engine: true, raw: raw, Name: "InternalError", Message: message, Stack: m.ownString(e, atomStack, t)}
+	return &Error{engine: true, raw: raw, Name: "InternalError", Message: msg, Stack: stack}
 }
 
-// ownString returns the own property atom of v, an error the engine or the
-// VM made, when it is a string, and "" otherwise. It runs no javascript: the
-// engine defined message and stack on v as data properties, and nothing ran
-// since, so the read finds them on v and calls nothing, and a property v
-// lacks is not looked up on the prototype, where page code could have put a
-// getter. Reading a stack the engine has not formatted yet formats it, and
-// making the Go string of a string built by concatenation needs memory:
-// running out of memory there is dropped, uncatchable flag and all. With t,
-// the string is cut as cutString does.
+// ownString reads the own property atom of v when it is a string, and "" for
+// anything else. Whatever fails on the way, such as running out of memory as
+// the engine makes the text of a stack for its first read, is dropped with
+// the uncatchable flag: the error being read is the one to report.
 func (m *VM) ownString(v jsValue, atom uint32, t *textCut) string {
 	switch m.jsGetOwnProperty(v, atom) {
 	case 0:
@@ -349,64 +333,53 @@ func (m *VM) ownString(v jsValue, atom uint32, t *textCut) string {
 		m.dropUncatchable()
 		return ""
 	}
-
-	p := m.jsGetPropertyInternal(v, atom, v, 0)
-	if isException(p) {
+	x := m.jsGetPropertyInternal(v, atom, v, 0)
+	if isException(x) {
 		m.dropUncatchable()
 		return ""
 	}
-
-	defer m.jsFreeValue(p)
-
-	if tag(p) != tagString && tag(p) != tagStringRope {
+	defer m.jsFreeValue(x)
+	switch tag(x) {
+	case tagString, tagStringRope:
+	default:
 		return ""
 	}
-
-	var str string
+	var s string
 	var ok bool
 	if t != nil {
-		str, ok = m.cutString(p, t)
+		s, ok = m.cutString(x, t)
 	} else {
-		str, ok = m.argString(p, false)
+		s, ok = m.argString(x, false)
 	}
 	if !ok {
 		m.dropUncatchable()
 	}
-	return str
+	return s
 }
 
-// dropUncatchable drops the exception pending in ctx and clears the
-// uncatchable flag running out of memory sets, so that it does not stay
-// with the next exception thrown (see takeException).
+// dropUncatchable drops the pending exception and the uncatchable flag.
 func (m *VM) dropUncatchable() {
-	m.dropException()
+	m.jsFreeValue(m.jsGetException())
 	m.jsSetUncatchableException(false)
 }
 
-// outOfMemoryError is the error the engine throws when it runs out of
-// memory.
-func outOfMemoryError() *Error {
-	return &Error{engine: true, raw: "InternalError: out of memory", Name: "InternalError", Message: "out of memory"}
+// hostPanicked turns the panic p of the Go function name, which javascript
+// called, into an uncatchable exception that ends the javascript as an
+// interrupt does. p is kept for repanic, which goes on with it where the Go
+// code that called javascript gets back. The panic must not go up through the
+// engine: the engine would keep pointing at its frames that are gone, and
+// walk them the next time it makes an error.
+func (m *VM) hostPanicked(name string, p any) {
+	m.panicked = p
+	m.jsThrowError(errorKindInternal, fmt.Sprintf("panic in Go function %s: %v", name, p))
+	m.jsSetUncatchableException(true)
 }
 
-// uncatchablePending reports whether an uncatchable exception (an
-// interrupt) is pending in m's context. Every call into javascript fails
-// while one is.
-func (m *VM) uncatchablePending() bool {
-	return m.jsIsUncatchableException()
-}
-
-// settled returns v, the result of a call into javascript, or the exception
-// value when an uncatchable exception is still pending after the call. A
-// built-in that runs out of memory in a step it does not check, such as a
-// property of an object it makes, returns as if it had not failed, and the
-// code that called it can go on until its next call, which fails. The call
-// that ran it fails all the same.
-func (m *VM) settled(v jsValue) jsValue {
-	if isException(v) || !m.uncatchablePending() {
-		return v
+// repanic goes on with the panic of a Go function that hostPanicked kept,
+// if any.
+func (m *VM) repanic() {
+	if p := m.panicked; p != nil {
+		m.panicked = nil
+		panic(p)
 	}
-
-	m.jsFreeValue(v)
-	return exception
 }

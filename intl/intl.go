@@ -1,174 +1,65 @@
-// Copyright 2026 The quickjs-go Authors. All rights reserved.
-// Use of the source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
+// Copyright (c) 2026 The liustack/slowjs Authors.
+// SPDX-License-Identifier: MIT
+// Use of this source code is governed by the MIT license in LICENSE at the
+// root of this repository.
 
-// Package intl implements ECMA-402, the ECMAScript Internationalization API,
-// for a [slowjs.VM].
+// Package intl gives a [slowjs.VM] the ECMA-402 Intl API, computed in Go.
 //
-// QuickJS has no Intl. It is not a disabled build option: neither Bellard's
-// engine nor quickjs-ng implements ECMA-402, so a page or bundle that reaches
-// for Intl.DateTimeFormat gets a ReferenceError. [Register] installs a Go
-// backed implementation of the parts of the API pages depend on:
+// QuickJS comes without Intl. [Register] adds it: the constructors
+// Intl.DateTimeFormat, NumberFormat, PluralRules, Collator, Segmenter,
+// RelativeTimeFormat, ListFormat, DisplayNames, DurationFormat and Locale,
+// the supportedLocalesOf of each but Locale, Intl.getCanonicalLocales and
+// Intl.supportedValuesOf. It also replaces the methods that format with a
+// locale: Date.prototype.toLocaleString, toLocaleDateString and
+// toLocaleTimeString, Number.prototype.toLocaleString,
+// BigInt.prototype.toLocaleString, String.prototype.localeCompare, and
+// String.prototype.toLocaleUpperCase and toLocaleLowerCase, which follow the
+// case rules of Turkish, Azerbaijani, Lithuanian and Greek.
 //
-//   - Intl.DateTimeFormat: date and time styles, the component options,
-//     hour cycles, day periods, time zone names, and the IANA time zone
-//     database behind the timeZone option.
-//   - Intl.NumberFormat: grouping, fraction and significant digits, rounding
-//     modes, percent, currency, unit, compact and scientific notation, and
-//     numbering systems, and ranges with formatRange and formatRangeToParts.
-//   - Intl.PluralRules: cardinal and ordinal rules, select and selectRange.
-//   - Intl.Collator, and String.prototype.localeCompare through it: the
-//     collation types, sensitivity, numeric, caseFirst, ignorePunctuation
-//     and search usage, from go-intl (internal/gointl), which is ICU's
-//     collation in Go over the data Chromium ships.
-//   - Intl.Segmenter: graphemes, words, with the dictionaries of Thai, Lao,
-//     Khmer, Burmese, Chinese and Japanese, and sentences.
-//   - Intl.RelativeTimeFormat: every unit and style, words such as
-//     "yesterday" with numeric auto, and numbering systems.
-//   - Intl.ListFormat: conjunctions, disjunctions and unit lists in every
-//     style, with the joins that depend on the next item, as Spanish "e"
-//     and "u" and Hebrew "ו-".
-//   - Intl.DisplayNames: the names of languages, with dialect names such
-//     as "British English" or without, of regions, scripts, currencies,
-//     calendars and date fields, in every style.
-//   - Intl.DurationFormat: every style and each unit's own, digital
-//     clocks with fractional seconds, and durations given as objects or as
-//     Temporal's duration strings ("PT1H30M"), as Chromium takes them.
-//   - Intl.Locale: tags built from options, likely subtags added and
-//     removed, every getter, and the calendars, collations, hour cycles,
-//     numbering systems, time zones, text direction and week of a locale.
-//     A Locale stands for its tag wherever a constructor takes locales.
-//   - Intl.supportedValuesOf, which lists the calendars, collations,
-//     currencies, numbering systems, time zones and units the constructors
-//     take.
-//   - Intl.getCanonicalLocales and each constructor's supportedLocalesOf.
+// # Locales and time zones
 //
-// Register also replaces Date.prototype.toLocaleString, toLocaleDateString and
-// toLocaleTimeString along with Number.prototype.toLocaleString,
-// BigInt.prototype.toLocaleString and String.prototype.localeCompare, which
-// ECMA-402 redefines in terms of those constructors, and
-// String.prototype.toLocaleUpperCase and toLocaleLowerCase, which map case
-// by the rules of Turkish and Azeri ("i" to "İ"), Lithuanian and, to upper
-// case, Greek ("άδικος" to "ΑΔΙΚΟΣ"), as V8 does, and by Unicode's default
-// rules in other languages. QuickJS ships fallbacks for them that ignore
-// their arguments, so
+// Locales resolve as in Chromium: a locale without data of its own falls
+// back to its parent, and then to en-US. With no locale given the locale is
+// en-US, and with no time zone given the zone is the VM's default, UTC
+// unless [TimeZone] sets another. Nothing is read from the host: not its
+// locale, not its zone, not the TZ variable. The zone data is tz 2026e,
+// built into go-intl, so the program needs neither the host's zoneinfo nor
+// time/tzdata.
 //
-//	new Date(0).toLocaleString("en-US", {timeZone: "America/New_York"})
+// # Compared with Chromium
 //
-// ignores the requested zone before Register
-// and "12/31/1969, 7:00:00 PM" after it.
-//
-// # Locales
-//
-// All constructors read go-intl's data packs, selected by Chromium 156
-// resource inventory, for every locale Chromium has. A locale resolves as it does in Chromium: one with no data of its own
-// falls back to its parent (en-XX to en) or, failing that, to en-US. With no
-// locale argument the locale is en-US and with no timeZone option the zone is
-// UTC: Intl and the toLocale* methods never read the host's language or zone.
-// Neither does the engine's own Date, whose local time is UTC in every VM.
-//
-// Dates support all 18 calendars Chromium lists. NumberFormat and PluralRules
-// implement roundingIncrement and roundingPriority through go-intl.
-//
-// # Differences from Chromium
-//
-// The output is compared with Chromium 156 (V8 over ICU 78.2) on 74,868
-// recorded expressions. DateTimeFormat, NumberFormat and PluralRules match
-// every expression, including calendars. The other constructors have the
-// known differences below. An additional 939 expressions cover the migration
-// to go-intl. Three Winnipeg answers differ because the embedded tz 2026e
-// keeps daylight time after October 2026, unlike Chromium's older tz data.
-//
-// Intl.Segmenter breaks words by ICU's rules, which Chromium changes: there a
-// full stop or a colon between letters ends a word, so "U.S.A" is five
-// segments and "a:b" three, and Lao and Khmer break by smaller dictionaries
-// of Chromium's own, which find other words in some runs.
-//
-// Intl.DisplayNames names more than Chromium, whose ICU data leaves names
-// out: of some languages ("tlh" for Klingon), of variants ("German (1996)"),
-// of numeric regions but 419, and of currencies no longer in use, which it
-// writes as their codes, or leaves undefined with fallback none. It has no
-// names at all for ak, az, bs, kk, kok, pa, sd and uz, which it names as
-// root does, by codes, or in English. And it has names of its own for Hong
-// Kong, Macao, Palestine and the Falkland Islands ("Hong Kong" for "Hong
-// Kong SAR China"). Here the names are CLDR's. The narrow names of de-CH's
-// era and th's time zone are go-intl's, which ICU writes otherwise.
-//
-// Intl.Locale's getTimeZones for the world, 001, leaves out five zones that
-// Chromium lists, EST5EDT, CST6CDT, MST7MDT, PST8PDT and Factory. Its
-// baseName of a tag with -u-va-posix leaves the extension out, which V8
-// keeps ("en-US-u-va-posix"). An unknown region in -u-rg-, as in
-// "en-u-rg-xxzzzz", leaves the locale's own region in place for the hour
-// cycle and the week, where Chromium takes the world's.
-//
-// Intl.supportedValuesOf("currency") lists go-intl's 162 currencies,
-// including SLE, XCG and ZWG beyond Chromium's 159.
-//
-// Intl.DurationFormat writes a fraction of more than 2**63 nanoseconds, as
-// in {nanoseconds: 1e20} with numeric seconds, as V8 does on x86-64:
-// "9223372036.854775808" seconds. V8 on arm64 writes
-// "9223372036.854775807".
-//
-// Error messages are worded differently, though the errors thrown are the
-// same.
-//
-// Where Chromium's ICU data departs from CLDR 48.2, the data here follows
-// Chromium. A language Chromium ships no dates or numbers for formats them
-// with CLDR root's data, as az and kk do ("2026 M01 5, Mon"), and one it ships
-// no currency, zone, unit or region names for takes them from English. Digits
-// a locale does not use by default, such as arab in de, take the symbols and
-// patterns Chromium has for them, which cldr-json leaves out. A
-// zone's city is the one its id spells ("Sao Paulo"), Hong Kong
-// and Macao go by their short names, and the zones of the British Isles are
-// never "Greenwich Mean Time". fr-CH groups digits with a narrow no-break
-// space (CLDR 48.1's), ko calls the North American zones 북미 (North
-// America), and uk and ru write the hryvnia as грн and грн. As in Chromium,
-// narrow and thin spaces in dates are written as plain spaces.
+// The answers of DateTimeFormat, NumberFormat and PluralRules are
+// Chromium 156's, checked against what that browser answered for tens of
+// thousands of expressions (testdata/chromium). The known differences are
+// elsewhere: where Segmenter breaks words, a few names of DisplayNames, the
+// 001 time zones, -u-va-posix and unknown -u-rg- regions of Locale, the
+// currencies SLE, XCG and ZWG that supportedValuesOf("currency") lists in
+// addition, how DurationFormat writes a sum of nanoseconds past 2**63, and
+// the words of error messages. Under tz 2026e, three answers for
+// America/Winnipeg differ from that browser's older data.
 //
 // # Cost
 //
-// The six embedded packs total 9.35 MB. Their shared tables stay in the
-// binary's read-only data. Other chunks inflate into the Go heap on first
-// use, once per process. Date and Temporal formatting use the same packs.
-// The build tags slowjs_intl_nonames and slowjs_intl_nocjdict omit display
-// names and the Chinese and Japanese word dictionary respectively.
+// The data takes six packs, 9.35 MB of the binary in all. The build tags
+// slowjs_intl_nonames and slowjs_intl_nocjdict leave out the display names
+// and the Chinese and Japanese word dictionary of Segmenter.
 //
-// Register installs stand-ins. The first use installs the javascript half
-// from bytecode compiled once per process. Resolved formatters are shared
-// across VMs in a bounded registry of 1024 entries. Eviction makes an object
-// resolve its saved arguments again on its next call, without changing its
-// result. Date keys include the actual pattern because distinct patterns
-// can report identical public resolved options.
-//
-// See docs/changes/time-and-intl.md for measured binary size, VM memory
-// and constructor and formatting times.
+// The formatters are shared by all the VMs of the process: a registry keeps
+// up to 1024 of them, and an object whose formatter it dropped makes it
+// again, from the same arguments, on its next call, with the same results.
+// A date formatter is told apart by the pattern it writes with, beside its
+// options. docs/changes/time-and-intl.md has the timings.
 //
 // # License of the data
 //
-// The embedded locale data comes from Unicode CLDR and from the ICU data
-// Chromium ships, which are under the Unicode License V3, with changes
-// Chromium made to it under Chromium's BSD license. A program that imports
-// this package distributes that data, and has to include the notices in
-// LICENSE-DATA, in this package's directory, in its documentation or with
-// its copies. It also links internal/gointl and internal/gointl/temporal,
-// and has to include their notices too: internal/gointl/LICENSE and the
-// NOTICE-ICU, NOTICE-ICU4X, NOTICE-TEMPORAL and NOTICE-V8 files in
-// internal/gointl/qjsdata, as NOTICE.md at the module root says.
-//
-// # Time zones
-//
-// Names, offsets and daylight flags use go-intl's embedded ICU tz 2026e
-// pack, shared with Temporal. No host zoneinfo or time/tzdata is read.
-//
-// The default zone, which is also what
-// Intl.DateTimeFormat().resolvedOptions().timeZone reports, is UTC unless
-// [TimeZone] sets another. Intl never consults the host's zone (see Locales
-// for the engine's Date, which does).
+// A program that imports this package carries data from Unicode CLDR, ICU
+// and Chromium, and has to ship intl/LICENSE-DATA and the notices of
+// internal/gointl with it. NOTICE.md says which covers what.
 package intl // import "github.com/liustack/slowjs/intl"
 
 import (
 	_ "embed"
-	"fmt"
+	"errors"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -177,21 +68,67 @@ import (
 	"github.com/liustack/slowjs/internal/intlhook"
 )
 
+// intl.js is the javascript half of Intl, installed on a VM when a page
+// first uses Intl or a method it replaces. stub.js puts the stand-ins in
+// place that install it.
+
 //go:embed intl.js
 var shim string
 
 //go:embed stub.js
 var stub string
 
-// script is javascript compiled to bytecode once per process and evaluated
-// from there on every VM: the bytecode does not depend on the VM that made it.
+// A script is javascript compiled once per process, to bytecode every VM
+// evaluates.
 type script struct {
 	src *string
 
 	mu   sync.Mutex
-	code []byte // nil until a compile works
+	code []byte
 }
 
+var (
+	shimScript = script{src: &shim}
+	stubScript = script{src: &stub}
+
+	// shimInstalls counts the installs of intl.js begun, and
+	// interruptedInstalls those begun after one on the same VM was cut short,
+	// for the tests.
+	shimInstalls, interruptedInstalls atomic.Int64
+)
+
+// bytecode returns the compiled script. A compile that fails is not kept,
+// and the next call tries again.
+func (s *script) bytecode() ([]byte, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.code != nil {
+		return s.code, nil
+	}
+
+	// A VM of its own: the one that wants the script may be short of
+	// memory, stack or time.
+	vm, err := slowjs.NewVM()
+	if err != nil {
+		return nil, err
+	}
+
+	defer vm.Close()
+
+	// Without source and debug information, its functions show
+	// [native code], as built-ins do, and each VM holds less.
+	vm.SetStrip(slowjs.StripDebug)
+	code, err := vm.Compile(*s.src, slowjs.EvalGlobal)
+	if err != nil {
+		return nil, err
+	}
+
+	s.code = code
+	return code, nil
+}
+
+// eval evaluates the script on vm.
 func (s *script) eval(vm *slowjs.VM) error {
 	code, err := s.bytecode()
 	if err != nil {
@@ -202,114 +139,73 @@ func (s *script) eval(vm *slowjs.VM) error {
 	return err
 }
 
-// bytecode returns s compiled. A compile that fails is not kept, the next
-// call tries again.
-func (s *script) bytecode() ([]byte, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if s.code == nil {
-		code, err := compile(*s.src)
-		if err != nil {
-			return nil, err
-		}
-
-		s.code = code
-	}
-	return s.code, nil
-}
-
-// compile compiles src on a VM of its own. The VM that needs the bytecode may
-// be short of memory, stack or time, and a compile there would fail for
-// reasons that have nothing to do with src. The functions are compiled
-// without their source and debug information: they stand for built-ins, whose
-// toString shows [native code], and each VM that loads them carries less.
-func compile(src string) ([]byte, error) {
-	vm, err := slowjs.NewVM()
-	if err != nil {
-		return nil, err
-	}
-
-	defer vm.Close()
-
-	vm.SetStrip(slowjs.StripDebug)
-	return vm.Compile(src, slowjs.EvalGlobal)
-}
-
-var (
-	shimScript = script{src: &shim}
-	stubScript = script{src: &stub}
-
-	// shimInstalls counts the VMs the shim has been installed on, for the
-	// tests.
-	shimInstalls atomic.Int64
-
-	// interruptedInstalls counts the installs that started over after an
-	// interrupt or running out of memory cut one short, for the tests.
-	interruptedInstalls atomic.Int64
-)
-
 type config struct {
-	timeZone string
+	zone string
 }
 
 // An Option configures [Register].
 type Option func(*config)
 
-// TimeZone returns an Option setting the default time zone: the one a
-// formatter created without a timeZone option uses and the one
-// Intl.DateTimeFormat().resolvedOptions().timeZone reports. The name must be
-// an IANA identifier like "Europe/Prague", "UTC", or an offset like "+05:30".
+// TimeZone sets the default time zone of the VM: the one a DateTimeFormat
+// without a timeZone option formats in, and the one its resolvedOptions
+// reports. name is an IANA name, such as "Europe/Prague", "UTC", or an
+// offset, such as "+05:30". Without it the default is UTC, whatever the
+// host's zone is.
 //
-// Without it the zone is UTC. Intl never reads the host's zone: a server would
-// otherwise render a page differently depending on where it runs. The
-// engine's Date local time methods do not follow this option: their local
-// time is always UTC.
-func TimeZone(name string) Option { return func(c *config) { c.timeZone = name } }
+// The local time of the engine's Date is UTC whatever the zone: getHours,
+// toString and the other methods of Date that are not toLocale* do not
+// follow it.
+func TimeZone(name string) Option {
+	return func(c *config) { c.zone = name }
+}
 
-// Register installs Intl on vm's global object and replaces the toLocale*
-// methods ECMA-402 defines in terms of it. See the package documentation for
-// what is and is not implemented.
+// marker is the key, as Symbol.for(marker), of the property stub.js puts
+// on the global object of a VM it registered.
+const marker = "github.com/liustack/slowjs/intl"
+
+// registered reports whether vm has Intl from Register.
+func registered(vm *slowjs.VM) (bool, error) {
+	v, err := vm.Eval("globalThis[Symbol.for("+strconv.Quote(marker)+")] === true", slowjs.EvalGlobal)
+	if err != nil {
+		return false, err
+	}
+
+	b, _ := v.(bool)
+	return b, nil
+}
+
+// Register gives vm Intl and the locale-aware methods of Date, Number,
+// BigInt and String (see the package documentation).
 //
-// Call it on every VM that is to have Intl, including one created to replace
-// another. A VM is a javascript realm, Intl lives on that realm's global
-// object and it does not migrate: an embedder that gives each document a fresh
-// realm - the only way to empty one, see [slowjs.VM] - has to register per
-// document rather than once at startup, or the second document is back to a
-// ReferenceError.
+// Every VM needs its own Register, a VM made to replace the realm of
+// another one included. Call it before any code of the page runs: it takes
+// the built-ins Intl works with then, so that a page that later changes
+// Array.prototype, JSON or the like does not change Intl. A second Register
+// on the same VM returns an error.
 //
-// Call it before any code of the page runs on vm. It takes then the
-// built-ins Intl's code uses, so that a page changing Array.prototype,
-// Object.prototype, JSON and the like afterwards changes nothing Intl does:
-// called later, it takes what the page changed them to.
-//
-// Registering a second time on the same VM is an error rather than a silent
-// no-op, because it would otherwise drop that call's options. Nothing has to
-// be released: vm.Close does it all. The formatters themselves belong to the
-// process, which shares them between VMs and keeps a bounded number of them.
+// Register only puts stand-ins in place. Intl is installed the first time
+// a page uses it or one of the methods. Nothing needs to be released:
+// vm.Close frees it all.
 func Register(vm *slowjs.VM, opts ...Option) error {
-	switch already, err := registered(vm); {
+	switch done, err := registered(vm); {
 	case err != nil:
 		return err
-	case already:
-		return fmt.Errorf("intl: this VM already has Intl; a VM created to replace a realm needs its own Register")
+	case done:
+		return errors.New("intl: this VM already has Intl; a VM that replaces a realm needs a Register of its own")
 	}
 
-	c := &config{}
+	c := config{}
 	for _, o := range opts {
-		o(c)
+		o(&c)
 	}
-	if c.timeZone == "" {
-		c.timeZone = "UTC"
+	if c.zone == "" {
+		c.zone = "UTC"
 	}
-	name, err := resolveTimeZone(c.timeZone)
+	zone, err := resolveTimeZone(c.zone)
 	if err != nil {
 		return err
 	}
 
-	// stub.js is a function of the install Builtin and the zone, which puts
-	// the stand-ins in place. The shim is installed the first time the page
-	// touches Intl or a toLocale* method, from inside that call.
 	code, err := stubScript.bytecode()
 	if err != nil {
 		return err
@@ -333,30 +229,43 @@ func Register(vm *slowjs.VM, opts ...Option) error {
 	if err != nil {
 		return err
 	}
+
 	defer state.Free()
 
-	if _, err = f.Call(slowjs.UndefinedValue, install, name, state); err != nil {
+	if _, err := f.Call(slowjs.UndefinedValue, install, zone, state); err != nil {
 		return err
 	}
 
-	// For the toLocaleString of a Temporal.Instant (see temporal.go).
-	rememberZone(vm, name)
+	rememberZone(vm, zone)
 	return nil
 }
 
-// installing holds the VMs an install is running on.
-var installing sync.Map
+// A request is what a constructor resolves from: the locales the page asked
+// for, and the options intl.js read and converted, only those it was given,
+// each a string, a float64 or a bool. Its json is how the registry tells
+// formatters apart before they are made.
+type request struct {
+	Locales []string       `json:"locales"`
+	Options map[string]any `json:"options"`
 
-// installBuiltin installs the shim: it evaluates intl.js, a function of the
-// built-ins stub.js took, the zone, the option lists and the bridge, and
-// returns what calling it returns, the objects stub.js then puts in place.
-// Its third argument says the previous install was cut short.
+	// vm is the VM of the call, nil in some tests.
+	vm *slowjs.VM
+}
+
+// installing holds the VMs intl.js is being installed on.
+var installing sync.Map // *slowjs.VM -> bool
+
+// installBuiltin installs intl.js on the VM of its call, for stub.js, which
+// passes the built-ins it took, the default zone, whether an install of
+// this VM was cut short before, and the state the VM shares with Temporal.
+// It returns what intl.js returns, which stub.js puts in place of the
+// stand-ins.
 var installBuiltin = intlhook.NewBuiltin("install", 3, func(a slowjs.Args) (slowjs.Value, error) {
 	vm := a.VM()
 	if _, busy := installing.LoadOrStore(vm, true); busy {
-		// The shim calls no code of the page while it installs, so nothing
-		// can get here.
-		return slowjs.Value{}, &slowjs.Error{Name: "Error", Message: "intl: used while being installed"}
+		// intl.js calls no code of the page while it installs, so only a
+		// bug gets here.
+		return slowjs.Value{}, &slowjs.Error{Name: "Error", Message: "intl: Intl was used while it was being installed"}
 	}
 
 	defer installing.Delete(vm)
@@ -365,44 +274,40 @@ var installBuiltin = intlhook.NewBuiltin("install", 3, func(a slowjs.Args) (slow
 		interruptedInstalls.Add(1)
 	}
 	shimInstalls.Add(1)
+
 	code, err := shimScript.bytecode()
 	if err != nil {
 		return slowjs.Value{}, err
 	}
 
-	f, err := vm.EvalBytecodeValue(code)
+	g, err := vm.EvalBytecodeValue(code)
 	if err != nil {
 		return slowjs.Value{}, err
 	}
 
-	defer f.Free()
+	defer g.Free()
 
-	args := make([]any, 0, 3+len(bridge))
+	args := make([]any, 0, 4+len(bridge))
 	args = append(args, a.Value(0), a.Value(1), optionLists, a.Value(3))
 	for _, b := range bridge {
 		v, err := vm.NewBuiltinFunction(b)
 		if err != nil {
+			freeValues(args[4:])
 			return slowjs.Value{}, err
 		}
-
-		defer v.Free()
-
 		args = append(args, v)
 	}
-	return f.CallValue(slowjs.UndefinedValue, args...)
+
+	defer freeValues(args[4:])
+
+	return g.CallValue(slowjs.UndefinedValue, args...)
 })
 
-// marker is the well known symbol stub.js stamps on the global object of a VM
-// it registers, keyed by this package's import path.
-const marker = "github.com/liustack/slowjs/intl"
-
-// registered reports whether this package has already installed Intl on vm.
-func registered(vm *slowjs.VM) (bool, error) {
-	v, err := vm.Eval("globalThis[Symbol.for("+strconv.Quote(marker)+")] === true", slowjs.EvalGlobal)
-	if err != nil {
-		return false, err
+// freeValues frees the Values in l.
+func freeValues(l []any) {
+	for _, v := range l {
+		if v, ok := v.(slowjs.Value); ok {
+			v.Free()
+		}
 	}
-
-	b, _ := v.(bool)
-	return b, nil
 }

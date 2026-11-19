@@ -1,6 +1,7 @@
-// Copyright 2025 The quickjs-go Authors. All rights reserved.
-// Use of the source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
+// Copyright (c) 2026 The liustack/slowjs Authors.
+// SPDX-License-Identifier: MIT
+// Use of this source code is governed by the MIT license in LICENSE at the
+// root of this repository.
 
 package fmt // import "github.com/liustack/slowjs/fmt"
 
@@ -17,12 +18,26 @@ func TestMain(m *testing.M) {
 }
 
 func ExampleRegister_printf() {
-	m, _ := slowjs.NewVM()
-	defer m.Close()
-	g := m.GlobalObject()
+	vm, err := slowjs.NewVM()
+	if err != nil {
+		panic(err)
+	}
+
+	defer vm.Close()
+
+	g := vm.GlobalObject()
+
 	defer g.Free()
-	Register(g.Dup())
-	v, _ := m.Eval("fmt.printf('Math.PI=%v\\n', Math.PI)", slowjs.EvalGlobal)
+
+	if err := Register(g.Dup()); err != nil {
+		panic(err)
+	}
+
+	v, err := vm.Eval(`fmt.printf('Math.PI=%v\n', Math.PI)`, slowjs.EvalGlobal)
+	if err != nil {
+		panic(err)
+	}
+
 	fmt.Print(v)
 	// Output:
 	// Math.PI=3.141592653589793
@@ -30,12 +45,26 @@ func ExampleRegister_printf() {
 }
 
 func ExampleRegister_sprint() {
-	m, _ := slowjs.NewVM()
-	defer m.Close()
-	g := m.GlobalObject()
+	vm, err := slowjs.NewVM()
+	if err != nil {
+		panic(err)
+	}
+
+	defer vm.Close()
+
+	g := vm.GlobalObject()
+
 	defer g.Free()
-	Register(g.Dup())
-	v, _ := m.Eval("fmt.sprint([2*21, 'foo', {bar: Math.exp(1)}])", slowjs.EvalGlobal)
+
+	if err := Register(g.Dup()); err != nil {
+		panic(err)
+	}
+
+	v, err := vm.Eval(`fmt.sprint([2*21, 'foo', {bar: Math.exp(1)}])`, slowjs.EvalGlobal)
+	if err != nil {
+		panic(err)
+	}
+
 	fmt.Print(v)
 	// Output:
 	// [42,"foo",{"bar":2.718281828459045}]

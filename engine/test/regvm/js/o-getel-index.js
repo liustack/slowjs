@@ -1,6 +1,6 @@
 // Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
-// Use of this source code is governed by the MIT license in LICENSE-MIT at the
+// Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 // rvdiff: a[i] and a[i] = v with an int key (GETEL, GETELT, GETELK,
 // GETELKT, GETEL3 and PUTEL, sloppy and strict) on Arrays that are no

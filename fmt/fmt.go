@@ -1,9 +1,10 @@
-// Copyright 2025 The quickjs-go Authors. All rights reserved.
-// Use of the source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
+// Copyright (c) 2026 The liustack/slowjs Authors.
+// SPDX-License-Identifier: MIT
+// Use of this source code is governed by the MIT license in LICENSE at the
+// root of this repository.
 
-// Package fmt exposes some functionality of the Go stdlib fmt package to a
-// [slowjs.VM].
+// Package fmt gives a [slowjs.VM] some of Go's fmt: printf, println, sprint
+// and sprintf.
 package fmt // import "github.com/liustack/slowjs/fmt"
 
 import (
@@ -17,181 +18,134 @@ import (
 	"github.com/liustack/slowjs/internal/vmhook"
 )
 
-const pkg = "fmt"
-
-// Register sets the "fmt" property of 'obj' to the fmt package javascript object.
-//
-// The functions registered are
-//
-//   - [fmt.Printf]
-//   - [fmt.Println]
-//   - [fmt.Sprintf]
-//   - [fmt.Sprint]
-//
-// The javascript functions follow the usual conventions where the first letter
-// of a function name is not capitalized. So [fmt.Println] becomes
-// 'fmt.println' in javascript, for example.
-//
-// A call makes its whole output in Go before it returns it or writes it, as
-// Go's fmt does, and a short format can ask for a long output. So each
-// function first finds a bound on the bytes of its output, from the format
-// and the arguments, and when what making the output may make Go allocate,
-// sixteen times its bytes and a few KiB for the printer that makes it, is
-// more than the VM has left under its memory limit (see
-// [slowjs.VM.SetMemoryLimit]), the call ends with the uncatchable out of
-// memory error and makes nothing. A VM with no memory limit has room for
-// an output of at most 16 MiB. The bound comes from the format
-// and the arguments, not from the output, and can be far above it: when an
-// argument is longer than what is printed of it, as a string cut by its
-// precision, or when a width or a precision is not used, as by a verb that
-// does not fit its argument or for a zero printed with a precision of 0.
-// Such a call can be refused under a tight memory limit. A call whose bound
-// fits in a small part of what is left runs as before.
-//
-// A call whose bound is more than 64 KiB makes its output a verb at a time,
-// and a long string, object or big int a part at a time, in the same bytes
-// as Go's fmt, and ends between two parts when [slowjs.VM.Interrupt] or
-// the eval timeout asks it to. It takes about as long as Go's fmt for a long
-// argument, and about three times as long for many short verbs. The longest
-// part is in the conversion of a big int to decimal: one division by
-// math/big of the whole big int, about 5 ms on an Apple M4 for the
-// 1,048,576 bits of the longest the engine makes.
-//
-// printf and println write to os.Stdout, or to the writer of [Writer], 64
-// KiB at a time, and end the call between two writes when
-// [slowjs.VM.Interrupt] or the eval timeout asks it to. A write that
-// blocks, as one to a full pipe nobody reads does, holds the call, and the
-// goroutine running the VM, until it is done.
-func Register(obj slowjs.Value, opts ...Option) (err error) {
-	defer obj.Free()
-
-	var o options
-	for _, opt := range opts {
-		opt(&o)
-	}
-	vm := obj.VM()
-	mod, err := vm.EvalThisValue(obj.Dup(), fmt.Sprintf("this.%s={}; this.%[1]s", pkg), slowjs.EvalGlobal)
-	if err != nil {
-		return err
-	}
-
-	defer mod.Free()
-
-	for _, v := range []struct {
-		nm       string
-		f        any
-		wantThis bool
-	}{
-		{"printf", func(format string, a ...any) (int, error) {
-			s, give, ok := makePrintf(vm, format, a)
-			defer give()
-			if !ok {
-				return 0, nil
-			}
-			return write(vm, o.writer(), s)
-		}, false},
-		{"println", func(a ...any) (int, error) {
-			s, give, ok := makePrint(vm, a, true)
-			defer give()
-			if !ok {
-				return 0, nil
-			}
-			return write(vm, o.writer(), s)
-		}, false},
-		{"sprint", func(a ...any) slowjs.Value {
-			s, give, ok := makePrint(vm, a, false)
-			defer give()
-			return result(vm, s, ok)
-		}, false},
-		{"sprintf", func(format string, a ...any) slowjs.Value {
-			s, give, ok := makePrintf(vm, format, a)
-			defer give()
-			return result(vm, s, ok)
-		}, false},
-	} {
-		longName := fmt.Sprintf("__%s_%s__", pkg, v.nm)
-		if err := vm.RegisterFunc(longName, v.f, v.wantThis); err != nil {
-			return err
-		}
-
-		if _, err := vm.EvalThis(mod.Dup(), fmt.Sprintf("this.%s = %s", v.nm, longName), slowjs.EvalGlobal); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-// An Option changes what Register sets up.
-type Option func(*options)
-
 type options struct {
 	w io.Writer
 }
 
-// Writer makes printf and println write to w, where they write to
-// os.Stdout without it.
-func Writer(w io.Writer) Option { return func(o *options) { o.w = w } }
+// An Option configures [Register].
+type Option func(*options)
 
-// writer is the writer of o, or os.Stdout as it is when the call writes.
-func (o *options) writer() io.Writer {
-	if o.w != nil {
-		return o.w
-	}
-	return os.Stdout
+// Writer makes printf and println write to w. Without it they write to
+// os.Stdout, as it is at the time of each call.
+func Writer(w io.Writer) Option {
+	return func(o *options) { o.w = w }
 }
 
-// result is the javascript string of s, an output of sprint or sprintf,
-// made while the memory of s is still held (sprintf): the function returns
-// it, not s, which RegisterFunc would convert once the memory is given
-// back. When ok is false the error that ends the call is pending, and what
-// result returns is dropped. A string the engine cannot make ends the call:
-// at Interrupt or the eval timeout with the interrupt, and otherwise, when
-// it has no memory for it or it is longer than the longest string it
-// makes, with the out of memory error.
-func result(vm *slowjs.VM, s string, ok bool) slowjs.Value {
-	if !ok {
-		return slowjs.UndefinedValue
-	}
-	v, err := vm.NewString(s)
-	if err != nil && !vmhook.Stop(vm) {
-		vmhook.OutOfMemory(vm)
-	}
-	return v
+const (
+	// direct is the longest output, as bounded before it is made, that
+	// Go's fmt makes in one go: that is faster than making it a piece at a
+	// time (printf.go), and short enough to hold.
+	direct = 1 << 16
+	// writePiece is the most bytes printf and println hand their writer at
+	// once: between two writes they check whether the call is to end.
+	writePiece = 64 << 10
+	// maxOutput is the output a VM with no memory limit has room for.
+	maxOutput = 16 << 20
+)
+
+// budget is what Go's fmt may allocate to make n bytes of output, besides
+// more allocated for the call, counted whole, as Go may collect none of it
+// before the call returns.
+//
+// fmt's buffer grows by append to at least 1.25 times what it held, and by
+// its padding to twice, so the buffers it goes through add up to at most 8
+// times the output. A verb that quotes a string or writes a float first
+// makes its bytes in a slice of its own, grown the same way, and Sprintf
+// copies the buffer into the string it returns: 16 times the output in all.
+// Any output also takes a printer, a few hundred bytes, and after a
+// collection the slots of the pool of printers, 128 bytes for each P, for
+// which the budget has 1 KiB and 256 bytes for each P.
+func budget(n, more int64) int64 {
+	return 16*n + more + 1024 + 256*int64(runtime.GOMAXPROCS(0))
 }
 
-// writePiece is the most bytes printf and println write at once.
-const writePiece = 64 << 10
+// Register sets obj.fmt, on the object obj, normally the global object, to
+// an object with the functions:
+//
+//	printf(format, ...args)  writes fmt.Sprintf(format, args...), returns [bytes written, error or null]
+//	println(...args)         writes fmt.Sprintln(args...), returns the same
+//	sprint(...args)          returns fmt.Sprint(args...)
+//	sprintf(format, ...args) returns fmt.Sprintf(format, args...)
+//
+// They are also the global functions __fmt_printf__, __fmt_println__,
+// __fmt_sprint__ and __fmt_sprintf__. The arguments convert to Go as the
+// arguments of a function of RegisterFunc do. An output whose bound is more
+// than the memory limit of the VM allows, or more than 16 MiB in a VM with
+// no limit, ends the call with the out of memory error.
+//
+// Register takes obj over and frees it.
+func Register(obj slowjs.Value, opts ...Option) error {
+	defer obj.Free()
 
-// write writes s to w, writePiece bytes at a time, and stops between two
-// writes when the call is to end (vmhook.Stop), which throws the error
-// that ends it. It returns what it wrote.
-func write(vm *slowjs.VM, w io.Writer, s string) (int, error) {
-	n := 0
-	// Write, not WriteString: a writer may keep the string WriteString gets,
-	// and s is given back after the call (sprintf). Write must not keep the
-	// bytes.
-	for {
-		k, err := w.Write(unsafe.Slice(unsafe.StringData(s), min(len(s), writePiece)))
-		n += k
-		if err != nil {
-			return n, err
+	o := options{}
+	for _, f := range opts {
+		f(&o)
+	}
+
+	// EvalThis takes over the value it is given as this: each call gets a
+	// reference of its own.
+	vm := obj.VM()
+	if _, err := vm.EvalThis(obj.Dup(), "this.fmt = {}", slowjs.EvalGlobal); err != nil {
+		return err
+	}
+
+	w := func() io.Writer {
+		if o.w != nil {
+			return o.w
 		}
-		s = s[k:]
-		if len(s) == 0 || vmhook.Stop(vm) {
-			return n, nil
+		return os.Stdout
+	}
+	funcs := []struct {
+		name string
+		f    any
+	}{
+		{"printf", func(format string, a ...any) (int, error) {
+			s, give, ok := formatPrintf(vm, format, a)
+			if !ok {
+				return 0, nil
+			}
+			defer give()
+			return write(vm, w(), s)
+		}},
+		{"println", func(a ...any) (int, error) {
+			s, give, ok := formatPrint(vm, a, true)
+			if !ok {
+				return 0, nil
+			}
+			defer give()
+			return write(vm, w(), s)
+		}},
+		{"sprint", func(a ...any) slowjs.Value {
+			s, give, ok := formatPrint(vm, a, false)
+			if !ok {
+				return slowjs.Value{}
+			}
+			defer give()
+			return newString(vm, s)
+		}},
+		{"sprintf", func(format string, a ...any) slowjs.Value {
+			s, give, ok := formatPrintf(vm, format, a)
+			if !ok {
+				return slowjs.Value{}
+			}
+			defer give()
+			return newString(vm, s)
+		}},
+	}
+	for _, f := range funcs {
+		global := "__fmt_" + f.name + "__"
+		if err := vm.RegisterFunc(global, f.f, false); err != nil {
+			return err
+		}
+
+		if _, err := vm.EvalThis(obj.Dup(), "this.fmt."+f.name+" = "+global, slowjs.EvalGlobal); err != nil {
+			return err
 		}
 	}
+	return nil
 }
 
-// maxOutput is the most bytes of output a call may make in a VM with no
-// memory limit: the call takes the room for it as the room it has left.
-// sprintf makes 16 MiB of quoted bytes in about 25 ms on an Apple M4, and
-// may allocate 16 times the bound (allocated).
-const maxOutput = 16 << 20
-
-// room is the room vm has left under its memory limit (vmhook.Room), or
-// that of an output of maxOutput bytes when it has none.
+// room is what the output of a call on vm may take.
 func room(vm *slowjs.VM) int64 {
 	if r := vmhook.Room(vm); r >= 0 {
 		return r
@@ -199,126 +153,96 @@ func room(vm *slowjs.VM) int64 {
 	return budget(maxOutput, 0)
 }
 
-// allocated is how many times the bound on its output a call may make Go
-// allocate, counted whole, as Go may collect none of it before the call
-// returns. Go's fmt makes the output of a call whose bound is at most
-// shortOutput whole (see fmt/print.go and fmt/format.go):
-//
-//   - its buffer grows by append, to at least 1.25 times what it held
-//     (growslice in runtime/slice.go), and by writePadding, to twice its
-//     capacity and the padding. So the buffers before the last come to at
-//     most 5 times the one before the last, which is less than the output,
-//     and the last to at most 3 times the output: 8 times the output;
-//   - Sprintf and Sprint copy the buffer into the string they return, once
-//     the output;
-//   - a verb that quotes a string or writes a float makes its bytes in a
-//     slice of its own first, grown by append as the buffer is, to at most
-//     7 times what it writes, and an integer with a width or a precision
-//     makes a slice of that size, and what the verbs write comes to at most
-//     the output. A big int makes its digits, and what it takes to make
-//     them, in less than its bound.
-//
-// That is 16 times the bound, with the bytes Go rounds each object up to.
-// sprintf makes a longer output in a buffer of the size of the bound, which
-// never grows: once the bound. Each verb Go's fmt makes for it, it makes as
-// a call of that verb alone, which allocates as above but for the copy into
-// a string: at most 15 times what the verb writes. A long string or object
-// sprintf writes into the buffer with no more than the quotes of one piece
-// beside it, and a long big int it converts to decimal in quotients,
-// remainders and powers of ten, which came to 3.9 times its part of the
-// bound for the longest. That is 16 times the bound too. On the long
-// outputs of TestOutputAllocatedUnderBudget, Go allocated up to 8 times the
-// bound.
-const allocated = 16
-
-// budget is what an output of at most n bytes, with more bytes allocated
-// beside it, may make Go's fmt allocate: allocated times n, more, and the
-// printer that makes it, the same for any output. That is the printer (pp
-// in fmt/print.go), a few hundred bytes, and, when a collection has emptied
-// the pool of printers, the slots of the pool, 128 bytes for each P
-// (poolLocal in sync/pool.go), which Go rounds up. On "" fmt.Sprintf
-// allocated 312 bytes with GOMAXPROCS 1 and 9,656 with 64.
-//
-// What Go's runtime sets up for its pools is not counted: after a
-// collection, the first use of each pool of the program puts it in the
-// runtime's list of pools again (allPools in sync/pool.go), which grows
-// with how many pools the program uses, not with what the script asks.
-func budget(n, more int64) int64 {
-	return allocated*n + more + 1<<10 + 256*int64(runtime.GOMAXPROCS(0))
-}
-
-// shortOutput is the largest bound on its output a call may have for Go's
-// fmt to make it whole: it does so in well under a millisecond, and faster
-// than sprintf does verb by verb.
-const shortOutput = 1 << 16
-
-// makePrintf is the output of fmt.Sprintf(format, a...), when what it may
-// make Go's fmt allocate fits in what vm has left under its memory limit
-// (fits), made whole by Go's fmt when it is short and by sprintf otherwise.
-// It is false when the call is to end, with the error that ends it thrown.
-func makePrintf(vm *slowjs.VM, format string, a []any) (string, func(), bool) {
-	room := room(vm)
-	n, read, ok, stopped := sizePrintfStop(format, a, room, func() bool { return vmhook.Stop(vm) })
+// formatPrintf makes fmt.Sprintf(format, a...) for a call on vm, and the
+// function that gives back its memory once the string is no longer used.
+// It is false, with the error that ends the call pending, when the call is
+// to end or the output would not fit.
+func formatPrintf(vm *slowjs.VM, format string, a []any) (string, func(), bool) {
+	r := room(vm)
+	n, read, ok, stopped := sizePrintfStop(format, a, r, func() bool { return vmhook.Stop(vm) })
 	if stopped {
-		return "", func() {}, false
+		return "", nil, false
 	}
-	if !ok {
-		vmhook.OutOfMemory(vm)
-		return "", func() {}, false
-	}
+
 	var more int64
-	if len(read) != len(format) {
+	if read != format {
 		more = int64(len(read))
 	}
-	if !fits(vm, room, n, more) {
-		return "", func() {}, false
+	if !ok || budget(n, more) > r {
+		vmhook.OutOfMemory(vm)
+		return "", nil, false
 	}
+
 	return printfOf(vm, n, read, a)
 }
 
-// printfOf is the output of fmt.Sprintf(format, a...), whose bound is n,
-// made whole by Go's fmt when it is short and by sprintf otherwise, and the
-// function that gives it back (sprintf).
+// formatPrint is formatPrintf for fmt.Sprint, or fmt.Sprintln when ln is
+// true.
+func formatPrint(vm *slowjs.VM, a []any, ln bool) (string, func(), bool) {
+	n := sizePrint(a)
+	if budget(n, 0) > room(vm) {
+		vmhook.OutOfMemory(vm)
+		return "", nil, false
+	}
+
+	return printOf(vm, n, a, ln)
+}
+
+// printfOf makes fmt.Sprintf(format, a...), whose output is at most n bytes:
+// in one go when that is short, else a piece at a time, which stops when
+// the call on vm is to end. vm may be nil, for the tests.
 func printfOf(vm *slowjs.VM, n int64, format string, a []any) (string, func(), bool) {
-	if n <= shortOutput {
+	if n <= direct {
 		return fmt.Sprintf(format, a...), func() {}, true
 	}
 	return sprintf(vm, n, format, a)
 }
 
-// makePrint is makePrintf for fmt.Sprint(a...), or fmt.Sprintln(a...) when
-// ln is true.
-func makePrint(vm *slowjs.VM, a []any, ln bool) (string, func(), bool) {
-	n := sizePrint(a)
-	if !fits(vm, room(vm), n, 0) {
-		return "", func() {}, false
-	}
-	return printOf(vm, n, a, ln)
-}
-
-// printOf is printfOf for fmt.Sprint(a...), or fmt.Sprintln(a...) when ln
-// is true.
+// printOf is printfOf for fmt.Sprint, or fmt.Sprintln when ln is true.
 func printOf(vm *slowjs.VM, n int64, a []any, ln bool) (string, func(), bool) {
 	switch {
-	case n <= shortOutput && ln:
-		return fmt.Sprintln(a...), func() {}, true
-	case n <= shortOutput:
-		return fmt.Sprint(a...), func() {}, true
-	case ln:
+	case n > direct && ln:
 		return sprintln(vm, n, a)
+	case n > direct:
+		return sprint(vm, n, a)
+	case ln:
+		return fmt.Sprintln(a...), func() {}, true
 	}
-	return sprint(vm, n, a)
+	return fmt.Sprint(a...), func() {}, true
 }
 
-// fits reports whether an output of at most n bytes, made with more bytes
-// allocated beside it, fits in the room vm has left under its memory limit
-// (vmhook.Room): allocated times n, and more. When it does not, it throws the
-// out of memory error, which ends the call: what the function returns then
-// is dropped.
-func fits(vm *slowjs.VM, room, n, more int64) bool {
-	if room >= 0 && budget(n, more) > room {
-		vmhook.OutOfMemory(vm)
-		return false
+// write writes s to w a piece at a time, and stops between two pieces when
+// the call on vm is to end. It returns the bytes written.
+func write(vm *slowjs.VM, w io.Writer, s string) (int, error) {
+	// The bytes may be given back once the call ends: w gets a slice it
+	// must not keep, as an io.Writer, rather than a string it could.
+	b := unsafe.Slice(unsafe.StringData(s), len(s))
+	n := 0
+	for len(b) > 0 {
+		k := min(len(b), writePiece)
+		m, err := w.Write(b[:k])
+		n += m
+		if err != nil {
+			return n, err
+		}
+
+		b = b[k:]
+		if len(b) > 0 && vmhook.Stop(vm) {
+			return n, nil
+		}
 	}
-	return true
+	return n, nil
+}
+
+// newString is s as a javascript string, made before the memory of s is
+// given back.
+func newString(vm *slowjs.VM, s string) slowjs.Value {
+	v, err := vm.NewString(s)
+	if err != nil {
+		if !vmhook.Stop(vm) {
+			vmhook.OutOfMemory(vm)
+		}
+		return slowjs.Value{}
+	}
+	return v
 }

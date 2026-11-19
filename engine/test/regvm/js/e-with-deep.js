@@ -1,6 +1,6 @@
 // Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
-// Use of this source code is governed by the MIT license in LICENSE-MIT at the
+// Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 // WITH 2 (the poll after a found name) with a stack over 32 temps at the
 // target, after a getter ran: the temps 32 and up must be in its pcmap mask

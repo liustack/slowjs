@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2026 The liustack/slowjs Authors.
  * SPDX-License-Identifier: MIT
- * Use of this source code is governed by the MIT license in LICENSE-MIT at the
+ * Use of this source code is governed by the MIT license in LICENSE at the
  * root of this repository. js_load_file, js_module_test_json and
  * js_std_dump_error follow quickjs-libc.c of QuickJS (Copyright (c) 2017-2021
  * Fabrice Bellard and Charlie Gordon, MIT, see engine/LICENSE).

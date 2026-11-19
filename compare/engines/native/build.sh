@@ -1,7 +1,7 @@
 #!/bin/sh
 # Copyright (c) 2026 The liustack/slowjs Authors.
 # SPDX-License-Identifier: MIT
-# Use of this source code is governed by the MIT license in LICENSE-MIT at the
+# Use of this source code is governed by the MIT license in LICENSE at the
 # root of this repository.
 # build.sh <dir>: downloads and builds the native reference engines into
 # <dir>, each with its own build as shipped: Bellard's QuickJS 2026-06-04

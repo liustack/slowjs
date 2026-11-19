@@ -1,6 +1,6 @@
 // Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
-// Use of this source code is governed by the MIT license in LICENSE-MIT at the
+// Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 // P2 of the register loop: mul, div, mod, and, or, xor, shl, sar with a slot,
 // a temp and a constant operand, not, neg, plus, inc, dec, post_inc,

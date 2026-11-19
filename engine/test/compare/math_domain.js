@@ -1,6 +1,6 @@
 // Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
-// Use of this source code is governed by the MIT license in LICENSE-MIT at the
+// Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 // The domain of the Math functions whose libc code can go wrong for an input
 // out of range: acosh, asinh, atanh, log, log1p, log2, log10, sqrt and pow
