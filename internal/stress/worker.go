@@ -6,11 +6,14 @@
 package main
 
 import (
+	"context"
 	"crypto/sha256"
 	"errors"
 	"fmt"
 	"math/rand/v2"
 	"runtime/debug"
+	"runtime/pprof"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -132,7 +135,7 @@ func classify(p *page, html string, err error) (outcome, string) {
 		}
 		return outKilled, ""
 	case e.Uncatchable && e.Interrupted && !e.OutOfMemory:
-		return outInterrupted, ""
+		return outInterrupted, e.Stack
 	case e.Uncatchable && e.OutOfMemory && !e.Interrupted:
 		return outOOM, ""
 	case e.Uncatchable:
@@ -351,7 +354,16 @@ func (w *worker) step(i int) (keep bool) {
 	}
 
 	reused := v.stops > 0
-	html, err := v.render(p.input, timeout)
+	var html string
+	var err error
+	if w.s.cfg.cpuprofile != "" {
+		// the labels pick the renders of one VM out of the profile:
+		// go tool pprof -tagfocus 'vm=^ID$'
+		labels := pprof.Labels("worker", strconv.Itoa(w.id), "vm", strconv.Itoa(v.id), "op", opNames[o], "page", p.name)
+		pprof.Do(context.Background(), labels, func(context.Context) { html, err = v.render(p.input, timeout) })
+	} else {
+		html, err = v.render(p.input, timeout)
+	}
 	if o == opAbort {
 		abortAfterPolls(v.VM, 0)
 	}

@@ -27,6 +27,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/pprof"
 	"slices"
 	"strings"
 	"sync"
@@ -59,6 +60,7 @@ type config struct {
 	tolerance  float64
 	slack      int64
 	series     string // the file of the series, none when empty
+	cpuprofile string // the file of a CPU profile of the run, none when empty
 	maxLog     int    // failures printed in full
 	stopOnFail bool
 	log        io.Writer
@@ -159,6 +161,7 @@ func main() {
 	flag.StringVar(&c.series, "series", "", "write the series, one row per -every, as CSV to this file")
 	flag.IntVar(&c.maxLog, "max-log", 50, "failures printed in full")
 	flag.BoolVar(&c.stopOnFail, "stop-on-fail", false, "end the run at the first failure")
+	flag.StringVar(&c.cpuprofile, "cpuprofile", "", "write a CPU profile of the run to this file, each render labeled with its worker, vm, op and page")
 	flag.Parse()
 	c.kinds = strings.Split(kinds, ",")
 	c.log = os.Stderr
@@ -211,6 +214,22 @@ func run(c config) error {
 	}
 	if c.abort > 0 && !canAbort {
 		return errors.New("stress: -abort needs a build with -tags testhooks")
+	}
+	if c.cpuprofile != "" {
+		f, err := os.Create(c.cpuprofile)
+		if err != nil {
+			return err
+		}
+		if err := pprof.StartCPUProfile(f); err != nil {
+			f.Close()
+			return err
+		}
+		defer func() {
+			pprof.StopCPUProfile()
+			if err := f.Close(); err != nil {
+				fmt.Fprintf(c.log, "stress: the CPU profile: %v\n", err)
+			}
+		}()
 	}
 	s := &stress{cfg: c}
 	fmt.Fprintf(c.log, "stress: seed %d, %d workers, %d churn VMs a bundle, %v, warm-up %v, kinds %s, ops oom %d%% timeout %d%% interrupt %d%% kill %d%% abort %d%%, GOMAXPROCS %d\n",

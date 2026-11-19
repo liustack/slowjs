@@ -343,6 +343,7 @@ go run ./internal/stress -duration 10m -series series.csv                 # a ru
 go run -tags testhooks ./internal/stress -duration 10m -refuse 10          # the OS also refuses 10 of every 1000 maps
 go run -tags testhooks ./internal/stress -duration 10m -abort 2           # and the engine aborts in 2% of the renders of churn VMs
 CGO_ENABLED=1 go test -race -run TestStress ./internal/stress -args -stress-duration 10m   # under the race detector
+go run ./internal/stress -duration 1h -stop-on-fail -cpuprofile cpu.prof   # with a CPU profile of the renders
 ```
 
 Before the run it compiles each bundle once, as tifa does, and renders every page three times on a VM of its own. Each page must give the same HTML each time, and its hash is the one every later render is held to. All VMs read a fixed clock, so the HTML does not change over a run. Then each worker goroutine (`-workers`, 4 by default) owns a pool: for each bundle, a steady VM that lives the whole run and `-churn` VMs (1 by default) that are killed and replaced. Each VM is set up as tifa sets it up (`tifa.Register`, 128 MiB, a call depth of 10000) and collected between renders as tifa's pool collects it. A worker picks a VM and a page at random, then one of these:
@@ -365,7 +366,7 @@ What it checks:
 - After the warm-up (`-warmup`, a fifth of the run by default), the mean of each measure over the last third of the rows may grow from its mean over the middle third by at most `-tolerance` (5%) and `-slack` (1 MiB) for what the steady VMs keep, and four times that fraction for the sums that move with the renders in flight. What a steady VM keeps grows while its pages warm up (code made at a function's first call, the caches of the app) and then stays: what still moves is bounded by the shape cache (2048 shapes, `SetShapeCache`), the regexp cache and the atoms, each with its cap.
 - At the end every VM and bundle is closed, and the totals of the host must be what they were before the first VM, with no block or kept memory of a Go function, no leftover VM and no goroutine left.
 
-It exits 1 when any check failed. `-seed` repeats the random choices of a run (the seed is printed at the start), though the moments of the stops come from the clock. `TestStress` runs it for 4 seconds (2 with `-short`), so `go test ./...` keeps it working. Nightly CI runs it for 12 minutes, and for 5 more with `-tags testhooks -refuse 10 -abort 2`.
+It exits 1 when any check failed. A render that ends interrupted where its step could not interrupt it prints the JS stack it was in. With `-cpuprofile` every render in the profile carries labels of its worker, VM, step and page, so `go tool pprof -tagfocus 'vm=^ID$'` shows where one VM spent its time (a bare number is read as a range, so anchor it). `-seed` repeats the random choices of a run (the seed is printed at the start), though the moments of the stops come from the clock. `TestStress` runs it for 4 seconds (2 with `-short`), so `go test ./...` keeps it working. Nightly CI runs it for 12 minutes, and for 5 more with `-tags testhooks -refuse 10 -abort 2`.
 
 For a long run on the build machines, build once and run under `~/bin/heavy`, which pins it to one core under a 5 GB cap (`GOMAXPROCS=4` on that one core makes the goroutines change places more often):
 

@@ -11,6 +11,8 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -40,9 +42,13 @@ func TestStress(t *testing.T) {
 		renderTimeout: time.Minute, measureEvery: 16,
 		oom: 12, timeout: 12, interrupt: 12, kill: 5,
 		tolerance: 0.05, slack: 1 << 20, maxLog: 50, log: t.Output(),
+		cpuprofile: filepath.Join(t.TempDir(), "cpu.prof"),
 	}
 	if err := run(c); err != nil {
 		t.Fatal(err)
+	}
+	if fi, err := os.Stat(c.cpuprofile); err != nil || fi.Size() == 0 {
+		t.Fatalf("the CPU profile: %v", err)
 	}
 }
 
