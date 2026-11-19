@@ -3306,7 +3306,10 @@ static void test_async_gen_stop_queue(void)
    only what it captured. They were left with the frame suspended and the
    variables open: keep held the frame, and the buffer of 16 MiB in it, for
    as long as it lived. Each case is stopped at each reading of the flag up
-   to ENTRY_STOPS. */
+   to ENTRY_STOPS. A stop in the getter of constructor that an await reads
+   (PromiseResolve) ends the body the same way: unlike an error a script can
+   catch, it is not thrown at the await, so no catch or finally of the body
+   runs and ran stays undefined. */
 static void test_await_stop_frees_frame(void)
 {
     static const struct {
@@ -3324,6 +3327,16 @@ static void test_await_stop_frees_frame(void)
           "  let buf = new ArrayBuffer(16 << 20), x = 0;\n"
           "  globalThis.keep = () => ++x;\n"
           "  await { get then() { for (;;) {} } };\n"
+          "  return buf.byteLength;\n"
+          "})();\n" },
+        { "async function, constructor getter",
+          "globalThis.run = () => (async function () {\n"
+          "  let buf = new ArrayBuffer(16 << 20), x = 0;\n"
+          "  globalThis.keep = () => ++x;\n"
+          "  const p = Promise.resolve(1);\n"
+          "  Object.defineProperty(p, 'constructor', { get() { for (;;) {} } });\n"
+          "  try { await p; } catch (e) { globalThis.ran = 'catch'; }\n"
+          "  finally { globalThis.ran = (globalThis.ran || '') + 'finally'; }\n"
           "  return buf.byteLength;\n"
           "})();\n" },
     };
@@ -3346,6 +3359,9 @@ static void test_await_stop_frees_frame(void)
             JS_FreeValue(v.ctx, r);
             take_stop(&v, cases[i].what, k);
             drain_jobs(&v);
+            r = global_prop(v.ctx, "ran");
+            CHECK(JS_IsUndefined(r), "%s, stop at %ld: a catch or finally ran", cases[i].what, k);
+            JS_FreeValue(v.ctx, r);
             after = usage(&v);
             CHECK(after.malloc_size < base.malloc_size + (1 << 20),
                   "%s, stop at %ld: %lld bytes kept by the closure", cases[i].what, k,
