@@ -336,9 +336,9 @@
 		return t;
 	}
 
-	// pairs makes the types and values of parts that Go answers, in turn, the
+	// parts makes the types and values of parts that Go answers, in turn, the
 	// parts of formatToParts, in the same array.
-	function pairs(a) {
+	function parts(a) {
 		const n = a.length / 2;
 		let types;
 		for (let i = 0; i < n; i++) {
@@ -355,7 +355,7 @@
 		return a;
 	}
 
-	// triples is pairs for parts with a third field, name: the source of a
+	// triples is parts for parts with a third field, name: the source of a
 	// range, or a unit, which a part without one leaves out.
 	function triples(a, name) {
 		const n = a.length / 3;
@@ -460,17 +460,17 @@
 		return s;
 	}
 
-	function formatDate(r, date, parts) {
+	function formatDate(r, date, toParts) {
 		const t = temporalOf(date);
 		if (t === undefined) {
 			const ms = date === undefined ? dateNow() : +date;
-			return parts ? pairs(call(r, dtfParts, ms)) : call(r, dtfFormat, ms);
+			return toParts ? parts(call(r, dtfParts, ms)) : call(r, dtfFormat, ms);
 		}
 		if (t.kind === 'zoned') {
 			throw new TypeError(zonedRefused);
 		}
 		const s = sub(r, t.kind);
-		return parts ? pairs(call(s, tfParts, t.ms, t.cal)) : call(s, tfFormat, t.ms, t.cal);
+		return toParts ? parts(call(s, tfParts, t.ms, t.cal)) : call(s, tfFormat, t.ms, t.cal);
 	}
 
 	// rangeEnd is an end of formatRange as a Temporal kind, a calendar and
@@ -480,7 +480,7 @@
 		return t !== undefined ? t : {__proto__: null, kind: 'legacy', cal: undefined, ms: +v};
 	}
 
-	function formatDateRange(r, start, end, parts) {
+	function formatDateRange(r, start, end, toParts) {
 		if (start === undefined || end === undefined) {
 			throw new TypeError('Invalid time value');
 		}
@@ -492,7 +492,7 @@
 			throw new TypeError(zonedRefused);
 		}
 		const s = sub(r, x.kind);
-		return parts ? triples(call(s, tfRangeParts, x.ms, x.cal, y.ms, y.cal), 'source') :
+		return toParts ? triples(call(s, tfRangeParts, x.ms, x.cal, y.ms, y.cal), 'source') :
 			call(s, tfRange, x.ms, x.cal, y.ms, y.cal);
 	}
 
@@ -592,13 +592,13 @@
 		return call(r, nfFormat, x, big);
 	}
 
-	function formatNumberRange(r, start, end, parts) {
+	function formatNumberRange(r, start, end, toParts) {
 		if (start === undefined || end === undefined) {
 			throw new TypeError('start or end is undefined');
 		}
 		const x = numeric(start), xBig = big;
 		const y = numeric(end), yBig = big;
-		return parts ? triples(call(r, nfRangeParts, x, xBig, y, yBig), 'source') : call(r, nfRange, x, xBig, y, yBig);
+		return toParts ? triples(call(r, nfRangeParts, x, xBig, y, yBig), 'source') : call(r, nfRange, x, xBig, y, yBig);
 	}
 
 	constructor(NumberFormat, {
@@ -616,7 +616,7 @@
 		formatToParts(value) {
 			const r = internal(this, NF);
 			const x = numeric(value);
-			return pairs(call(r, nfParts, x, big));
+			return parts(call(r, nfParts, x, big));
 		},
 		formatRange(start, end) {
 			return formatNumberRange(internal(this, NF), start, end, false);
