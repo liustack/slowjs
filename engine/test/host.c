@@ -382,18 +382,31 @@ static void host_vm_free(HostVM *vm)
 
 #ifdef RV_INJECT
 void JS_RegvmInject(long n, unsigned site, long j);
+void JS_RegvmInjectCover(long each, int place);
 const char *JS_RegvmInjectResult(void);
 
 /* the throw-injection test (engine/regvm-inject.h, engine/test/regvm/inject.sh):
    RV_INJECT=N throws at the N-th place where an instruction of the register
    loop can throw, RV_INJECT_SITE="S J" at the J-th place run at its S-th
-   site, and RV_INJECT_OUT names the file that gets what happened */
+   site, RV_INJECT_COVER="EACH P" throws nowhere and lists the hooks the
+   injections at the place P of each instruction throw at (each place, or
+   the first EACH at each site: inject-cover.sh),
+   and RV_INJECT_OUT names the file that gets what happened */
 static void host_inject_start(void)
 {
     const char *n = getenv("RV_INJECT"), *st = getenv("RV_INJECT_SITE");
+    const char *cover = getenv("RV_INJECT_COVER");
     unsigned site = 0;
     long j = 0;
 
+    if (cover) {
+        long each = 0;
+        int place = 1;
+        if (sscanf(cover, "%ld %d", &each, &place) < 1)
+            each = 0;
+        JS_RegvmInjectCover(each, place);
+        return;
+    }
     if (st && sscanf(st, "%u %ld", &site, &j) != 2)
         site = 0;
     JS_RegvmInject(n ? atol(n) : 0, site, j);

@@ -75,6 +75,7 @@ JSMemRange JS_ReleaseNextRange(JSRuntime *rt) { JSMemRange r = { 0, 0 }; (void)r
 #ifdef RV_INJECT
 /* the throw-injection test of the register loop (engine/regvm-inject.h) */
 void JS_RegvmInject(long n, unsigned site, long j) { (void)n; (void)site; (void)j; }
+void JS_RegvmInjectCover(long each, int place) { (void)each; (void)place; }
 const char *JS_RegvmInjectResult(void) { return "none 0 0"; }
 #endif
 

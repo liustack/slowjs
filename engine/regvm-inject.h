@@ -92,14 +92,97 @@ static const JSStackFrame *rv_inj_frame; /* the frame of its run then */
 static int rv_inj_just;         /* a hook threw in the instruction being run */
 static int rv_inj_op;           /* the register op that is to throw */
 static const uint8_t *rv_inj_pc;
-static char rv_inj_result[192];
+static char rv_inj_result[256];
 static char rv_inj_key[96];     /* the result once the hook has thrown */
+
+/* The cover mode (JS_RegvmInjectCover): nothing throws. Each instruction
+   with a place P (1 or 2, one run of the script for each) is armed as an
+   injection at its place P arms it, and the hook the injection would throw
+   at is written down in place of the throw, and the call into the engine
+   after it runs: the hooks the runs of the script take are those its
+   injections throw at. A hook is told by the op, the old opcode under it for OLD, WITH
+   and W_GEN (rv_inj_sub), and the hook: its file and line and its
+   __COUNTER__, which tells apart the hooks of one macro of a handler.
+   inject-cover.sh lists the hooks no script of a set comes to. */
+static int rv_inj_cover;        /* the cover mode is on: the place P */
+static long rv_inj_cover_each;  /* 0, or the places it arms at each site */
+static int rv_inj_sub;          /* the old opcode under the op, or -1 */
+typedef struct RVInjHook {
+    const char *file;           /* NULL: the entry is free */
+    int line, id, op, sub, kind; /* id: __COUNTER__ at the hook. kind: 0 a hook,
+                                   1 outside, 2 miss */
+} RVInjHook;
+#define RV_INJ_HOOKS 4096
+static RVInjHook rv_inj_hooks[RV_INJ_HOOKS];
+static int rv_inj_hooks_used, rv_inj_hooks_lost;
+/* what an outer run of the loop was arming, while an inner one runs */
+typedef struct RVInjOuter {
+    const JSStackFrame *frame;
+    int op, sub;
+} RVInjOuter;
+#define RV_INJ_DEPTH 65536
+static RVInjOuter rv_inj_outer[RV_INJ_DEPTH];
+static int rv_inj_depth;
+
+static void rv_inj_cover_add(const char *file, int line, int id, int kind)
+{
+    uint32_t h = (uint32_t)id * 131 + (uint32_t)rv_inj_op * 7 + (uint32_t)(rv_inj_sub + 1) * 3 + kind;
+    const char *s;
+    RVInjHook *e;
+
+    if (file) {
+        for (s = file; *s; s++)
+            if (*s == '/')
+                file = s + 1;
+    } else {
+        file = "-";
+    }
+    for (;;) {
+        h &= RV_INJ_HOOKS - 1;
+        e = &rv_inj_hooks[h];
+        if (!e->file) {
+            if (++rv_inj_hooks_used > RV_INJ_HOOKS / 2) {
+                rv_inj_hooks_lost = 1;
+                return;
+            }
+            e->file = file;
+            e->line = line;
+            e->id = id;
+            e->op = rv_inj_op;
+            e->sub = rv_inj_sub;
+            e->kind = kind;
+            return;
+        }
+        if (e->id == id && e->op == rv_inj_op && e->sub == rv_inj_sub &&
+            e->kind == kind)
+            return;
+        h++;
+    }
+}
+
+/* the cover mode: a run of the loop starts, the instruction of the run it
+   was entered from waits */
+static no_inline void rv_inj_cover_enter(void)
+{
+    if (rv_inj_depth < RV_INJ_DEPTH) {
+        rv_inj_outer[rv_inj_depth].frame = rv_inj_frame;
+        rv_inj_outer[rv_inj_depth].op = rv_inj_op;
+        rv_inj_outer[rv_inj_depth].sub = rv_inj_sub;
+    } else {
+        rv_inj_hooks_lost = 1;
+    }
+    rv_inj_depth++;
+}
 
 /* the instruction that was to throw threw an error of its own before its
    hook, or has no place to fail with these operands (iterator_close of an
    iterator that is done): the run goes on with nothing thrown by the test */
 static no_inline void rv_inj_none(const char *what)
 {
+    if (rv_inj_cover) {
+        rv_inj_armed = 0;
+        return;
+    }
     rv_inj_armed = 0;
     rv_inj_fired = 1;
     snprintf(rv_inj_result, sizeof(rv_inj_result), "%s", what);
@@ -107,9 +190,19 @@ static no_inline void rv_inj_none(const char *what)
 
 /* a hook of the instruction that is to throw: 1 with the error thrown when
    it is the one, in place of the call into the engine after it */
-static no_inline int rv_inj_hit(JSContext *ctx)
+static no_inline int rv_inj_hit(JSContext *ctx, const char *file, int line, int id)
 {
-    const char *name = JS_RegvmOpName(rv_inj_op);
+    const char *name = JS_RegvmOpName(rv_inj_op), *s;
+    if (rv_inj_cover) {
+        if (ctx->rt->current_stack_frame != rv_inj_frame) {
+            rv_inj_cover_add(file, line, id, 1);
+            rv_inj_armed = 0;
+            return 0;
+        }
+        if (--rv_inj_armed == 0)
+            rv_inj_cover_add(file, line, id, 0);
+        return 0;
+    }
     if (ctx->rt->current_stack_frame != rv_inj_frame) {
         /* a hook of JS that the instruction ran, which has a run of the
            loop of its own (RV_INJ_ENTER): a fault of the test, nothing is
@@ -123,8 +216,12 @@ static no_inline int rv_inj_hit(JSContext *ctx)
         return 0;
     rv_inj_fired = 1;
     rv_inj_just = 1;
-    snprintf(rv_inj_result, sizeof(rv_inj_result), "%s\nhit %s %d", rv_inj_key,
-             name ? name : "?", rv_inj_place);
+    for (s = file; *s; s++)
+        if (*s == '/')
+            file = s + 1;
+    /* and the hook, by its file and line */
+    snprintf(rv_inj_result, sizeof(rv_inj_result), "%s\nhit %s %d\nhook %s:%d:%d", rv_inj_key,
+             name ? name : "?", rv_inj_place, file, line, id);
     JS_ThrowInternalError(ctx, "rv inject");
     return 1;
 }
@@ -144,6 +241,18 @@ static no_inline void rv_inj_again(JSContext *ctx)
    goes on */
 static no_inline void rv_inj_leave(int saved)
 {
+    if (rv_inj_cover) {
+        if (rv_inj_armed)
+            rv_inj_cover_add(NULL, 0, -1, 2);
+        rv_inj_depth--;
+        if (rv_inj_depth < RV_INJ_DEPTH) {
+            rv_inj_frame = rv_inj_outer[rv_inj_depth].frame;
+            rv_inj_op = rv_inj_outer[rv_inj_depth].op;
+            rv_inj_sub = rv_inj_outer[rv_inj_depth].sub;
+        }
+        rv_inj_armed = saved;
+        return;
+    }
     if (rv_inj_armed) {
         const char *name = JS_RegvmOpName(rv_inj_op);
         char what[64];
@@ -184,6 +293,59 @@ void JS_RegvmInject(long n, unsigned site, long j)
     rv_inj_any = n > 0 || site > 0;
 }
 
+/* the cover mode (see rv_inj_cover above) at the place 1 or 2 of each
+   instruction: each place, or the first each places at each site, as
+   inject.sh samples a script with more places than it injects */
+void JS_RegvmInjectCover(long each, int place)
+{
+    rv_inj_cover = place;
+    rv_inj_cover_each = each;
+    rv_inj_n = 0;
+    rv_inj_site = 0;
+    rv_inj_any = 1;
+}
+
+/* the result of the cover mode: "none SEEN SITES", then a line a hook
+   taken, "cover OP SUB FILE:LINE" (SUB the old opcode under OLD, WITH and
+   W_GEN, or -), "outside OP SUB FILE:LINE" for a hook of JS an
+   instruction ran, taken while it was armed, "miss OP SUB" for an
+   instruction that ran to its end with no hook taken, and "lost" when the
+   table was full */
+static const char *rv_inj_cover_result(void)
+{
+    static char out[RV_INJ_HOOKS / 2 * 96 + 64];
+    static const char *const kinds[] = { "cover", "outside", "miss" };
+    size_t len;
+    int i;
+
+    if (rv_inj_armed)
+        rv_inj_cover_add(NULL, 0, -1, 2);
+    rv_inj_armed = 0;
+    len =snprintf(out, sizeof(out), "none %ld %u\n", rv_inj_seen, rv_inj_sites);
+    for (i = 0; i < RV_INJ_HOOKS; i++) {
+        const RVInjHook *e = &rv_inj_hooks[i];
+        const char *name;
+        char sub[16];
+
+        if (!e->file || len >= sizeof(out))
+            continue;
+        name = JS_RegvmOpName(e->op);
+        if (e->sub < 0)
+            snprintf(sub, sizeof(sub), "-");
+        else
+            snprintf(sub, sizeof(sub), "%d", e->sub);
+        if (e->kind == 2)
+            len += snprintf(out + len, sizeof(out) - len, "%s %s %s\n", kinds[e->kind],
+                            name ? name : "?", sub);
+        else
+            len += snprintf(out + len, sizeof(out) - len, "%s %s %s %s:%d:%d\n", kinds[e->kind],
+                            name ? name : "?", sub, e->file, e->line, e->id);
+    }
+    if (rv_inj_hooks_lost && len < sizeof(out))
+        snprintf(out + len, sizeof(out) - len, "lost\n");
+    return out;
+}
+
 /* what happened: "at FUNC POS K" when the register loop threw at a place
    that has a key, "nokey" when it threw at one that has none, "none SEEN
    SITES" when nothing threw, SEEN the
@@ -196,6 +358,8 @@ void JS_RegvmInject(long n, unsigned site, long j)
    now writes its own result, so it is not given. */
 const char *JS_RegvmInjectResult(void)
 {
+    if (rv_inj_cover)
+        return rv_inj_cover_result();
     if (rv_inj_armed) {
         /* the instruction that was to throw was the last one run */
         const char *name = JS_RegvmOpName(rv_inj_op);
@@ -216,12 +380,13 @@ const char *JS_RegvmInjectResult(void)
    RV_INJ_AGAIN and RV_INJ_NONE: rv_inj_again and rv_inj_none above. All are
    constants in a build without RV_INJECT, which they do not change. */
 #define RV_INJ_ARMED unlikely(rv_inj_armed != 0)
-#define RV_INJ_HIT(ctx) (unlikely(rv_inj_armed != 0) && rv_inj_hit(ctx))
+#define RV_INJ_HIT(ctx) (unlikely(rv_inj_armed != 0) && rv_inj_hit(ctx, __FILE__, __LINE__, __COUNTER__))
 #define RV_INJ_AGAIN(ctx) rv_inj_again(ctx)
 #define RV_INJ_NONE(what) do { if (unlikely(rv_inj_armed != 0)) rv_inj_none(what); } while (0)
 /* a run of the register loop starts and ends: the injection of the run it
    was entered from waits in saved (an int of the run) while it runs */
-#define RV_INJ_ENTER(saved) ((saved) = rv_inj_armed, rv_inj_armed = 0)
+#define RV_INJ_ENTER(saved) ((saved) = rv_inj_armed, rv_inj_armed = 0,  \
+                             rv_inj_cover ? rv_inj_cover_enter() : (void)0)
 #define RV_INJ_LEAVE(saved) rv_inj_leave(saved)
 
 #else /* RV_INJECT */

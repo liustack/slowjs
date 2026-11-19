@@ -459,7 +459,13 @@ static no_inline void rv_inj_new(JSContext *ctx, JSValue *F, const uint8_t *pc)
     RVInjCount *e;
 
     rv_inj_just = 0;
-    if (rv_inj_armed) {
+    if (rv_inj_cover) {
+        /* the cover mode (regvm-inject.h): the instruction before ran to
+           its end */
+        if (rv_inj_armed)
+            rv_inj_cover_add(NULL, 0, -1, 2);
+        rv_inj_armed = 0;
+    } else if (rv_inj_armed) {
         /* the instruction that was to throw ran to its end */
         const char *name = JS_RegvmOpName(rv_inj_op);
         char what[64];
@@ -511,6 +517,22 @@ static no_inline void rv_inj_new(JSContext *ctx, JSValue *F, const uint8_t *pc)
     n = m->hooks == RV_HOOK_OWN_POLL || m->hooks == RV_HOOK_APART2 ? 2 : 1;
     rv_inj_seen += n;
     e->places += n;
+    if (rv_inj_cover) {
+        /* its place rv_inj_cover, at every run or at the first each places
+           of the site */
+        if (rv_inj_cover > n ||
+            (rv_inj_cover_each && (long)e->places - n + rv_inj_cover > rv_inj_cover_each))
+            return;
+        rv_inj_armed = rv_inj_cover;
+        rv_inj_frame = ctx->rt->current_stack_frame;
+        rv_inj_op = rf->code[off];
+        switch (rv_inj_op) {
+        case RV_OLD: rv_inj_sub = rf->code[off + 3]; break;
+        case RV_WITH: case RV_W_GEN: rv_inj_sub = rf->code[off + 2]; break;
+        default: rv_inj_sub = -1; break;
+        }
+        return;
+    }
     if (rv_inj_site) {
         /* the j-th place run at the site */
         if (e->site != rv_inj_site || rv_inj_site_j <= (long)e->places - n ||
