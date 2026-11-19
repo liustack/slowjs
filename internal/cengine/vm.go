@@ -92,6 +92,7 @@ type VM struct {
 	leaked  uintptr       // what JS_FreeRuntime returned
 	timeout time.Duration // of Eval (SetTimeout)
 	placed  [][2]uintptr  // the objects of Place, freed by Close
+	scripts int           // the entries of enterScript that have not left
 }
 
 // Options are the settings of a new VM.
@@ -225,10 +226,21 @@ func (v *VM) enter(f func()) {
 }
 
 // enterScript is enter for f that runs a script, with the timeout of the VM.
+// The outermost one is a call of the host into a script: it ends a wait of
+// the block collections that the last call left (JS_StartCall), as the enter
+// of the Go API does. An inner one, a script that a function of the host runs,
+// is part of that call and keeps its wait (TestNestedEvalKeepsBlockWait).
 func (v *VM) enterScript(f func()) {
 	CheckSP(v.sp)
 	v.h.EnterScript(v.timeout)
-	v.run(f)
+	v.scripts++
+	defer func() { v.scripts-- }()
+	v.run(func() {
+		if v.scripts == 1 {
+			JS_StartCall(v.sp, v.rt)
+		}
+		f()
+	})
 }
 
 func (v *VM) run(f func()) {
