@@ -64,7 +64,7 @@ The shared files hold the API: `vm.go` (making, setting and closing a VM), `eval
 | `temporal/testdata/` | The expressions compared with Chromium and its answers, and the program the link test builds |
 | `internal/gointl/` | Our ECMA-402 and Temporal in pure Go, copied once from go-intl, behind every `intl` constructor and behind `temporal` (see [upgrading.md](upgrading.md#updating-the-data-of-intl-internalgointl)) |
 | `internal/intlhook/` | What package `temporal` takes from package `intl`: the formatting of its `toLocaleString` and a VM's default zone |
-| `internal/vmhook/` | How the Go functions of `intl`, `temporal`, `fmt` and `url` keep the limits of the VM that called them: `Stop` for the eval timeout and `Interrupt`, `Room` and `OutOfMemory` for the memory limit, which package `slowjs` sets (`vmhook.go`) |
+| `internal/vmhook/` | How the Go functions of `intl`, `temporal`, `fmt` and `url` keep the limits of the VM that called them: `Stop` for the eval timeout and `Interrupt`, `Room` and `OutOfMemory` for the memory limit, which package `slowjs` sets (`vmhook.go`), and `LocaleArgs`, with which `intl.Register` makes the `toLocaleString` of arrays and typed arrays pass its locales and options on, as ECMA-402 says |
 | `fmt/` | Package `github.com/liustack/slowjs/fmt` |
 | `url/` | Package `github.com/liustack/slowjs/url`, `URL` and `URLSearchParams` for a VM |
 | `tifa/` | Package `github.com/liustack/slowjs/tifa`: `Register` sets a VM up as tifa does, for tifa, `cmd/slowjs` and `internal/measure/pages` |

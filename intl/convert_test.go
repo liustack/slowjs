@@ -46,6 +46,31 @@ func TestConversions(t *testing.T) {
 	}
 }
 
+// TestEmptyLocaleKey checks that the formatter toLocaleString keeps for a
+// call with no locales is not taken for a locale of "", which is no language
+// tag: ECMA-402 throws a RangeError for it, after such a call as before it.
+// Node 24 gives the default locale for "" once a call with no locales came
+// first.
+func TestEmptyLocaleKey(t *testing.T) {
+	vm := newVM(t)
+	for _, call := range []string{
+		`(1.5).toLocaleString`,
+		`(1n).toLocaleString`,
+		`new Date(0).toLocaleString`,
+		`new Date(0).toLocaleDateString`,
+		`new Date(0).toLocaleTimeString`,
+	} {
+		src := fmt.Sprintf("(() => { const f = (...a) => %s(...a); f(); try { return f('') } catch (e) { return e.name } })()", call)
+		if got := fmt.Sprint(eval(t, vm, src)); got != "RangeError" {
+			t.Errorf("%s(''), after %s(): got %s, want RangeError", call, call, got)
+		}
+		src = fmt.Sprintf("(() => { const f = (...a) => %s(...a); try { f('') } catch (e) {} return f() === %s() })()", call, call)
+		if got := fmt.Sprint(eval(t, vm, src)); got != "true" {
+			t.Errorf("%s() after %s(''): got %s, want true", call, call, got)
+		}
+	}
+}
+
 // TestOptionOrder checks the order the constructors read their options in,
 // and the rounding options they check. The expected values are Node 24's,
 // but for PluralRules' order, which is test262's: Node 24 has no notation

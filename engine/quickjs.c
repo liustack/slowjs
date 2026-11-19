@@ -865,6 +865,10 @@ struct JSContext {
        is, for none yet */
     int64_t date_key;
     double date_fields[8];
+    /* TRUE once the host gave the realm ECMA-402 (JS_SetLocaleArgs): the
+       toLocaleString of arrays and typed arrays then passes its locales and
+       options on to each element (JS_ToLocaleStringFree) */
+    BOOL locale_args;
 };
 
 typedef union JSFloat64Union {
@@ -4167,6 +4171,11 @@ __exception int JS_SetDirectCCalls(JSContext *ctx, int on)
 void JS_SetFusedOps(JSContext *ctx, int on)
 {
     ctx->rt->no_fused_ops = !on;
+}
+
+void JS_SetLocaleArgs(JSContext *ctx, int on)
+{
+    ctx->locale_args = on != 0;
 }
 
 JSContext *JS_NewContextRaw(JSRuntime *rt)
@@ -20686,11 +20695,26 @@ static JSValue JS_ToStringFree(JSContext *ctx, JSValue val)
     return ret;
 }
 
-static JSValue JS_ToLocaleStringFree(JSContext *ctx, JSValue val)
+/* The toLocaleString of an element of Array.prototype.toLocaleString and
+   %TypedArray%.prototype.toLocaleString. ECMA-262 alone calls it with no
+   argument. ECMA-402 calls it with the locales and options of the call,
+   always two arguments, undefined for those the call left out
+   (Invoke(nextElement, "toLocaleString", [locales, options])), and a realm
+   follows ECMA-402 once its host gave it Intl (JS_SetLocaleArgs). QuickJS
+   always called it with none, so an element never saw a locale. ctx is the
+   realm of the toLocaleString of the array, the one that was called. */
+static JSValue JS_ToLocaleStringFree(JSContext *ctx, JSValue val,
+                                     int argc, JSValueConst *argv)
 {
+    JSValueConst args[2];
+
     if (JS_IsUndefined(val) || JS_IsNull(val))
         return JS_ToStringFree(ctx, val);
-    return JS_InvokeFree(ctx, val, JS_ATOM_toLocaleString, 0, NULL);
+    if (!ctx->locale_args)
+        return JS_InvokeFree(ctx, val, JS_ATOM_toLocaleString, 0, NULL);
+    args[0] = argc > 0 ? argv[0] : JS_UNDEFINED;
+    args[1] = argc > 1 ? argv[1] : JS_UNDEFINED;
+    return JS_InvokeFree(ctx, val, JS_ATOM_toLocaleString, 2, args);
 }
 
 JSValue JS_ToPropertyKey(JSContext *ctx, JSValueConst val)
@@ -53544,7 +53568,7 @@ static JSValue js_array_join(JSContext *ctx, JSValueConst this_val,
             goto fail;
         if (!JS_IsNull(el) && !JS_IsUndefined(el)) {
             if (toLocaleString) {
-                el = JS_ToLocaleStringFree(ctx, el);
+                el = JS_ToLocaleStringFree(ctx, el, argc, argv);
             }
             if (string_buffer_concat_value_free(b, el))
                 goto fail;
@@ -75642,7 +75666,7 @@ static JSValue js_typed_array_join(JSContext *ctx, JSValueConst this_val,
             if (JS_IsException(el))
                 goto fail;
             if (toLocaleString) {
-                el = JS_ToLocaleStringFree(ctx, el);
+                el = JS_ToLocaleStringFree(ctx, el, argc, argv);
             }
             if (string_buffer_concat_value_free(b, el))
                 goto fail;

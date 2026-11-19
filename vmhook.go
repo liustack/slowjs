@@ -21,6 +21,7 @@ func init() {
 	vmhook.Chars = func(args any, i int) ([]byte, []uint16, func(), bool) { return hookArgs(args).chars(i) }
 	vmhook.LongWTF8 = func(args any, i int) (string, func(), bool) { return hookArgs(args).longWTF8(i) }
 	vmhook.Take = func(vm any, size int) (unsafe.Pointer, func(), bool) { return hookVM(vm).goTake(size) }
+	vmhook.LocaleArgs = func(vm any) { vm.(*VM).jsSetLocaleArgs() }
 }
 
 // hookVM is the VM a function of vmhook was given, which has to be running a

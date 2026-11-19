@@ -14,6 +14,8 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 
 - A nil `*big.Int` passed to `Call` or another call method is `null`, as it is as a result, where it became a syntax error that went on as the argument and stayed pending.
 - An argument that goes to javascript as JSON, such as a struct or a slice, and runs out of memory or is stopped in the parse now fails the call with that error, where the failure went on as the argument.
+- `Array.prototype.toLocaleString` and the `toLocaleString` of typed arrays pass their locales and options on to each element in a VM with package `intl` registered, as ECMA-402 says, so `[1234.5].toLocaleString('de')` gives `1.234,5` and a bad locale throws a `RangeError`, where every element was formatted in the default locale.
+- Package `intl`: `toLocaleString`, `toLocaleDateString` and `toLocaleTimeString` with a locale of `''` throw a `RangeError` also after a call with no locales, which made them take the default locale.
 
 ## [v0.31.8] - 2026-11-19
 

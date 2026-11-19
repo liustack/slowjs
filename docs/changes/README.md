@@ -261,6 +261,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | `Intl.NumberFormat.prototype.formatRange` and `formatRangeToParts`, on the range formatter of `internal/gointl` | v0.31.2 | [intl/intl.js](../../intl/intl.js), `numberRangeFormatted` in [intl/bridge.go](../../intl/bridge.go) |
 | A collator compares two short Latin strings from a table of their characters, with no normal form, and `localeCompare` with no locales or options keeps one collator | v0.31.2 | [internal/gointl/qjs_collshort.go](../../internal/gointl/qjs_collshort.go), `localeCompare` in [intl/intl.js](../../intl/intl.js) |
 | `formatToParts` gives the types of parts as atoms, which intl.js makes once from the list of Go | v0.31.2 | `partTypes` in [intl/bridge.go](../../intl/bridge.go), `parts` in [intl/intl.js](../../intl/intl.js) |
+| In a VM with package intl registered, `Array.prototype.toLocaleString` and `%TypedArray%.prototype.toLocaleString` call the `toLocaleString` of each element with their locales and options, always two arguments, as ECMA-402 says, where QuickJS called it with none. Without Intl they pass none, as ECMA-262 says (`JS_SetLocaleArgs`) | Unreleased | `JS_ToLocaleStringFree` in [quickjs.c](../../engine/quickjs.c), `vmhook.LocaleArgs` in [intl/intl.go](../../intl/intl.go) |
 
 ## Temporal
 

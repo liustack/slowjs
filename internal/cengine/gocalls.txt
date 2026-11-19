@@ -70,6 +70,7 @@ JS_SetDirectCCalls
 JS_SetFusedOps
 JS_SetGCThreshold
 JS_SetHostRemap
+JS_SetLocaleArgs
 JS_SetMaxCallDepth
 JS_SetMemoryLimit
 JS_SetPropertyInternal

@@ -384,6 +384,19 @@ func (m *VM) jsSetShapeCache(n int32) (r int32) {
 	return r
 }
 
+// jsSetLocaleArgs gives the realm of m the toLocaleString of arrays and typed
+// arrays of ECMA-402, which passes its locales and options on to each element
+// (JS_SetLocaleArgs).
+func (m *VM) jsSetLocaleArgs() {
+	if m.entered == 0 {
+		m.outer(m.jsSetLocaleArgs)
+		return
+	}
+	m.toEngine()
+	cengine.JS_SetLocaleArgs(m.sp, m.ctx, 1)
+	m.inEngine--
+}
+
 func (m *VM) jsSetRegExpCache(n int32, bytes uint64) {
 	if m.entered == 0 {
 		m.outer(func() { m.jsSetRegExpCache(n, bytes) })

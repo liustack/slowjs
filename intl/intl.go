@@ -16,6 +16,12 @@
 // String.prototype.toLocaleUpperCase and toLocaleLowerCase, which follow the
 // case rules of Turkish, Azerbaijani, Lithuanian and Greek.
 //
+// Register also makes Array.prototype.toLocaleString and
+// %TypedArray%.prototype.toLocaleString pass their locales and options on to
+// the toLocaleString of each element, as ECMA-402 says, so that
+// [1234.5].toLocaleString("de") gives "1.234,5". Without Intl they pass none,
+// as ECMA-262 says.
+//
 // # Locales and time zones
 //
 // Locales resolve as in Chromium: a locale without data of its own falls
@@ -66,6 +72,7 @@ import (
 
 	"github.com/liustack/slowjs"
 	"github.com/liustack/slowjs/internal/intlhook"
+	"github.com/liustack/slowjs/internal/vmhook"
 )
 
 // intl.js is the javascript half of Intl, installed on a VM when a page
@@ -236,6 +243,7 @@ func Register(vm *slowjs.VM, opts ...Option) error {
 		return err
 	}
 
+	vmhook.LocaleArgs(vm)
 	rememberZone(vm, zone)
 	return nil
 }

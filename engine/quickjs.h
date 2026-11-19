@@ -453,6 +453,13 @@ __js_must_check int JS_SetDirectCCalls(JSContext *ctx, int on);
    check, from then on, and with 1 it joins and drops them again. Code
    compiled before, or read by JS_ReadObject, stays as it is. */
 void JS_SetFusedOps(JSContext *ctx, int on);
+/* With on 1, Array.prototype.toLocaleString and
+   %TypedArray%.prototype.toLocaleString of the realm ctx call the
+   toLocaleString of each element with their locales and options, always
+   two arguments, as ECMA-402 says. With 0, the default, they call it with
+   none, as ECMA-262 says for an engine without ECMA-402. A host that gives
+   the realm Intl turns it on (package intl of the Go API). */
+void JS_SetLocaleArgs(JSContext *ctx, int on);
 /* counts of the register loop for tests: 0 functions converted, 1 refused,
    2 entries of the loop from C, 3 and 4 the opcode and offset of the last
    instruction the pass refused (-1 for a refusal of the whole function),

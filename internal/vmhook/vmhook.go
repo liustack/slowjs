@@ -12,7 +12,8 @@
 // slowjs, which imports it.
 //
 // Each is for a Go function that javascript called, while it runs on the
-// goroutine of the call, and panics anywhere else.
+// goroutine of the call, and panics anywhere else, but LocaleArgs, which
+// sets the VM up.
 package vmhook // import "github.com/liustack/slowjs/internal/vmhook"
 
 import "unsafe"
@@ -63,4 +64,10 @@ var (
 	// ok is false, with the error that ends the call pending, when the call
 	// is to stop or the OS refuses the memory, and give is nil then.
 	Take func(vm any, size int) (p unsafe.Pointer, give func(), ok bool)
+
+	// LocaleArgs gives vm the toLocaleString of arrays and typed arrays of
+	// ECMA-402: it passes its locales and options on to the toLocaleString of
+	// each element, where ECMA-262 alone passes none. Package intl calls it
+	// from Register.
+	LocaleArgs func(vm any)
 )
