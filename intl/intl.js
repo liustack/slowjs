@@ -215,30 +215,31 @@
 	// alone, or the list CanonicalizeLocaleList reads, each tag preceded by
 	// its length and a colon, which Go makes canonical.
 	function pushLocales(a, locales) {
+		const n = a.length;
 		if (locales === undefined || typeof locales === 'string') {
-			push(a, locales);
-			push(a, undefined);
+			a[n] = locales;
+			a[n + 1] = undefined;
 			return;
 		}
 		const tag = localeTag(locales);
 		if (tag !== undefined) {
-			push(a, tag);
-			push(a, undefined);
+			a[n] = tag;
+			a[n + 1] = undefined;
 			return;
 		}
 		if (locales === null) {
 			throw new TypeError('Cannot convert null to object');
 		}
-		const o = Object(locales), n = toLength(o.length);
+		const o = Object(locales), len = toLength(o.length);
 		let s = '';
-		for (let k = 0; k < n; k++) {
+		for (let k = 0; k < len; k++) {
 			if (k in o) {
 				const t = listTag(o[k]);
 				s += t.length + ':' + t;
 			}
 		}
-		push(a, undefined);
-		push(a, s);
+		a[n] = undefined;
+		a[n + 1] = s;
 	}
 
 	// listTag is the tag an element of a list of locales gives.
@@ -259,7 +260,11 @@
 		if (options === undefined) {
 			return undefined;
 		}
-		if (coerce ? options === null : !isObject(options)) {
+		const t = typeof options;
+		if (t === 'object' ? options !== null : t === 'function') {
+			return options;
+		}
+		if (!coerce || options === null) {
 			throw new TypeError('Options must be an object');
 		}
 		return Object(options);
@@ -267,13 +272,15 @@
 
 	// pushOptions appends the options of a constructor, each read once, in
 	// the order of its list, and converted as its kind says: Go checks them.
-	// Without options it appends nothing.
+	// Without options it appends nothing. The arguments are written in place,
+	// not pushed by a call each: a constructor has up to 25 of them.
 	function pushOptions(a, options, list, coerce) {
-		const o = optionsObject(options, coerce);
-		if (o === undefined) {
+		if (options === undefined) {
 			return;
 		}
+		const o = optionsObject(options, coerce);
 		const names = list.names, kinds = list.kinds;
+		let n = a.length;
 		for (let i = 0; i < names.length; i++) {
 			let v = o[names[i]];
 			if (v !== undefined) {
@@ -291,7 +298,7 @@
 					v = v === true ? true : !v ? false : toStr(v);
 				}
 			}
-			push(a, v);
+			a[n++] = v;
 		}
 	}
 
