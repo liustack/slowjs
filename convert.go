@@ -39,6 +39,11 @@ func (m *VM) value(v jsValue, free bool) (any, error) {
 	case tagFloat64:
 		return jsvToFloat64(v), nil
 	}
+	if free {
+		// Deferred: converting an object or a BigInt runs javascript, and a
+		// Go function it calls may panic through here.
+		defer m.jsFreeValue(v)
+	}
 	var r any
 	var err error
 	switch tag(v) {
@@ -59,9 +64,6 @@ func (m *VM) value(v jsValue, free bool) (any, error) {
 		}
 	default:
 		r = Unsupported{}
-	}
-	if free {
-		m.jsFreeValue(v)
 	}
 	return r, err
 }
@@ -84,8 +86,10 @@ func (m *VM) bigInt(v jsValue) (*big.Int, error) {
 	if s = m.settled(s); isException(s) {
 		return nil, m.errFromException()
 	}
+	// A replaced toString may return an object, whose string runs
+	// javascript.
+	defer m.jsFreeValue(s)
 	text, err := m.goString(s)
-	m.jsFreeValue(s)
 	if err != nil {
 		return nil, err
 	}
@@ -102,8 +106,8 @@ func (m *VM) objectJSON(v jsValue) (*Object, error) {
 	if isException(j) {
 		return nil, m.errFromException()
 	}
+	defer m.jsFreeValue(j)
 	s, err := m.goString(j)
-	m.jsFreeValue(j)
 	if err != nil {
 		return nil, err
 	}

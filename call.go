@@ -121,8 +121,8 @@ func (m *VM) invoke(f, this jsValue, args []any) (jsValue, error) {
 	if err != nil {
 		return exception, err
 	}
+	defer m.freeAll(vals)
 	r, err := m.jsCall(f, this, vals)
-	m.freeAll(vals)
 	if err != nil {
 		return exception, err
 	}
@@ -138,20 +138,26 @@ func (m *VM) freeAll(vals []jsValue) {
 
 // callArgs converts the arguments of a call (see VM.Call). The values are new
 // or Dups, for the caller to free once the call is done. When one fails to
-// convert, those before it are freed.
+// convert, or panics, as a MarshalJSON may, those before it are freed.
 func (m *VM) callArgs(args []any) ([]jsValue, error) {
 	if len(args) == 0 {
 		return nil, nil
 	}
 	vals := make([]jsValue, 0, len(args))
+	done := false
+	defer func() {
+		if !done {
+			m.freeAll(vals)
+		}
+	}()
 	for _, a := range args {
 		v, err := m.callArg(a)
 		if err != nil {
-			m.freeAll(vals)
 			return nil, err
 		}
 		vals = append(vals, v)
 	}
+	done = true
 	return vals, nil
 }
 
