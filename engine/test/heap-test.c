@@ -3096,7 +3096,7 @@ static void scenario_js_objects(void)
         int32_t n = 0;
 
         CHECK(!JS_IsException(v), "the script threw in round %d", round);
-        JS_ToInt32(ctx, &n, v);
+        CHECK(!JS_ToInt32(ctx, &n, v), "JS_ToInt32 failed in round %d", round);
         CHECK(n == 30 + 2000 + 2000 + 100000 + 8890, "the script gave %d", (int)n);
         JS_FreeValue(ctx, v);
         CHECK(!JS_CheckMemory(rt), "check after round %d", round);
