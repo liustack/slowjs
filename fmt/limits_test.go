@@ -251,15 +251,17 @@ func TestOutputAllocatedUnderBudget(t *testing.T) {
 			t.Fatal(c.format)
 		}
 		var out string
-		give := func() {}
-		alloc := allocatedDuring(func() { out, give, _ = printfOf(nil, bound, read, c.a) })
+		alloc := allocatedDuring(func() {
+			var give func()
+			out, give, _ = printfOf(nil, bound, read, c.a)
+			give()
+		})
 		if bound >= 4<<10 {
 			most = max(most, float64(alloc)/float64(bound))
 		}
 		if alloc > budget(bound, 0) {
 			t.Errorf("%.40q: Go allocated %d bytes for %d, more than the %d of the bound of %d", c.format, alloc, len(out), budget(bound, 0), bound)
 		}
-		give()
 	}
 	t.Logf("on outputs of 4 KiB or more, Go allocated at most %.1f times the bound", most)
 	for _, a := range [][]any{{s, s, b}, {s, 1.5, "x"}} {
@@ -274,14 +276,26 @@ func TestOutputAllocatedUnderBudget(t *testing.T) {
 
 // allocatedDuring runs f and returns the bytes Go allocated while it ran,
 // with nothing in the pool of fmt's printers, as after a collection.
+//
+// The count is the whole process's, and the runtime allocates for itself
+// too: the first time it starts another thread after GOMAXPROCS grows, it
+// allocates the thread's m and its profiling stacks on the heap, about 5 KiB
+// with Go 1.26.6 (runtime.newm), which now and then fell in the run of a
+// short format and put it over its budget. f allocates the same in every
+// run, as the collections empty the pool before each, so the least of three
+// runs is what f allocates.
 func allocatedDuring(f func()) int64 {
-	runtime.GC()
-	runtime.GC()
-	var before, after runtime.MemStats
-	runtime.ReadMemStats(&before)
-	f()
-	runtime.ReadMemStats(&after)
-	return int64(after.TotalAlloc - before.TotalAlloc)
+	least := int64(math.MaxInt64)
+	for range 3 {
+		runtime.GC()
+		runtime.GC()
+		var before, after runtime.MemStats
+		runtime.ReadMemStats(&before)
+		f()
+		runtime.ReadMemStats(&after)
+		least = min(least, int64(after.TotalAlloc-before.TotalAlloc))
+	}
+	return least
 }
 
 // Every format of up to 6 bytes of "%[]1x*." makes the same output as the
