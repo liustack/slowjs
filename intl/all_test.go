@@ -251,6 +251,27 @@ func TestErrors(t *testing.T) {
 	}
 }
 
+// TestFormatInUserCode checks that a format called from the getter or
+// valueOf a format reads leaves what the outer format knows of its own
+// value alone.
+func TestFormatInUserCode(t *testing.T) {
+	vm := newVM(t)
+	eval(t, vm, `var df = new Intl.DurationFormat('en', {style: 'long'}), df2 = new Intl.DurationFormat('en'), nf = new Intl.NumberFormat('en')`)
+	evalTests(t, vm, formatInUserCodeTests)
+}
+
+var formatInUserCodeTests = [][2]string{
+	{"df.format({get days() {df.format('P1D'); return 1}})", "1 day"},
+	{"df.formatToParts({get days() {df.format('P1D'); return 1}}).map(p => p.value).join('')", "1 day"},
+	{"df.format({get days() {df2.formatToParts('PT1H'); return 2}, hours: 3})", "2 days, 3 hours"},
+	{"df.format({get days() {df.format({hours: 1}); return 1}})", "1 day"},
+	{"nf.format({valueOf() {nf.format(1n); return 1.5}})", "1.5"},
+	{"nf.format({valueOf() {nf.format(1); return 12345678901234567891n}})", "12,345,678,901,234,567,891"},
+	{"nf.formatToParts({valueOf() {nf.format(1); return 12345678901234567891n}}).map(p => p.value).join('')", "12,345,678,901,234,567,891"},
+	{"nf.formatRange(12345678901234567891n, {valueOf() {nf.format(1); return 22345678901234567891n}})", "12,345,678,901,234,567,891–22,345,678,901,234,567,891"},
+	{"nf.formatRange({valueOf() {nf.format(2n); return 1.5}}, 12345678901234567899n)", "1.5–12,345,678,901,234,567,899"},
+}
+
 func TestDefaultTimeZone(t *testing.T) {
 	evalTests(t, newVM(t, TimeZone("America/New_York")), defaultTimeZoneTests)
 }

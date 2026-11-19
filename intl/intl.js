@@ -544,7 +544,9 @@
 	}
 
 	// big says whether the last value numeric returned is the digits of a
-	// BigInt.
+	// BigInt. numeric sets it after the valueOf or toString of the page has
+	// run, which may format another number, and every caller reads it right
+	// after numeric returns, before any code of the page runs again.
 	let big = false;
 
 	// numeric is what Go formats of v: a Number, a numeric string, or the
@@ -956,19 +958,17 @@
 		'seconds', 'weeks', 'years']);
 	const durationSlots = bare([3, 4, 8, 7, 5, 1, 9, 6, 2, 0]);
 
-	// fields says whether the last duration durationOf returned is a list of
-	// fields, rather than a string Go parses.
-	let fields = false;
-
+	// durationOf is what Go formats of the duration d: a string Go parses, or
+	// for an object the list of its fields. Which of the two it is follows
+	// from d, not from a variable: reading the fields runs the getters of the
+	// page, which may format another duration.
 	function durationOf(d) {
 		if (typeof d === 'string') {
-			fields = false;
 			return d;
 		}
 		if (!isObject(d)) {
 			throw new TypeError('Invalid duration: ' + typeof d);
 		}
-		fields = true;
 		const f = state.temporal;
 		if (f !== undefined) {
 			const t = f(d);
@@ -1001,13 +1001,11 @@
 	}, {
 		format(duration) {
 			const r = internal(this, DF);
-			const d = durationOf(duration);
-			return call(r, dfFormat, d, fields);
+			return call(r, dfFormat, durationOf(duration), typeof duration !== 'string');
 		},
 		formatToParts(duration) {
 			const r = internal(this, DF);
-			const d = durationOf(duration);
-			return triples(call(r, dfParts, d, fields), 'unit');
+			return triples(call(r, dfParts, durationOf(duration), typeof duration !== 'string'), 'unit');
 		},
 		resolvedOptions() {
 			return parse(call(internal(this, DF), optionsOf));
