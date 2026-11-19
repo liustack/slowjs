@@ -39,14 +39,22 @@ const (
 	// writePiece is the most bytes printf and println hand their writer at
 	// once: between two writes they check whether the call is to end.
 	writePiece = 64 << 10
-	// unlimited is the room of a VM with no memory limit: what its output
-	// may take.
-	unlimited = 16 << 20
+	// maxOutput is the output a VM with no memory limit has room for.
+	maxOutput = 16 << 20
 )
 
 // budget is what Go's fmt may allocate to make n bytes of output, besides
-// more allocated for the call: up to 16 times the output, its printer, and
-// the slots of the printers' pool, one for each P.
+// more allocated for the call, counted whole, as Go may collect none of it
+// before the call returns.
+//
+// fmt's buffer grows by append to at least 1.25 times what it held, and by
+// its padding to twice, so the buffers it goes through add up to at most 8
+// times the output. A verb that quotes a string or writes a float first
+// makes its bytes in a slice of its own, grown the same way, and Sprintf
+// copies the buffer into the string it returns: 16 times the output in all.
+// Any output also takes a printer, a few hundred bytes, and after a
+// collection the slots of the pool of printers, 128 bytes for each P, for
+// which the budget has 1 KiB and 256 bytes for each P.
 func budget(n, more int64) int64 {
 	return 16*n + more + 1024 + 256*int64(runtime.GOMAXPROCS(0))
 }
@@ -142,7 +150,7 @@ func room(vm *slowjs.VM) int64 {
 	if r := vmhook.Room(vm); r >= 0 {
 		return r
 	}
-	return budget(unlimited, 0)
+	return budget(maxOutput, 0)
 }
 
 // formatPrintf makes fmt.Sprintf(format, a...) for a call on vm, and the

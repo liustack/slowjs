@@ -198,7 +198,7 @@ func TestGolden(t *testing.T) {
 					continue
 				}
 
-				if reason := goldenExplained(expr, got, want, recorded); reason != "" {
+				if reason := goldenDifferences(expr, got, want, recorded); reason != "" {
 					reasons[reason]++
 					continue
 				}
@@ -222,10 +222,10 @@ func TestGolden(t *testing.T) {
 	}
 }
 
-// goldenExplained is the reason got may differ from Chromium's want, or ""
+// goldenDifferences is the reason got may differ from Chromium's want, or ""
 // when no known difference accounts for it. recorded holds every answer of
 // the set.
-func goldenExplained(expr, got, want string, recorded map[string]string) string {
+func goldenDifferences(expr, got, want string, recorded map[string]string) string {
 	switch {
 	case strings.Contains(expr, `granularity:"word"`) && sameWords(got, want):
 		// Chromium changed ICU's word rules: a period or a colon parts
