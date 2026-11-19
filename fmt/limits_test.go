@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -251,15 +252,17 @@ func TestOutputAllocatedUnderBudget(t *testing.T) {
 			t.Fatal(c.format)
 		}
 		var out string
-		give := func() {}
-		alloc := allocatedDuring(func() { out, give, _ = printfOf(nil, bound, read, c.a) })
+		alloc := allocatedDuring(func() {
+			var give func()
+			out, give, _ = printfOf(nil, bound, read, c.a)
+			give()
+		})
 		if bound >= 4<<10 {
 			most = max(most, float64(alloc)/float64(bound))
 		}
 		if alloc > budget(bound, 0) {
 			t.Errorf("%.40q: Go allocated %d bytes for %d, more than the %d of the bound of %d", c.format, alloc, len(out), budget(bound, 0), bound)
 		}
-		give()
 	}
 	t.Logf("on outputs of 4 KiB or more, Go allocated at most %.1f times the bound", most)
 	for _, a := range [][]any{{s, s, b}, {s, 1.5, "x"}} {
@@ -272,16 +275,124 @@ func TestOutputAllocatedUnderBudget(t *testing.T) {
 	}
 }
 
-// allocatedDuring runs f and returns the bytes Go allocated while it ran,
-// with nothing in the pool of fmt's printers, as after a collection.
+// allocatedDuring runs f and returns the bytes Go allocated under it, with
+// nothing in the pool of fmt's printers, as after a collection.
+//
+// It counts by the stack of each allocation, so what other goroutines and
+// the runtime allocate meanwhile is left out. A count of the whole process
+// (MemStats.TotalAlloc) was not: the first time the runtime starts another
+// thread after GOMAXPROCS grows, it allocates the thread's m and its
+// profiling stacks on the heap, about 5 KiB (runtime.newm), and that fell
+// now and then in the run of a short format and put it over its budget.
+// The memory profile records every allocation while MemProfileRate is 1,
+// with its size as the runtime counts it, so allocatedDuring sets it for
+// the call and gives the old rate back.
 func allocatedDuring(f func()) int64 {
+	old := runtime.MemProfileRate
+	runtime.MemProfileRate = 1
+	defer func() { runtime.MemProfileRate = old }()
+
+	// Two collections empty the pool, and publish in the profile what was
+	// allocated before: the profile is as of the last finished collection,
+	// and a record may wait for the one after it.
 	runtime.GC()
 	runtime.GC()
-	var before, after runtime.MemStats
-	runtime.ReadMemStats(&before)
-	f()
-	runtime.ReadMemStats(&after)
-	return int64(after.TotalAlloc - before.TotalAlloc)
+	before := allocatedUnderMeasured()
+	measured(f)
+	runtime.GC()
+	runtime.GC()
+	runtime.GC()
+	return allocatedUnderMeasured() - before
+}
+
+// measured calls f, as the frame the stacks of its allocations go through.
+//
+//go:noinline
+func measured(f func()) { f() }
+
+// measuredName is the name of measured, as the profile reports it.
+var measuredName = runtime.FuncForPC(reflect.ValueOf(measured).Pointer()).Name()
+
+// measuredPC caches whether a return address of a profile stack is in
+// measured.
+var measuredPC = map[uintptr]bool{}
+
+// allocatedUnderMeasured is the bytes the memory profile records under a
+// call of measured so far. A record keeps the 32 innermost frames of its
+// stack, so one that has all 32 may have been cut above measured: it is
+// counted too, which can only count more than f allocated, never less.
+func allocatedUnderMeasured() int64 {
+	var recs []runtime.MemProfileRecord
+	n, _ := runtime.MemProfile(nil, true)
+	for {
+		recs = make([]runtime.MemProfileRecord, n+64)
+		var ok bool
+		if n, ok = runtime.MemProfile(recs, true); ok {
+			recs = recs[:n]
+			break
+		}
+	}
+
+	var sum int64
+	for i := range recs {
+		r := &recs[i]
+		stack := r.Stack()
+		under := len(stack) == len(r.Stack0)
+		for _, pc := range stack {
+			in, ok := measuredPC[pc]
+			if !ok {
+				fn := runtime.FuncForPC(pc - 1)
+				in = fn != nil && fn.Name() == measuredName
+				measuredPC[pc] = in
+			}
+			if in {
+				under = true
+				break
+			}
+		}
+		if under {
+			sum += r.AllocBytes
+		}
+	}
+	return sum
+}
+
+// sink keeps what a test allocates on the heap.
+var sink []byte
+
+// TestAllocatedDuring checks that allocatedDuring sees what f allocates and
+// leaves out what another goroutine allocates meanwhile.
+func TestAllocatedDuring(t *testing.T) {
+	if got := allocatedDuring(func() { sink = make([]byte, 64<<10) }); got < 64<<10 || got > 80<<10 {
+		t.Errorf("64 KiB allocated by f: counted %d bytes", got)
+	}
+	if got := allocatedDuring(func() {}); got != 0 {
+		t.Errorf("nothing allocated by f: counted %d bytes", got)
+	}
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				sink = make([]byte, 1<<10)
+			}
+		}
+	}()
+	got := allocatedDuring(func() {
+		// Sleep would allocate the timer of the goroutine the first time.
+		for end := time.Now().Add(10 * time.Millisecond); time.Now().Before(end); {
+			runtime.Gosched()
+		}
+	})
+	close(stop)
+	<-done
+	if got != 0 {
+		t.Errorf("another goroutine allocating: counted %d bytes", got)
+	}
 }
 
 // Every format of up to 6 bytes of "%[]1x*." makes the same output as the

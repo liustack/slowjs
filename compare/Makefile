@@ -1,55 +1,29 @@
-# Copyright 2024 The quickjs-go Authors. All rights reserved.
-# Use of this source code is governed by a BSD-style
-# license that can be found in the LICENSE file.
+# Copyright (c) 2026 The liustack/slowjs Authors.
+# SPDX-License-Identifier: MIT
+# Use of this source code is governed by the MIT license in LICENSE-MIT at the
+# root of this repository.
 
-.PHONY:	all clean edit editor work test cpu mem short-test benchmark cover
+.PHONY: benchmark clean cpu mem
 
-all: editor
-	golint 2>&1
-	staticcheck 2>&1
-
-# The indirect requires here are only lower bounds; go mod tidy re-derives them
-# from ../go.mod, which "replace github.com/liustack/slowjs => ../" makes authoritative.
-# Without it a dependency bump in ../go.mod fails with "updates to go.mod needed".
+# benchmark times the scripts of testdata on the three engines, at least 5s
+# each, and writes the table of benchreport.go. The output goes to a file
+# first, not through a pipe, so that a failed go test stops here instead of
+# making a table of half a run. go mod tidy first: the versions of go.mod are
+# only a floor, ../go.mod decides.
 benchmark:
 	go mod tidy
-	# The benchmarks run on their own and the report is made once they
-	# succeeded: in a pipe the status of go test would be lost, and a table
-	# of the benchmarks that finished would pass for the whole. make clean
-	# removes bench.out.
 	go test -vet=off -timeout 24h -run @ -bench . -benchtime 5s > bench.out; \
-	rc=$$?; cat bench.out; \
-	if [ $$rc -ne 0 ]; then echo "benchmark: go test failed with status $$rc, no report"; exit $$rc; fi; \
+	status=$$?; \
+	cat bench.out; \
+	if [ $$status -ne 0 ]; then \
+		echo "benchmark: go test failed with status $$status, no report"; \
+		exit $$status; \
+	fi; \
 	go run benchreport.go < bench.out
 
 clean:
 	rm -f log-* cpu.test mem.test *.out go.work*
 	go clean
-
-edit:
-	@touch log
-	@if [ -f "Session.vim" ]; then gvim -S & else gvim -p Makefile go.mod *.go & fi
-
-editor:
-	gofmt -l -s -w .
-	go test -c -o /dev/null ./...
-	go install -v  ./...
-	staticcheck
-
-test:
-	go test -failfast -v -timeout 24h -count=1 ./...
-	grep -a 'TRC\|TODO\|ERRORF\|FAIL' log-test || true
-
-short-test:
-	go test -failfast -v -short -timeout 24h -count=1 ./...
-	grep -a 'TRC\|TODO\|ERRORF\|FAIL' log-test || true
-
-work:
-	rm -f go.work*
-	go work init
-	go work use .
-	if [ -d ../../libc ]; then go work use ../../libc; fi
-	if [ -d ../../libquickjs ]; then go work use ../../libquickjs; fi
 
 cpu: clean
 	go test -run @ -bench BenchmarkLIUSTACK -cpuprofile cpu.out
@@ -58,8 +32,3 @@ cpu: clean
 mem: clean
 	go test -run @ -bench BenchmarkLIUSTACK -memprofile mem.out -memprofilerate 1 -timeout 24h
 	go tool pprof -lines -web -alloc_space *.test mem.out
-
-cover:
-	cover=$(shell mktemp) ; \
-	      go test -v -short -coverprofile=$$cover ; \
-	      go tool cover -html=$$cover
