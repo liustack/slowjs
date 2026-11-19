@@ -20,6 +20,7 @@ package cengine
 import (
 	"errors"
 	"fmt"
+	"sync/atomic"
 	"time"
 	"unsafe"
 
@@ -670,12 +671,23 @@ func (v *VM) Close() (leaked uintptr, err error) {
 				JS_SetShapeCache(v.sp, v.ctx, 0)
 				JS_FreeContext(v.sp, v.ctx)
 				v.leaked = JS_FreeRuntime(v.sp, v.rt)
+				leakedBlocks.Add(uint64(v.leaked))
 			})
 			done = true
 		}
 	}
 	return v.leaked, v.h.Close()
 }
+
+// leakedBlocks is what Leaked returns.
+var leakedBlocks atomic.Uint64
+
+// Leaked returns the blocks the runtimes of the VMs closed so far in the
+// process still had in use when Close freed them, which is 0 when nothing
+// leaked. A test reads it before and after the VMs it closes, and sees a
+// leak of the engine where it has no *VM of this package, as with a
+// *slowjs.VM.
+func Leaked() uint64 { return leakedBlocks.Load() }
 
 // addr and bytesAt reach the engine's memory, outside the Go heap (see
 // gohost).

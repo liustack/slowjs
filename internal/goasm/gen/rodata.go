@@ -24,6 +24,7 @@
 package gen
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"sort"
@@ -253,6 +254,28 @@ func planData(u *AsmUnit, funcs map[string]bool, arch string) *DataPlan {
 			}
 		}
 	}
+	// The data in the bodies goes to llvm-mc as text (BodyData), which makes
+	// every byte of it. Each body places its data from its own start, which
+	// FuncPlace aligns, and all of them together are held to maxBlob, as the
+	// blob is, counted with the same encoder before any of it is written. Once
+	// they reach it, the function at hand and every one after it are
+	// rejected, so the functions a survey (-keep-going) keeps hold no more.
+	total := 0
+	fns := SortedKeys(p.InBody)
+	for i, fn := range fns {
+		n, err := bodyDataSize(p.InBody[fn], maxBlob-total, p.arch)
+		if err == nil {
+			total += n
+			continue
+		}
+		fail(fn, "data in the body of %s: %v", fn, err)
+		if errors.Is(err, errLimit) {
+			for _, later := range fns[i+1:] {
+				fail(later, "data in the body of %s not counted: the bodies before it reach the %d-byte limit of the data", later, maxBlob)
+			}
+			break
+		}
+	}
 	// Lay the blob out in text order and fill it.
 	type fix struct {
 		off, size int
@@ -266,6 +289,10 @@ func planData(u *AsmUnit, funcs map[string]bool, arch string) *DataPlan {
 		}
 		p.BlobObjects++
 		start := alignUp(len(p.Blob), 1<<o.Align)
+		if start > maxBlob {
+			fail("", "data %s starts past the %d-byte limit of the data", o.Label, maxBlob)
+			break
+		}
 		p.Blob = append(p.Blob, make([]byte, start-len(p.Blob))...)
 		p.BlobOff[o.Label] = start
 		for _, a := range o.Aliases {
@@ -350,6 +377,40 @@ func amd64TextRefs(u *AsmUnit, fail func(fn, f string, a ...any)) []textRef {
 }
 
 func alignUp(x, a int) int { return (x + a - 1) / a * a }
+
+// maxBlob is the most bytes of data the generator lays out: a .zero or an
+// alignment that would make the data longer is an error, found before any
+// byte of it is made. A count in the text is only a number, and .zero
+// 333333333332 asked for 333 GB. engine_rodata is about 125 KB, so 64 MiB
+// leaves room for any engine llc writes.
+const maxBlob = 1 << 26
+
+// errLimit is in every error of data past maxBlob.
+var errLimit = errors.New("limit of the data")
+
+// bodyDataSize is the size of objs placed in a body, from its start, or an
+// error past room bytes. It aligns the objects as if the pool began at 0,
+// but the pool of a body begins on 16 bytes only (lower.go), so with
+// -align64 the padding where it lands can differ from this count by up to
+// one alignment of the pool, less than 64 bytes per function. The limit is
+// there to stop a runaway allocation, not to give the exact size.
+func bodyDataSize(objs []*DataObj, room int, arch string) (int, error) {
+	pos := 0
+	for _, o := range objs {
+		pos = alignUp(pos, 1<<o.Align)
+		if pos > room {
+			return 0, fmt.Errorf("data %s starts past the %d-byte %w", o.Label, maxBlob, errLimit)
+		}
+		for _, l := range o.Lines {
+			b, _, err := encodeDirectiveRoom(l, pos, room-pos, arch)
+			if err != nil {
+				return 0, fmt.Errorf("data %s: %w", o.Label, err)
+			}
+			pos += len(b)
+		}
+	}
+	return pos, nil
+}
 
 // parseP2align parses the operands of a GNU .p2align: power, fill and
 // max-skip. All three must be honoured: a non-zero fill is the padding byte,
@@ -464,8 +525,23 @@ func encodeDirective(l string, at int) ([]byte, []exprFix, error) {
 }
 
 // encodeDirectiveArch is encodeDirective for the GNU syntax of arch: on
-// aarch64 .word is 4 bytes, .hword 2 and .xword 8.
+// aarch64 .word is 4 bytes, .hword 2 and .xword 8. Bytes that would end past
+// maxBlob, counted from at, are an error, found before they are made: a count
+// is checked before its bytes, and a string or a list of values is checked as
+// it is read. An offset at outside the data is an error too.
 func encodeDirectiveArch(l string, at int, arch string) ([]byte, []exprFix, error) {
+	if at < 0 || at > maxBlob {
+		return nil, nil, fmt.Errorf("%.40q at offset %d, outside the %d bytes of the data", l, at, maxBlob)
+	}
+	return encodeDirectiveRoom(l, at, maxBlob-at, arch)
+}
+
+// encodeDirectiveRoom is encodeDirectiveArch with room bytes left (room >=
+// 0), where at only places the bytes, for .p2align.
+func encodeDirectiveRoom(l string, at, room int, arch string) ([]byte, []exprFix, error) {
+	past := func() ([]byte, []exprFix, error) {
+		return nil, nil, fmt.Errorf("%.40q ends past the %d-byte %w", l, maxBlob, errLimit)
+	}
 	dir, arg := l, ""
 	if i := strings.IndexAny(l, " \t"); i >= 0 {
 		dir, arg = l[:i], strings.TrimSpace(l[i+1:])
@@ -484,25 +560,32 @@ func encodeDirectiveArch(l string, at int, arch string) ([]byte, []exprFix, erro
 		if skip >= 0 && pad > skip {
 			pad = 0
 		}
+		if pad > room {
+			return past()
+		}
 		b := make([]byte, pad)
 		for i := range b {
 			b[i] = fill
 		}
 		return b, nil, nil
 	case ".zero":
-		parts := strings.Split(arg, ",")
-		n, err := strconv.Atoi(strings.TrimSpace(parts[0]))
+		count, rest, hasFill := strings.Cut(arg, ",")
+		n, err := strconv.Atoi(strings.TrimSpace(count))
 		if err != nil {
-			return nil, nil, fmt.Errorf("bad .zero %q", arg)
+			return nil, nil, fmt.Errorf("bad .zero %.40q", arg)
 		}
 		if n < 0 {
-			return nil, nil, fmt.Errorf("negative .zero count %q", arg)
+			return nil, nil, fmt.Errorf("negative .zero count %.40q", arg)
+		}
+		if n > room {
+			return past()
 		}
 		b := make([]byte, n)
-		if len(parts) > 1 {
-			v, err := strconv.ParseInt(strings.TrimSpace(parts[1]), 0, 64)
+		if hasFill {
+			fill, _, _ := strings.Cut(rest, ",")
+			v, err := strconv.ParseInt(strings.TrimSpace(fill), 0, 64)
 			if err != nil {
-				return nil, nil, fmt.Errorf("bad .zero fill %q", arg)
+				return nil, nil, fmt.Errorf("bad .zero fill %.40q", arg)
 			}
 			for i := range b {
 				b[i] = byte(v)
@@ -510,7 +593,13 @@ func encodeDirectiveArch(l string, at int, arch string) ([]byte, []exprFix, erro
 		}
 		return b, nil, nil
 	case ".ascii", ".asciz", ".string":
-		s, err := unquoteGNU(arg)
+		if dir != ".ascii" {
+			room-- // the 0 at the end
+		}
+		s, err := unquoteGNU(arg, room)
+		if err == errPastRoom {
+			return past()
+		}
 		if err != nil {
 			return nil, nil, err
 		}
@@ -521,11 +610,16 @@ func encodeDirectiveArch(l string, at int, arch string) ([]byte, []exprFix, erro
 	}
 	n, ok := size[dir]
 	if !ok {
-		return nil, nil, fmt.Errorf("unknown directive %q", l)
+		return nil, nil, fmt.Errorf("unknown directive %.40q", l)
 	}
 	var out []byte
 	var fixes []exprFix
-	for _, v := range strings.Split(arg, ",") {
+	for rest, more := arg, true; more; {
+		var v string
+		v, rest, more = strings.Cut(rest, ",")
+		if n > room-len(out) {
+			return past()
+		}
 		v = strings.TrimSpace(v)
 		if x, err := strconv.ParseInt(v, 0, 64); err == nil {
 			for k := 0; k < n; k++ {
@@ -686,14 +780,25 @@ func exprParts(e string) (pos, neg string, k int64, err error) {
 	return ps[0], neg, k, nil
 }
 
-// unquoteGNU decodes a GNU assembler string literal.
-func unquoteGNU(s string) ([]byte, error) {
+// errPastRoom is what unquoteGNU returns for a string longer than its room.
+var errPastRoom = errors.New("string longer than the room left")
+
+// unquoteGNU decodes a GNU assembler string literal of at most room bytes. A
+// longer one is errPastRoom, found as it is read: it makes no more than room
+// bytes.
+func unquoteGNU(s string, room int) ([]byte, error) {
 	if len(s) < 2 || s[0] != '"' || s[len(s)-1] != '"' {
-		return nil, fmt.Errorf("bad string %q", s)
+		return nil, fmt.Errorf("bad string %.40q", s)
+	}
+	if room < 0 {
+		return nil, errPastRoom
 	}
 	s = s[1 : len(s)-1]
 	var out []byte
 	for i := 0; i < len(s); i++ {
+		if len(out) == room {
+			return nil, errPastRoom
+		}
 		c := s[i]
 		if c != '\\' {
 			out = append(out, c)

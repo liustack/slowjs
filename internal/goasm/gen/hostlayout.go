@@ -58,8 +58,12 @@ func HostLayout(u *AsmUnit) ([]int64, error) {
 			vs = append(vs, v)
 		case ".zero":
 			n, err := strconv.Atoi(arg)
-			if err != nil || n%8 != 0 {
+			if err != nil || n < 0 || n%8 != 0 {
 				return nil, fmt.Errorf("%s: %q is not a run of whole quads", HostLayoutSymbol, l)
+			}
+			// Checked before the zeros are added: the count can be anything.
+			if n/8 > len(HostLayoutNames)-len(vs) {
+				return nil, fmt.Errorf("%s: %q runs past the %d entries the generator names (HostLayoutNames)", HostLayoutSymbol, l, len(HostLayoutNames))
 			}
 			for range n / 8 {
 				vs = append(vs, 0)
