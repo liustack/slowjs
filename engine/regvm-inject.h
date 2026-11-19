@@ -28,6 +28,10 @@
    reads the interrupt flag) or two (a compare and branch, CASES and GORET:
    the instruction itself, then the reading of the flag), told by the hooks
    field of its pcmap entry (regvm-func.h), and each is a number of its own.
+   A compare and branch to throw at its second place takes its fast path
+   where its operands have one (RV_INJ_SLOW), so that the reading of the
+   flag on that path is thrown at too: its slow side reads it in another
+   place (rv_jump_slow).
    THROW and THROWE throw at every run and CATCH never does: the test adds
    nothing to them.
    An instruction that ran to its end with no hook taken is a hole of the
@@ -235,6 +239,18 @@ static no_inline void rv_inj_again(JSContext *ctx)
         JS_ThrowInternalError(ctx, "rv inject");
 }
 
+/* RV_INJ_SLOW of a compare and branch with a fast path for its operands:
+   0 when it is to throw at its first place, the call into the engine of its
+   slow side, 1 when at its second, the reading of the flag: the fast path
+   runs, and its reading of the flag is then the first hook it comes to */
+static no_inline int rv_inj_fast(void)
+{
+    if (rv_inj_armed != 2)
+        return 0;
+    rv_inj_armed = 1;
+    return 1;
+}
+
 /* a run of the register loop ends: an instruction of it that was to throw
    ended the run with no hook taken (an error of its own has made it
    rv_inj_none already), and the injection of the run it was entered from
@@ -380,6 +396,18 @@ const char *JS_RegvmInjectResult(void)
    RV_INJ_AGAIN and RV_INJ_NONE: rv_inj_again and rv_inj_none above. All are
    constants in a build without RV_INJECT, which they do not change. */
 #define RV_INJ_ARMED unlikely(rv_inj_armed != 0)
+/* RV_INJ_SLOW: as RV_INJ_ARMED, for a compare and branch whose operands
+   have a fast path, read after it found they have: when the place to throw
+   is the second, the reading of the interrupt flag, the fast path runs and
+   the flag is read where it reads it, and the first place, the call into
+   the engine the fast path does not make, is passed by (rv_inj_fast) */
+#define RV_INJ_SLOW (unlikely(rv_inj_armed != 0) && !rv_inj_fast())
+/* RV_INJ_FAST(test): the test of a fast path that RV_INJ_ARMED came before,
+   then RV_INJ_SLOW. test has no operator weaker than &&. In the build
+   without RV_INJECT it is !0 && test, the C those handlers had: clang finds
+   the profile of a function by a hash of the order of its operators, and
+   JS_RegvmRun keeps its profile only with the same order */
+#define RV_INJ_FAST(test) test && !RV_INJ_SLOW
 #define RV_INJ_HIT(ctx) (unlikely(rv_inj_armed != 0) && rv_inj_hit(ctx, __FILE__, __LINE__, __COUNTER__))
 #define RV_INJ_AGAIN(ctx) rv_inj_again(ctx)
 #define RV_INJ_NONE(what) do { if (unlikely(rv_inj_armed != 0)) rv_inj_none(what); } while (0)
@@ -393,6 +421,8 @@ const char *JS_RegvmInjectResult(void)
 
 #define RV_INJ_FUNC(b) ((void)0)
 #define RV_INJ_ARMED 0
+#define RV_INJ_SLOW 0
+#define RV_INJ_FAST(test) !RV_INJ_ARMED && test
 #define RV_INJ_HIT(ctx) 0
 #define RV_INJ_AGAIN(ctx) ((void)0)
 #define RV_INJ_NONE(what) ((void)0)
