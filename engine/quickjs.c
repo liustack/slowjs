@@ -2932,9 +2932,9 @@ static void js_trigger_gc(JSRuntime *rt, size_t size)
    its garbage freed by the counts, collected at every block, at each push
    that grew an array, each time to free next to nothing: a page of tifa
    took forty times its time and ended at the eval timeout, not at the limit
-   (test_block_gc_near_limit). Now, when a collection leaves less than
-   another JS_GC_BLOCK_SLACK of room above what the block needs, the next
-   requests that would pass let 1, then 2, 4 and up to
+   (test_block_gc_near_limit). Now, when a collection leaves the block
+   within JS_GC_BLOCK_SLACK of the limit still, the window it was run for,
+   the next requests that would pass let 1, then 2, 4 and up to
    JS_GC_BLOCK_WAIT_MAX of them go by with no collection, each one asked for
    as it is and failing at the limit when it does not fit. A collection that
    leaves room ends the wait, and so does a full collection started for
@@ -2971,7 +2971,7 @@ static no_inline void js_trigger_gc_block_run(JSRuntime *rt, size_t size)
     wait = rt->gc_block_wait;
     JS_RunGC(rt);
     room = h->count < h->limit ? h->limit - h->count : 0;
-    if (room > need && room - need >= JS_GC_BLOCK_SLACK)
+    if (room >= need)
         return;
     wait = wait ? min_uint32(wait * 2, JS_GC_BLOCK_WAIT_MAX) : 1;
     rt->gc_block_wait = wait;

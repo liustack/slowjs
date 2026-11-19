@@ -147,6 +147,8 @@ int white_string_plain(JSContext *ctx, JSValueConst v);
 long white_call_debt(JSContext *ctx, int direct, int *depth);
 int white_key_atoms_bad(JSRuntime *rt, int *live, int *keys);
 unsigned long white_gc_run_count(int young);
+int white_block_gc(JSRuntime *rt, size_t size);
+unsigned white_block_wait(JSRuntime *rt, unsigned *skip);
 unsigned long white_module_steps_take(void);
 uint32_t white_module_names(JSContext *ctx, int *bits);
 JSValue white_call_failing(JSContext *ctx, JSValueConst func, JSValueConst this_val, int argc, JSValueConst *argv, int fail, int *nallocs);
@@ -4129,6 +4131,89 @@ static void test_block_gc_wait(void)
     make_cycles(&v, 200 << 10);
     CHECK(repeat_block(&v, 150 << 10), "after a collection of the host, the block was refused");
     JS_SetMemoryLimit(v.rt, (size_t)-1);
+    vm_free(&v);
+}
+
+/* The lengths of the waits: a block request that collects and still finds
+   no room starts a wait of 1, then 2, 4 and up to JS_GC_BLOCK_WAIT_MAX
+   (1024) requests with no collection, which stays the length after that. A
+   collection of the threshold ends the wait, and the next one starts again
+   at 1. */
+static void test_block_gc_wait_steps(void)
+{
+    VM v = vm_new();
+    unsigned skip, wait, want = 1, k, i;
+    unsigned long gcs;
+
+    JS_RunGC(v.rt);
+    /* a block of 1 byte comes within the slack of the limit, and a
+       collection frees nothing */
+    JS_SetMemoryLimit(v.rt, JS_GetMemorySize(v.rt) + 4096);
+    for (k = 1; k <= 14; k++) {
+        CHECK(white_block_gc(v.rt, 1), "wait %u: the request after the wait did not collect", k);
+        wait = white_block_wait(v.rt, &skip);
+        CHECK(wait == want && skip == want, "wait %u is %u requests (%u left), %u wanted", k, wait, skip, want);
+        for (i = 0; i < wait; i++)
+            if (white_block_gc(v.rt, 1)) {
+                CHECK(0, "wait %u: request %u of %u collected", k, i + 1, wait);
+                break;
+            }
+        CHECK(white_block_wait(v.rt, &skip) == wait && skip == 0, "wait %u: %u requests left at its end", k, skip);
+        want = want * 2 > 1024 ? 1024 : want * 2;
+    }
+    /* in a wait of 8, the threshold collects at an object made */
+    JS_RunGC(v.rt);
+    for (k = 1; k <= 4; k++)
+        while (!white_block_gc(v.rt, 1))
+            ;
+    CHECK(white_block_wait(v.rt, &skip) == 8 && skip == 8, "the wait is %u requests (%u left), 8 wanted",
+          white_block_wait(v.rt, &skip), skip);
+    JS_SetMemoryLimit(v.rt, (size_t)-1);
+    JS_SetGCThreshold(v.rt, 0);
+    gcs = white_gc_run_count(0);
+    CHECK(eval_ok(v.ctx, "globalThis.o = {}"), "the object threw");
+    CHECK(white_gc_run_count(0) - gcs >= 1, "the threshold ran no collection");
+    CHECK(white_block_wait(v.rt, &skip) == 0 && skip == 0, "after the threshold the wait is %u requests (%u left)",
+          white_block_wait(v.rt, &skip), skip);
+    /* what the eval left, freed now, so that the next collection frees
+       nothing */
+    JS_RunGC(v.rt);
+    JS_SetMemoryLimit(v.rt, JS_GetMemorySize(v.rt) + 4096);
+    CHECK(white_block_gc(v.rt, 1), "the request after the threshold did not collect");
+    CHECK(white_block_wait(v.rt, &skip) == 1 && skip == 1, "after the threshold the next wait is %u requests (%u left)",
+          white_block_wait(v.rt, &skip), skip);
+    JS_SetMemoryLimit(v.rt, (size_t)-1);
+    vm_free(&v);
+}
+
+/* The edge of the wait: a collection that leaves just JS_GC_BLOCK_SLACK
+   (8 KiB) of room above the block starts none, one that leaves a byte less
+   starts one. Here the collection frees cycles and leaves what was live. */
+static void test_block_gc_wait_edge(void)
+{
+    VM v = vm_new();
+    size_t base, size = 64 << 10, after;
+    unsigned skip, wait;
+    int d;
+
+    CHECK(eval_ok(v.ctx, "function cyc(n) { for (var i = 0; i < n; i++) { var a = { i: i }; a.self = a } }"),
+          "the setup threw");
+    make_cycles(&v, 32 << 10);
+    JS_RunGC(v.rt);
+    for (d = 0; d <= 1; d++) {
+        base = JS_GetMemorySize(v.rt);
+        make_cycles(&v, 32 << 10);
+        JS_SetMemoryLimit(v.rt, base + size + 8192 - d);
+        CHECK(white_block_gc(v.rt, size), "%d below the edge: no collection", d);
+        after = JS_GetMemorySize(v.rt);
+        CHECK(after == base, "%d below the edge: the collection left %lu bytes, %lu before the cycles", d,
+              (unsigned long)after, (unsigned long)base);
+        wait = white_block_wait(v.rt, &skip);
+        CHECK(wait == (unsigned)d && skip == (unsigned)d, "%d below the edge: a wait of %u requests (%u left)", d,
+              wait, skip);
+        JS_SetMemoryLimit(v.rt, (size_t)-1);
+        JS_RunGC(v.rt);
+    }
     vm_free(&v);
 }
 
@@ -11434,6 +11519,8 @@ int main(int argc, char **argv)
     test_registry_job_after_free();
     test_block_gc_near_limit();
     test_block_gc_wait();
+    test_block_gc_wait_steps();
+    test_block_gc_wait_edge();
     test_gc_alloc_at_limit();
     test_young_weak_table_recount();
     test_gc_in_free();

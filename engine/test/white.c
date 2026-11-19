@@ -1447,6 +1447,24 @@ unsigned long white_gc_run_count(int young)
     return white_gc_runs[young != 0];
 }
 
+/* js_trigger_gc_block for a block of size bytes, as a built-in calls it
+   before the block: 1 when it ran a full collection, 0 when not. */
+int white_block_gc(JSRuntime *rt, size_t size)
+{
+    unsigned long n = white_gc_runs[0];
+
+    js_trigger_gc_block(rt, size);
+    return white_gc_runs[0] != n;
+}
+
+/* The wait of js_trigger_gc_block_run: its length, and in *skip the
+   requests it still lets pass. */
+unsigned white_block_wait(JSRuntime *rt, unsigned *skip)
+{
+    *skip = rt->gc_block_skip;
+    return rt->gc_block_wait;
+}
+
 /* ---- the steps of the walks over modules (JS_MODULE_STEP) ---- */
 
 /* The steps since the last call, which starts the count again. */
