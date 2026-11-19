@@ -1,0 +1,10 @@
+top: caught boom | finally | resolved done
+sync part only: before | caught first | after | resolved x
+nested await: inner start | inner caught nested | inner finally | outer got inner value | outer caught deeper | resolved inner value
+class method arrow: arrow caught in arrow | arrow finally | resolved 10 10
+loop: loop 0 | loop 1 | loop 2 | resolved 3
+no catch: finally | rejected uncaught
+finally awaits: finally | after await in finally | rejected f1
+catch awaits again: caught a | caught b | resolved 7
+getter returns Promise: getter | resolved 5
+call depth: refused at the await: some, other outcomes: none

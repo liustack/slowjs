@@ -1,0 +1,13 @@
+result top: caught boom | finally | resolved done
+result sync part only: before | caught first | after | resolved x
+result nested await: inner start | inner caught nested | inner finally | outer got inner value | outer caught deeper | resolved inner value
+result class method arrow: arrow caught in arrow | arrow finally | resolved 10 10
+result loop: loop 0 | loop 1 | loop 2 | resolved 3
+result no catch: finally | rejected uncaught
+result finally awaits: finally | after await in finally | rejected f1
+result catch awaits again: caught a | caught b | resolved 7
+result getter returns Promise: getter | resolved 5
+result call depth: refused at the await: some, other outcomes: none
+mem-end obj=15214 atom=620 shape=134 prop=26000 jsfunc=28 cfunc=137 array=13 fast_array=13 elements=5031 binary=0
+mem-gc obj=225 atom=620 shape=133 prop=1016 jsfunc=28 cfunc=137 array=12 fast_array=12 elements=37 binary=0
+--- status exit 0
