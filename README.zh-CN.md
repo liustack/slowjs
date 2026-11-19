@@ -171,4 +171,4 @@ liustack/slowjs 不接受 pull request。每一行都由一个维护者审读、
 
 ## 许可证
 
-liustack/slowjs 新建的文件用 [MIT 许可证](LICENSE)。来自其他项目的代码保留各自的许可证：QuickJS 的 C 代码、modernc.org/quickjs 留下的部分、TLSF 分配器、musl 的 libc 函数，以及 `intl` 和 go-intl 的语言数据。banner 里的 gopher 照 Renée French 画的 Go gopher 画成（CC BY 4.0）。哪条路径用哪个许可证、发布用到本模块的程序要带哪些声明，见 [NOTICE.md](NOTICE.md)。
+liustack/slowjs 用 [MIT 许可证](LICENSE)。来自其他项目的代码保留各自的许可证：QuickJS 的 C 代码、TLSF 分配器、musl 的 libc 函数、来自 go-intl、ICU 和 Chromium 的 `Intl` 与 `Temporal` 的 Go 代码和语言数据、来自 nlnwa/whatwg-url 的 URL 解析器，以及几个 Go 自带的文件。banner 里的 gopher 照 Renée French 画的 Go gopher 画成（CC BY 4.0）。哪条路径用哪个许可证、发布用到本模块的程序要带哪些声明，见 [NOTICE.md](NOTICE.md)。

@@ -171,4 +171,4 @@ A security problem goes in a private report, as [SECURITY.md](SECURITY.md) says.
 
 ## License
 
-The files liustack/slowjs created are under the [MIT license](LICENSE). Code that came from other projects keeps its own license: the C of QuickJS, what remains from modernc.org/quickjs, the TLSF allocator, musl's libc functions and the locale data of `intl` and go-intl. The gopher of the banner is drawn after the Go gopher by Renée French (CC BY 4.0). [NOTICE.md](NOTICE.md) says which license covers which path, and which notices a program that ships this module has to carry.
+liustack/slowjs is under the [MIT license](LICENSE). Code that came from other projects keeps its own license: the C of QuickJS, the TLSF allocator, musl's libc functions, the Go side and the locale data of `Intl` and `Temporal` from go-intl, ICU and Chromium, the URL parser from nlnwa/whatwg-url and a few files of Go. The gopher of the banner is drawn after the Go gopher by Renée French (CC BY 4.0). [NOTICE.md](NOTICE.md) says which license covers which path, and which notices a program that ships this module has to carry.
