@@ -382,16 +382,69 @@ static void host_vm_free(HostVM *vm)
 
 #ifdef RV_INJECT
 void JS_RegvmInject(long n, unsigned site, long j);
-void JS_RegvmInjectCover(long each, int place);
+void JS_RegvmInjectCover(long each, int place, const long long *n, int nn,
+                         const long long *sj, int nsj);
 const char *JS_RegvmInjectResult(void);
+
+static int host_cmp_ll(const void *a, const void *b)
+{
+    long long x = *(const long long *)a, y = *(const long long *)b;
+    return x < y ? -1 : x > y;
+}
+
+/* the places of the file path, a line each, N or S.J, as the sorted lists of
+   JS_RegvmInjectCover: it exits on a file it cannot read or a line it cannot
+   parse, which would cover fewer places than were asked for */
+static void host_inject_places(const char *path, long long **n, int *nn,
+                               long long **sj, int *nsj)
+{
+    FILE *f = fopen(path, "r");
+    char line[64];
+    int cap = 0, used_n = 0, used_sj = 0;
+    long long *a = NULL, *b = NULL;
+
+    if (!f) {
+        fprintf(stderr, "RV_INJECT_COVER_AT: cannot open %s\n", path);
+        exit(2);
+    }
+    while (fgets(line, sizeof(line), f)) {
+        long long x, y;
+        int len = 0;
+        if (cap <= used_n + used_sj) {
+            cap = cap ? cap * 2 : 1024;
+            a = realloc(a, cap * sizeof(*a));
+            b = realloc(b, cap * sizeof(*b));
+            if (!a || !b) {
+                fprintf(stderr, "RV_INJECT_COVER_AT: out of memory\n");
+                exit(2);
+            }
+        }
+        if (sscanf(line, "%lld.%lld%n", &x, &y, &len) == 2 && (line[len] == '\n' || !line[len]))
+            b[used_sj++] = x << 32 | y;
+        else if (sscanf(line, "%lld%n", &x, &len) == 1 && (line[len] == '\n' || !line[len]))
+            a[used_n++] = x;
+        else {
+            fprintf(stderr, "RV_INJECT_COVER_AT: %s: not a place: %s", path, line);
+            exit(2);
+        }
+    }
+    fclose(f);
+    qsort(a, used_n, sizeof(*a), host_cmp_ll);
+    qsort(b, used_sj, sizeof(*b), host_cmp_ll);
+    *n = a;
+    *nn = used_n;
+    *sj = b;
+    *nsj = used_sj;
+}
 
 /* the throw-injection test (engine/regvm-inject.h, engine/test/regvm/inject.sh):
    RV_INJECT=N throws at the N-th place where an instruction of the register
    loop can throw, RV_INJECT_SITE="S J" at the J-th place run at its S-th
    site, RV_INJECT_COVER="EACH P" throws nowhere and lists the hooks the
    injections at the place P of each instruction throw at (each place, or
-   the first EACH at each site: inject-cover.sh),
-   and RV_INJECT_OUT names the file that gets what happened */
+   the first EACH at each site and those the file RV_INJECT_COVER_AT names:
+   inject-cover.sh), and RV_INJECT_OUT names the file that gets what
+   happened */
 static void host_inject_start(void)
 {
     const char *n = getenv("RV_INJECT"), *st = getenv("RV_INJECT_SITE");
@@ -400,11 +453,16 @@ static void host_inject_start(void)
     long j = 0;
 
     if (cover) {
+        const char *at = getenv("RV_INJECT_COVER_AT");
+        static long long *at_n, *at_sj;
+        static int at_nn, at_nsj;
         long each = 0;
         int place = 1;
         if (sscanf(cover, "%ld %d", &each, &place) < 1)
             each = 0;
-        JS_RegvmInjectCover(each, place);
+        if (at && *at && !at_n && !at_sj)
+            host_inject_places(at, &at_n, &at_nn, &at_sj, &at_nsj);
+        JS_RegvmInjectCover(each, place, at_n, at_nn, at_sj, at_nsj);
         return;
     }
     if (st && sscanf(st, "%u %ld", &site, &j) != 2)

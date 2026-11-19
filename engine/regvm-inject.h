@@ -110,7 +110,11 @@ static char rv_inj_key[96];     /* the result once the hook has thrown */
    inject-cover.sh lists the hooks no script of a set comes to. */
 static int rv_inj_cover;        /* the cover mode is on: the place P */
 static long rv_inj_cover_each;  /* 0, or the places it arms at each site */
-static int rv_inj_sub;          /* the old opcode under the op, or -1 */
+/* and the places it arms besides, sorted: N, and S << 32 | J, the J-th
+   place of the site S (the places a golden of inject.sh names) */
+static const long long *rv_inj_cover_n, *rv_inj_cover_sj;
+static int rv_inj_cover_nn, rv_inj_cover_nsj;
+static int rv_inj_sub;         /* the old opcode under the op, or -1 */
 typedef struct RVInjHook {
     const char *file;           /* NULL: the entry is free */
     int line, id, op, sub, kind; /* id: __COUNTER__ at the hook. kind: 0 a hook,
@@ -309,13 +313,44 @@ void JS_RegvmInject(long n, unsigned site, long j)
     rv_inj_any = n > 0 || site > 0;
 }
 
+/* k is one of the count sorted keys of a */
+static int rv_inj_cover_has(const long long *a, int count, long long k)
+{
+    int lo = 0, hi = count - 1, mid;
+
+    while (lo <= hi) {
+        mid = (lo + hi) >> 1;
+        if (a[mid] < k)
+            lo = mid + 1;
+        else if (a[mid] > k)
+            hi = mid - 1;
+        else
+            return 1;
+    }
+    return 0;
+}
+
+/* the cover mode arms the place N, the j-th of the site S */
+static int rv_inj_cover_at(long n, uint32_t site, long j)
+{
+    return rv_inj_cover_has(rv_inj_cover_n, rv_inj_cover_nn, n) ||
+        rv_inj_cover_has(rv_inj_cover_sj, rv_inj_cover_nsj, (long long)site << 32 | j);
+}
+
 /* the cover mode (see rv_inj_cover above) at the place 1 or 2 of each
-   instruction: each place, or the first each places at each site, as
-   inject.sh samples a script with more places than it injects */
-void JS_RegvmInjectCover(long each, int place)
+   instruction: each place, or the first each places at each site and the
+   places of the sorted lists n (N) and sj (S << 32 | J), as inject.sh
+   samples a script with more places than it injects and runs the places its
+   golden names too. The lists stay the caller's, to the end of the run. */
+void JS_RegvmInjectCover(long each, int place, const long long *n, int nn,
+                         const long long *sj, int nsj)
 {
     rv_inj_cover = place;
     rv_inj_cover_each = each;
+    rv_inj_cover_n = n;
+    rv_inj_cover_nn = nn;
+    rv_inj_cover_sj = sj;
+    rv_inj_cover_nsj = nsj;
     rv_inj_n = 0;
     rv_inj_site = 0;
     rv_inj_any = 1;

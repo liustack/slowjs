@@ -518,10 +518,12 @@ static no_inline void rv_inj_new(JSContext *ctx, JSValue *F, const uint8_t *pc)
     rv_inj_seen += n;
     e->places += n;
     if (rv_inj_cover) {
-        /* its place rv_inj_cover, at every run or at the first each places
-           of the site */
+        /* its place rv_inj_cover, at every run, or at the first each places
+           of the site and at the places of the lists */
+        long j = (long)e->places - n + rv_inj_cover;
         if (rv_inj_cover > n ||
-            (rv_inj_cover_each && (long)e->places - n + rv_inj_cover > rv_inj_cover_each))
+            (rv_inj_cover_each && j > rv_inj_cover_each &&
+             !rv_inj_cover_at(rv_inj_seen - n + rv_inj_cover, e->site, j)))
             return;
         rv_inj_armed = rv_inj_cover;
         rv_inj_frame = ctx->rt->current_stack_frame;

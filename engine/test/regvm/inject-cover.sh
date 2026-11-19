@@ -11,9 +11,12 @@
 # -DRV_INJECT, as inject.sh runs it: once to count its places, then twice in
 # the cover mode (RV_INJECT_COVER), which throws nowhere: each instruction
 # is armed at its first place, then at its second, where inject.sh injects
-# (every place, or the first M over the number of sites at each site for a
-# script with more than M places), and the hook the injection would throw at
-# is written down. The scripts G/skip names are left out, as inject.sh
+# (every place, or for a script with more than M places the first M over
+# the number of sites at each site and the places its golden G/SCRIPT.txt
+# names), and the hook the injection would throw at is written down. Each
+# run must end as a script does (exit 0 or 1, as inject.sh wants of its run
+# with no injection): a leak, a signal or a sanitizer that stops the run
+# fails the script. The scripts G/skip names are left out, as inject.sh
 # leaves them out.
 #
 #   engine/test/regvm/inject-cover.sh [-j N] [-max M] [-golden G] DIR PATH...
@@ -34,7 +37,9 @@
 #                             it was armed
 #
 # and a last line with the counts. The lines of each script are in
-# DIR/cover/SCRIPT.cover. It exits with 1 when a script did not run.
+# DIR/cover/NAME.cover, NAME its path with % and / written %25 and %2F. It
+# exits with 1 when a script failed, and with 2 when the preprocessor gives
+# no hooks.
 set -eu
 
 jobs=4
@@ -64,33 +69,54 @@ work=$dir/cover
 ASAN_OPTIONS=${ASAN_OPTIONS:+$ASAN_OPTIONS:}detect_leaks=0
 export ASAN_OPTIONS
 
+# name_of PATH: the name of the files of the script PATH in DIR/cover, one
+# for each path, so that two scripts of one name in two folders keep apart
+name_of() {
+	printf '%s\n' "$1" | sed 's|%|%25|g; s|/|%2F|g'
+}
+
 if [ -n "$single" ]; then
 	sc=$1
 	base=$(basename "$sc")
-	out=$work/$base
-	rm -rf "$out.d" "$out.count" "$out.cover"
-	mkdir -p "$out.d"
-	RV_INJECT=2000000000 RV_INJECT_OUT="$out.count" "$rvdiff" -q -golden "$out.d" -update -root "$(dirname "$sc")" "$sc" > /dev/null 2>&1 || true
+	out=$work/$(name_of "$sc")
+	rm -rf "$out.d" "$out.count" "$out.cover" "$out.raw" "$out.at" "$out.log"
+	# run VAR=VAL...: one run of the script, its transcript in $out.d. It
+	# fails the script unless the run ends as a script does, as inject.sh
+	# wants of its run with no injection (a leak of the engine is status 87)
+	run() {
+		rm -rf "$out.d"
+		mkdir -p "$out.d"
+		env "$@" "$rvdiff" -q -golden "$out.d" -update -root "$(dirname "$sc")" "$sc" > "$out.log" 2>&1 || true
+		g=$(find "$out.d" -name "*.txt" | head -1)
+		if [ -z "$g" ] || ! grep -q '^--- status exit [01]$' "$g"; then
+			echo "FAIL $sc: the run with $1 ends with $( [ -n "$g" ] && sed -n 's/^--- status //p' "$g" || grep '^NOUPDATE' "$out.log" | cut -c1-200)"
+			rm -rf "$out.d" "$out.count" "$out.raw" "$out.at" "$out.log"
+			exit 0
+		fi
+	}
+	run RV_INJECT=2000000000 RV_INJECT_OUT="$out.count"
 	total=$(sed -n 's/^none \([0-9]*\) [0-9]*$/\1/p' "$out.count" 2>/dev/null | sort -n | tail -1)
 	sites=$(sed -n 's/^none [0-9]* \([0-9]*\)$/\1/p' "$out.count" 2>/dev/null | sort -n | tail -1)
 	rm -f "$out.count"
 	if [ -z "$total" ] || [ "$total" = 0 ]; then
 		echo "FAIL $sc: no place to throw ran in the count run"
-		rm -rf "$out.d"
+		rm -rf "$out.d" "$out.log"
 		exit 0
 	fi
+	# the places inject.sh runs: every place, or the first max / sites at
+	# each site and each place its golden names
 	each=0
+	: > "$out.at"
 	if [ "$total" -gt "$max" ]; then
 		each=$((max / sites))
 		[ "$each" -ge 1 ] || each=1
+		[ ! -f "$golden/$base.txt" ] || cut -d' ' -f2 "$golden/$base.txt" > "$out.at"
 	fi
 	: > "$out.raw"
 	for place in 1 2; do
-		rm -rf "$out.d"
-		mkdir -p "$out.d"
-		RV_INJECT_COVER="$each $place" RV_INJECT_OUT="$out.raw" "$rvdiff" -q -golden "$out.d" -update -root "$(dirname "$sc")" "$sc" > /dev/null 2>&1 || true
+		run RV_INJECT_COVER="$each $place" RV_INJECT_COVER_AT="$out.at" RV_INJECT_OUT="$out.raw"
 	done
-	rm -rf "$out.d"
+	rm -rf "$out.d" "$out.at" "$out.log"
 	if [ "$(grep -c '^none ' "$out.raw")" != 2 ]; then
 		echo "FAIL $sc: a cover run wrote nothing"
 		rm -f "$out.raw"
@@ -129,29 +155,37 @@ for sc in $scripts; do
 	fi
 	echo "$sc" >> "$list"
 done
+# quickjs.c as DIR built it, to a file first, so that set -e sees the
+# preprocessor fail
+. "$engine/test/flags.sh"
+cc=${CC:-clang}
+# shellcheck disable=SC2086
+$cc -E $engine_flags $(engine_target_flags native) -DJS_HOST_POLL -DRV_SELF_CHECK -DRV_INJECT \
+	-DCONFIG_PRINT_VALUE -I"$engine/libc" -I"$engine" -DCONFIG_VERSION=\"$engine_version\" \
+	"$engine/quickjs.c" > "$work/quickjs.i"
 fails=$(xargs -P "$jobs" -I{} "$0" -golden "$golden" -max "$max" -one "$dir" {} < "$list")
 [ -z "$fails" ] || echo "$fails"
 
 # every hook of the engine as DIR built it: "ID NAME", the name FILE:LINE,
 # or FILE:LINE#K for the K-th hook at a line with more than one
-. "$engine/test/flags.sh"
-cc=${CC:-clang}
-# shellcheck disable=SC2086
-$cc -E $engine_flags $(engine_target_flags native) -DJS_HOST_POLL -DRV_SELF_CHECK -DRV_INJECT \
-	-DCONFIG_PRINT_VALUE -I"$engine/libc" -I"$engine" -DCONFIG_VERSION=\"$engine_version\" "$engine/quickjs.c" |
-	grep -o 'rv_inj_hit(ctx, "[^"]*", [0-9]*, [0-9]*)' |
+grep -o 'rv_inj_hit(ctx, "[^"]*", [0-9]*, [0-9]*)' "$work/quickjs.i" |
 	sed 's|rv_inj_hit(ctx, "\(.*/\)\{0,1\}\([^"/]*\)", \([0-9]*\), \([0-9]*\))|\2:\3 \4|' |
 	LC_ALL=C sort -u | sort -k1,1 -k2,2n |
 	awk '{ at[NR] = $1; id[NR] = $2; n[$1]++ }
 	END { for (i = 1; i <= NR; i++) { k[at[i]]++; print id[i], (n[at[i]] > 1 ? at[i] "#" k[at[i]] : at[i]) } }' > "$work/hooks"
+rm -f "$work/quickjs.i"
+if [ ! -s "$work/hooks" ]; then
+	echo "inject-cover.sh: the preprocessor gives no hook of the injection in $engine/quickjs.c" >&2
+	exit 2
+fi
 
 # the lines of the scripts, the hook by its name: KIND OP SUB [HOOK] SCRIPT
 all=$work/all
 : > "$all"
 while read -r sc; do
-	base=$(basename "$sc")
-	[ -f "$work/$base.cover" ] || continue
-	sed "s|\$| $base|" "$work/$base.cover" >> "$all"
+	f=$work/$(name_of "$sc").cover
+	[ -f "$f" ] || continue
+	awk -v s="$sc" '{ print $0, s }' "$f" >> "$all"
 done < "$list"
 awk 'FILENAME == ARGV[1] { name[$1] = $2; next }
 	NF == 5 { n = split($4, f, ":"); $4 = (f[n] in name) ? name[f[n]] : $4 "?" }
