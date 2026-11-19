@@ -680,12 +680,12 @@ static force_inline BOOL rv_rel(int rel, double d1, double d2)
     {                                                                   \
         JSValue a = RV_R(ip[0]), bv = (bexpr);                          \
         int res;                                                        \
-        if (likely(JS_VALUE_IS_BOTH_INT(a, bv)) && !RV_INJ_ARMED) {     \
+        if (likely(JS_VALUE_IS_BOTH_INT(a, bv)) && !RV_INJ_SLOW) {      \
             res = JS_VALUE_GET_INT(a) cop JS_VALUE_GET_INT(bv);         \
         } else if ((eqk) < 0) {                                         \
             goto rv_jcmp_other;                                         \
-        } else if ((eqk) >= 0 && !RV_INJ_ARMED &&                       \
-                   (res = goasm_eq_fast(a, bv, (eqk) > 0)) >= 0) {      \
+        } else if ((eqk) >= 0 && RV_INJ_FAST(                           \
+                       (res = goasm_eq_fast(a, bv, (eqk) > 0)) >= 0)) { \
             if (rv_is_temp(F, (int8_t)ip[0]))                           \
                 JS_FreeValue(ctx, a);                                   \
             if (!(isk) && rv_is_temp(F, (int8_t)ip[1]))                 \
@@ -748,7 +748,7 @@ static force_inline BOOL rv_rel(int rel, double d1, double d2)
         JSValue a = RV_R(ip[0]), bv = (n & 2) ? RV_K(ip[1]) : RV_R(ip[1]);
         double d1, d2;
         int res, jt = n & 1;
-        if (!RV_INJ_ARMED && rv_num_pair(a, bv, &d1, &d2)) {
+        if (RV_INJ_FAST(rv_num_pair(a, bv, &d1, &d2))) {
             res = rv_rel(n >> 2, d1, d2);
         } else {
             RV_SYNC_TOP();

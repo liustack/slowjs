@@ -1,0 +1,43 @@
+result plain: 0/0|x=0,y=y0,k33=kept
+result getter: 0/0|x=0,y=y0,k33=kept,g=got 0
+result proxy: 0/0|x=0,y=y0,k33=kept 4
+result string: undefined/undefined|0=a,1=b,2=0
+result null: throws TypeError cannot convert to object
+result getter throws: throws RangeError getter 0
+result ownKeys throws: throws TypeError ownKeys 0
+result computed: 0/0|y=y0,k33=kept
+result computed symbol: 0/sym|x=0,y=y0,k33=kept 0/y0|x=0,k33=kept,Symbol(q9)=sym
+result assign: 0|x=0,y=y0,k33=kept
+result plain: 1/1|x=2,y=y1,k33=kept
+result getter: 1/1|x=2,y=y1,k33=kept,g=got 1
+result proxy: 1/1|x=2,y=y1,k33=kept 4
+result string: undefined/undefined|0=a,1=b,2=1
+result null: throws TypeError cannot convert to object
+result getter throws: throws RangeError getter 1
+result ownKeys throws: throws TypeError ownKeys 1
+result computed: 1/2|y=y1,k33=kept
+result computed symbol: 1/sym|x=2,y=y1,k33=kept 1/y1|x=2,k33=kept,Symbol(q9)=sym
+result assign: 1|x=2,y=y1,k33=kept
+result plain: 2/2|x=4,y=y2,k33=kept
+result getter: 2/2|x=4,y=y2,k33=kept,g=got 2
+result proxy: 2/2|x=4,y=y2,k33=kept 4
+result string: undefined/undefined|0=a,1=b,2=2
+result null: throws TypeError cannot convert to object
+result getter throws: throws RangeError getter 2
+result ownKeys throws: throws TypeError ownKeys 2
+result computed: 2/4|y=y2,k33=kept
+result computed symbol: 2/sym|x=4,y=y2,k33=kept 2/y2|x=4,k33=kept,Symbol(q9)=sym
+result assign: 2|x=4,y=y2,k33=kept
+result plain: 3/3|x=6,y=y3,k33=kept
+result getter: 3/3|x=6,y=y3,k33=kept,g=got 3
+result proxy: 3/3|x=6,y=y3,k33=kept 4
+result string: undefined/undefined|0=a,1=b,2=3
+result null: throws TypeError cannot convert to object
+result getter throws: throws RangeError getter 3
+result ownKeys throws: throws TypeError ownKeys 3
+result computed: 3/6|y=y3,k33=kept
+result computed symbol: 3/sym|x=6,y=y3,k33=kept 3/y3|x=6,k33=kept,Symbol(q9)=sym
+result assign: 3|x=6,y=y3,k33=kept
+mem-end obj=193 atom=580 shape=171 prop=965 jsfunc=0 cfunc=130 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=193 atom=580 shape=171 prop=965 jsfunc=0 cfunc=130 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0
