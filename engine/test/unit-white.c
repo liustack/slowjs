@@ -4137,8 +4137,8 @@ static void test_block_gc_wait(void)
 /* The lengths of the waits: a block request that collects and still finds
    no room starts a wait of 1, then 2, 4 and up to JS_GC_BLOCK_WAIT_MAX
    (1024) requests with no collection, which stays the length after that. A
-   collection of the threshold ends the wait, and the next one starts again
-   at 1. */
+   collection of the threshold ends the wait, and so does the next call of
+   the host (JS_StartCall): the next wait starts again at 1. */
 static void test_block_gc_wait_steps(void)
 {
     VM v = vm_new();
@@ -4181,6 +4181,16 @@ static void test_block_gc_wait_steps(void)
     JS_SetMemoryLimit(v.rt, JS_GetMemorySize(v.rt) + 4096);
     CHECK(white_block_gc(v.rt, 1), "the request after the threshold did not collect");
     CHECK(white_block_wait(v.rt, &skip) == 1 && skip == 1, "after the threshold the next wait is %u requests (%u left)",
+          white_block_wait(v.rt, &skip), skip);
+    /* the next call of the host ends a wait of 8, and its first request
+       collects and starts one of 1 */
+    while (white_block_wait(v.rt, &skip) != 8 || skip != 8)
+        white_block_gc(v.rt, 1);
+    JS_StartCall(v.rt);
+    CHECK(white_block_wait(v.rt, &skip) == 0 && skip == 0, "after JS_StartCall the wait is %u requests (%u left)",
+          white_block_wait(v.rt, &skip), skip);
+    CHECK(white_block_gc(v.rt, 1), "the first request of the call did not collect");
+    CHECK(white_block_wait(v.rt, &skip) == 1 && skip == 1, "the first wait of the call is %u requests (%u left)",
           white_block_wait(v.rt, &skip), skip);
     JS_SetMemoryLimit(v.rt, (size_t)-1);
     vm_free(&v);

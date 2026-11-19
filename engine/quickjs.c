@@ -2938,8 +2938,12 @@ static void js_trigger_gc(JSRuntime *rt, size_t size)
    JS_GC_BLOCK_WAIT_MAX of them go by with no collection, each one asked for
    as it is and failing at the limit when it does not fit. A collection that
    leaves room ends the wait, and so does a full collection started for
-   another reason: the host's, or the threshold's (JS_RunGC). So a VM at the
-   edge runs a few collections where it ran one per block, the wait is
+   another reason: the host's, or the threshold's (JS_RunGC). The next call
+   of the host ends it too (JS_StartCall): a wait serves the blocks of one
+   call, and a call that ran out of memory in a wait leaves the next one to
+   collect at its first block, as a VM fresh from a collection does
+   (TestBlockWaitEndsWithTheCall in blockwait_test.go). So a VM at the edge
+   runs a few collections in a call where it ran one per block, the wait is
    bounded, and garbage in cycles that piles up meanwhile is collected at
    its end at the latest. Inside it, a block that would fit only once the
    cycles are freed fails as if they were live (test_block_gc_wait). */
@@ -2976,6 +2980,12 @@ static no_inline void js_trigger_gc_block_run(JSRuntime *rt, size_t size)
     wait = wait ? min_uint32(wait * 2, JS_GC_BLOCK_WAIT_MAX) : 1;
     rt->gc_block_wait = wait;
     rt->gc_block_skip = wait;
+}
+
+void JS_StartCall(JSRuntime *rt)
+{
+    rt->gc_block_skip = 0;
+    rt->gc_block_wait = 0;
 }
 
 static force_inline void js_trigger_gc_block(JSRuntime *rt, size_t size)

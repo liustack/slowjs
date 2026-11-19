@@ -4,6 +4,16 @@
 #include "textflag.h"
 #include "funcdata.h"
 
+TEXT ·JS_StartCall(SB), NOSPLIT, $0-16
+	NO_LOCAL_POINTERS
+	MOVD a0+0(FP), R20
+	MOVD a1+8(FP), R21
+	PCALIGN $16
+	WORD $0x6f00e400
+	WORD $0xfd161ea0
+	WORD $0x14000001
+	RET
+
 TEXT ·js_malloc_rt(SB), $56-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
