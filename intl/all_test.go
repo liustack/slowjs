@@ -972,6 +972,14 @@ var errorsTests = [][2]string{
 	{"(1).toLocaleString(null)", "TypeError:"},
 	{"new Date(0).toLocaleString(null)", "TypeError:"},
 	{"Intl.getCanonicalLocales(5).length", "no error"},
+	// The toLocale* methods keep the formatter of no locale apart from that
+	// of the empty tag, which is no tag.
+	{"(1).toLocaleString()", "no error"},
+	{"(1).toLocaleString('')", "RangeError:"},
+	{"new Date(0).toLocaleString()", "no error"},
+	{"new Date(0).toLocaleString('')", "RangeError:"},
+	{"'a'.localeCompare('b', 'en')", "no error"},
+	{"'a'.localeCompare('b', '')", "RangeError:"},
 }
 
 // defaultTimeZoneTests are the cases of TestDefaultTimeZone.
