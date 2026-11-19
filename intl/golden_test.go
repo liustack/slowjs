@@ -1,19 +1,26 @@
-// Copyright 2026 The quickjs-go Authors. All rights reserved.
-// Use of the source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
+// Copyright (c) 2026 The liustack/slowjs Authors.
+// SPDX-License-Identifier: MIT
+// Use of this source code is governed by the MIT license in LICENSE-MIT at the
+// root of this repository.
 
 package intl // import "github.com/liustack/slowjs/intl"
 
+// TestGolden compares what Intl answers with what Chromium answered for the
+// same expressions, recorded in testdata/chromium. To record again: go test
+// -run TestGolden -golden.corpus writes the expressions of each set to
+// corpus*.json, and node intl/testdata/chromium/record.cjs golden evaluates
+// them in Chromium and writes golden*.json.gz.
+
 import (
+	"bytes"
 	"compress/gzip"
 	"encoding/json"
 	"flag"
-	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
-	"sort"
 	"strings"
 	"testing"
 	"unicode"
@@ -21,322 +28,50 @@ import (
 	"github.com/liustack/slowjs"
 )
 
-// The golden test compares this package with a browser. testdata/chromium
-// holds what Chromium answered for some tens of thousands of expressions,
-// recorded by record.cjs; go test only reads it. The expressions come in
-// sets, each recorded in a file of its own: the first, of NumberFormat,
-// DateTimeFormat and PluralRules, in golden.json.gz, and each of the others,
-// one per constructor built on go-intl, in golden-<name>.json.gz. To record
-// again, after changing a corpus or for a new browser:
-//
-//	go test ./intl -run TestGolden -args -golden.corpus   # writes corpus*.json
-//	node intl/testdata/chromium/record.cjs golden   # writes golden*.json.gz
-
 var (
-	goldenCorpus = flag.Bool("golden.corpus", false, "write testdata/chromium/corpus*.json and skip the comparison")
-	goldenRun    = flag.String("golden.run", "", "compare only the expressions matching this regular expression")
-	goldenShow   = flag.Int("golden.show", 40, "report at most this many unexplained differences")
+	goldenCorpus = flag.Bool("golden.corpus", false, "write the expressions of each golden set to testdata/chromium/corpus*.json and skip the comparison")
+	goldenRun    = flag.String("golden.run", "", "compare only the golden expressions that match this regular expression")
+	goldenShow   = flag.Int("golden.show", 40, "report at most this many unexplained golden differences")
 )
 
+// goldenDir holds what Chromium answered.
 var goldenDir = filepath.Join("testdata", "chromium")
 
-var (
-	goldenCalendar     = regexp.MustCompile(`-u-ca-(\w+)`)
-	goldenCalendarMore = regexp.MustCompile(`-u-ca-\w+-`) // with other keywords after it
-	goldenCalendarOpt  = regexp.MustCompile(`,?calendar:'(\w+)',?`)
-)
-
-// goldenOtherCalendar reports whether expr asks for a calendar other than the
-// Gregorian one, in a locale tag or in the calendar option.
-func goldenOtherCalendar(expr string) bool {
-	for _, re := range []*regexp.Regexp{goldenCalendar, goldenCalendarOpt} {
-		for _, m := range re.FindAllStringSubmatch(expr, -1) {
-			if m[1] != "gregory" {
-				return true
-			}
-		}
-	}
-	return false
+// goldenLocales are the locales the base set and numrange set ask about:
+// those tifa's users write most, and others for Indian grouping, other
+// digits, right-to-left scripts, a minimum grouping of 2, plural rules with
+// every category, currencies with patterns of their own (en-DE), ties of
+// date patterns (en-AU), and a language Chromium has no data for (az). The
+// order is fixed: the numrange corpus follows it.
+var goldenLocales = []string{
+	"en-US", "en-GB", "en-IN", "en-AU", "en-DE", "zh-CN", "zh-TW", "zh-HK", "ja", "ko", "de", "de-CH",
+	"fr", "fr-CA", "fr-CH", "es", "es-MX", "pt-BR", "pt-PT", "it", "ru", "pl", "uk", "cs", "nl", "sv",
+	"tr", "ar", "ar-EG", "he", "fa", "hi", "bn", "th", "vi", "id", "az",
 }
 
-// goldenDropCalendar returns expr without the calendars other than the
-// Gregorian one it asks for.
-func goldenDropCalendar(expr string) string {
-	expr = goldenCalendarMore.ReplaceAllStringFunc(expr, func(m string) string {
-		if m == "-u-ca-gregory-" {
-			return m
-		}
-		return "-u-"
-	})
-	expr = goldenCalendar.ReplaceAllStringFunc(expr, func(m string) string {
-		if m == "-u-ca-gregory" {
-			return m
-		}
-		return ""
-	})
-	return goldenCalendarOpt.ReplaceAllStringFunc(expr, func(m string) string {
-		if strings.Contains(m, "'gregory'") {
-			return m
-		}
-		if strings.HasPrefix(m, ",") && strings.HasSuffix(m, ",") {
-			return ","
-		}
-		return ""
-	})
+// jsList is s as a javascript array of strings.
+func jsList(s ...string) string {
+	b, err := json.Marshal(s)
+	if err != nil {
+		panic(err)
+	}
+	return string(b)
 }
 
-// goldenWordsAsChromium takes the json of word segments as the Segmenter
-// golden expressions write them, [segment, index, isWordLike], and returns
-// them with every word cut at its full stops and colons and every run of
-// Lao and Khmer words joined, which both break rules agree on.
-func goldenWordsAsChromium(answer string) (string, bool) {
-	var segs [][3]any
-	if json.Unmarshal([]byte(answer), &segs) != nil {
-		return "", false
+// goldenEval is expr as the recorder writes it down: its string, or ERR:
+// and the constructor of what it throws.
+func goldenEval(t *testing.T, vm *slowjs.VM, expr string) string {
+	t.Helper()
+	v, err := vm.Eval("(() => {try {return String("+expr+")} catch (e) {return 'ERR:' + e.constructor.name}})()", slowjs.EvalGlobal)
+	if err != nil {
+		return "EVAL FAILED: " + err.Error()
 	}
-
-	laoKhmer := func(s string) bool {
-		for _, r := range s {
-			if unicode.In(r, unicode.Lao, unicode.Khmer) {
-				return true
-			}
-		}
-		return false
-	}
-	var out []string
-	joinable := false
-	for _, seg := range segs {
-		s, _ := seg[0].(string)
-		word, _ := seg[2].(bool)
-		if word && laoKhmer(s) {
-			if joinable {
-				out[len(out)-1] += s
-				continue
-			}
-			out = append(out, s)
-			joinable = true
-			continue
-		}
-
-		joinable = false
-		if !word {
-			out = append(out, s)
-			continue
-		}
-
-		start := 0
-		for i, r := range s {
-			if r == '.' || r == ':' {
-				out = append(out, s[start:i], string(r))
-				start = i + 1
-			}
-		}
-		out = append(out, s[start:])
-	}
-	return strings.Join(out, "|"), true
+	s, _ := v.(string)
+	return s
 }
 
-// goldenDurationOverflow finds INT64_MIN nanoseconds as a number of
-// seconds, which x86-64 writes where arm64 writes INT64_MAX's.
-var goldenDurationOverflow = regexp.MustCompile(`-?(9223372036[.,]854775)808`)
-
-// goldenDifference is a difference from Chromium that is understood: the
-// expression, Chromium's answer and ours match a known cause. Anything else
-// fails the test. recorded holds Chromium's answer to every expression of
-// the corpus.
-type goldenDifference struct {
-	why   string
-	match func(expr, got, want string, recorded map[string]string) bool
-}
-
-var goldenDifferences = []goldenDifference{
-	{
-		// Chromium patches ICU's word break rules: a full stop is MidNum
-		// rather than MidNumLet, and a colon no MidLetter, so "U.S.A" and
-		// "a:b" are words apart there ("3.14" is one in both). And it ships
-		// Lao and Khmer dictionaries of its own, smaller than ICU's, which
-		// break some runs into other words. go-intl has ICU's rules and
-		// dictionaries. The answers have to be the same once words are cut
-		// at full stops and colons and runs of Lao and Khmer words are
-		// joined.
-		why: "Chromium's word break rules and Lao and Khmer dictionaries are its own",
-		match: func(expr, got, want string, recorded map[string]string) bool {
-			if !strings.Contains(expr, `granularity:"word"`) {
-				return false
-			}
-
-			g, ok := goldenWordsAsChromium(got)
-			if !ok {
-				return false
-			}
-
-			w, ok := goldenWordsAsChromium(want)
-			return ok && g == w
-		},
-	},
-	{
-		// Only the Gregorian calendar has data everywhere. buddhist and
-		// persian have it where they are the default (th, fa). Any other
-		// calendar is dropped from the locale and formats as Gregorian: the
-		// answer has to be Chromium's for the expression without it, which
-		// the corpus holds too.
-		why: "a calendar there is no data for formats as Gregorian",
-		match: func(expr, got, want string, recorded map[string]string) bool {
-			stripped, ok := recorded[goldenDropCalendar(expr)]
-			return goldenOtherCalendar(expr) && ok && got == stripped
-		},
-	},
-	{
-		// Chromium's ICU data has fewer names than CLDR: none for some
-		// languages, the numeric regions but 419, variants, and currencies
-		// that are no longer used, which it writes as their codes. It has
-		// none at all for ak, az, bs, kk, kok, pa, sd and uz, which it
-		// names as root and English do. And a few English names are its
-		// own: "Hong Kong" for "Hong Kong SAR China". go-intl has CLDR's
-		// names. Every name that differs has to differ that way.
-		why: "Chromium's ICU data has fewer names, and a few of its own",
-		match: func(expr, got, want string, recorded map[string]string) bool {
-			items, ok := dnItems(expr, got, want)
-			if !ok || len(items) == 0 {
-				return false
-			}
-
-			english := dnEnglish(expr, recorded)
-			for _, it := range items {
-				if !dnExplained(it, english) {
-					return false
-				}
-			}
-			return true
-		},
-	},
-	{
-		// go-intl falls back to other narrow names of fields than ICU does
-		// in two locales: de-CH's era and th's time zone, which Node 77
-		// writes as Chromium does.
-		why: "go-intl's narrow names of two fields",
-		match: func(expr, got, want string, recorded map[string]string) bool {
-			items, ok := dnItems(expr, got, want)
-			if !ok || len(items) == 0 {
-				return false
-			}
-
-			for _, it := range items {
-				if !dnGoIntlFields[[3]string{it.loc, it.style, it.code}] {
-					return false
-				}
-			}
-			return true
-		},
-	},
-	{
-		// V8 sums the sub-second units of a duration in nanoseconds, a
-		// double it converts to an int64, which C++ leaves undefined past
-		// 2**63: x86-64 gives INT64_MIN, where Node runs, and arm64, where
-		// this Chromium ran, INT64_MAX. go-intl converts as x86-64 does.
-		why: "V8 overflows durations of more than 2**63 nanoseconds by the machine's rules",
-		match: func(expr, got, want string, recorded map[string]string) bool {
-			if !strings.Contains(expr, "Intl.DurationFormat") {
-				return false
-			}
-
-			return goldenDurationOverflow.ReplaceAllString(got, "${1}807") == want
-		},
-	},
-	{
-		// go-intl lists the currencies that ICU names, which are more than
-		// Chromium's ICU data names, as with DisplayNames: those of the
-		// summary of Chromium's data.
-		why: "Chromium's ICU data names fewer currencies",
-		match: func(expr, got, want string, recorded map[string]string) bool {
-			if expr != `Intl.supportedValuesOf("currency").join()` {
-				return false
-			}
-
-			named := goldenChromiumCurrencies()
-			return want == strings.Join(slices.DeleteFunc(strings.Split(got, ","), func(c string) bool { return !slices.Contains(named, c) }), ",") &&
-				strings.Join(named, ",") == want
-		},
-	},
-	{
-		// ICU's zones of region 001 have five that go-intl's data puts in
-		// no region: the POSIX style zones, such as EST5EDT, and Factory.
-		why: "Chromium's ICU data has five zones more in 001",
-		match: func(expr, got, want string, recorded map[string]string) bool {
-			return localeDiffers(expr, got, want, func(field int, got, want string) bool {
-				return field == localeTimeZones && got == strings.Join(slices.DeleteFunc(strings.Split(want, ","), func(z string) bool {
-					return slices.Contains([]string{"CST6CDT", "EST5EDT", "Factory", "MST7MDT", "PST8PDT"}, z)
-				}), ",")
-			})
-		},
-	},
-	{
-		// V8 takes the baseName from ICU, which reads -u-va-posix as the
-		// variant POSIX, and keeps the extension in it too.
-		why: "V8 reads -u-va-posix as a variant",
-		match: func(expr, got, want string, recorded map[string]string) bool {
-			return localeDiffers(expr, got, want, func(field int, got, want string) bool {
-				return field == localeBaseName && want == got+"-u-va-posix" || field == localeVariants && want == "posix"
-			})
-		},
-	},
-	{
-		// Chromium's ICU, 78, reads the region of an unknown -u-rg- value,
-		// "xx", as a region without data, and takes the hour cycle and the
-		// week of the world, 001; go-intl, as Node's ICU, the locale's own.
-		// And it takes h12 for und-ZZ, where go-intl takes 001's h23.
-		why: "Chromium's ICU reads unknown regions otherwise",
-		match: func(expr, got, want string, recorded map[string]string) bool {
-			if !strings.Contains(expr, `Locale("en-u-rg-xxzzzz")`) && !strings.Contains(expr, `Locale("und-ZZ")`) &&
-				!strings.Contains(expr, `Locale("und-Zzzz-ZZ")`) {
-				return false
-			}
-
-			return localeDiffers(expr, got, want, func(field int, got, want string) bool {
-				return field == localeHourCycles || field == localeWeekInfo
-			})
-		},
-	},
-}
-
-// The fields of localeShow's answer, by index, that the differences of
-// Intl.Locale look at.
-const (
-	localeBaseName   = 1
-	localeVariants   = 5
-	localeHourCycles = 17
-	localeTimeZones  = 19
-	localeWeekInfo   = 21
-)
-
-// localeDiffers reports whether expr writes out an Intl.Locale with
-// localeShow and each field of got that is not want's is explained.
-func localeDiffers(expr, got, want string, explained func(field int, got, want string) bool) bool {
-	if !strings.HasPrefix(expr, localeShow) {
-		return false
-	}
-
-	g, w := strings.Split(got, " | "), strings.Split(want, " | ")
-	if len(g) != len(w) {
-		return false
-	}
-
-	for i := range g {
-		if g[i] != w[i] && !explained(i, g[i], w[i]) {
-			return false
-		}
-	}
-	return true
-}
-
-type golden struct {
-	Browser   string      `json:"browser"`
-	UserAgent string      `json:"userAgent"`
-	Cases     [][2]string `json:"cases"`
-}
-
-// goldenSets are the sets of expressions: name, which names the files of
-// all but the first, and the expressions.
+// goldenSets are the recorded sets, by name, and what writes the expressions
+// of each.
 var goldenSets = []struct {
 	name  string
 	exprs func() []string
@@ -354,50 +89,81 @@ var goldenSets = []struct {
 	{"numrange", numrangeExprs},
 }
 
-// goldenFile returns the name of a file of the set name: corpus.json for
-// "corpus", ".json" and "", corpus-collator.json for "collator".
-func goldenFile(base, ext, name string) string {
-	if name == "" {
-		return base + ext
+// goldenFile is the file of the set name: golden.json.gz for the base set,
+// golden-<name>.json.gz for the others, and the same with corpus and .json.
+func goldenFile(prefix, name, ext string) string {
+	if name != "" {
+		prefix += "-" + name
 	}
-
-	return base + "-" + name + ext
+	return filepath.Join(goldenDir, prefix+ext)
 }
 
-func readGolden(tb testing.TB, name string) *golden {
-	f, err := os.Open(filepath.Join(goldenDir, goldenFile("golden", ".json.gz", name)))
+// A goldenRecord is a set as the recorder writes it.
+type goldenRecord struct {
+	Browser   string      `json:"browser"`
+	UserAgent string      `json:"userAgent"`
+	Cases     [][2]string `json:"cases"`
+}
+
+func readGolden(name string) (*goldenRecord, error) {
+	b, err := os.ReadFile(goldenFile("golden", name, ".json.gz"))
 	if err != nil {
-		tb.Fatal(err)
+		return nil, err
 	}
 
-	defer f.Close()
-
-	z, err := gzip.NewReader(f)
+	z, err := gzip.NewReader(bytes.NewReader(b))
 	if err != nil {
-		tb.Fatal(err)
+		return nil, err
 	}
 
-	var g golden
-	if err := json.NewDecoder(z).Decode(&g); err != nil {
-		tb.Fatal(err)
+	defer z.Close()
+
+	var r goldenRecord
+	if err := json.NewDecoder(z).Decode(&r); err != nil {
+		return nil, err
+	}
+	return &r, nil
+}
+
+// goldenExprs are the expressions of the base set: those recorded last, so
+// that recording again changes the answers, not the questions.
+func goldenExprs() []string {
+	r, err := readGolden("")
+	if err != nil {
+		panic(err)
 	}
 
-	return &g
+	exprs := make([]string, len(r.Cases))
+	for i, c := range r.Cases {
+		exprs[i] = c[0]
+	}
+	return exprs
+}
+
+func writeCorpus(t *testing.T) {
+	for _, set := range goldenSets {
+		var b bytes.Buffer
+		enc := json.NewEncoder(&b)
+		enc.SetEscapeHTML(false)
+		enc.SetIndent("", "\t")
+		if err := enc.Encode(set.exprs()); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(goldenFile("corpus", set.name, ".json"), b.Bytes(), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
 }
 
 func TestGolden(t *testing.T) {
 	if *goldenCorpus {
-		for _, set := range goldenSets {
-			b, err := json.MarshalIndent(set.exprs(), "", "\t")
-			if err != nil {
-				t.Fatal(err)
-			}
+		writeCorpus(t)
+		t.Skip("wrote the corpus; record it with node intl/testdata/chromium/record.cjs golden")
+	}
 
-			if err := os.WriteFile(filepath.Join(goldenDir, goldenFile("corpus", ".json", set.name)), append(b, '\n'), 0o644); err != nil {
-				t.Fatal(err)
-			}
-		}
-		t.Skip("wrote corpus*.json")
+	var only *regexp.Regexp
+	if *goldenRun != "" {
+		only = regexp.MustCompile(*goldenRun)
 	}
 
 	for _, set := range goldenSets {
@@ -405,456 +171,247 @@ func TestGolden(t *testing.T) {
 		if name == "" {
 			name = "base"
 		}
-		t.Run(name, func(t *testing.T) { testGolden(t, set.name) })
+		t.Run(name, func(t *testing.T) {
+			r, err := readGolden(set.name)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			recorded := make(map[string]string, len(r.Cases))
+			for _, c := range r.Cases {
+				recorded[c[0]] = c[1]
+			}
+
+			vm := newVM(t)
+			same, total, unexplained := 0, 0, 0
+			reasons := map[string]int{}
+			for _, c := range r.Cases {
+				expr, want := c[0], c[1]
+				if only != nil && !only.MatchString(expr) {
+					continue
+				}
+
+				total++
+				got := goldenEval(t, vm, expr)
+				if got == want {
+					same++
+					continue
+				}
+
+				if reason := goldenExplained(expr, got, want, recorded); reason != "" {
+					reasons[reason]++
+					continue
+				}
+
+				unexplained++
+				if unexplained <= *goldenShow {
+					t.Errorf("%s\n got %q\nwant %q", expr, got, want)
+				}
+			}
+			if unexplained > *goldenShow {
+				t.Errorf("... and %d more", unexplained-*goldenShow)
+			}
+
+			explained := 0
+			for _, reason := range slices.Sorted(maps.Keys(reasons)) {
+				t.Logf("explained, %s: %d", reason, reasons[reason])
+				explained += reasons[reason]
+			}
+			t.Logf("%s: %d of %d the same, %d explained, %d unexplained", r.Browser, same, total, explained, unexplained)
+		})
 	}
 }
 
-func testGolden(t *testing.T, set string) {
-	g := readGolden(t, set)
-	recorded := map[string]string{}
-	for _, c := range g.Cases {
-		recorded[c[0]] = c[1]
+// goldenExplained is the reason got may differ from Chromium's want, or ""
+// when no known difference accounts for it. recorded holds every answer of
+// the set.
+func goldenExplained(expr, got, want string, recorded map[string]string) string {
+	switch {
+	case strings.Contains(expr, `granularity:"word"`) && sameWords(got, want):
+		// Chromium changed ICU's word rules: a period or a colon parts
+		// letters into words. And it breaks Lao and Khmer with dictionaries
+		// of its own, smaller ones.
+		return "word breaks"
+	case goldenOtherCalendar(expr) && calendarDropped(expr, got, recorded):
+		return "calendar without data, formatted as gregory"
 	}
-	if *goldenRun != "" {
-		re := regexp.MustCompile(*goldenRun)
-		cases := g.Cases[:0]
-		for _, c := range g.Cases {
-			if re.MatchString(c[0]) {
-				cases = append(cases, c)
-			}
+
+	if items, ok := dnItems(expr, got, want); ok && len(items) > 0 {
+		english := dnEnglish(expr, recorded)
+		if all(items, func(it dnItem) bool { return dnExplained(it, english) }) {
+			// Chromium's ICU data has fewer names, and some English names
+			// of its own.
+			return "display names"
 		}
-		g.Cases = cases
+		if all(items, func(it dnItem) bool { return dnGoIntlFields[[3]string{it.loc, it.style, it.code}] }) {
+			// The narrow names of de-CH's era and th's time zone fall back
+			// otherwise in go-intl than in ICU.
+			return "narrow field names"
+		}
 	}
-	vm := newVM(t)
-	byCause := map[string]int{}
-	var unexplained []string
-	for _, c := range g.Cases {
-		expr, want := c[0], c[1]
-		got := goldenEval(t, vm, expr)
-		if got == want {
+
+	switch {
+	case strings.Contains(expr, "Intl.DurationFormat") &&
+		durationOverflow.ReplaceAllString(got, "${1}807") == want:
+		// V8 turns a sum of nanoseconds past 2**63 into an int64 as the
+		// machine does: INT64_MIN on x86-64, INT64_MAX on the arm64 the
+		// recording ran on.
+		return "duration past 2**63"
+	case expr == `Intl.supportedValuesOf("currency").join()` && chromiumCurrencies(got) == want &&
+		want == strings.Join(goldenChromiumCurrencies(), ","):
+		return "currencies Chromium has no data for"
+	case localeDiffers(expr, got, want, func(i int, g, w string) bool {
+		return i == 19 && g == withoutZones(w, "CST6CDT", "EST5EDT", "Factory", "MST7MDT", "PST8PDT")
+	}):
+		return "Locale time zones of region 001"
+	case localeDiffers(expr, got, want, func(i int, g, w string) bool {
+		return i == 1 && w == g+"-u-va-posix" || i == 5 && w == "posix"
+	}):
+		return "Locale -u-va-posix"
+	case (strings.Contains(expr, `Locale("en-u-rg-xxzzzz")`) || strings.Contains(expr, `Locale("und-ZZ")`) ||
+		strings.Contains(expr, `Locale("und-Zzzz-ZZ")`)) &&
+		localeDiffers(expr, got, want, func(i int, g, w string) bool { return i == 17 || i == 21 }):
+		return "Locale of an unknown region"
+	}
+	return ""
+}
+
+func all[T any](l []T, f func(T) bool) bool {
+	for _, x := range l {
+		if !f(x) {
+			return false
+		}
+	}
+	return true
+}
+
+var durationOverflow = regexp.MustCompile(`-?(9223372036[.,]854775)808`)
+
+// sameWords reports whether got and want, each a list of segments, break
+// a text alike but for the word rules Chromium changed.
+func sameWords(got, want string) bool {
+	g, ok := wordBreaks(got)
+	if !ok {
+		return false
+	}
+	w, ok := wordBreaks(want)
+	return ok && g == w
+}
+
+// wordBreaks writes the segments of s, a json list of [segment, index,
+// isWordLike], with the words as Chromium would break them: the word-like
+// segments with Lao or Khmer in a row as one, and every other word-like
+// segment parted at each period and colon, the mark a segment of its own.
+func wordBreaks(s string) (string, bool) {
+	var segs [][3]any
+	if err := json.Unmarshal([]byte(s), &segs); err != nil {
+		return "", false
+	}
+
+	var out []string
+	run := ""
+	inRun := false
+	for _, seg := range segs {
+		text, ok := seg[0].(string)
+		if !ok {
+			return "", false
+		}
+
+		wordLike, _ := seg[2].(bool)
+		if wordLike && laoOrKhmer(text) {
+			run += text
+			inRun = true
 			continue
 		}
 
-		why := ""
-		for _, d := range goldenDifferences {
-			if d.match(expr, got, want, recorded) {
-				why = d.why
-				break
-			}
+		if inRun {
+			out = append(out, run)
+			run, inRun = "", false
 		}
-		byCause[why]++
-		if why == "" {
-			unexplained = append(unexplained, fmt.Sprintf("%s\n\tgot    %q\n\tbrowser %q", expr, got, want))
-		}
-	}
-	var causes []string
-	known := 0
-	for why, n := range byCause {
-		if why != "" {
-			known += n
-			causes = append(causes, fmt.Sprintf("%5d %s", n, why))
-		}
-	}
-	sort.Strings(causes)
-	for _, c := range causes {
-		t.Log(c)
-	}
-	for i, u := range unexplained {
-		if i == *goldenShow {
-			t.Errorf("... and %d more", len(unexplained)-i)
-			break
+		if !wordLike {
+			out = append(out, text)
+			continue
 		}
 
-		t.Error(u)
+		start := 0
+		for i, r := range text {
+			if r == '.' || r == ':' {
+				out = append(out, text[start:i], string(r))
+				start = i + 1
+			}
+		}
+		out = append(out, text[start:])
 	}
-	t.Logf("%s: %d of %d expressions match exactly, %d differ for a known reason, %d are unexplained",
-		g.Browser, len(g.Cases)-known-len(unexplained), len(g.Cases), known, len(unexplained))
+	if inRun {
+		out = append(out, run)
+	}
+	return strings.Join(out, "|"), true
 }
 
-// goldenEval evaluates expr, returning an error's type rather than failing:
-// the two implementations have to agree on what throws, not on the wording.
-func goldenEval(t *testing.T, vm *slowjs.VM, expr string) string {
-	t.Helper()
-	v, err := vm.Eval("(() => {try {return String("+expr+")} catch (e) {return 'ERR:' + e.constructor.name}})()", slowjs.EvalGlobal)
-	if err != nil {
-		return "EVAL FAILED: " + err.Error()
+func laoOrKhmer(s string) bool {
+	for _, r := range s {
+		if unicode.Is(unicode.Lao, r) || unicode.Is(unicode.Khmer, r) {
+			return true
+		}
 	}
-
-	s, _ := v.(string)
-	return s
+	return false
 }
 
-// goldenLocales are the locales the corpus formats in: the ones tifa users
-// are likely to write, plus enough others to cover Indian grouping, other
-// digits, right to left text, a minimum grouping of two, plural rules with
-// every category, a currency with a pattern of its own (en-DE), ties between
-// date patterns (en-AU) and a language Chromium has no data for (az).
-var goldenLocales = []string{
-	"en-US", "en-GB", "en-IN", "en-AU", "en-DE", "zh-CN", "zh-TW", "zh-HK", "ja", "ko", "de", "de-CH",
-	"fr", "fr-CA", "fr-CH", "es", "es-MX", "pt-BR", "pt-PT", "it", "ru", "pl", "uk", "cs", "nl", "sv",
-	"tr", "ar", "ar-EG", "he", "fa", "hi", "bn", "th", "vi", "id", "az",
+// calendarDropped reports whether got is what Chromium answered for expr
+// without its calendar.
+func calendarDropped(expr, got string, recorded map[string]string) bool {
+	want, ok := recorded[goldenDropCalendar(expr)]
+	return ok && got == want
 }
 
-func jsList(s ...string) string {
-	b, _ := json.Marshal(s)
-	return string(b)
+var (
+	calendarKey      = regexp.MustCompile(`-u-ca-(\w+)`)
+	calendarKeyAhead = regexp.MustCompile(`-u-ca-(\w+)-`)
+	calendarOption   = regexp.MustCompile(`calendar:'(\w+)'`)
+	calendarField    = regexp.MustCompile(`,?calendar:'(\w+)',?`)
+)
+
+// goldenOtherCalendar reports whether expr asks for a calendar other than
+// gregory, in a tag or in an option.
+func goldenOtherCalendar(expr string) bool {
+	for _, re := range []*regexp.Regexp{calendarKey, calendarOption} {
+		for _, m := range re.FindAllStringSubmatch(expr, -1) {
+			if m[1] != "gregory" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
-// goldenExprs returns the expressions to record and compare.
-func goldenExprs() (r []string) {
-	add := func(format string, args ...any) { r = append(r, fmt.Sprintf(format, args...)) }
-
-	// Locale negotiation.
-	for _, tag := range []string{
-		"zh", "zh-CN", "zh-Hans", "zh-Hans-CN", "zh-Hant", "zh-TW", "zh-Hant-TW", "zh-HK", "zh-SG", "zh-MO",
-		"en", "en-XX", "en-GB", "en-001", "en-u-nu-arab", "en-US-u-hc-h23", "ar-EG-u-nu-latn", "ar-u-nu-arab",
-		"de-u-co-phonebk", "ja-JP-u-ca-japanese", "th-TH", "th-u-nu-thai", "cy", "eu", "yue", "iw", "in",
-		"nb", "no", "sr", "sr-Latn", "sr-Latn-RS", "pt", "pt-PT", "es-419", "es-AR", "hi-Latn", "x-private",
-		"EN-us", "zh-hant-tw", "fil", "tl", "sh", "mo",
-	} {
-		for _, c := range []string{"NumberFormat", "DateTimeFormat", "PluralRules"} {
-			add(`new Intl.%s(%q).resolvedOptions().locale`, c, tag)
+// goldenDropCalendar is expr without the calendars other than gregory it
+// asks for.
+func goldenDropCalendar(expr string) string {
+	expr = calendarKeyAhead.ReplaceAllStringFunc(expr, func(m string) string {
+		if calendarKeyAhead.FindStringSubmatch(m)[1] == "gregory" {
+			return m
 		}
-	}
-	add(`JSON.stringify(Intl.getCanonicalLocales(%s))`, jsList("EN-us", "zh-hant-tw", "iw", "in-ID", "en-u-ca-gregory-nu-latn", "de-DE-u-co-phonebk", "sr-cyrl-rs", "und", "en-GB-oed"))
-	add(`JSON.stringify(Intl.NumberFormat.supportedLocalesOf(%s))`, jsList("zh-CN", "cy", "fr-CA", "yue", "ar-EG", "eu"))
-	add(`JSON.stringify(Intl.DateTimeFormat.supportedLocalesOf(%s))`, jsList("zh-TW", "cy", "ne-IN", "ja-JP"))
-	add(`JSON.stringify(Intl.PluralRules.supportedLocalesOf(%s))`, jsList("cy", "yue", "gd", "en-XX"))
-
-	// Numbers.
-	numberOptions := []string{
-		`{}`, `{maximumFractionDigits:2}`, `{minimumFractionDigits:2}`, `{maximumSignificantDigits:3}`,
-		`{style:'percent'}`, `{style:'percent',minimumFractionDigits:1}`,
-		`{style:'currency',currency:'USD'}`, `{style:'currency',currency:'EUR'}`, `{style:'currency',currency:'CNY'}`,
-		`{style:'currency',currency:'JPY'}`, `{style:'currency',currency:'TWD'}`, `{style:'currency',currency:'INR'}`,
-		`{style:'currency',currency:'GBP',currencyDisplay:'code'}`, `{style:'currency',currency:'USD',currencyDisplay:'narrowSymbol'}`,
-		`{style:'currency',currency:'EUR',currencyDisplay:'name'}`, `{style:'currency',currency:'USD',currencySign:'accounting'}`,
-		`{style:'currency',currency:'KRW'}`, `{style:'currency',currency:'CHF'}`,
-		`{style:'unit',unit:'kilometer'}`, `{style:'unit',unit:'kilometer',unitDisplay:'long'}`,
-		`{style:'unit',unit:'kilometer-per-hour'}`, `{style:'unit',unit:'liter',unitDisplay:'long'}`,
-		`{style:'unit',unit:'celsius'}`, `{style:'unit',unit:'megabyte'}`, `{style:'unit',unit:'day',unitDisplay:'long'}`,
-		`{style:'unit',unit:'hour',unitDisplay:'narrow'}`, `{style:'unit',unit:'percent'}`,
-		`{style:'unit',unit:'gigabyte-per-second'}`, `{style:'unit',unit:'kilogram',unitDisplay:'narrow'}`,
-		`{notation:'compact'}`, `{notation:'compact',compactDisplay:'long'}`,
-		`{notation:'compact',style:'currency',currency:'USD'}`,
-		`{notation:'scientific'}`, `{notation:'engineering'}`,
-		`{signDisplay:'always'}`, `{signDisplay:'exceptZero'}`,
-		`{useGrouping:false}`, `{useGrouping:'min2'}`, `{useGrouping:'always'}`,
-		`{numberingSystem:'arab'}`, `{numberingSystem:'latn'}`, `{numberingSystem:'hanidec'}`,
-	}
-	values := []string{"0", "-0", "1", "2", "5", "21", "1.5", "-1234.5678", "1234567.891", "0.005", "999999", "12345", "1000", "-1000", "1000000", "1e21", "NaN", "-Infinity"}
-	for _, l := range goldenLocales {
-		for _, o := range numberOptions {
-			add(`JSON.stringify(new Intl.NumberFormat(%q,%s).resolvedOptions())`, l, o)
-			for _, v := range values {
-				add(`new Intl.NumberFormat(%q,%s).format(%s)`, l, o, v)
-			}
-			add(`JSON.stringify(new Intl.NumberFormat(%q,%s).formatToParts(-1234567.891))`, l, o)
+		return "-u-"
+	})
+	expr = calendarKey.ReplaceAllStringFunc(expr, func(m string) string {
+		if calendarKey.FindStringSubmatch(m)[1] == "gregory" {
+			return m
 		}
-		add(`(1234.5).toLocaleString(%q)`, l)
-		add(`(123456789n).toLocaleString(%q)`, l)
-	}
-	add(`(1234.5).toLocaleString()`)
-
-	// Dates.
-	dateOptions := []string{
-		`{}`,
-		`{dateStyle:'full'}`, `{dateStyle:'long'}`, `{dateStyle:'medium'}`, `{dateStyle:'short'}`,
-		`{timeStyle:'full'}`, `{timeStyle:'long'}`, `{timeStyle:'medium'}`, `{timeStyle:'short'}`,
-		`{dateStyle:'full',timeStyle:'short'}`, `{dateStyle:'long',timeStyle:'medium'}`,
-		`{dateStyle:'medium',timeStyle:'short'}`, `{dateStyle:'short',timeStyle:'short'}`,
-		`{dateStyle:'medium',timeStyle:'short',hour12:true}`, `{dateStyle:'short',timeStyle:'long',hourCycle:'h23'}`,
-		`{year:'numeric',month:'long',day:'numeric'}`, `{year:'numeric',month:'short',day:'numeric'}`,
-		`{year:'numeric',month:'2-digit',day:'2-digit'}`, `{year:'2-digit',month:'numeric',day:'numeric'}`,
-		`{month:'short',day:'numeric'}`, `{month:'long',day:'numeric'}`, `{month:'numeric',day:'numeric'}`,
-		`{year:'numeric',month:'long'}`, `{year:'numeric',month:'numeric'}`, `{year:'numeric'}`,
-		`{month:'long'}`, `{month:'narrow'}`, `{day:'numeric'}`,
-		`{weekday:'long'}`, `{weekday:'short'}`, `{weekday:'narrow'}`,
-		`{weekday:'long',year:'numeric',month:'long',day:'numeric'}`, `{weekday:'short',month:'short',day:'numeric'}`,
-		`{weekday:'short',hour:'numeric',minute:'numeric'}`,
-		`{era:'short',year:'numeric'}`, `{era:'long',year:'numeric',month:'long',day:'numeric'}`,
-		`{hour:'numeric'}`, `{hour:'numeric',minute:'numeric'}`, `{hour:'2-digit',minute:'2-digit'}`,
-		`{hour:'numeric',minute:'numeric',second:'numeric'}`,
-		`{hour:'numeric',minute:'numeric',hour12:true}`, `{hour:'numeric',minute:'numeric',hour12:false}`,
-		`{hour:'numeric',minute:'numeric',hourCycle:'h11'}`, `{hour:'numeric',minute:'numeric',hourCycle:'h23'}`,
-		`{minute:'numeric',second:'numeric'}`, `{minute:'2-digit',second:'2-digit',fractionalSecondDigits:3}`,
-		`{hour:'numeric',dayPeriod:'short'}`, `{dayPeriod:'long'}`, `{hour:'numeric',minute:'numeric',dayPeriod:'narrow'}`,
-		`{timeZoneName:'short'}`, `{timeZoneName:'long'}`, `{timeZoneName:'shortOffset'}`, `{timeZoneName:'longOffset'}`,
-		`{timeZoneName:'shortGeneric'}`, `{timeZoneName:'longGeneric'}`,
-		`{hour:'numeric',minute:'numeric',timeZoneName:'short'}`,
-		`{year:'numeric',month:'numeric',day:'numeric',hour:'numeric',minute:'numeric',second:'numeric'}`,
-		`{month:'long',day:'numeric',hour:'numeric',minute:'numeric'}`,
-	}
-	instants := []string{"0", "1755324309123", "1741521600000", "1767225599999", "-62198755200000"}
-	zones := []string{"UTC", "Asia/Shanghai", "America/New_York", "Europe/Berlin", "Asia/Kolkata", "Asia/Tokyo", "America/Sao_Paulo"}
-	for li, l := range goldenLocales {
-		for oi, o := range dateOptions {
-			zone := zones[(li+oi)%len(zones)]
-			opts := strings.TrimSuffix(o, "}")
-			if opts != "{" {
-				opts += ","
-			}
-			opts += "timeZone:'" + zone + "'}"
-			add(`JSON.stringify(new Intl.DateTimeFormat(%q,%s).resolvedOptions())`, l, opts)
-			for _, at := range instants {
-				add(`new Intl.DateTimeFormat(%q,%s).format(%s)`, l, opts, at)
-			}
-			add(`JSON.stringify(new Intl.DateTimeFormat(%q,%s).formatToParts(1755324309123))`, l, opts)
+		return ""
+	})
+	return calendarField.ReplaceAllStringFunc(expr, func(m string) string {
+		if calendarField.FindStringSubmatch(m)[1] == "gregory" {
+			return m
 		}
-		for _, m := range []string{"toLocaleString", "toLocaleDateString", "toLocaleTimeString"} {
-			add(`new Date(1755324309123).%s(%q)`, m, l)
-			add(`new Date(1755324309123).%s(%q,{timeZone:'Asia/Shanghai'})`, m, l)
+		if strings.HasPrefix(m, ",") && strings.HasSuffix(m, ",") {
+			return ","
 		}
-		// Every hour of a day, for the day periods and the hour cycle.
-		for h := 0; h < 24; h += 3 {
-			add(`new Intl.DateTimeFormat(%q,{hour:'numeric',minute:'numeric',timeZone:'UTC'}).format(%d)`, l, h*3600000+1800000)
-			add(`new Intl.DateTimeFormat(%q,{hour:'numeric',dayPeriod:'long',timeZone:'UTC'}).format(%d)`, l, h*3600000)
-		}
-	}
-	for _, m := range []string{"toLocaleString", "toLocaleDateString", "toLocaleTimeString"} {
-		add(`new Date(1755324309123).%s()`, m)
-	}
-	add(`JSON.stringify(new Intl.DateTimeFormat().resolvedOptions())`)
-
-	// Hour cycle keywords, numbering systems and calendars in the locale.
-	for _, l := range []string{
-		"en-US-u-hc-h23", "en-GB-u-hc-h12", "ja-JP-u-hc-h11", "zh-CN-u-hc-h12", "de-u-hc-h24", "ko-KR-u-hc-h23",
-		"ja-JP-u-ca-japanese", "zh-TW-u-ca-roc", "en-u-ca-buddhist", "th-u-ca-gregory", "fa-u-ca-gregory",
-		"ar-SA", "ar-u-ca-islamic", "he-u-ca-hebrew", "zh-u-ca-chinese", "en-u-ca-persian", "th-TH-u-nu-thai",
-		"hi-u-nu-deva", "zh-u-nu-hanidec", "ar-EG-u-nu-latn", "fa-AF", "ps", "my", "ne", "mr",
-	} {
-		for _, o := range []string{
-			`{}`, `{dateStyle:'full'}`, `{dateStyle:'medium',timeStyle:'short'}`, `{timeStyle:'full'}`,
-			`{hour:'numeric',minute:'numeric'}`, `{hour:'numeric',hour12:true}`, `{hour:'numeric',hour12:false}`,
-			`{hour:'numeric',hourCycle:'h23'}`, `{hour:'numeric',hourCycle:'h11'}`, `{year:'numeric',era:'short'}`,
-			`{year:'numeric',month:'long'}`, `{calendar:'gregory',dateStyle:'long'}`,
-		} {
-			opts := strings.TrimSuffix(o, "}")
-			if opts != "{" {
-				opts += ","
-			}
-			opts += "timeZone:'UTC'}"
-			add(`JSON.stringify(new Intl.DateTimeFormat(%q,%s).resolvedOptions())`, l, opts)
-			add(`new Intl.DateTimeFormat(%q,%s).format(1755324309123)`, l, opts)
-			add(`new Intl.DateTimeFormat(%q,%s).format(0)`, l, opts)
-		}
-	}
-
-	// Years before AD 1 and at the ends of the range.
-	for _, l := range []string{"en-US", "zh-CN", "ja", "de", "th", "fa", "ar"} {
-		for _, o := range []string{`{}`, `{era:'short',year:'numeric'}`, `{dateStyle:'full'}`, `{weekday:'short',year:'numeric',month:'short',day:'numeric'}`} {
-			opts := strings.TrimSuffix(o, "}")
-			if opts != "{" {
-				opts += ","
-			}
-			opts += "timeZone:'UTC'}"
-			for _, at := range []string{"-77931370800000", "-8.64e15", "8.64e15", "-62135596800001"} {
-				add(`new Intl.DateTimeFormat(%q,%s).format(%s)`, l, opts, at)
-			}
-		}
-	}
-
-	// Time zone names: many zones, in the locales with the most names.
-	nameZones := []string{
-		"America/Los_Angeles", "America/Chicago", "America/Denver", "America/Phoenix", "America/Anchorage",
-		"Pacific/Honolulu", "America/Toronto", "America/Mexico_City", "America/Argentina/Buenos_Aires",
-		"America/St_Johns", "Europe/London", "Europe/Dublin", "Europe/Paris", "Europe/Moscow", "Europe/Istanbul",
-		"Africa/Cairo", "Africa/Casablanca", "Africa/Lagos", "Asia/Jerusalem", "Asia/Tehran", "Asia/Dubai",
-		"Asia/Karachi", "Asia/Kathmandu", "Asia/Dhaka", "Asia/Bangkok", "Asia/Ho_Chi_Minh", "Asia/Jakarta",
-		"Asia/Singapore", "Asia/Hong_Kong", "Asia/Taipei", "Asia/Seoul", "Australia/Sydney", "Australia/Perth",
-		"Pacific/Auckland", "Pacific/Chatham", "Asia/Macau", "Africa/Abidjan", "Atlantic/Reykjavik", "Asia/Calcutta", "US/Eastern", "Etc/GMT+5", "Etc/UTC", "GMT",
-		"+05:30", "-08:00",
-	}
-	for _, l := range []string{"en-US", "en-GB", "zh-CN", "zh-TW", "ja", "de", "fr", "es", "pt-BR", "ru", "ko", "ar"} {
-		for _, z := range nameZones {
-			for _, n := range []string{"short", "long", "shortOffset", "longOffset", "shortGeneric", "longGeneric"} {
-				for _, at := range []string{"1755324309123", "1767225599999"} {
-					add(`new Intl.DateTimeFormat(%q,{timeZoneName:'%s',timeZone:'%s'}).format(%s)`, l, n, z, at)
-				}
-			}
-		}
-	}
-	for _, z := range nameZones {
-		add(`new Intl.DateTimeFormat('en',{timeZone:'%s'}).resolvedOptions().timeZone`, z)
-	}
-
-	// Date errors.
-	for _, src := range []string{
-		`new Intl.DateTimeFormat('en',{dateStyle:'short',hour:'numeric'})`,
-		`new Date(0).toLocaleDateString('en',{timeStyle:'short'})`,
-		`new Date(0).toLocaleTimeString('en',{dateStyle:'short'})`,
-		`new Intl.DateTimeFormat('en').format(NaN)`, `new Intl.DateTimeFormat('en').format(8.64e15+1)`,
-		`new Intl.DateTimeFormat('en',{calendar:'x'})`, `new Intl.DateTimeFormat('en',{hourCycle:'h25'})`,
-		`new Intl.DateTimeFormat('en',{fractionalSecondDigits:4})`, `new Intl.DateTimeFormat('en',{dateStyle:'tiny'})`,
-		`new Intl.DateTimeFormat('en',{timeZone:'+25:00'})`,
-	} {
-		add(`(() => {try {%s; return 'ok'} catch (e) {return e.constructor.name}})()`, src)
-	}
-
-	r = append(r, enUSExprs()...)
-
-	// Plural rules.
-	pluralValues := []string{"0", "1", "2", "3", "4", "5", "6", "7", "11", "12", "21", "22", "100", "101", "1000000", "0.5", "1.5", "2.5", "-1"}
-	for _, l := range []string{"en", "fr", "ru", "pl", "cs", "ar", "he", "cy", "lt", "ja", "zh", "ko", "de", "pt", "pt-PT", "es", "it", "hi", "uk", "ga", "sl"} {
-		for _, o := range []string{`{}`, `{type:'ordinal'}`, `{minimumFractionDigits:1}`, `{maximumSignificantDigits:1}`} {
-			add(`JSON.stringify(new Intl.PluralRules(%q,%s).resolvedOptions())`, l, o)
-			for _, v := range pluralValues {
-				add(`new Intl.PluralRules(%q,%s).select(%s)`, l, o, v)
-			}
-		}
-		add(`new Intl.PluralRules(%q).selectRange(1,2)`, l)
-		add(`new Intl.PluralRules(%q).selectRange(0,1)`, l)
-		add(`new Intl.PluralRules(%q).selectRange(1,5)`, l)
-	}
-
-	// Errors.
-	for _, src := range []string{
-		`new Intl.NumberFormat('en-')`, `new Intl.NumberFormat('a')`, `new Intl.NumberFormat('en-US-u')`,
-		`new Intl.NumberFormat('en',{style:'unit',unit:'furlong'})`, `new Intl.NumberFormat('en',{style:'unit'})`,
-		`new Intl.NumberFormat('en',{numberingSystem:'xx'})`, `new Intl.DateTimeFormat('en',{timeZone:'Mars/Olympus'})`,
-		`new Intl.PluralRules('en',{type:'cardinalish'})`, `Intl.PluralRules('en')`,
-	} {
-		add(`(() => {try {%s; return 'ok'} catch (e) {return e.constructor.name}})()`, src)
-	}
-
-	// An expression in a calendar there is no data for is compared with
-	// Chromium's answer without that calendar, so record that one too.
-	for _, e := range r {
-		if goldenOtherCalendar(e) {
-			r = append(r, goldenDropCalendar(e))
-		}
-	}
-
-	seen := map[string]bool{}
-	out := r[:0]
-	for _, e := range r {
-		if !seen[e] {
-			seen[e] = true
-			out = append(out, e)
-		}
-	}
-	return out
-}
-
-// enUSExprs returns en-US in depth: every option across values and instants
-// chosen to hit the edges, a DST switch in both directions, a half hour and a
-// three quarter hour zone, a value that rounds up into another magnitude,
-// zero, NaN and both infinities.
-func enUSExprs() (r []string) {
-	dateOptions := []string{
-		`{}`,
-		`{dateStyle:'full'}`, `{dateStyle:'long'}`, `{dateStyle:'medium'}`, `{dateStyle:'short'}`,
-		`{timeStyle:'full'}`, `{timeStyle:'long'}`, `{timeStyle:'medium'}`, `{timeStyle:'short'}`,
-		`{dateStyle:'full',timeStyle:'full'}`, `{dateStyle:'long',timeStyle:'medium'}`,
-		`{dateStyle:'medium',timeStyle:'short'}`, `{dateStyle:'short',timeStyle:'short'}`,
-		`{year:'numeric'}`, `{year:'2-digit'}`, `{month:'numeric'}`, `{month:'2-digit'}`,
-		`{month:'long'}`, `{month:'short'}`, `{month:'narrow'}`, `{day:'numeric'}`,
-		`{weekday:'long'}`, `{weekday:'short'}`, `{weekday:'narrow'}`,
-		`{year:'numeric',month:'long'}`, `{year:'numeric',month:'numeric'}`,
-		`{month:'numeric',day:'numeric'}`, `{month:'long',day:'numeric'}`,
-		`{year:'numeric',month:'long',day:'numeric'}`, `{year:'numeric',month:'short',day:'numeric'}`,
-		`{year:'numeric',month:'2-digit',day:'2-digit'}`,
-		`{weekday:'long',year:'numeric',month:'long',day:'numeric'}`,
-		`{weekday:'short',month:'numeric',day:'numeric'}`,
-		`{year:'numeric',era:'short'}`, `{year:'numeric',era:'long'}`,
-		`{hour:'numeric'}`, `{hour:'2-digit'}`, `{hour:'numeric',minute:'numeric'}`,
-		`{hour:'numeric',minute:'2-digit'}`, `{hour:'numeric',minute:'numeric',second:'numeric'}`,
-		`{hour:'numeric',minute:'numeric',hour12:false}`, `{hour:'numeric',minute:'numeric',hour12:true}`,
-		`{hour:'numeric',minute:'numeric',hourCycle:'h23'}`, `{hour:'numeric',minute:'numeric',hourCycle:'h11'}`,
-		`{hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}`,
-		`{hour:'numeric',minute:'numeric',second:'numeric',fractionalSecondDigits:3}`,
-		`{hour:'numeric',minute:'numeric',second:'numeric',fractionalSecondDigits:1}`,
-		`{minute:'numeric',second:'numeric'}`,
-		`{timeZoneName:'short'}`, `{timeZoneName:'shortOffset'}`, `{timeZoneName:'longOffset'}`,
-		`{hour:'numeric',timeZoneName:'short'}`,
-		`{year:'numeric',month:'numeric',day:'numeric',hour:'numeric',minute:'numeric',second:'numeric'}`,
-		`{month:'long',day:'numeric',hour:'numeric'}`, `{month:'short',day:'numeric',hour:'numeric'}`,
-		`{dayPeriod:'short'}`, `{hour:'numeric',dayPeriod:'short'}`,
-	}
-	instants := []string{
-		"0",
-		"1000000000000",
-		"1755300000000",
-		"1741503600000", // 2025-03-09T07:00:00Z, a US DST switch.
-		"1762063200000", // 2025-11-02T06:00:00Z, back again.
-		"1500",
-		"-1000000000000",
-	}
-	zones := []string{
-		"'UTC'", "'America/New_York'", "'Europe/Prague'",
-		"'Asia/Kolkata'",     // A half hour offset.
-		"'Australia/Sydney'", // DST the other way around.
-		"'Pacific/Chatham'",  // Three quarters of an hour.
-	}
-	for i, opts := range dateOptions {
-		for j, at := range instants {
-			o := strings.TrimSuffix(opts, "}")
-			if o != "{" {
-				o += ","
-			}
-			o += "timeZone:" + zones[(i+j)%len(zones)] + "}"
-			r = append(r,
-				fmt.Sprintf(`new Intl.DateTimeFormat('en-US',%s).format(new Date(%s))`, o, at),
-				fmt.Sprintf(`JSON.stringify(new Intl.DateTimeFormat('en-US',%s).formatToParts(new Date(%s)))`, o, at),
-				fmt.Sprintf(`JSON.stringify(new Intl.DateTimeFormat('en-US',%s).resolvedOptions())`, o),
-			)
-		}
-	}
-	for _, opts := range dateOptions {
-		for _, m := range []string{"toLocaleString", "toLocaleDateString", "toLocaleTimeString"} {
-			r = append(r, fmt.Sprintf(`new Date(1755300000000).%s('en-US',%s)`, m, opts))
-		}
-	}
-
-	numberOptions := []string{
-		`{}`, `{useGrouping:false}`, `{useGrouping:'min2'}`, `{useGrouping:'always'}`,
-		`{minimumFractionDigits:2}`, `{maximumFractionDigits:0}`, `{maximumFractionDigits:1}`,
-		`{maximumFractionDigits:5}`, `{minimumFractionDigits:2,maximumFractionDigits:4}`,
-		`{minimumIntegerDigits:3}`, `{minimumSignificantDigits:3}`, `{maximumSignificantDigits:2}`,
-		`{maximumSignificantDigits:4}`, `{minimumSignificantDigits:2,maximumSignificantDigits:5}`,
-		`{style:'percent'}`, `{style:'percent',maximumFractionDigits:2}`, `{style:'percent',minimumFractionDigits:1}`,
-		`{style:'currency',currency:'USD'}`, `{style:'currency',currency:'EUR'}`,
-		`{style:'currency',currency:'JPY'}`, `{style:'currency',currency:'GBP'}`,
-		`{style:'currency',currency:'CAD'}`, `{style:'currency',currency:'CAD',currencyDisplay:'narrowSymbol'}`,
-		`{style:'currency',currency:'USD',currencyDisplay:'code'}`,
-		`{style:'currency',currency:'USD',currencySign:'accounting'}`, `{style:'currency',currency:'BHD'}`,
-		`{style:'unit',unit:'liter'}`, `{style:'unit',unit:'kilometer'}`,
-		`{style:'unit',unit:'kilometer-per-hour'}`, `{style:'unit',unit:'byte'}`,
-		`{style:'unit',unit:'megabyte',unitDisplay:'long'}`, `{style:'unit',unit:'day',unitDisplay:'long'}`,
-		`{style:'unit',unit:'celsius',unitDisplay:'narrow'}`,
-		`{notation:'compact'}`, `{notation:'compact',compactDisplay:'long'}`,
-		`{notation:'scientific'}`, `{notation:'engineering'}`,
-		`{signDisplay:'always'}`, `{signDisplay:'never'}`, `{signDisplay:'exceptZero'}`, `{signDisplay:'negative'}`,
-		`{maximumFractionDigits:0,roundingMode:'ceil'}`, `{maximumFractionDigits:0,roundingMode:'floor'}`,
-		`{maximumFractionDigits:0,roundingMode:'expand'}`, `{maximumFractionDigits:0,roundingMode:'trunc'}`,
-		`{maximumFractionDigits:0,roundingMode:'halfCeil'}`, `{maximumFractionDigits:0,roundingMode:'halfFloor'}`,
-		`{maximumFractionDigits:0,roundingMode:'halfTrunc'}`, `{maximumFractionDigits:0,roundingMode:'halfEven'}`,
-		`{maximumFractionDigits:2,roundingMode:'halfEven'}`, `{maximumFractionDigits:2,roundingMode:'expand'}`,
-		`{minimumFractionDigits:2,trailingZeroDisplay:'stripIfInteger'}`,
-		`{maximumSignificantDigits:3,roundingMode:'trunc'}`,
-	}
-	values := []string{
-		"0", "-0", "1", "-1", "0.5", "1.005", "2.5", "3.5", "1234.5678", "1234567.891",
-		"999999", "1000", "1e21", "1e-7", "123456789", "-1234.5", "NaN", "Infinity",
-		"-Infinity", "0.0001", "12345", "99.995", "1e6", "1e9",
-	}
-	for _, opts := range numberOptions {
-		for _, v := range values {
-			r = append(r,
-				fmt.Sprintf(`new Intl.NumberFormat('en-US',%s).format(%s)`, opts, v),
-				fmt.Sprintf(`(%s).toLocaleString('en-US',%s)`, v, opts),
-			)
-		}
-		r = append(r,
-			fmt.Sprintf(`JSON.stringify(new Intl.NumberFormat('en-US',%s).resolvedOptions())`, opts),
-			fmt.Sprintf(`JSON.stringify(new Intl.NumberFormat('en-US',%s).formatToParts(-1234.5678))`, opts),
-		)
-	}
-	return r
+		return ""
+	})
 }
 
 func TestGoldenDropCalendar(t *testing.T) {
-	for _, test := range [][2]string{
+	for _, tc := range [][2]string{
 		{`new Intl.DateTimeFormat("ja-JP-u-ca-japanese",{timeZone:'UTC'})`, `new Intl.DateTimeFormat("ja-JP",{timeZone:'UTC'})`},
 		{`new Intl.DateTimeFormat("en-u-ca-buddhist-hc-h23")`, `new Intl.DateTimeFormat("en-u-hc-h23")`},
 		{`new Intl.DateTimeFormat("en-u-ca-gregory-nu-latn")`, `new Intl.DateTimeFormat("en-u-ca-gregory-nu-latn")`},
@@ -864,8 +421,57 @@ func TestGoldenDropCalendar(t *testing.T) {
 		{`new Intl.DateTimeFormat('en',{year:'numeric',calendar:'roc',month:'long'})`, `new Intl.DateTimeFormat('en',{year:'numeric',month:'long'})`},
 		{`new Intl.DateTimeFormat('en',{calendar:'gregory'})`, `new Intl.DateTimeFormat('en',{calendar:'gregory'})`},
 	} {
-		if got := goldenDropCalendar(test[0]); got != test[1] {
-			t.Errorf("%s\n\tgot  %s\n\twant %s", test[0], got, test[1])
+		if got := goldenDropCalendar(tc[0]); got != tc[1] {
+			t.Errorf("%s\n got %s\nwant %s", tc[0], got, tc[1])
 		}
 	}
+}
+
+// chromiumCurrencies is the list s of currencies with only those Chromium
+// has data for.
+func chromiumCurrencies(s string) string {
+	known := map[string]bool{}
+	for _, c := range goldenChromiumCurrencies() {
+		known[c] = true
+	}
+
+	var kept []string
+	for _, c := range strings.Split(s, ",") {
+		if known[c] {
+			kept = append(kept, c)
+		}
+	}
+	return strings.Join(kept, ",")
+}
+
+// withoutZones is the list s of time zones without the zones drop.
+func withoutZones(s string, drop ...string) string {
+	var kept []string
+	for _, z := range strings.Split(s, ",") {
+		if !slices.Contains(drop, z) {
+			kept = append(kept, z)
+		}
+	}
+	return strings.Join(kept, ",")
+}
+
+// localeDiffers reports whether expr writes out a Locale with localeShow and
+// every field where got and want differ is one that ok accepts, by its
+// index: 1 is baseName, 5 variants, 17 hourCycles, 19 timeZones and 21
+// weekInfo.
+func localeDiffers(expr, got, want string, ok func(i int, got, want string) bool) bool {
+	if !strings.HasPrefix(expr, localeShow) {
+		return false
+	}
+
+	g, w := strings.Split(got, " | "), strings.Split(want, " | ")
+	if len(g) != len(w) {
+		return false
+	}
+	for i := range g {
+		if g[i] != w[i] && !ok(i, g[i], w[i]) {
+			return false
+		}
+	}
+	return true
 }
