@@ -11,11 +11,11 @@ read_when:
 ## Where the code comes from
 
 - **The engine** is [QuickJS](https://bellard.org/quickjs), the JavaScript engine in C by Fabrice Bellard and Charlie Gordon, at the release of 2026-06-04, commit `3d5e064e9dd67c70f7962836505a7fa067bf0a4e`. `engine/` holds that C with the changes of liustack/slowjs on top. `internal/goasm/gen` compiles it to Go assembly, which is checked in. The generated files are never edited by hand, and `make check-gen` fails when they are not what the generator makes. The test262 suite gives 33 known failures, listed in `engine/test/test262_errors.txt`.
-- **The Go API** (`VM`, `Value`, `Eval`, `Call` and the rest at the root of the module) started from [modernc.org/quickjs](https://gitlab.com/cznic/quickjs) v0.25.0 (2026-10-01), commit `ea7b851` in this repository's history, and has been rewritten and extended since. Some of its names, comments and tests remain. Until v0.28 the engine under it was [modernc.org/libquickjs](https://gitlab.com/cznic/libquickjs), QuickJS translated to Go by ccgo. That engine is gone, and so is its Go.
+- **The Go API** (`VM`, `Value`, `Eval`, `Call` and the rest at the root of the module) started from [modernc.org/quickjs](https://gitlab.com/cznic/quickjs) v0.25.0 (2026-10-01), commit `ea7b851` in this repository's history. Its code has since been replaced in full by code written for liustack/slowjs, so none of it remains. Until v0.28 the engine under it was [modernc.org/libquickjs](https://gitlab.com/cznic/libquickjs), QuickJS translated to Go by ccgo. That engine is gone, and so is its Go.
 - **The Go side of `Intl` and `Temporal`** (`internal/gointl`) was copied from [go-intl](https://github.com/go-quickjs/go-intl) v0.6.1, commit `59e7b7a9f80bb90458f314e7d99efa4fb592dc3b`, once, and is changed here freely since: no later go-intl code is taken. Only its data is: the packs are made from the `data/` directory of the go-intl release in `internal/gointl/UPSTREAM`, cut to the locales of Chromium, with the time zones of `internal/gointl/qjstz` (see [upgrading.md](upgrading.md#updating-the-data-of-intl-internalgointl)).
 - **Everything else** is written for liustack/slowjs, or comes from a project named in [NOTICE.md](../NOTICE.md): the allocator (TLSF), the small libc of the engine (musl), the locale data and the Go side of `Intl` and `Temporal` (go-intl, ICU, Chromium).
 
-The authors of liustack/slowjs are in [AUTHORS-LIUSTACK](../AUTHORS-LIUSTACK). The `AUTHORS` file of modernc.org/quickjs stays in the repository as that project has it: [AUTHORS](../AUTHORS).
+The authors of liustack/slowjs are in [AUTHORS-LIUSTACK](../AUTHORS-LIUSTACK).
 
 ## Taking QuickJS commits
 
@@ -52,4 +52,4 @@ v0.30.0 to v0.30.7 were published as `github.com/liustack/quickjs`, and from v0.
 
 ## Credits
 
-The engine is Fabrice Bellard's and Charlie Gordon's QuickJS. The Go API began as modernc.org/quickjs, by the quickjs-go authors Jan Mercl and Dan Kortschak, who also translated QuickJS to Go with ccgo as modernc.org/libquickjs. liustack/slowjs thanks them for the API it started from. Their license files stay in the repository, as the code that remains from them needs: [LICENSE](../LICENSE) and [LICENSE-MODERNC-LIBQUICKJS](../LICENSE-MODERNC-LIBQUICKJS), and [LICENSE-LIBQUICKJS](../LICENSE-LIBQUICKJS) for QuickJS.
+The engine is Fabrice Bellard's and Charlie Gordon's QuickJS. The Go API began as modernc.org/quickjs, by the quickjs-go authors Jan Mercl and Dan Kortschak, who also translated QuickJS to Go with ccgo as modernc.org/libquickjs. liustack/slowjs thanks them for the API it started from. None of their code remains in the repository. QuickJS's license is in [engine/LICENSE](../engine/LICENSE), also at the root as [LICENSE-LIBQUICKJS](../LICENSE-LIBQUICKJS).

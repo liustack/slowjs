@@ -8,6 +8,7 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 
 - The zero `Value` is `undefined` to `Value.Any` and `Value.IsUndefined` too, as it already was as an argument, as `this` and as a property value: `Any` returned the number 0 and `IsUndefined` false.
 - `RegisterFunc` with a nil function returns the error `NAME is not a function`, where it panicked.
+- The code that came from modernc.org/quickjs is all replaced by code written for liustack/slowjs, so the module is MIT apart from the third-party parts that NOTICE.md lists, and its BSD-3-Clause license files are gone.
 
 ### Fixed
 

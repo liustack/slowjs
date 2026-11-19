@@ -1,8 +1,7 @@
 # This file lists the authors of github.com/liustack/slowjs (named
 # github.com/liustack/quickjs from v0.30.0 to v0.30.7) for copyright purposes:
 # "The liustack/slowjs Authors" in LICENSE-MIT and in the headers of the files
-# written for liustack/slowjs. AUTHORS lists the authors of
-# modernc.org/quickjs, whose code some files still hold, as that project has it.
+# written for liustack/slowjs.
 #
 # Names should be added to this file as:
 #     Name or Organization <email address>

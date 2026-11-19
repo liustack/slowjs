@@ -2,7 +2,7 @@
 
 ## Goal
 
-`github.com/liustack/slowjs` is a pure Go JavaScript engine from QuickJS, built and kept for [tifa](https://github.com/liustack/tifa), a Go framework that renders React pages to HTML inside the Go process. It was named `github.com/liustack/slowjs` from v0.28.0 to v0.29.11 and is again from v0.31.0. From v0.30.0 to v0.30.7 it was named `github.com/liustack/quickjs`, and those versions stay at that path. The Go API at the root started from `modernc.org/quickjs`. The engine is QuickJS in C (`engine/`), compiled by LLVM to Go assembly that is checked in, so building needs no C compiler. Until v0.28 the engine was QuickJS translated to Go by ccgo, and that engine is gone. liustack/slowjs makes renders faster, makes limits hold (a timeout or running out of memory ends the call whatever the script does), and makes output the same on every machine.
+`github.com/liustack/slowjs` is a pure Go JavaScript engine from QuickJS, built and kept for [tifa](https://github.com/liustack/tifa), a Go framework that renders React pages to HTML inside the Go process. It was named `github.com/liustack/slowjs` from v0.28.0 to v0.29.11 and is again from v0.31.0. From v0.30.0 to v0.30.7 it was named `github.com/liustack/quickjs`, and those versions stay at that path. The Go API at the root started from `modernc.org/quickjs`, and its code has since been written anew for liustack/slowjs. The engine is QuickJS in C (`engine/`), compiled by LLVM to Go assembly that is checked in, so building needs no C compiler. Until v0.28 the engine was QuickJS translated to Go by ccgo, and that engine is gone. liustack/slowjs makes renders faster, makes limits hold (a timeout or running out of memory ends the call whatever the script does), and makes output the same on every machine.
 
 ## Hard constraints
 
@@ -64,8 +64,8 @@ liustack/slowjs does not accept pull requests: [CONTRIBUTING.md](CONTRIBUTING.md
   // root of this repository.
   ```
 
-- A file that came from upstream (QuickJS, modernc.org/quickjs, go-intl), a generated file, and a new file made from one of them keep the upstream header and license, however much liustack/slowjs changes them.
-- Add a new author of liustack/slowjs to `AUTHORS-LIUSTACK`. `AUTHORS` lists the authors of modernc.org/quickjs and stays as that project has it.
+- A file that came from upstream (QuickJS, go-intl), a generated file, and a new file made from one of them keep the upstream header and license, however much liustack/slowjs changes them. No code of modernc.org/quickjs remains: do not bring any back.
+- Add a new author of liustack/slowjs to `AUTHORS-LIUSTACK`.
 - New code or data from a third party keeps its license file next to it and gets a row in [NOTICE.md](NOTICE.md). Say MIT only together with what stays under the upstream licenses.
 
 ## Draft folder
