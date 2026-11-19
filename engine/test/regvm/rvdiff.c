@@ -32,7 +32,7 @@
    A PATH is a script (.js, or .mjs for a module) or a folder, read for
    scripts with no recursion into its subfolders. A script names options of
    jsrun on a line "// jsrun: OPTIONS" (-raw, -result, -call, -no-fused-ops,
-   -regexp-cache=N,BYTES), and -strict, which puts "use strict" before the
+   -locale-args, -regexp-cache=N,BYTES), and -strict, which puts "use strict" before the
    script (the pass converts only strict functions). Options given before
    the paths apply to every script. -cases FILE reads lines "SCRIPT
    [OPTIONS]" as compare.sh does.
@@ -452,6 +452,8 @@ static int child_run(void *p)
         JS_SetRegExpCache(rt, opt_regexp_cache, opt_regexp_cache_bytes);
     if (opt_no_fused_ops)
         JS_SetFusedOps(ctx, 0);
+    if (opt_locale_args)
+        JS_SetLocaleArgs(ctx, 1);
     if (gc_mode == -1)
         JS_SetGCThreshold(rt, (size_t)-1);
     else if (gc_mode >= 0)
@@ -774,6 +776,8 @@ static int set_opts(const char *s)
             opt_call = 1;
         else if (!strcmp(tok, "-no-fused-ops"))
             opt_no_fused_ops = 1;
+        else if (!strcmp(tok, "-locale-args"))
+            opt_locale_args = 1;
         else if (!strcmp(tok, "-strict"))
             opt_strict = 1;
         else if (!strcmp(tok, "-regvm"))
@@ -1435,7 +1439,7 @@ int main(int argc, char **argv)
                 fprintf(stderr, "rvdiff: unknown option %s\n", a);
                 return 2;
             }
-            opt_raw = opt_result = opt_call = opt_no_fused_ops = 0;
+            opt_raw = opt_result = opt_call = opt_no_fused_ops = opt_locale_args = 0;
             opt_strict = 0;
             opt_regexp_cache = -1;
         }

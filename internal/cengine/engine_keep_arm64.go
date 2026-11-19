@@ -237,6 +237,7 @@ var goasmKeep = []any{
 	JS_SetHostRemap,
 	JS_SetInternalDepth,
 	JS_SetIsHTMLDDA,
+	JS_SetLocaleArgs,
 	JS_SetMaxCallDepth,
 	JS_SetMemoryLimit,
 	JS_SetModuleExport,

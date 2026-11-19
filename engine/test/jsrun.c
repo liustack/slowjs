@@ -8,7 +8,7 @@
 /* jsrun runs scripts on the C tree, so that compare.sh can compare what they
    print with the files kept in the repository.
 
-     jsrun [-raw] [-result] [-call] [-regexp-cache=N,BYTES] [-no-fused-ops] [-regvm] FILE...
+     jsrun [-raw] [-result] [-call] [-regexp-cache=N,BYTES] [-no-fused-ops] [-locale-args] [-regvm] FILE...
 
    Each file runs as a global script in a runtime and a context of its own,
    then the jobs it queued run. jsrun prints "== " and the name of the file,
@@ -38,6 +38,10 @@
    -no-fused-ops compiles the file with the instructions that the compiler
    joins into one opcode left apart, and every check of the temporal dead
    zone kept (JS_SetFusedOps).
+
+   -locale-args gives the context the toLocaleString of arrays and typed
+   arrays of ECMA-402, which passes its locales and options on to each
+   element, as a host that gives the context Intl does (JS_SetLocaleArgs).
 
    -regvm calls a completion value that is a function with JS_Call itself.
    It prints on stderr a line "regvm: after the call" with the functions converted and refused and the last refusal
@@ -345,6 +349,7 @@ static int opt_result;
 static int opt_call;
 static int opt_regexp_cache = -1;   /* -1 keeps the default of the runtime */
 static int opt_no_fused_ops;
+static int opt_locale_args;
 static int opt_regvm;
 static size_t opt_regexp_cache_bytes;
 
@@ -408,6 +413,8 @@ static int run(const char *path)
         JS_SetRegExpCache(rt, opt_regexp_cache, opt_regexp_cache_bytes);
     if (opt_no_fused_ops)
         JS_SetFusedOps(ctx, 0);
+    if (opt_locale_args)
+        JS_SetLocaleArgs(ctx, 1);
     if (module) {
         /* The file is the module "NAME", read from its folder, and a module
            of "<eval>" imports it, as a host does with its main module. So
@@ -588,6 +595,8 @@ int main(int argc, char **argv)
             opt_call = 1;
         } else if (strcmp(argv[i], "-no-fused-ops") == 0) {
             opt_no_fused_ops = 1;
+        } else if (strcmp(argv[i], "-locale-args") == 0) {
+            opt_locale_args = 1;
         } else if (strcmp(argv[i], "-regvm") == 0) {
             opt_regvm = 1;
         } else if (strncmp(argv[i], "-regexp-cache=", 14) == 0) {
