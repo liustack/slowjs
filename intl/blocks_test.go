@@ -42,6 +42,8 @@ var blockCalls = []struct {
 		`var s = 'I' + '̣'.repeat(N - 1)`, `s.toLocaleLowerCase('tr').length`, 0},
 	{"toLocaleUpperCase in Greek",
 		`var s = 'άέή'.repeat(N / 3)`, `s.toLocaleUpperCase('el').length`, 0},
+	{"toLocaleUpperCase in Turkish of lone surrogates",
+		`var s = 'i\ud800'.repeat(N / 2)`, `s.toLocaleUpperCase('tr').length`, 0},
 }
 
 // A long call holds its copy of the text in a block, not in Go's heap: Go

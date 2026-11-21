@@ -298,9 +298,8 @@ var swept = []struct {
 // divides. The longest stretch with no read of vmhook.Stop was measured on
 // one core of an AMD EPYC, at the n of each call.
 var known = map[string]string{
-	"format of a ListFormat of many empty items":      "the lists of the items and the parts of 8 Mi items, up to 574 ms",
-	"toLocaleUpperCase in Turkish of lone surrogates": "the list of the pieces of 8 Mi lone surrogates, up to 751 ms, which gets the VM killed",
-	"the first word of a long text in Chinese":        "the arrays of a run the dictionary divides, up to 235 ms for 11 Mi units",
+	"format of a ListFormat of many empty items": "the lists of the items and the parts of 8 Mi items, up to 574 ms",
+	"the first word of a long text in Chinese":   "the arrays of a run the dictionary divides, up to 235 ms for 11 Mi units",
 }
 
 // A dropped cursor is not kept: no slot of the list holds it after, and its

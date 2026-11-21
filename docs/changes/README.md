@@ -228,6 +228,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | The scan of a regexp literal reads the interrupt flag at its end, so a stop does not wait for the hash of a long literal | v0.31.3 | `js_parse_regexp` in [quickjs.c](../../engine/quickjs.c) |
 | Intl asks Go for no memory sized by a whole list of locales before its first check of the call: the locales it canonicalizes and their seen set grow with the tags gone through | v0.31.3 | [uncatchable.md](uncatchable.md#intl-reads-the-interrupt-flag-in-loops-over-a-long-list) |
 | The growth of a fast array that moves its block reads the interrupt flag before each MiB it copies, as the resize of an `ArrayBuffer` does, and a stop leaves the array as it was: the result of a `split` of 2M parts, or an array pushed to that many elements, was copied in one go, and a stop asked then waited for it, more polls than a timeout allows | v0.31.6 | `js_realloc_stop` in [quickjs.c](../../engine/quickjs.c) |
+| The case mapping of Turkish, Azeri, Lithuanian and Greek returns a text with lone surrogates as one string of UTF-16 units made in a block, where it made a list with an entry for each lone surrogate that Go grew and freed with no check: 8 Mi units ran 54 to 67 ms past the timeout on an Apple M4, 751 ms on an AMD EPYC, and were killed there | Unreleased | `premapCase` in [casemap.go](../../intl/casemap.go), `TestCaseLoneSurrogatesAsPieces` in [casemap_test.go](../../intl/casemap_test.go) |
 
 ## Errors and stacks
 

@@ -41,7 +41,6 @@
 		stringSlice: String.prototype.slice,
 		toUpperCase: String.prototype.toUpperCase,
 		toLowerCase: String.prototype.toLowerCase,
-		fromCharCode: String.fromCharCode,
 		hasInstance: Function.prototype[Symbol.hasInstance],
 		dateNow: Date.now,
 		dateValueOf: Date.prototype.valueOf,

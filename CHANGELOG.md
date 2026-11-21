@@ -4,6 +4,10 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 
 ## [Unreleased]
 
+### Fixed
+
+- Package `intl`: `toLocaleUpperCase` and `toLocaleLowerCase` in Turkish, Azeri, Lithuanian and Greek of a long text with lone surrogates stop at the eval timeout and `Interrupt`, where Go held the call up to 0.75 s and the VM could be killed.
+
 ## [v0.31.10] - 2026-11-20
 
 ### Fixed

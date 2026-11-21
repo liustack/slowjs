@@ -38,7 +38,7 @@
 	const {
 		apply, defineProperty, getOwnPropertyDescriptor, ownKeys, setPrototypeOf, parse,
 		Object, String, Error, TypeError, RangeError, Symbol, toStringTag, hasInstance, iterator, iteratorPrototype,
-		stringSlice, toUpperCase, toLowerCase, fromCharCode, dateNow, dateValueOf, numberValueOf, bigintValueOf
+		stringSlice, toUpperCase, toLowerCase, dateNow, dateValueOf, numberValueOf, bigintValueOf
 	} = P;
 	const toPrimitive = Symbol.toPrimitive;
 
@@ -1244,15 +1244,8 @@
 			const language = caseLanguage(tag);
 			if (language !== '') {
 				const m = casePremap(s, language, upper);
-				if (typeof m === 'string') {
+				if (m !== undefined) {
 					s = m;
-				} else if (m !== undefined) {
-					let t = '';
-					for (let i = 0; i < m.length; i++) {
-						const x = m[i];
-						t += typeof x === 'number' ? fromCharCode(x) : x;
-					}
-					s = t;
 				}
 			}
 		}

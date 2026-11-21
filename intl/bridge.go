@@ -840,9 +840,8 @@ var bridge = []*slowjs.Builtin{
 	}),
 	// casePremap takes a string, a language from caseLanguage and whether to
 	// map to upper case, and answers what the language's rules make of the
-	// string, for the engine to map the rest: a string, or an array of
-	// strings and the code units of lone surrogates; undefined where they
-	// change nothing.
+	// string, for the engine to map the rest, lone surrogates as they are:
+	// undefined where they change nothing.
 	intlhook.NewBuiltin("casePremap", 3, func(a slowjs.Args) (slowjs.Value, error) {
 		door := intlhook.Open(a)
 		lang, _ := door.Short(1, intlhook.KindOption)
@@ -856,18 +855,16 @@ var bridge = []*slowjs.Builtin{
 		s, give, _ := door.LongWTF8(0)
 		defer give()
 		w.read()
-		pieces, ok, err := premapCase(w, s, units, lang, upper)
+		text, wide, ok, err := premapCase(w, s, units, lang, upper)
 		switch {
 		case err != nil:
 			return slowjs.Value{}, err
 		case !ok:
 			return slowjs.UndefinedValue, nil
-		case len(pieces) == 1:
-			if s, ok := pieces[0].(string); ok {
-				return intlhook.Emit(a.VM(), s)
-			}
+		case wide != nil:
+			return intlhook.EmitUTF16(a.VM(), wide)
 		}
-		return intlhook.EmitMixed(a.VM(), pieces)
+		return intlhook.Emit(a.VM(), text)
 	}),
 	resolveBuiltin(temporalDateFormatCtor),
 	intlhook.NewBuiltin("temporalFormat", 3, func(a slowjs.Args) (slowjs.Value, error) { return temporalDateFormatted(a, false, false) }),
