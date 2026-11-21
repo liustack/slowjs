@@ -39,6 +39,7 @@
 		iterator: Symbol.iterator,
 		iteratorPrototype: Object.getPrototypeOf(Object.getPrototypeOf([][Symbol.iterator]())),
 		stringSlice: String.prototype.slice,
+		arrayPrototype: Array.prototype,
 		toUpperCase: String.prototype.toUpperCase,
 		toLowerCase: String.prototype.toLowerCase,
 		hasInstance: Function.prototype[Symbol.hasInstance],

@@ -95,7 +95,7 @@ func TestStringArgumentOutOfMemory(t *testing.T) {
 
 // A list a script passes Intl, however long, ends at the eval timeout: the
 // work Go does over it checks the VM between batches. Each case takes Go
-// several hundred milliseconds or more over a million tags or items, and the
+// several hundred milliseconds or more over a million tags, and the
 // timeout is 20ms. The list comes from Go, made before the call, so that the
 // time is all that of the Go work: none goes to the javascript of intl.js
 // that makes the list a Builtin gets.
@@ -105,10 +105,6 @@ func TestLongListTimeout(t *testing.T) {
 	for i := range tags {
 		tags[i] = "zxx-x-" + strconv.FormatInt(int64(i), 36)
 		list.WriteString(strconv.Itoa(len(tags[i])) + ":" + tags[i])
-	}
-	lf, err := resolveListFormat(request{Locales: []string{"en"}, Options: map[string]any{}})
-	if err != nil {
-		t.Fatal(err)
 	}
 	for name, c := range map[string]struct {
 		js string
@@ -123,10 +119,6 @@ func TestLongListTimeout(t *testing.T) {
 		"supported": {fn: func(vm *slowjs.VM) (slowjs.Value, error) {
 			_, err := goSupported(vm, gointl.ServiceNumberFormat, tags)
 			return slowjs.UndefinedValue, err
-		}},
-		"list": {fn: func(vm *slowjs.VM) (slowjs.Value, error) {
-			items, _ := listItems(vm, list.String())
-			return listParts(vm, items, lf.f.FormatToPartsCheck(items, func(i int) { checkTurn(vm, i) }))
 		}},
 		"stringArray": {fn: func(vm *slowjs.VM) (slowjs.Value, error) { return intlhook.EmitStrings(vm, tags) }},
 	} {

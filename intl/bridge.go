@@ -697,25 +697,36 @@ var bridge = []*slowjs.Builtin{
 		return intlhook.EmitStrings(a.VM(), l)
 	}),
 	resolveBuiltin(listFormatCtor),
-	// lfParts takes the items as listItems reads them and answers as
-	// listParts writes them.
-	intlhook.NewBuiltin("lfParts", 2, func(a slowjs.Args) (slowjs.Value, error) {
+	// lfLiterals answers what the patterns of the formatter put before,
+	// between and after two items, for a list of n items whose last item
+	// begins with head (gointl's ListFormat.Literals): first 1 when they
+	// read head and 0 when they do not, then their three or nine strings.
+	// intl.js writes the list from them, so that Go holds nothing for each
+	// item: a list of the items and of the parts of 8 Mi items took 1.8 GiB
+	// of Go, made and grown whole with no check.
+	intlhook.NewBuiltin("lfLiterals", 3, func(a slowjs.Args) (slowjs.Value, error) {
 		door := intlhook.Open(a)
 		f, ok, err := formatterOf[*listFormat](a)
 		if !ok {
 			return slowjs.UndefinedValue, err
 		}
 
-		s, give, _ := door.LongWTF8(1)
-		defer give()
-		items, ok := listItems(a.VM(), s)
+		n, _ := a.Number(1)
+		head, _ := door.ShortWTF8(2, intlhook.KindOption)
+		lits, contextual, ok := f.f.Literals(int(n), head)
 		if !ok {
-			return slowjs.Value{}, typeError("malformed list")
+			return slowjs.Value{}, errors.New("intl: internal error: a list pattern with {1} before {0}")
 		}
 
-		vm := a.VM()
-		parts := f.f.FormatToPartsCheck(items, func(i int) { checkTurn(vm, i) })
-		return listParts(vm, items, parts)
+		return intlhook.EmitStringsAs(a.VM(), append([]string{""}, lits...), func(i int, _ string) (int, bool) {
+			if i > 0 {
+				return 0, false
+			}
+			if contextual {
+				return 1, true
+			}
+			return 0, true
+		})
 	}),
 	resolveBuiltin(displayNamesCtor),
 	// dnOf answers the name, or the number 0 for none.

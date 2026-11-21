@@ -188,15 +188,8 @@ func TestCJKRunHeldPerPiece(t *testing.T) {
 
 // longRead are calls whose work on a long text, after reading it, is short:
 // a Segments object reads its whole text before the first segment, and
-// finds the first ones in the first piece, and a ListFormat reads its items
-// and only the first characters of each.
+// finds the first ones in the first piece.
 var longRead = []struct{ name, setup, call string }{
-	{"a list of one long item",
-		`var l = ['x'.repeat(N), 'y'], f = new Intl.ListFormat('en')`,
-		`f.format(l).length`},
-	{"the parts of a list of one long item in Thai, with characters past the BMP",
-		`var l = ['สวัสดี😀'.repeat(N / 8), 'y'], f = new Intl.ListFormat('th')`,
-		`f.formatToParts(l).length`},
 	{"the first word of a long text",
 		`var s = 'hello world '.repeat(N / 12), g = new Intl.Segmenter('en', {granularity: 'word'})`,
 		`g.segment(s).containing(0).segment`},
@@ -328,13 +321,9 @@ var swept = []struct {
 }
 
 // known holds the calls of swept that still run a part of their work whole,
-// in Go, with no check, each with that part: a list whose elements hold
-// pointers, which Go grows by append, copying it whole, and clears whole
-// when it makes it. The longest stretch with no read of vmhook.Stop was
-// measured on one core of an AMD EPYC, at the n of each call.
-var known = map[string]string{
-	"format of a ListFormat of many empty items": "the lists of the items and the parts of 8 Mi items, up to 574 ms",
-}
+// in Go, with no check, each with that part and the longest stretch with no
+// read of vmhook.Stop, until the change that checks it takes the call out.
+var known = map[string]string{}
 
 // A dropped cursor is not kept: no slot of the list holds it after, and its
 // text is given back.

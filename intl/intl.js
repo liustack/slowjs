@@ -27,7 +27,7 @@
 	colResolve, colCompare,
 	segResolve, segBreaks,
 	rtfResolve, rtfFormat, rtfParts,
-	lfResolve, lfParts,
+	lfResolve, lfLiterals,
 	dnResolve, dnOf,
 	dfResolve, dfFormat, dfParts,
 	valuesOf, localeCheck, localeNew, localeInfo,
@@ -38,7 +38,7 @@
 	const {
 		apply, defineProperty, getOwnPropertyDescriptor, ownKeys, setPrototypeOf, parse,
 		Object, String, Error, TypeError, RangeError, Symbol, toStringTag, hasInstance, iterator, iteratorPrototype,
-		stringSlice, toUpperCase, toLowerCase, dateNow, dateValueOf, numberValueOf, bigintValueOf
+		stringSlice, toUpperCase, toLowerCase, dateNow, dateValueOf, numberValueOf, bigintValueOf, arrayPrototype
 	} = P;
 	const toPrimitive = Symbol.toPrimitive;
 
@@ -870,14 +870,97 @@
 		return items;
 	}
 
-	// listParts is what Go makes of the items: the index of an item, or a
-	// literal.
-	function listParts(r, items) {
-		let s = '';
-		for (let i = 0; i < items.length; i++) {
-			s += items[i].length + ':' + items[i];
+	// headArgs are the arguments of the slice of an item that lfLiterals
+	// reads: its first 8 units, more than the patterns of any locale read.
+	const headArgs = bare([0, 8]);
+
+	// listLiterals is what the patterns of r put before, between and after
+	// two items, for a list of n items whose last item is last (lfLiterals):
+	// 1 when they read last and 0 when they do not, then three strings for a
+	// list of two, nine for a longer one. r keeps those that do not.
+	function listLiterals(r, n, last) {
+		let p = n === 2 ? r.lits2 : r.lits;
+		if (p === undefined) {
+			p = call(r, lfLiterals, n, apply(stringSlice, last, headArgs));
+			if (p[0] === 0) {
+				if (n === 2) {
+					r.lits2 = p;
+				} else {
+					r.lits = p;
+				}
+			}
 		}
-		return call(r, lfParts, s);
+		return p;
+	}
+
+	// listJoin writes the items as the patterns of r join them, as gointl's
+	// formatInOrder does (ListFormat.Literals): as a string, or with parts,
+	// as the parts it pushes on parts. The parts leave out an empty item and
+	// join the literals either side of it, as Node's ICU does.
+	function listJoin(r, items, parts) {
+		const n = items.length;
+		let s = '', lit = '';
+		function literal(v) {
+			if (parts === undefined) {
+				s += v;
+			} else {
+				lit += v;
+			}
+		}
+		function item(i) {
+			const v = items[i];
+			if (parts === undefined) {
+				s += v;
+				return;
+			}
+			if (v === '') {
+				return;
+			}
+			if (lit !== '') {
+				push(parts, {type: 'literal', value: lit});
+				lit = '';
+			}
+			push(parts, {type: 'element', value: v});
+		}
+		if (n === 1) {
+			item(0);
+		} else if (n === 2) {
+			const p = listLiterals(r, n, items[1]);
+			literal(p[1]);
+			item(0);
+			literal(p[2]);
+			item(1);
+			literal(p[3]);
+		} else if (n > 2) {
+			// The start, middle and end patterns, the end for the last two.
+			const p = listLiterals(r, n, items[n - 1]);
+			literal(p[1]);
+			item(0);
+			literal(p[2]);
+			for (let i = 1; i < n - 2; i++) {
+				literal(p[4]);
+				item(i);
+				literal(p[5]);
+			}
+			literal(p[7]);
+			item(n - 2);
+			literal(p[8]);
+			item(n - 1);
+			literal(p[9]);
+			if (p[6] !== '') {
+				for (let i = 1; i < n - 2; i++) {
+					literal(p[6]);
+				}
+			}
+			literal(p[3]);
+		}
+		if (parts === undefined) {
+			return s;
+		}
+		if (lit !== '') {
+			push(parts, {type: 'literal', value: lit});
+		}
+		return parts;
 	}
 
 	constructor(ListFormat, {
@@ -887,24 +970,13 @@
 	}, {
 		format(list) {
 			const r = internal(this, LF);
-			const items = stringList(list);
-			const parts = listParts(r, items);
-			let s = '';
-			for (let i = 0; i < parts.length; i++) {
-				const p = parts[i];
-				s += typeof p === 'number' ? items[p] : p;
-			}
-			return s;
+			return listJoin(r, stringList(list), undefined);
 		},
 		formatToParts(list) {
 			const r = internal(this, LF);
-			const items = stringList(list);
-			const parts = listParts(r, items);
-			for (let i = 0; i < parts.length; i++) {
-				const p = parts[i];
-				parts[i] = typeof p === 'number' ? {type: 'element', value: items[p]} : {type: 'literal', value: p};
-			}
-			return parts;
+			// Made with no prototype, so that a setter a page puts on
+			// Array.prototype sees none of it.
+			return setPrototypeOf(listJoin(r, stringList(list), bare([])), arrayPrototype);
 		},
 		resolvedOptions() {
 			return parse(call(internal(this, LF), optionsOf));

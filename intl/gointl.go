@@ -14,7 +14,6 @@ import (
 	"github.com/liustack/slowjs"
 	gointl "github.com/liustack/slowjs/internal/gointl"
 	"github.com/liustack/slowjs/internal/intlhook"
-	"github.com/liustack/slowjs/internal/vmhook"
 )
 
 // The constructors built on go-intl (internal/gointl) resolve their locales
@@ -368,11 +367,4 @@ func takeBlock(vm *slowjs.VM) func(size int) (unsafe.Pointer, func()) {
 		b, give := intlhook.Take[byte](vm, size)
 		return unsafe.Pointer(unsafe.SliceData(b)), give
 	}
-}
-
-// stopTurn is checkTurn for a loop that has made javascript values, which
-// it frees before it returns when stopTurn is true: then the call is to
-// end, with its error pending, and the Builtin returns at once.
-func stopTurn(vm *slowjs.VM, i int) bool {
-	return i%checkEvery == checkEvery-1 && vmhook.Stop(vm)
 }
