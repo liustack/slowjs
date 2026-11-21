@@ -113,7 +113,6 @@ Work in Go that a script can make long and that makes none of these calls still 
 
 - `format` and `formatToParts` of `Intl.ListFormat` make Go lists of the items and of the parts of the list, grown and cleared whole, and what those take is outside the memory limit.
 - `Intl.Segmenter` divides a run of Chinese or Japanese in arrays the length of the run, made and filled whole (the room for them is checked first).
-- The canonical form of a locale tag with many variants looks each variant up again after every alias it replaces: up to about 18 ms for one tag under the cap of 16,384 units, on an Apple M4.
 - A compare of two long strings stopped at its timeout gives the memory it took back to the OS before the call returns: about 9 ms for strings of 16 Mi units on an Apple M4.
 - `%d` of a long BigInt in `fmt` does one division of the whole number with math/big ([uncatchable.md](changes/uncatchable.md#the-functions-of-fmt-make-a-long-output-in-checked-pieces)).
 

@@ -45,6 +45,13 @@ type Canonicalizer struct {
 	// in its order, a line each.
 	legacy, redundant string
 	likely            *Fallbacker
+	// aliasVariants holds each subtag after the first of a key of the
+	// language table and each key of the variant table: a variant not in it
+	// is in no key, so its lookups always miss and are not made. A tag may
+	// have some 1,600 variants, and the aliases are looked for again after
+	// each one replaced: looking each variant up took 18 ms for one tag on
+	// an Apple M4. nil looks every variant up.
+	aliasVariants map[string]bool
 }
 
 // NewCanonicalizer reads the alias tables from a source.
@@ -64,6 +71,7 @@ func NewCanonicalizer(src Source, opts CanonicalizeOptions) (*Canonicalizer, err
 		return nil, fmt.Errorf("intl: the locale aliases have no legacy tags")
 	}
 	c.legacy, c.redundant = string(legacy), string(redundant)
+	c.aliasVariants = aliasVariantsOf(aliases)
 	if c.likely, err = NewFallbacker(src); err != nil {
 		return nil, err
 	}
@@ -324,6 +332,9 @@ func (c *Canonicalizer) replaceLanguage(b *base, checkLanguage, checkRegion, che
 		searchVariant := ""
 		if checkVariants {
 			searchVariant = b.variants[vi]
+			if !c.mayAlias(searchVariant) {
+				continue
+			}
 		}
 		key := search
 		if searchRegion != "" {
@@ -439,6 +450,9 @@ func (c *Canonicalizer) replaceScript(b *base) bool {
 // "heploc" becomes "alalc97" and takes "hepburn" with it.
 func (c *Canonicalizer) replaceVariant(b *base) bool {
 	for i, v := range b.variants {
+		if !c.mayAlias(v) {
+			continue
+		}
 		to, ok := c.alias("variant", v)
 		if !ok || to == v {
 			continue
@@ -672,3 +686,26 @@ func checkLanguageID(parts []string, at int) (int, error) {
 	}
 	return at, nil
 }
+
+// aliasVariantsOf is the set of Canonicalizer.aliasVariants of the alias
+// tables: a superset of the variants of their keys, as it takes every
+// subtag of a language key after its language, regions too.
+func aliasVariantsOf(aliases blob.Index) map[string]bool {
+	set := map[string]bool{}
+	for i := range aliases.Len() {
+		k, _ := aliases.At(i)
+		key := string(k)
+		if rest, ok := strings.CutPrefix(key, "language "); ok {
+			subtags := strings.Split(rest, "_")
+			for _, s := range subtags[1:] {
+				set[s] = true
+			}
+		} else if v, ok := strings.CutPrefix(key, "variant "); ok {
+			set[v] = true
+		}
+	}
+	return set
+}
+
+// mayAlias reports whether a variant may be in a key of the alias tables.
+func (c *Canonicalizer) mayAlias(v string) bool { return c.aliasVariants == nil || c.aliasVariants[v] }

@@ -90,12 +90,12 @@ func goLocales(vm *slowjs.VM, tags []string) (r []gointl.Locale, units []int, er
 }
 
 // pieceEnd is the end of the piece of a list of locales that starts at i:
-// checkEvery locales, or fewer whose tags have intlhook.Piece units in all,
+// checkEvery locales, or fewer whose tags have intlhook.MaxTag units in all,
 // and one at least. units are the lengths of the tags.
 func pieceEnd(units []int, i int) int {
 	n := 0
 	j := i
-	for j < len(units) && j-i < checkEvery && n < intlhook.Piece {
+	for j < len(units) && j-i < checkEvery && n < intlhook.MaxTag {
 		n += units[j]
 		j++
 	}
@@ -310,9 +310,10 @@ func checkTurn(vm *slowjs.VM, i int) {
 
 // tagTurns counts the turns of a loop over a list of locales and the units
 // of their tags, and checks the call every checkEvery turns or every
-// intlhook.Piece units, whichever comes first: the work on a tag grows with
+// intlhook.MaxTag units, whichever comes first: the work on a tag grows with
 // its length, up to intlhook.MaxTag units, and checkEvery tags at the cap
-// held the eval timeout 60 ms on an Apple M4.
+// held the eval timeout 60 ms on an Apple M4, and four tags of many variants
+// 44 ms.
 type tagTurns struct {
 	vm           *slowjs.VM
 	turns, units int
@@ -323,7 +324,7 @@ type tagTurns struct {
 func (t *tagTurns) turn(n int) {
 	t.turns++
 	t.units += n
-	if t.turns >= checkEvery || t.units >= intlhook.Piece {
+	if t.turns >= checkEvery || t.units >= intlhook.MaxTag {
 		t.turns, t.units = 0, 0
 		intlhook.Check(t.vm)
 	}
