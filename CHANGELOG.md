@@ -4,6 +4,8 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 
 ## [Unreleased]
 
+## [v0.31.11] - 2026-11-22
+
 ### Fixed
 
 - Package `intl`: `toLocaleUpperCase` and `toLocaleLowerCase` in Turkish, Azeri, Lithuanian and Greek of a long text with lone surrogates stop at the eval timeout and `Interrupt`, where Go held the call up to 0.75 s and the VM could be killed.
@@ -905,7 +907,10 @@ The first release of the fork, from modernc.org/quickjs v0.25.0 and libquickjs v
 - A VM that runs out of memory inside `JSON.parse`, or anything else that converts a string with non-ASCII characters to UTF-8, no longer leaks that string.
 - `VM.Call` and `VM.CallValue` report the exception thrown while evaluating the function expression instead of `cannot call a non-function`.
 
-[Unreleased]: https://github.com/liustack/slowjs/compare/v0.31.8...main
+[Unreleased]: https://github.com/liustack/slowjs/compare/v0.31.11...main
+[v0.31.11]: https://github.com/liustack/slowjs/compare/v0.31.10...v0.31.11
+[v0.31.10]: https://github.com/liustack/slowjs/compare/v0.31.9...v0.31.10
+[v0.31.9]: https://github.com/liustack/slowjs/compare/v0.31.8...v0.31.9
 [v0.31.8]: https://github.com/liustack/slowjs/compare/v0.31.7...v0.31.8
 [v0.31.7]: https://github.com/liustack/slowjs/compare/v0.31.6...v0.31.7
 [v0.31.6]: https://github.com/liustack/slowjs/compare/v0.31.5...v0.31.6

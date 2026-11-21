@@ -77,6 +77,7 @@ Releases from v0.29.0 run the C engine. Instructions are counted with callgrind 
 | v0.31.8 | A fix: a write near the memory limit that let the engine use a freed shape | Against v0.31.7, counted: the same instructions a render on the store and workbench pages, with the same HTML ([v0.31.8 against v0.31.7](#v0318-against-v0317)) |
 | v0.31.9 | Fixes and checks: block collections near the memory limit wait, `toLocaleString` of arrays passes locales and options once Intl is there, the Go API from modernc.org/quickjs written again, the render stress and fuzzing every night | Against v0.31.8, counted: within 0.1% of the instructions a render on every kind of page and on the V8 suite, with the same HTML ([v0.31.9 against v0.31.8](#v0319-against-v0318)) |
 | v0.31.10 | A fix: an `await` whose PromiseResolve throws throws at the `await`. The throw injection reaches 120 of its 123 places | Against v0.31.9, counted: within 0.03% of the instructions a render on every kind of page and on the V8 suite, with the same HTML ([v0.31.10 against v0.31.9](#v03110-against-v0319)) |
+| v0.31.11 | Fixes: the Go code of `intl` keeps the eval timeout, `Interrupt` and the memory limit on long inputs of case mapping, locale tags, `Intl.Segmenter`, `Intl.ListFormat` and `Intl.Collator` | Against v0.31.10, counted: 0.04% to 0.24% more instructions a render, with the same HTML, and the engine unchanged. tifa's extreme i18n page, timed on an Apple M4, renders 1.95% faster ([v0.31.11 against v0.31.10](#v03111-against-v03110)) |
 
 ## Measuring in tifa
 
@@ -2225,6 +2226,21 @@ v0.31.7 (the C of 1be7ca76, its profile trained again on [the pages of tifa d668
 | workbench pages of tifa 96232521, with the collection | -0.48% (-1.58% to +0.64%) no regression beyond delta | +1.94% (-0.06% to +3.99%) inconclusive | |
 
 v0.31.7 is a release of fixes, and no change of speed was measured: the instructions move by 0.11% or less on every kind, and the store pages' -0.58% is under the delta of 1%. The spread of a run was 2.1% to 2.8% against 1.4% to 1.6% for v0.31.6, so the formal layout decides nothing on any kind.
+
+#### v0.31.11 against v0.31.10
+
+v0.31.11 is v0.31.10 with fixes of package `intl` and the code under it, and the C engine unchanged. It was counted, not timed: `.github/workflows/count.yml` on 2026-11-22, the release branch at 469ade94 against v0.31.10 (fb26fbea), with the same profile on both sides.
+
+| Pages | Instructions a render |
+| --- | ---: |
+| tifa's MUI test app, three pages | +0.22% |
+| React's page | +0.20% |
+| tifa's shop, seven store pages in English | +0.04% |
+| tifa's shop, seven store pages in Chinese | +0.06% |
+| tifa's shop, six workbench pages | +0.10% |
+| The V8 suite | +0.04% |
+
+The HTML is the same on all pages. The engine and its code are the same on both sides, and the VM that `tifa.Register` sets up has one object fewer and one atom more (`intl/stub.js`), so the objects of a render sit at other addresses: the counts move by what that changes, such as where the shapes of the engine, whose hash takes the address of the prototype, fall in their table. A change under 1% is too small for a timing to see ([measuring.md](measuring.md)). The extreme i18n page of tifa (`Extreme/i18n-3000`), which formats lists, was timed on an Apple M4 in four code layouts against v0.31.10: 1.95% faster (95% interval -2.34% to -1.55%).
 
 #### v0.31.10 against v0.31.9
 
