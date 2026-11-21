@@ -576,17 +576,64 @@ func (c *Collator) sortElements(s string, l *Limits) []uint64 { return c.sortEle
 // precedes it is read only for the prefixes a character's weight depends
 // on.
 func (c *Collator) sortElementsFrom(s string, start int, l *Limits) []uint64 {
+	return c.sortElementsWindow(s, start, prefixWindow, l)
+}
+
+// prefixWindow is how many characters before the start of a comparison
+// sortElementsFrom puts in NFD, as the context a prefix matches (qjs): more
+// than the longest prefix of the data. Putting the whole text before it in
+// NFD, of two strings that shared 16 Mi units, took 0.5 GiB and 600 to
+// 870 ms on an Apple M4, and its memory was given back after a stop.
+const prefixWindow = 32
+
+// sortElementsWindow is sortElementsFrom with only the text from a
+// normalization boundary at least window characters before start put in
+// NFD (windowStart), whose NFD is the tail of that of the whole text. A
+// prefix whose match runs to the start of the window, and so might go on
+// before it, makes it start again with the whole text.
+func (c *Collator) sortElementsWindow(s string, start, window int, l *Limits) []uint64 {
 	text := c.normalizedText(s[start:], l)
-	from := 0
+	ws := start
 	if start > 0 {
-		before := c.normalizedText(s[:start], l)
-		from = len(before)
-		l.room(8 * int64(len(before)+len(text)))
-		text = appendPieces(l, appendPieces(l, take[rune](l, len(before)+len(text))[:0], before), text)
+		ws = c.windowStart(s, start, window, l)
 	}
-	ces := c.elementsFrom(text, from, l)
-	if c.shifted {
-		c.shiftVariables(ces, l)
+	for {
+		all, from := text, 0
+		if ws < start {
+			before := c.normalizedText(s[ws:start], l)
+			from = len(before)
+			l.room(8 * int64(len(before)+len(text)))
+			all = appendPieces(l, appendPieces(l, take[rune](l, len(before)+len(text))[:0], before), text)
+		}
+		ces, cut := c.elementsCut(all, from, l)
+		if cut && ws > 0 {
+			ws = 0
+			continue
+		}
+		if c.shifted {
+			c.shiftVariables(ces, l)
+		}
+		return ces
 	}
-	return ces
+}
+
+// windowStart is the byte offset in s of a character at least window
+// characters before start, before which NFD orders nothing (nfdBoundary),
+// the nearest such, or 0 when there is none. It checks l as it walks back.
+func (c *Collator) windowStart(s string, start, window int, l *Limits) int {
+	p, n, turns := start, 0, 0
+	for p > 0 {
+		l.every(&turns)
+		if n >= window {
+			if r, _ := decodeWTF8(s, p); c.normalizer.nfdBoundary(r) {
+				return p
+			}
+		}
+		p--
+		for p > 0 && s[p]&0xc0 == 0x80 {
+			p--
+		}
+		n++
+	}
+	return 0
 }

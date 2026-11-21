@@ -81,6 +81,9 @@ type elementWriter struct {
 	// limitEvery turns in all (qjs).
 	l     *Limits
 	turns int
+	// cut is whether a prefix matched up to the start of the text, and
+	// might have gone on before it (qjs).
+	cut bool
 }
 
 func (c *Collator) elements(s string) []uint64 { return c.elementsOf([]rune(s)) }
@@ -96,6 +99,13 @@ const maxElements = 64
 // before it read only as the context a prefix matches, with the limits of
 // the call checked as it goes (qjs).
 func (c *Collator) elementsFrom(text []rune, from int, l *Limits) []uint64 {
+	ces, _ := c.elementsCut(text, from, l)
+	return ces
+}
+
+// elementsCut is elementsFrom, and whether a prefix matched up to the start
+// of the text, so that the text before it might have changed a weight.
+func (c *Collator) elementsCut(text []rune, from int, l *Limits) ([]uint64, bool) {
 	w := elementWriter{c: c, text: text, l: l}
 	asked := len(w.text) - from + 1
 	l.room(8 * int64(asked))
@@ -138,7 +148,7 @@ func (c *Collator) elementsFrom(text []rune, from int, l *Limits) []uint64 {
 		d, ce32 := c.lookup(r)
 		i = w.appendCE32(d, ce32, i)
 	}
-	return append(w.out, noCE)
+	return append(w.out, noCE), w.cut
 }
 
 // ensure makes room in w.out for the elements of one character or one
@@ -306,7 +316,11 @@ func contextTrie(d *colldata.Data, ce32 uint32) (uint32, colldata.CharTrie) {
 // before it.
 func (w *elementWriter) prefix(d *colldata.Data, ce32 uint32, i int) uint32 {
 	ce32, trie := contextTrie(d, ce32)
-	for j := i - 1; j >= 0; j-- {
+	for j := i - 1; ; j-- {
+		if j < 0 {
+			w.cut = true
+			break
+		}
 		m := trie.Next(w.text[j])
 		if m.HasValue() {
 			ce32 = trie.Value()

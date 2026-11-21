@@ -10,6 +10,7 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 - Package `intl`: a locale tag with many variants is put in canonical form up to seven times faster, and a list of such tags stops at the eval timeout and `Interrupt` after each tag, where 64 of them held the call 44 ms with no check.
 - Package `intl`: `Intl.Segmenter` on a long run of Chinese or Japanese stops at the eval timeout and `Interrupt` within a few milliseconds, where Go held the call up to 73 ms for 8 Mi units, and takes less of Go's memory.
 - Package `intl`: `Intl.ListFormat` with many items stops at the eval timeout and `Interrupt` and keeps to the memory limit, where Go took 1.8 GiB for 8 Mi items outside it and held the call up to 55 ms.
+- Package `intl`: `Intl.Collator` compares two long strings that share most of their text in time and memory that follow the part after the shared prefix: 16 Mi units that part at the end took 575 ms and 0.5 GiB, and take 21 ms.
 
 ## [v0.31.10] - 2026-11-20
 

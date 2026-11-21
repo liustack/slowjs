@@ -330,3 +330,21 @@ func composeHangul(a, b rune) (rune, bool) {
 	}
 	return 0, false
 }
+
+// nfdBoundary reports whether NFD orders nothing across the start of r: its
+// canonical decomposition starts with a starter, so that NFD of a text that
+// starts with r is the tail of NFD of any text it ends (qjs).
+func (n *Normalizer) nfdBoundary(r rune) bool {
+	for {
+		d, ok := n.tables.Decompose(r)
+		if !ok || d == "" {
+			break
+		}
+		first, _ := utf8.DecodeRuneInString(d)
+		if first == r {
+			break
+		}
+		r = first
+	}
+	return n.tables.Class(r) == 0
+}
