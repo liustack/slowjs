@@ -263,12 +263,15 @@ func (n *Normalizer) sortMarks(run []rune, l *Limits) {
 // compose puts the decomposed text back together, by Unicode's algorithm: each
 // character that follows a starter is joined to it where the two make one,
 // unless something with an equal or greater combining class stands between.
+// Its arrays are made with checks, from blocks when l has them (qjs): made
+// whole in Go's heap, those of the NFKC of a run of 4 Mi units of Chinese
+// took 44 MiB with no check.
 func (n *Normalizer) compose(s string, l *Limits) string {
-	runes := []rune(s)
+	runes := runesOf(s, l)
 	if len(runes) == 0 {
 		return s
 	}
-	out := make([]rune, 0, len(runes))
+	out := take[rune](l, len(runes))[:0]
 	starter := -1
 	lastClass := -1
 
@@ -293,7 +296,7 @@ func (n *Normalizer) compose(s string, l *Limits) string {
 		}
 		out = append(out, r)
 	}
-	return string(out)
+	return stringOf(out, l)
 }
 
 // join returns what two characters make together, if they make anything.

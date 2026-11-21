@@ -150,6 +150,42 @@ func TestCJKRunRoom(t *testing.T) {
 	}
 }
 
+// cjkRuns are long runs of Chinese and Japanese the dictionary divides as a
+// whole, each of the ways it reads one: plain, with katakana, with
+// halfwidth katakana that NFKC changes, with a long piece NFKC takes as
+// one, and with characters past the BMP.
+var cjkRuns = []struct{ name, setup string }{
+	{"Chinese", `var s = '我们今天去北京大学看书'.repeat(N / 11), g = new Intl.Segmenter('zh', {granularity: 'word'})`},
+	{"Japanese with katakana", `var s = '東京タワーに行きました'.repeat(N / 11), g = new Intl.Segmenter('ja', {granularity: 'word'})`},
+	{"halfwidth katakana", `var s = 'ｶﾀｶﾅﾃｽﾄ'.repeat(N / 7), g = new Intl.Segmenter('ja', {granularity: 'word'})`},
+	{"a Han character and halfwidth voiced marks", `var s = '中' + 'ﾞ'.repeat(N), g = new Intl.Segmenter('ja', {granularity: 'word'})`},
+	{"characters past the BMP", `var s = '𠀀𠀁中文𠀂'.repeat(N / 8), g = new Intl.Segmenter('zh', {granularity: 'word'})`},
+}
+
+// A long run of Chinese or Japanese is divided with a check of the call
+// between pieces of each pass over it, and the arrays of the division in
+// blocks (hostmem.Take): between two checks, Go allocates little more than
+// the breaks the cursor keeps, one int a word, at most one a unit. Before,
+// it decoded the run and made the arrays of the division whole, with no
+// check: 221 MiB of Go for 4 Mi units of Chinese, and 73 ms with no check
+// for 8 Mi on an Apple M4.
+func TestCJKRunHeldPerPiece(t *testing.T) {
+	const n = 4 << 20
+	for _, c := range cjkRuns {
+		t.Run(c.name, func(t *testing.T) {
+			vm := newVM(t)
+			setUp(t, vm, c.setup, n)
+			s, err := measureStops(t, vm, `g.segment(s).containing(0).segment`)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if s.maxAlloc > 9*n {
+				t.Errorf("Go allocated %d MiB between two reads of vmhook.Stop for %d units, want at most %d", s.maxAlloc>>20, n, 9*n>>20)
+			}
+		})
+	}
+}
+
 // longRead are calls whose work on a long text, after reading it, is short:
 // a Segments object reads its whole text before the first segment, and
 // finds the first ones in the first piece, and a ListFormat reads its items
@@ -294,12 +330,10 @@ var swept = []struct {
 // known holds the calls of swept that still run a part of their work whole,
 // in Go, with no check, each with that part: a list whose elements hold
 // pointers, which Go grows by append, copying it whole, and clears whole
-// when it makes it, and the arrays of a run of Chinese the dictionary
-// divides. The longest stretch with no read of vmhook.Stop was measured on
-// one core of an AMD EPYC, at the n of each call.
+// when it makes it. The longest stretch with no read of vmhook.Stop was
+// measured on one core of an AMD EPYC, at the n of each call.
 var known = map[string]string{
 	"format of a ListFormat of many empty items": "the lists of the items and the parts of 8 Mi items, up to 574 ms",
-	"the first word of a long text in Chinese":   "the arrays of a run the dictionary divides, up to 235 ms for 11 Mi units",
 }
 
 // A dropped cursor is not kept: no slot of the list holds it after, and its

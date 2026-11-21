@@ -8,6 +8,7 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 
 - Package `intl`: `toLocaleUpperCase` and `toLocaleLowerCase` in Turkish, Azeri, Lithuanian and Greek of a long text with lone surrogates stop at the eval timeout and `Interrupt`, where Go held the call up to 0.75 s and the VM could be killed.
 - Package `intl`: a locale tag with many variants is put in canonical form up to seven times faster, and a list of such tags stops at the eval timeout and `Interrupt` after each tag, where 64 of them held the call 44 ms with no check.
+- Package `intl`: `Intl.Segmenter` on a long run of Chinese or Japanese stops at the eval timeout and `Interrupt` within a few milliseconds, where Go held the call up to 73 ms for 8 Mi units, and takes less of Go's memory.
 
 ## [v0.31.10] - 2026-11-20
 

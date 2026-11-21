@@ -310,15 +310,36 @@ func (b *breaker) populateDictionary(start, end, firstStatus, otherStatus int) {
 		category = b.rules.trie.get(c)
 	}
 	if found > 0 {
-		if start < b.dict.breaks[0] {
-			b.dict.breaks = append([]int{start}, b.dict.breaks...)
-		}
-		if end > b.dict.breaks[len(b.dict.breaks)-1] {
-			b.dict.breaks = append(b.dict.breaks, end)
-		}
+		b.dict.breaks = withEnds(b.dict.breaks, start, end, b.limits)
 		b.dict.start = b.dict.breaks[0]
 		b.dict.limit = b.dict.breaks[len(b.dict.breaks)-1]
 	}
+}
+
+// withEnds is breaks with start before them and end after them, each where
+// it is not: copied once, a piece at a time with a check of l between two,
+// where an insert at the front and an append copied the breaks of a long
+// run whole, twice, with no check (qjs).
+func withEnds(breaks []int, start, end int, l *Limits) []int {
+	head, tail := start < breaks[0], end > breaks[len(breaks)-1]
+	n := len(breaks)
+	if head {
+		n++
+	}
+	if tail {
+		n++
+	}
+	if head || cap(breaks) < n {
+		s := make([]int, 0, n)
+		if head {
+			s = append(s, start)
+		}
+		breaks = appendPieces(l, s, breaks)
+	}
+	if tail {
+		breaks = append(breaks, end)
+	}
+	return breaks
 }
 
 // engineFor is getLanguageBreakEngine: the iterator's engines, latest

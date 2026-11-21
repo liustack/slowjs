@@ -112,11 +112,10 @@ No poll runs while a Go function that javascript called works in Go, so neither 
 Work in Go that a script can make long and that makes none of these calls still runs to its end. What is left of it:
 
 - `format` and `formatToParts` of `Intl.ListFormat` make Go lists of the items and of the parts of the list, grown and cleared whole, and what those take is outside the memory limit.
-- `Intl.Segmenter` divides a run of Chinese or Japanese in arrays the length of the run, made and filled whole (the room for them is checked first).
 - A compare of two long strings stopped at its timeout gives the memory it took back to the OS before the call returns: about 9 ms for strings of 16 Mi units on an Apple M4.
 - `%d` of a long BigInt in `fmt` does one division of the whole number with math/big ([uncatchable.md](changes/uncatchable.md#the-functions-of-fmt-make-a-long-output-in-checked-pieces)).
 
-The calls of the first two are in `known` of `intl/runs_test.go`, with what they took.
+The call of the first is in `known` of `intl/runs_test.go`, with what it took.
 
 ## A long call and the Go scheduler
 

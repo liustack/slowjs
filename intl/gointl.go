@@ -331,11 +331,13 @@ func (t *tagTurns) turn(n int) {
 }
 
 // limitsOf are the checks of a call on vm, for the work of gointl that is
-// one piece no Builtin can cut (gointl.Limits).
+// one piece no Builtin can cut (gointl.Limits), and the blocks of the work
+// of one call, which it gives back before it returns.
 func limitsOf(vm *slowjs.VM) *gointl.Limits {
 	return &gointl.Limits{
-		Check: func() { intlhook.Check(vm) },
-		Room:  func(n int64) { intlhook.Room(vm, n) },
+		Check:  func() { intlhook.Check(vm) },
+		Room:   func(n int64) { intlhook.Room(vm, n) },
+		Blocks: takeBlock(vm),
 	}
 }
 
@@ -356,10 +358,15 @@ func callLimits(vm *slowjs.VM) *gointl.Limits {
 				intlhook.Room(vm, held)
 			}
 		},
-		Take: func(size int) (unsafe.Pointer, func()) {
-			b, give := intlhook.Take[byte](vm, size)
-			return unsafe.Pointer(unsafe.SliceData(b)), give
-		},
+		Take: takeBlock(vm),
+	}
+}
+
+// takeBlock takes the blocks of gointl.Limits from vm (intlhook.Take).
+func takeBlock(vm *slowjs.VM) func(size int) (unsafe.Pointer, func()) {
+	return func(size int) (unsafe.Pointer, func()) {
+		b, give := intlhook.Take[byte](vm, size)
+		return unsafe.Pointer(unsafe.SliceData(b)), give
 	}
 }
 
