@@ -599,7 +599,9 @@ func (e *cjkEngine) divide(t *utext, rangeStart, rangeEnd int, breaks *[]int, l 
 				}
 				normalized = push(w, normalized, uint16(r))
 			}
+			// push checks only when it grows the map: each turn counts.
 			for len(nmap) < len(normalized) {
+				l.every(&turns)
 				nmap = push(w, nmap, fragStart+rangeStart)
 			}
 		}

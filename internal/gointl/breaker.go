@@ -286,9 +286,13 @@ func (b *breaker) populateDictionary(start, end, firstStatus, otherStatus int) {
 	c := t.current32()
 	category := b.rules.trie.get(c)
 	dictStart := b.rules.forward.dictStart
+	// turns counts the characters skipped between two dictionary runs, a
+	// long run of marks among them (qjs).
+	turns := 0
 	for {
 		current := t.index()
 		for current < end && category < dictStart {
+			b.limits.every(&turns)
 			t.next32()
 			c = t.current32()
 			category = b.rules.trie.get(c)

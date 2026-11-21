@@ -8,6 +8,7 @@ package intl
 import (
 	"math/rand/v2"
 	"slices"
+	"sort"
 	"strings"
 	"testing"
 	"unicode/utf16"
@@ -260,4 +261,66 @@ func (e *cjkEngine) divideBefore(t *utext, rangeStart, rangeEnd int, breaks *[]i
 		corrected--
 	}
 	return corrected
+}
+
+// The work on a long run of a dictionary checks the call between pieces of
+// a size that does not grow with the run: between two checks, the arrays of
+// the run get at most 1 MiB written, in a copy piece or a few thousand
+// turns of a loop, and the iterator moves at most two pieces of turns over
+// the text. The test hands the work the range after an "a" whole, as the
+// rules do, so that the position at each check shows how far it went. The
+// arrays come from blocks the test hands out and watches fill: each is
+// written from its start, with no zero word, as no position in the range is
+// 0. Before, after the last growth of the map of a long fragment NFKC
+// changes, 512 Ki positions went into it with no check, and the walk over
+// the marks after a dictionary run, to the next run, made none.
+func TestDictionaryChecksEveryPiece(t *testing.T) {
+	if qjsNoCJDict {
+		t.Skip("built without the dictionary of Chinese and Japanese")
+	}
+	const n = 1 << 20
+	for _, c := range []struct{ lang, name, text string }{
+		{"ja", "a Han character and halfwidth voiced marks", "a中" + strings.Repeat("ﾞ", n)},
+		{"ja", "a Han character and acute accents", "a中" + strings.Repeat("\u0301", n) + strings.Repeat("中", 3*limitEvery)},
+		{"th", "a Thai word and acute accents", "aภาษา" + strings.Repeat("\u0301", n) + strings.Repeat("ภาษา", limitEvery)},
+		{"zh", "a run of Chinese", "a" + strings.Repeat("我们今天去北京大学看书", n/11)},
+		{"ja", "a run of halfwidth katakana", "a" + strings.Repeat("ｶﾀｶﾅﾃｽﾄ", n/7)},
+		{"zh", "a run past the BMP", "a" + strings.Repeat("𠀀𠀁中文𠀂", n/8)},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			s, err := NewSegmenter(qjsLocale(c.lang), SegmenterOptions{Granularity: GranularityWord})
+			if err != nil {
+				t.Fatal(err)
+			}
+			u := utf16.Encode([]rune(c.text))
+			it := s.Iter(u)
+			var blocks [][]uint64
+			filled := map[int]int{}
+			var written, maxWritten, maxMoved int
+			last := 1
+			l := &Limits{Room: func(int64) {}, Blocks: func(size int) (unsafe.Pointer, func()) {
+				b := make([]uint64, (size+7)/8)
+				blocks = append(blocks, b)
+				return unsafe.Pointer(unsafe.SliceData(b)), func() {}
+			}}
+			l.Check = func() {
+				for i, b := range blocks {
+					f := sort.Search(len(b), func(k int) bool { return b[k] == 0 })
+					written += 8 * (f - filled[i])
+					filled[i] = f
+				}
+				maxWritten, written = max(maxWritten, written), 0
+				maxMoved, last = max(maxMoved, it.b.t.pos-last), it.b.t.pos
+			}
+			it.SetLimits(l)
+			it.b.populateDictionary(1, len(u), 0, 0)
+			l.Check()
+			if maxWritten > 1<<20 {
+				t.Errorf("the arrays of the run got %d KiB written between two checks, want at most 1024", maxWritten>>10)
+			}
+			if maxMoved > 2*limitEvery {
+				t.Errorf("the iterator moved %d units between two checks, want at most %d", maxMoved, 2*limitEvery)
+			}
+		})
+	}
 }
