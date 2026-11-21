@@ -97,7 +97,7 @@ fi
 gc="env CGO_ENABLED=0 go"
 # Fast: every commit.
 step build fast - "$gc build ./..."
-step gofmt fast - "out=\$(gofmt -l -s . | grep -v -e '^\\.build/' -e '^internal/cengine/engine_'); [ -z \"\$out\" ] || { echo \"\$out\"; exit 1; }"
+step gofmt fast - "out=\$(git ls-files '*.go' | grep -v '^internal/cengine/engine_' | xargs gofmt -l -s); [ -z \"\$out\" ] || { echo \"\$out\"; exit 1; }"
 step docs fast - "scripts/docs-list.sh --check"
 step tracked fast - "scripts/check-tracked.sh"
 step goasm fast tests "scripts/gen-engine.sh pass && env CGO_ENABLED=0 SLOWJS_LLVM=$llvm SLOWJS_SHADOW_PASS=$root/.build/shadow.so SLOWJS_LLD=$lld go test -count=1 -v -p 2 -timeout 60m ./internal/goasm/..."

@@ -155,6 +155,16 @@ func (w *walk) bytes(n int) []byte {
 	return b[:0]
 }
 
+// units is runes for an array of n UTF-16 code units.
+func (w *walk) units(n int) []uint16 {
+	if !hostmem.Mapped[uint16](n) {
+		return make([]uint16, 0, n)
+	}
+	u, give := intlhook.Take[uint16](w.vm, n)
+	w.gives = append(w.gives, give)
+	return u[:0]
+}
+
 // done gives back the arrays of the walk: nothing may use them after.
 func (w *walk) done() {
 	for _, give := range w.gives {
@@ -201,19 +211,12 @@ func (w *walk) grow(out []rune) []rune {
 	return w.put(w.runes(2*len(out)+1), out)
 }
 
-// pieceBytes is what Go takes for a piece of the result besides its text:
-// its place in the list, which append may double, its value boxed in an
-// interface, the smallest buffer of a builder, and the javascript value
-// EmitMixed makes of it: about 124 bytes, in a text of lone surrogates and
-// letters in turn.
-const pieceBytes = 160
-
 // premapCase maps in s, as WTF-8, what the case rules of lang, from
 // caseLanguage, change, for the engine to map the rest: ok is false when
-// they change nothing. The result is the text in pieces: strings, and lone
-// surrogates as their code units, which a Go string cannot carry to the
-// engine.
-func premapCase(w *walk, s string, units int, lang string, upper bool) (pieces []any, ok bool, err error) {
+// they change nothing. The result is a string, or its UTF-16 code units when
+// it has a lone surrogate, which a Go string cannot carry to the engine.
+// Both live until the walk is done, after the engine has its own copy.
+func premapCase(w *walk, s string, units int, lang string, upper bool) (text string, wide []uint16, ok bool, err error) {
 	w.take(4 * int64(units))
 	in := caseRunes(w, s, units)
 	var out []rune
@@ -230,46 +233,48 @@ func premapCase(w *walk, s string, units int, lang string, upper bool) (pieces [
 		out, err = greekUpper(w, in)
 	}
 	if out == nil || err != nil {
-		return nil, false, err
+		return "", nil, false, err
 	}
 
-	// The strings are written in one array of bytes, counted first, and
-	// are over it: they live until the walk is done, after the engine has
-	// its own.
-	size := 0
+	// The result is written in one array, counted first: of bytes, or of
+	// UTF-16 code units when a lone surrogate is in it.
+	size, wideSize, lone := 0, 0, false
 	var buf [utf8.UTFMax]byte
 	for _, c := range out {
 		w.step()
-		if !isSurrogate(c) {
+		switch {
+		case isSurrogate(c):
+			lone = true
+			wideSize++
+		case c > 0xffff:
 			size += len(utf8.AppendRune(buf[:0], c))
+			wideSize += 2
+		default:
+			size += len(utf8.AppendRune(buf[:0], c))
+			wideSize++
 		}
+	}
+	if lone {
+		w.take(2 * int64(wideSize))
+		u := w.units(wideSize)
+		for _, c := range out {
+			w.step()
+			if c > 0xffff {
+				c -= 0x10000
+				u = append(u, uint16(0xd800+c>>10), uint16(0xdc00+c&0x3ff))
+				continue
+			}
+			u = append(u, uint16(c))
+		}
+		return "", u, true, nil
 	}
 	w.take(int64(size))
 	b := w.bytes(size)
-	at := 0
-	piece := func(p any) {
-		w.take(pieceBytes)
-		pieces = append(pieces, p)
-	}
-	text := func() {
-		piece(unsafe.String(unsafe.SliceData(b[at:]), len(b)-at))
-		at = len(b)
-	}
 	for _, c := range out {
 		w.step()
-		if isSurrogate(c) {
-			if len(b) > at {
-				text()
-			}
-			piece(int(c))
-			continue
-		}
 		b = utf8.AppendRune(b, c)
 	}
-	if len(b) > at || len(pieces) == 0 {
-		text()
-	}
-	return pieces, true, nil
+	return unsafe.String(unsafe.SliceData(b), len(b)), nil, true, nil
 }
 
 var caseNormalizer = sync.OnceValues(gointl.NewNormalizer)

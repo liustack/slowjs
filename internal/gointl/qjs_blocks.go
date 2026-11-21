@@ -38,6 +38,20 @@ func (l *Limits) Done() {
 	l.gives = nil
 }
 
+// local are the Limits of a piece of work of l whose long arrays end with
+// it: the checks of l, and blocks from l.Blocks, else from l.Take. The work
+// calls Done on them before it returns, a panic included.
+func (l *Limits) local() *Limits {
+	if l == nil {
+		return nil
+	}
+	take := l.Blocks
+	if take == nil {
+		take = l.Take
+	}
+	return &Limits{Check: l.Check, Room: l.Room, Take: take}
+}
+
 // take is n zero elements of T for the work: a block from hostmem.BlockMin
 // bytes, when the work takes its long arrays from the OS, else a Go
 // allocation.

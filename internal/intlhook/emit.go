@@ -6,8 +6,6 @@
 package intlhook
 
 import (
-	"errors"
-
 	"github.com/liustack/slowjs"
 	"github.com/liustack/slowjs/internal/vmhook"
 )
@@ -40,30 +38,9 @@ func EmitStrings(vm *slowjs.VM, l []string) (slowjs.Value, error) {
 	return vm.NewArray(vals...)
 }
 
-// EmitMixed is a javascript array of l, strings and ints.
-func EmitMixed(vm *slowjs.VM, l []any) (slowjs.Value, error) {
-	vals := make([]slowjs.Value, 0, len(l))
-	defer func() { freeAll(vals) }()
-	for i, x := range l {
-		if i%emitEvery == emitEvery-1 && vmhook.Stop(vm) {
-			return slowjs.UndefinedValue, nil
-		}
-		var v slowjs.Value
-		switch x := x.(type) {
-		case string:
-			var err error
-			if v, err = vm.NewString(x); err != nil {
-				return slowjs.Value{}, err
-			}
-		case int:
-			v = vm.NewInt(x)
-		default:
-			return slowjs.Value{}, errors.New("intlhook: internal error: a value of another type in an array")
-		}
-		vals = append(vals, v)
-	}
-	return vm.NewArray(vals...)
-}
+// EmitUTF16 is the javascript string of the UTF-16 code units u, lone
+// surrogates as they are.
+func EmitUTF16(vm *slowjs.VM, u []uint16) (slowjs.Value, error) { return vm.NewStringUTF16(u) }
 
 // EmitStringsAs is EmitStrings, but element i is the number asInt gives
 // for it, where it gives one.

@@ -697,25 +697,36 @@ var bridge = []*slowjs.Builtin{
 		return intlhook.EmitStrings(a.VM(), l)
 	}),
 	resolveBuiltin(listFormatCtor),
-	// lfParts takes the items as listItems reads them and answers as
-	// listParts writes them.
-	intlhook.NewBuiltin("lfParts", 2, func(a slowjs.Args) (slowjs.Value, error) {
+	// lfLiterals answers what the patterns of the formatter put before,
+	// between and after two items, for a list of n items whose last item
+	// begins with head (gointl's ListFormat.Literals): first 1 when they
+	// read head and 0 when they do not, then their three or nine strings.
+	// intl.js writes the list from them, so that Go holds nothing for each
+	// item: a list of the items and of the parts of 8 Mi items took 1.8 GiB
+	// of Go, made and grown whole with no check.
+	intlhook.NewBuiltin("lfLiterals", 3, func(a slowjs.Args) (slowjs.Value, error) {
 		door := intlhook.Open(a)
 		f, ok, err := formatterOf[*listFormat](a)
 		if !ok {
 			return slowjs.UndefinedValue, err
 		}
 
-		s, give, _ := door.LongWTF8(1)
-		defer give()
-		items, ok := listItems(a.VM(), s)
+		n, _ := a.Number(1)
+		head, _ := door.ShortWTF8(2, intlhook.KindOption)
+		lits, contextual, ok := f.f.Literals(int(n), head)
 		if !ok {
-			return slowjs.Value{}, typeError("malformed list")
+			return slowjs.Value{}, errors.New("intl: internal error: a list pattern with {1} before {0}")
 		}
 
-		vm := a.VM()
-		parts := f.f.FormatToPartsCheck(items, func(i int) { checkTurn(vm, i) })
-		return listParts(vm, items, parts)
+		return intlhook.EmitStringsAs(a.VM(), append([]string{""}, lits...), func(i int, _ string) (int, bool) {
+			if i > 0 {
+				return 0, false
+			}
+			if contextual {
+				return 1, true
+			}
+			return 0, true
+		})
 	}),
 	resolveBuiltin(displayNamesCtor),
 	// dnOf answers the name, or the number 0 for none.
@@ -840,9 +851,8 @@ var bridge = []*slowjs.Builtin{
 	}),
 	// casePremap takes a string, a language from caseLanguage and whether to
 	// map to upper case, and answers what the language's rules make of the
-	// string, for the engine to map the rest: a string, or an array of
-	// strings and the code units of lone surrogates; undefined where they
-	// change nothing.
+	// string, for the engine to map the rest, lone surrogates as they are:
+	// undefined where they change nothing.
 	intlhook.NewBuiltin("casePremap", 3, func(a slowjs.Args) (slowjs.Value, error) {
 		door := intlhook.Open(a)
 		lang, _ := door.Short(1, intlhook.KindOption)
@@ -856,18 +866,16 @@ var bridge = []*slowjs.Builtin{
 		s, give, _ := door.LongWTF8(0)
 		defer give()
 		w.read()
-		pieces, ok, err := premapCase(w, s, units, lang, upper)
+		text, wide, ok, err := premapCase(w, s, units, lang, upper)
 		switch {
 		case err != nil:
 			return slowjs.Value{}, err
 		case !ok:
 			return slowjs.UndefinedValue, nil
-		case len(pieces) == 1:
-			if s, ok := pieces[0].(string); ok {
-				return intlhook.Emit(a.VM(), s)
-			}
+		case wide != nil:
+			return intlhook.EmitUTF16(a.VM(), wide)
 		}
-		return intlhook.EmitMixed(a.VM(), pieces)
+		return intlhook.Emit(a.VM(), text)
 	}),
 	resolveBuiltin(temporalDateFormatCtor),
 	intlhook.NewBuiltin("temporalFormat", 3, func(a slowjs.Args) (slowjs.Value, error) { return temporalDateFormatted(a, false, false) }),

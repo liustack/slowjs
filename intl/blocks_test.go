@@ -33,15 +33,14 @@ var blockCalls = []struct {
 	{"compare of two long runs of accents",
 		`var a = 'a' + '\u0323\u0301\u0300'.repeat(N / 3), b = 'b' + '\u0323\u0301\u0300'.repeat(N / 3), c = new Intl.Collator('en')`,
 		`c.compare(a, b)`, 0},
-	{"a list of one long item",
-		`var l = ['x'.repeat(N), 'y'], f = new Intl.ListFormat('en')`,
-		`f.format(l).length`, 0},
 	{"toLocaleUpperCase in Turkish",
 		`var s = 'istanbul '.repeat(N / 9)`, `s.toLocaleUpperCase('tr').length`, 0},
 	{"toLocaleLowerCase in Turkish of I and marks",
 		`var s = 'I' + '̣'.repeat(N - 1)`, `s.toLocaleLowerCase('tr').length`, 0},
 	{"toLocaleUpperCase in Greek",
 		`var s = 'άέή'.repeat(N / 3)`, `s.toLocaleUpperCase('el').length`, 0},
+	{"toLocaleUpperCase in Turkish of lone surrogates",
+		`var s = 'i\ud800'.repeat(N / 2)`, `s.toLocaleUpperCase('tr').length`, 0},
 }
 
 // A long call holds its copy of the text in a block, not in Go's heap: Go

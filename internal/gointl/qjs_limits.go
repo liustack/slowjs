@@ -7,6 +7,7 @@ package intl
 
 import (
 	"strings"
+	"unicode/utf16"
 	"unicode/utf8"
 	"unsafe"
 )
@@ -26,10 +27,16 @@ import (
 // when the call is to stop or the OS refuses the memory. The owner of such
 // Limits calls Done once nothing the work made is used, and uses them for
 // one piece of work only.
+//
+// Blocks is Take for Limits that serve more than one piece of work, as
+// those of an iterator do: a piece of work that makes long arrays it drops
+// when it ends takes them from local Limits with Blocks as their Take, and
+// gives them back when it returns (local).
 type Limits struct {
-	Check func()
-	Room  func(n int64)
-	Take  func(size int) (p unsafe.Pointer, give func())
+	Check  func()
+	Room   func(n int64)
+	Take   func(size int) (p unsafe.Pointer, give func())
+	Blocks func(size int) (p unsafe.Pointer, give func())
 
 	gives []func()
 }
@@ -118,3 +125,27 @@ type turns struct {
 }
 
 func (t *turns) turn() { t.l.every(&t.n) }
+
+// utf8Of is string(utf16.Decode(u)), with the room for it asked first and
+// the call checked every limitEvery units.
+func utf8Of(u []uint16, l *Limits) string {
+	if l == nil {
+		return string(utf16.Decode(u))
+	}
+	l.room(3 * int64(len(u)))
+	b := take[byte](l, 3*len(u))[:0]
+	turns := 0
+	for i := 0; i < len(u); i++ {
+		l.every(&turns)
+		r := rune(u[i])
+		switch {
+		case isLead(u[i]) && i+1 < len(u) && isTrail(u[i+1]):
+			r = utf16.DecodeRune(r, rune(u[i+1]))
+			i++
+		case utf16.IsSurrogate(r):
+			r = utf8.RuneError
+		}
+		b = utf8.AppendRune(b, r)
+	}
+	return unsafe.String(unsafe.SliceData(b), len(b))
+}

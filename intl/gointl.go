@@ -14,7 +14,6 @@ import (
 	"github.com/liustack/slowjs"
 	gointl "github.com/liustack/slowjs/internal/gointl"
 	"github.com/liustack/slowjs/internal/intlhook"
-	"github.com/liustack/slowjs/internal/vmhook"
 )
 
 // The constructors built on go-intl (internal/gointl) resolve their locales
@@ -90,12 +89,12 @@ func goLocales(vm *slowjs.VM, tags []string) (r []gointl.Locale, units []int, er
 }
 
 // pieceEnd is the end of the piece of a list of locales that starts at i:
-// checkEvery locales, or fewer whose tags have intlhook.Piece units in all,
+// checkEvery locales, or fewer whose tags have intlhook.MaxTag units in all,
 // and one at least. units are the lengths of the tags.
 func pieceEnd(units []int, i int) int {
 	n := 0
 	j := i
-	for j < len(units) && j-i < checkEvery && n < intlhook.Piece {
+	for j < len(units) && j-i < checkEvery && n < intlhook.MaxTag {
 		n += units[j]
 		j++
 	}
@@ -310,9 +309,10 @@ func checkTurn(vm *slowjs.VM, i int) {
 
 // tagTurns counts the turns of a loop over a list of locales and the units
 // of their tags, and checks the call every checkEvery turns or every
-// intlhook.Piece units, whichever comes first: the work on a tag grows with
+// intlhook.MaxTag units, whichever comes first: the work on a tag grows with
 // its length, up to intlhook.MaxTag units, and checkEvery tags at the cap
-// held the eval timeout 60 ms on an Apple M4.
+// held the eval timeout 60 ms on an Apple M4, and four tags of many variants
+// 44 ms.
 type tagTurns struct {
 	vm           *slowjs.VM
 	turns, units int
@@ -323,18 +323,20 @@ type tagTurns struct {
 func (t *tagTurns) turn(n int) {
 	t.turns++
 	t.units += n
-	if t.turns >= checkEvery || t.units >= intlhook.Piece {
+	if t.turns >= checkEvery || t.units >= intlhook.MaxTag {
 		t.turns, t.units = 0, 0
 		intlhook.Check(t.vm)
 	}
 }
 
 // limitsOf are the checks of a call on vm, for the work of gointl that is
-// one piece no Builtin can cut (gointl.Limits).
+// one piece no Builtin can cut (gointl.Limits), and the blocks of the work
+// of one call, which it gives back before it returns.
 func limitsOf(vm *slowjs.VM) *gointl.Limits {
 	return &gointl.Limits{
-		Check: func() { intlhook.Check(vm) },
-		Room:  func(n int64) { intlhook.Room(vm, n) },
+		Check:  func() { intlhook.Check(vm) },
+		Room:   func(n int64) { intlhook.Room(vm, n) },
+		Blocks: takeBlock(vm),
 	}
 }
 
@@ -355,16 +357,14 @@ func callLimits(vm *slowjs.VM) *gointl.Limits {
 				intlhook.Room(vm, held)
 			}
 		},
-		Take: func(size int) (unsafe.Pointer, func()) {
-			b, give := intlhook.Take[byte](vm, size)
-			return unsafe.Pointer(unsafe.SliceData(b)), give
-		},
+		Take: takeBlock(vm),
 	}
 }
 
-// stopTurn is checkTurn for a loop that has made javascript values, which
-// it frees before it returns when stopTurn is true: then the call is to
-// end, with its error pending, and the Builtin returns at once.
-func stopTurn(vm *slowjs.VM, i int) bool {
-	return i%checkEvery == checkEvery-1 && vmhook.Stop(vm)
+// takeBlock takes the blocks of gointl.Limits from vm (intlhook.Take).
+func takeBlock(vm *slowjs.VM) func(size int) (unsafe.Pointer, func()) {
+	return func(size int) (unsafe.Pointer, func()) {
+		b, give := intlhook.Take[byte](vm, size)
+		return unsafe.Pointer(unsafe.SliceData(b)), give
+	}
 }

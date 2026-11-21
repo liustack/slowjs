@@ -551,7 +551,10 @@ func (e *cjkEngine) expandedUnits(in []uint16, l *Limits) int {
 
 // divide checks l every few thousand code points, and first that the call
 // has room for what it takes (qjs): a run of Han with no space is one
-// piece of any length.
+// piece of any length. Each pass over the run is checked, and its arrays
+// come from blocks when l has them (Limits.local), given back when it
+// returns: decoded whole and made in Go's heap with no check, the arrays
+// of 8 Mi units held the call 73 ms on an Apple M4.
 func (e *cjkEngine) divide(t *utext, rangeStart, rangeEnd int, breaks *[]int, l *Limits) int {
 	if rangeStart >= rangeEnd {
 		return 0
@@ -560,21 +563,24 @@ func (e *cjkEngine) divide(t *utext, rangeStart, rangeEnd int, breaks *[]int, l 
 	if l != nil && l.Room != nil {
 		l.room(int64(e.expandedUnits(in, l)) * cjkRoomPerUnit)
 	}
+	w := l.local()
+	defer w.Done()
 	var inputMap []int // nil for positions offset by rangeStart
-	s := string(utf16.Decode(in))
+	s := utf8Of(in, w)
 	turns := 0
-	if e.norm.normalize(s, NFKC, l) != s {
+	if e.norm.normalize(s, NFKC, w) != s {
 		var normalized []uint16
 		var nmap []int
+		var frag []rune
 		u := utext{text: in}
 		for u.index() < len(in) {
 			l.every(&turns)
 			fragStart := u.index()
-			var frag []rune
+			frag = frag[:0]
 			c := u.next32()
 			for {
 				l.every(&turns)
-				frag = append(frag, c)
+				frag = push(w, frag, c)
 				if u.index() == len(in) {
 					break
 				}
@@ -584,20 +590,35 @@ func (e *cjkEngine) divide(t *utext, rangeStart, rangeEnd int, breaks *[]int, l 
 				}
 				u.next32()
 			}
-			nf := utf16.Encode([]rune(e.norm.normalize(string(frag), NFKC, l)))
-			normalized = append(normalized, nf...)
+			for _, r := range e.norm.normalize(stringOf(frag, w), NFKC, w) {
+				l.every(&turns)
+				if r >= 0x10000 {
+					r1, r2 := utf16.EncodeRune(r)
+					normalized = push(w, normalized, uint16(r1))
+					r = r2
+				}
+				normalized = push(w, normalized, uint16(r))
+			}
+			// push checks only when it grows the map: each turn counts.
 			for len(nmap) < len(normalized) {
-				nmap = append(nmap, fragStart+rangeStart)
+				l.every(&turns)
+				nmap = push(w, nmap, fragStart+rangeStart)
 			}
 		}
-		nmap = append(nmap, len(in)+rangeStart)
+		nmap = push(w, nmap, len(in)+rangeStart)
 		inputMap, in = nmap, normalized
 	}
-	runes := utf16.Decode(in)
-	numCodePts := len(runes)
+	numCodePts := 0
+	for i := 0; i < len(in); i++ {
+		l.every(&turns)
+		if isLead(in[i]) && i+1 < len(in) && isTrail(in[i+1]) {
+			i++
+		}
+		numCodePts++
+	}
 	if numCodePts != len(in) {
 		// Supplementary characters: the dictionary counts code points.
-		var cp []int
+		cp := take[int](w, numCodePts+1)[:0]
 		cu := 0
 		for i := 0; ; i++ {
 			l.every(&turns)
@@ -618,14 +639,16 @@ func (e *cjkEngine) divide(t *utext, rangeStart, rangeEnd int, breaks *[]int, l 
 		inputMap = cp
 	}
 	const maxUint32 = ^uint32(0)
-	bestSnlp := make([]uint32, numCodePts+1)
-	prev := make([]int, numCodePts+1)
+	bestSnlp := take[uint32](w, numCodePts+1)
+	prev := take[int](w, numCodePts+1)
 	for i := range bestSnlp {
+		l.every(&turns)
 		bestSnlp[i], prev[i] = maxUint32, -1
 	}
 	bestSnlp[0] = 0
-	values := make([]int, numCodePts+1)
-	lengths := make([]int, numCodePts+1)
+	// matches gives at most cjkMaxWordSize words, and a character that is
+	// none is one more.
+	var values, lengths [cjkMaxWordSize + 1]int
 	fu := utext{text: in}
 	ix := 0
 	prevKatakana := false
@@ -634,7 +657,7 @@ func (e *cjkEngine) divide(t *utext, rangeStart, rangeEnd int, breaks *[]int, l 
 		c, n := fu.at(ix)
 		if bestSnlp[i] != maxUint32 {
 			fu.setIndex(ix)
-			count, _ := e.dict.matches(&fu, cjkMaxWordSize, numCodePts, nil, lengths[:numCodePts], values[:numCodePts])
+			count, _ := e.dict.matches(&fu, cjkMaxWordSize, numCodePts, nil, lengths[:], values[:])
 			// A character that is no one-character word is one anyway, at
 			// the highest cost, but for Hangul, which stays together.
 			if (count == 0 || lengths[0] != 1) && !(c >= 0xac00 && c <= 0xd7a3) {
@@ -673,21 +696,29 @@ func (e *cjkEngine) divide(t *utext, rangeStart, rangeEnd int, breaks *[]int, l 
 		}
 		ix += n
 	}
-	var tb []int
+	// The breaks back from the end, and 0, are at most numCodePts + 1.
+	tb := take[int](w, numCodePts+2)[:0]
 	if bestSnlp[numCodePts] == maxUint32 {
 		tb = append(tb, numCodePts)
 	} else {
 		for i := numCodePts; i > 0; i = prev[i] {
+			l.every(&turns)
 			tb = append(tb, i)
 		}
 	}
 	if len(*breaks) == 0 || peek(*breaks) < rangeStart {
 		tb = append(tb, 0)
 	}
+	// The breaks outlive the call in the iterator, in Go's heap: grown at
+	// most once here, copied a piece at a time.
+	if need := len(*breaks) + len(tb); cap(*breaks) < need {
+		*breaks = appendPieces(l, make([]int, 0, max(need, 2*cap(*breaks))), *breaks)
+	}
 	numBreaks := len(tb)
 	prevUTextPos := -1
 	corrected := 0
 	for i := numBreaks - 1; i >= 0; i-- {
+		l.every(&turns)
 		pos := tb[i] + rangeStart
 		if inputMap != nil {
 			pos = inputMap[tb[i]]

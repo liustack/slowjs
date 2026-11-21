@@ -109,7 +109,10 @@ No poll runs while a Go function that javascript called works in Go, so neither 
 - the functions of `fmt`, which check a bound on their output against `vmhook.Room` before Go makes it, against room for 16 MiB in a VM with no memory limit, and `printf` and `println`, which write 64 KiB at a time and check between two writes.
 - the Builtins of `url`, which read the length of each string argument with `Args.StringLen` (a rope too, without joining it), refuse one longer than 65,536 UTF-16 units, and check the room for what Go may take before they read a string. Their work is short, so they ask `vmhook.Stop` once, as each call starts and not inside it: the engine counts toward a poll the bytecode it runs and not the time of a Go function, so a loop of such calls would otherwise make dozens between two polls.
 
-Work in Go that a script can make long and that makes none of these calls still runs to its end, and what it allocates is outside the memory limit: `Intl.Collator` and `localeCompare` but for a run of accents, the case mapping of `toLocaleUpperCase` and `toLocaleLowerCase`, the read of one long locale tag in a list or of one long list item, and the read of the text of `Intl.Segmenter` and its copy in UTF-16. Go makes the output of `fmt` with no check of the call either, in a time that grows with its bound, but what the output may make it allocate is checked against the room of the VM before it starts ([uncatchable.md](changes/uncatchable.md#the-functions-of-fmt-end-the-call-when-their-output-does-not-fit)).
+Work in Go that a script can make long and that makes none of these calls still runs to its end. What is left of it:
+
+- A compare of two long strings that part near their start, stopped at its timeout, gives the memory it took back to the OS before the call returns: about 9 ms for strings of 16 Mi units on an Apple M4. Two strings that share a long prefix are weighed only after it.
+- `%d` of a long BigInt in `fmt` does one division of the whole number with math/big ([uncatchable.md](changes/uncatchable.md#the-functions-of-fmt-make-a-long-output-in-checked-pieces)).
 
 ## A long call and the Go scheduler
 

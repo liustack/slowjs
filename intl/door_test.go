@@ -378,7 +378,7 @@ func TestListRoomCoversGo(t *testing.T) {
 func TestEmittedArraysFreeTheirElements(t *testing.T) {
 	for _, js := range []string{
 		`Intl.getCanonicalLocales(['en-US', 'fr', 'de'])`, // EmitStrings
-		`'İ\ud800x'.toLocaleLowerCase('tr')`,              // EmitMixed: a lone surrogate cuts the pieces
+		`'İ\ud800x'.toLocaleLowerCase('tr')`,              // EmitUTF16: a lone surrogate
 		`new Intl.Locale('en-US').getCalendars()`,
 	} {
 		t.Run(js, func(t *testing.T) {
