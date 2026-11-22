@@ -27,7 +27,7 @@ set -eu
 cd "$(dirname "$0")/.."
 
 # The module folder, the -tags of its go vet ("-" for no tags) and the
-# systems: all, the five the module runs on, or unix, those but windows
+# systems: all, the six the module runs on, or unix, those but windows
 # (compare/engines measures with getrusage, and runs on linux and darwin).
 list='
 . - all
@@ -48,7 +48,7 @@ compare/engines eng_moejs unix
 compare/engines eng_goquickjs unix
 '
 unix='linux/amd64 linux/arm64 darwin/amd64 darwin/arm64'
-all="$unix windows/amd64"
+all="$unix windows/amd64 windows/arm64"
 
 if [ "${VET_TAGS_LIST:-}" = 1 ]; then
 	echo "$list" | grep -v '^$'
