@@ -94,15 +94,15 @@ Ask the owner before you create a tag and again before you push one. A pushed ta
    ```
 
 3. Check that the proxy has it: `GOPROXY=https://proxy.golang.org go list -m github.com/liustack/slowjs@<version>`.
-4. Check that the release job made the GitHub release of the tag (`gh run list --workflow release.yml`, then the release page): five archives and `checksums.txt`.
+4. Check that the release job made the GitHub release of the tag (`gh run list --workflow release.yml`, then the release page): six archives and `checksums.txt`.
 
 ### The release job
 
 `.github/workflows/release.yml` runs when a tag `v*` is pushed. The GitHub release it makes is there only for the binaries of `slowjs`: the module is still the tag, and Go users never need the release.
 
-1. **build** (linux/amd64): `scripts/slowjs-release.sh <tag> dist` builds `cmd/slowjs` for the five targets with `CGO_ENABLED=0`, `-trimpath`, `-ldflags "-s -w"` and the tag stamped in as the version, with the Go of the `go` line of `go.mod`, as CI tests with. It packs each binary with its license texts and writes `checksums.txt` (SHA-256).
-2. **test**, on each of the five systems as CI runs them (darwin/amd64 under Rosetta): it checks the archive against `checksums.txt`, unpacks it, and runs the tests of `cmd/slowjs` against that binary (`SLOWJS_BIN`, see [command.md](command.md#tests)), the V8 suite among them, with the tag as the version it must report.
-3. **release**, only after all five pass and only for a pushed tag: it makes the GitHub release of the tag, titled with the tag, with the archives and `checksums.txt`, and notes that link to [command.md](command.md) and the changelog. It is the only job with `contents: write`. Run again for a tag whose release exists, it replaces the files.
+1. **build** (linux/amd64): `scripts/slowjs-release.sh <tag> dist` builds `cmd/slowjs` for the six targets with `CGO_ENABLED=0`, `-trimpath`, `-ldflags "-s -w"` and the tag stamped in as the version, with the Go of the `go` line of `go.mod`, as CI tests with. It packs each binary with its license texts and writes `checksums.txt` (SHA-256).
+2. **test**, on each of the six systems as CI runs them (darwin/amd64 under Rosetta, windows/arm64 on `windows-11-arm`): it checks the archive against `checksums.txt`, unpacks it, and runs the tests of `cmd/slowjs` against that binary (`SLOWJS_BIN`, see [command.md](command.md#tests)), the V8 suite among them, with the tag as the version it must report.
+3. **release**, only after all six pass and only for a pushed tag: it makes the GitHub release of the tag, titled with the tag, with the archives and `checksums.txt`, and notes that link to [command.md](command.md) and the changelog. It is the only job with `contents: write`. Run again for a tag whose release exists, it replaces the files.
 
 What a release holds:
 
@@ -113,6 +113,7 @@ What a release holds:
 | `slowjs-darwin-amd64.tar.gz` | darwin/amd64 |
 | `slowjs-darwin-arm64.tar.gz` | darwin/arm64 |
 | `slowjs-windows-amd64.zip` | windows/amd64 |
+| `slowjs-windows-arm64.zip` | windows/arm64 |
 | `checksums.txt` | The SHA-256 of each archive, as `sha256sum` writes it |
 
 The names carry the target as Go names it, and no version, so that `releases/latest/download/<name>` always points to the newest. Each archive holds one folder of the same name, with the binary (`slowjs`, or `slowjs.exe`), `NOTICE.md` and the texts [NOTICE.md](../NOTICE.md#what-a-program-that-ships-a-binary-must-include) says a binary must carry, at their paths in this repository: `LICENSE`, `LICENSE-QUICKJS`, `LICENSE-TLSF`, `engine/libc/COPYRIGHT`, those of `intl` and `temporal` (`intl/LICENSE-DATA`, `internal/gointl/LICENSE` and the four notices of `internal/gointl/qjsdata/`), of `url` (`internal/whatwgurl/LICENSE-WHATWG-URL` and `LICENSE-GO`) and of `fmt` (`fmt/LICENSE-GO`), and under `third_party/` the license of Go and of golang.org/x/sys. The script stops when the binary links a module other than golang.org/x/sys, which would ship without its license.

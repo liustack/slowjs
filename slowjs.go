@@ -23,8 +23,8 @@
 // # Platforms
 //
 // The package builds for darwin/amd64, darwin/arm64, linux/amd64,
-// linux/arm64, windows/amd64 and windows/arm64. A build for any other target stops with an
-// error that names these.
+// linux/arm64, windows/amd64 and windows/arm64. A build for any other target
+// stops with an error that names these.
 //
 // # Bytecode across versions
 //

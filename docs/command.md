@@ -12,13 +12,13 @@ read_when:
 
 - **Show a problem.** A script and what `slowjs` printed for it is the whole report: the engine is the one we ship, set up as we use it.
 - **Run a script on the engine**, to see what it gives, how long it takes or how much memory it needs.
-- **Try a release without Go.** From v0.31.0, the GitHub release of each version has it prebuilt for linux and darwin on amd64 and arm64 and for windows/amd64.
+- **Try a release without Go.** From v0.31.0, the GitHub release of each version has it prebuilt for linux, darwin and windows, on amd64 and arm64 (windows/arm64 from the release after v0.31.11).
 
 The code is `cmd/slowjs`.
 
 ## Get it
 
-Download the archive of your system from the [latest release](https://github.com/liustack/slowjs/releases/latest), check it against `checksums.txt` and unpack it. The archives are named after the target as Go names it: `slowjs-linux-amd64.tar.gz`, `slowjs-linux-arm64.tar.gz`, `slowjs-darwin-amd64.tar.gz` (macOS, Intel), `slowjs-darwin-arm64.tar.gz` (macOS, Apple silicon) and `slowjs-windows-amd64.zip`.
+Download the archive of your system from the [latest release](https://github.com/liustack/slowjs/releases/latest), check it against `checksums.txt` and unpack it. The archives are named after the target as Go names it: `slowjs-linux-amd64.tar.gz`, `slowjs-linux-arm64.tar.gz`, `slowjs-darwin-amd64.tar.gz` (macOS, Intel), `slowjs-darwin-arm64.tar.gz` (macOS, Apple silicon), `slowjs-windows-amd64.zip` and `slowjs-windows-arm64.zip`.
 
 ```sh
 curl -LO https://github.com/liustack/slowjs/releases/latest/download/slowjs-linux-amd64.tar.gz
@@ -111,13 +111,14 @@ Size of the binary, built as the release builds it (`-trimpath -ldflags "-s -w"`
 
 | Target | slowjs |
 | --- | --: |
-| linux/amd64 | 19.0 |
-| linux/arm64 | 18.0 |
-| darwin/amd64 | 19.1 |
-| darwin/arm64 | 18.2 |
-| windows/amd64 | 19.3 |
+| linux/amd64 | 19.6 |
+| linux/arm64 | 18.5 |
+| darwin/amd64 | 19.7 |
+| darwin/arm64 | 18.7 |
+| windows/amd64 | 19.9 |
+| windows/arm64 | 18.7 |
 
-Most of it is the locale data of `intl`. The archives are 8.1 to 8.7 MiB.
+Most of it is the locale data of `intl`. The archives are 8.3 to 8.9 MiB.
 
 ## Tests
 
