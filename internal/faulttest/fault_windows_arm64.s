@@ -15,14 +15,38 @@ TEXT ·fillAndFault(SB), NOSPLIT|NOFRAME, $0-24
 	SUB	R2, R3, R4
 	SUB	$16, R3, R5
 	MOVD	$0x5a5a5a5a5a5a5a5a, R6
-loop:
+fill:
 	CMP	R5, R4
-	BHS	done
+	BHS	fault
 	EOR	R4, R6, R7
 	MOVD	R7, (R4)
 	ADD	$8, R4
-	B	loop
-done:
+	B	fill
+fault:
 	MOVD	(R0), R7
 	MOVD	R7, R0
+	RET
+
+// func written(top, span uintptr) uintptr
+TEXT ·written(SB), NOSPLIT|NOFRAME, $0-24
+	MOVD	top+0(FP), R3
+	MOVD	span+8(FP), R2
+	SUB	R2, R3, R4
+	SUB	$16, R3, R5
+	MOVD	$0x5a5a5a5a5a5a5a5a, R6
+scan:
+	CMP	R5, R4
+	BHS	none
+	MOVD	(R4), R7
+	EOR	R4, R6, R8
+	CMP	R8, R7
+	BNE	found
+	ADD	$8, R4
+	B	scan
+found:
+	SUB	R4, R3, R0
+	MOVD	R0, ret+16(FP)
+	RET
+none:
+	MOVD	ZR, ret+16(FP)
 	RET

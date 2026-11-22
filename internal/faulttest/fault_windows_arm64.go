@@ -14,3 +14,9 @@ const pattern = 0x5a5a5a5a5a5a5a5a
 // that nothing runs on the stack between the fill and the fault, for
 // TestFaultStateFits.
 func fillAndFault(wild uintptr, top *uintptr, span uintptr)
+
+// written returns how far below top the lowest word of [top-span, top-16)
+// that no longer holds the pattern of fillAndFault is, or 0 when every word
+// does. It is assembly with no frame and no stack check, so the stack cannot
+// move while it reads.
+func written(top, span uintptr) uintptr

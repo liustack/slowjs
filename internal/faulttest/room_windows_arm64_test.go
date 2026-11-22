@@ -6,54 +6,56 @@
 package faulttest
 
 import (
+	"os"
+	"os/exec"
 	"runtime/debug"
+	"strings"
 	"testing"
 	"unsafe"
+
+	"golang.org/x/sys/windows"
 
 	"github.com/liustack/slowjs/internal/faultstate"
 )
 
 const (
-	// wild is an address mapped to nothing.
-	wild = 0xdead0000
 	// span is how far below the stack pointer the fill reaches.
 	span = 8 << 10
+	// room is the stack the probe makes the goroutine hold below its frame
+	// before each fault, well past span and the frames of the panic.
+	room = 64 << 10
+	// probeEnv marks the process that runs the probe.
+	probeEnv = "SLOWJS_FAULTTEST_PROBE"
 )
 
 var sink byte
 
-// grow makes the stack of the goroutine hold its frame, larger than span,
-// below the frame of its caller. With the collector off the stack does not
-// shrink again.
+// grow makes the stack of the goroutine hold room bytes below the frame of
+// its caller.
 //
 //go:noinline
 func grow(n int) byte {
-	var buf [2 * span]byte
+	var buf [room]byte
 	buf[n%len(buf)] = byte(n)
 	return buf[(n*7)%len(buf)]
 }
 
 // faultBelow fills below its stack pointer, which it writes to *top, faults
-// and recovers.
+// on a load from wild and recovers, and returns the address of the fault,
+// or what else the panic was.
 //
 //go:noinline
-func faultBelow(top *uintptr) (faulted bool) {
-	defer func() { _, faulted = recover().(interface{ Addr() uintptr }) }()
-	fillAndFault(wild, top, span)
-	return false
-}
-
-// written returns how far below top the lowest word of the fill that changed
-// is, or 0 when none did.
-//
-//go:noinline
-func written(top uintptr) uintptr {
-	for a := top - span; a < top-16; a += 8 {
-		if *(*uint64)(*(*unsafe.Pointer)(unsafe.Pointer(&a))) != pattern^uint64(a) {
-			return top - a
+func faultBelow(wild uintptr, top *uintptr) (at uintptr, other any) {
+	defer func() {
+		r := recover()
+		if e, ok := r.(interface{ Addr() uintptr }); ok {
+			at = e.Addr()
+		} else {
+			other = r
 		}
-	}
-	return 0
+	}()
+	fillAndFault(wild, top, span)
+	return 0, nil
 }
 
 // TestFaultStateFits: on windows/arm64 the state of the CPU that the system
@@ -70,7 +72,34 @@ func written(top uintptr) uintptr {
 // CONTEXT takes more than faultstate.Dispatch, as a deeper dispatch of
 // another windows or Go might. Measured on the windows-11-arm runner of
 // GitHub (Cobalt 100, build 26200): 2,488 bytes, with a CONTEXT of 1,137.
+//
+// The probe writes and reads below the stack pointer, so it runs in a
+// process of its own in which the stack of a goroutine never shrinks
+// (GODEBUG=gcshrinkstackoff=1) and no collection runs. Before each fault it
+// grows the stack to room bytes below its frame, and it fails, reading
+// nothing, when the stack moved between the fill and the read.
 func TestFaultStateFits(t *testing.T) {
+	if os.Getenv(probeEnv) != "" {
+		probe(t)
+		return
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(exe, "-test.run=^TestFaultStateFits$", "-test.count=1", "-test.v")
+	cmd.Env = append(os.Environ(), probeEnv+"=1", "GODEBUG=gcshrinkstackoff=1,asyncpreemptoff=1", "GOGC=off", "GOMEMLIMIT=off")
+	out, err := cmd.CombinedOutput()
+	t.Logf("the probe said\n%s", out)
+	if err != nil {
+		t.Fatalf("the probe: %v", err)
+	}
+	if !strings.Contains(string(out), "--- PASS: TestFaultStateFits") {
+		t.Fatal("the probe did not pass")
+	}
+}
+
+func probe(t *testing.T) {
 	mask, size, err := faultstate.Query()
 	if err != nil {
 		t.Fatal(err)
@@ -78,16 +107,29 @@ func TestFaultStateFits(t *testing.T) {
 	if err := faultstate.Decide(mask, size, nil); err != nil {
 		t.Fatal(err)
 	}
+	// The fault is on a page the probe reserves with no access, so that it is
+	// the load of fillAndFault that faults, at that address.
+	page, err := windows.VirtualAlloc(0, 1<<16, windows.MEM_RESERVE, windows.PAGE_NOACCESS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer windows.VirtualFree(page, 0, windows.MEM_RELEASE)
 	defer debug.SetGCPercent(debug.SetGCPercent(-1))
 	defer debug.SetPanicOnFault(debug.SetPanicOnFault(true))
-	sink = grow(1)
 	deepest := uintptr(0)
 	for range 4 {
+		sink = grow(1)
+		var here byte
+		before := uintptr(unsafe.Pointer(&here))
 		var top uintptr
-		if !faultBelow(&top) {
-			t.Fatalf("the load from %#x did not fault", wild)
+		at, other := faultBelow(page, &top)
+		if uintptr(unsafe.Pointer(&here)) != before {
+			t.Fatal("the stack moved between the fill and the read")
 		}
-		w := written(top)
+		w := written(top, span)
+		if other != nil || at != page {
+			t.Fatalf("the fault was at %#x (%v), want the load from %#x", at, other, page)
+		}
 		if w == 0 {
 			t.Fatal("the fault wrote nothing below the stack pointer")
 		}
