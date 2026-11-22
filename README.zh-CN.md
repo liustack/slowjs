@@ -22,7 +22,7 @@
 
 你的 Go 服务自己渲染 React 页面：同样的代码比 C 版 QuickJS 还快，一个静态二进制，不用 cgo，旁边也不用跑 Node。
 
-给需要在 Go 程序里跑 JavaScript 的场景用，比如在服务端渲染 React。引擎支持 ES2023（模块、异步生成器、Proxy、BigInt），`Intl` 覆盖 Chromium 的全部语言，还有 `Temporal`，两者都是内置的。它是编译成 Go 汇编、为服务端渲染调优过的 QuickJS，为 [tifa](https://github.com/liustack/tifa) 而做，tifa 是一个渲染 React 页面的 Go 框架。
+给需要在 Go 程序里跑 JavaScript 的场景用，比如在服务端渲染 React。引擎支持 ES2023（模块、异步生成器、Proxy、BigInt），`Intl` 覆盖 Chromium 的全部语言，还有 `Temporal`，两者都是内置的。它为 [tifa](https://github.com/liustack/tifa) 而做，tifa 是一个渲染 React 页面的 Go 框架。
 
 它是引擎，不是 Node：没有 `require`、`fs`、`process`。npm 上的代码按浏览器的方式打包后就能原样运行，React 就是这样。
 
@@ -118,11 +118,11 @@ func main() {
 - **限额一到，调用就结束。** 脚本超过 eval 超时或内存上限就停在那里，不管它怎么 catch：页面里的 `catch`、`finally`、promise 回调和 Go 函数都不会再跑。`*Error` 会说明是超时还是内存。交给 VM 的 Go 函数 panic 了，panic 会回到你自己的 Go 代码，内存耗尽的 VM 也照样能关掉，不漏内存。
 - **每台机器上页面都一样。** 每个 VM 里脚本的本地时间都是 UTC，不用给整个进程设 `TZ`。`Intl` 支持 Chromium 有的所有语言，在约 75,000 个表达式上和 Chromium 156 对过结果。
 - **字符串完整到达。** 从 JavaScript 拿到的 Go 字符串一定是合法的 UTF-8，带非法字节的 Go 字符串到了 JavaScript 里，读法和 Go 自己解码时一样。
-- **比 C 还快，不要 C。** liustack/slowjs 对 QuickJS 的 C 做的改动，补回的比编译成 Go 汇编损失的还多（见[上面的表](#有多快)）。多个 VM 在多个核上也不会等同一把锁。
+- **比 C 还快，不要 C。** 同样的页面比 C 版 QuickJS 渲染得快，虽然它跑的是 Go 汇编（见[上面的表](#有多快)）。多个 VM 在多个核上也不会等同一把锁。
 
 ## 凭什么信它
 
-- **引擎就是上游 QuickJS。** `engine/` 是 Bellard 的 C 代码在一个固定的提交上，加上 liustack/slowjs 的改动，每处改动都有记录。LLVM 把它编译成提交进仓库的 Go 汇编，所以构建不需要 C 编译器，而且提交的文件和生成器从 `engine/` 生成的结果不一致时，`make check-gen` 会失败（[怎么核对](docs/testing.md#generate-and-check)）。
+- **每处改动都能追溯。** `engine/` 从 Bellard 的 QuickJS 的一个固定提交起步，之后的每处改动都有记录。LLVM 把它编译成提交进仓库的 Go 汇编，所以构建不需要 C 编译器，而且提交的文件和生成器从 `engine/` 生成的结果不一致时，`make check-gen` 会失败（[怎么核对](docs/testing.md#generate-and-check)）。
 - **生成器不放过没核对过的东西。** 遇到它没有规则的指令、调用或栈帧就停下，还会检查测试程序链接后的代码，所以 C 或 Go 本身的改动弄坏了引擎，表现为构建或测试失败，而不是答案错了。
 - **每处改动都有记录。** [docs/changes](docs/changes/README.md) 逐项写了为什么安全、内存代价多少、在哪台机器上快了多少，以及对应的测试。
 - **测试用上游的，还多加了一层。** test262 有 33 个已知失败，比搬进上游的修正之前少了 25 个，每次跑都是同样这些。另外还有引擎的记录输出、在 AddressSanitizer 和 UndefinedBehaviorSanitizer 下跑的 C 检查，以及 Go API 的测试。
