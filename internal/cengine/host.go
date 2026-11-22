@@ -20,7 +20,7 @@ import (
 // with at its end.
 //
 // Each callback that returns calls makeRoom last, right before its one
-// return, and returns only values already computed: on windows the stack
+// return, defers nothing and returns only values already computed: on windows the stack
 // may have shrunk while it ran, and the engine code it returns to has to
 // have the room for a fault below it again (room_windows_amd64.go).
 // TestCallbacksMakeRoom holds them to it.
