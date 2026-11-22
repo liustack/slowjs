@@ -68,18 +68,24 @@ func TestCallbacksMakeRoom(t *testing.T) {
 }
 
 // makesRoomLast says what is wrong with fd, or "" when it ends with
-// makeRoom() and then at most one return of names.
+// makeRoom() and then at most one return of names, and defers nothing: a
+// deferred call would run after makeRoom.
 func makesRoomLast(fd *ast.FuncDecl) string {
-	returns := 0
+	returns, defers := 0, 0
 	ast.Inspect(fd.Body, func(n ast.Node) bool {
 		switch n.(type) {
 		case *ast.FuncLit:
 			return false
 		case *ast.ReturnStmt:
 			returns++
+		case *ast.DeferStmt:
+			defers++
 		}
 		return true
 	})
+	if defers != 0 {
+		return "it defers a call, which runs after makeRoom"
+	}
 	list := fd.Body.List
 	if r, ok := list[len(list)-1].(*ast.ReturnStmt); ok {
 		for _, e := range r.Results {
@@ -118,5 +124,29 @@ func TestNewChecksFaultState(t *testing.T) {
 	v, err := New(Options{})
 	if v != nil || !errors.Is(err, refused) {
 		t.Fatalf("New = %v, %v, want no VM and the error of the check", v, err)
+	}
+}
+
+// A deferred call runs after makeRoom, and can stop at a call where the
+// runtime shrinks the stack, so a callback that defers is refused, as is one
+// that returns early or computes its result after makeRoom.
+func TestMakesRoomLastRefuses(t *testing.T) {
+	for src, want := range map[string]string{
+		"func f() { g(); makeRoom() }":                       "",
+		"func f() int { r := g(); makeRoom(); return r }":    "",
+		"func f() { defer g(); makeRoom() }":                 "it defers a call, which runs after makeRoom",
+		"func f() { if c { defer g() }; makeRoom() }":        "it defers a call, which runs after makeRoom",
+		"func f() int { makeRoom(); return g() }":            "its return computes a value after makeRoom",
+		"func f() { if c { return }; makeRoom() }":           "it returns before it makes room",
+		"func f() { makeRoom(); g() }":                       "its last statement before the return is not makeRoom()",
+		"func f() { go func() { defer g() }(); makeRoom() }": "",
+	} {
+		file, err := parser.ParseFile(token.NewFileSet(), "x.go", "package x\n"+src, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := makesRoomLast(file.Decls[0].(*ast.FuncDecl)); got != want {
+			t.Errorf("%s: %q, want %q", src, got, want)
+		}
 	}
 }
