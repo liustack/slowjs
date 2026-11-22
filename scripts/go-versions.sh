@@ -152,7 +152,7 @@ for v in $versions; do
 		test "$(go env GOVERSION)" = "$v"
 		step go-build go build ./...
 		step go-vet go vet ./...
-		step go-test-internal go test -count=1 -tags testhooks ./internal/cengine ./internal/gohost ./internal/hostmem ./internal/idtable
+		step go-test-internal go test -count=1 -tags testhooks ./internal/cengine ./internal/faultstate ./internal/faulttest ./internal/gohost ./internal/hostmem ./internal/idtable
 		step go-test-root go test -count=1 -p 1 -timeout 60m .
 		step go-test-root-hooks go test -count=1 -p 1 -timeout 60m -tags testhooks .
 		if [ "$use_llvm" = 1 ]; then

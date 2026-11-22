@@ -61,7 +61,7 @@ jobs:
           cache: true
       - run: go version
       - name: Test, internal packages with the test hooks
-        run: go test -count=1 -tags testhooks,slowjs_anygo ./internal/cengine ./internal/gohost ./internal/hostmem ./internal/idtable
+        run: go test -count=1 -tags testhooks,slowjs_anygo ./internal/cengine ./internal/faultstate ./internal/faulttest ./internal/gohost ./internal/hostmem ./internal/idtable
       - name: Test, root package
         run: go test -count=1 -p 1 -timeout 60m -tags slowjs_anygo .
       - name: Test, root package with the test hooks
