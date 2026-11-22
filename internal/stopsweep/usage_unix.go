@@ -17,11 +17,12 @@ import (
 func usageNow() usage {
 	var u syscall.Rusage
 	if err := syscall.Getrusage(syscall.RUSAGE_SELF, &u); err != nil {
-		return usage{faults: -1}
+		return usage{faults: -1, cycles: -1}
 	}
 	return usage{
 		user:   time.Duration(u.Utime.Nano()),
 		sys:    time.Duration(u.Stime.Nano()),
 		faults: int64(u.Minflt),
+		cycles: -1,
 	}
 }
