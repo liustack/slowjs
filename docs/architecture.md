@@ -130,7 +130,7 @@ A call into the engine keeps its P (the processor of the Go scheduler that runs 
 
 ## Platforms
 
-The engine runs on linux, darwin and windows, on amd64 and arm64. Every system runs the same generated code of each architecture, and windows/amd64 adds a room check to it (see [c-engine.md](changes/c-engine.md#room-for-a-fault-on-windows)). Other targets are not supported, so a build for one stops with an error that names the supported ones (`internal/unsupported`). Which Go builds it, and what a newer Go does, is in [upgrading.md](upgrading.md#moving-to-a-newer-go). A change must keep `make build_all_targets` passing on all six (see [testing.md](testing.md#every-target)).
+The engine runs on linux, darwin and windows, on amd64 and arm64. Every system runs the same generated code of each architecture, and windows/amd64 adds a room check to it (see [c-engine.md](changes/c-engine.md#room-for-a-fault-on-windows)). Other targets are not supported, android and ios among them, though Go builds them with the files of linux and of darwin, so a build for one stops with an error that names the supported ones (`internal/unsupported`). Which Go builds it, and what a newer Go does, is in [upgrading.md](upgrading.md#moving-to-a-newer-go). A change must keep `make build_all_targets` passing on all six (see [testing.md](testing.md#every-target)).
 
 ## Making the engine faster
 

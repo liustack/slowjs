@@ -3,7 +3,7 @@
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-//go:build ((linux || darwin) && (amd64 || arm64)) || (windows && (amd64 || arm64))
+//go:build (((linux && !android) || (darwin && !ios)) && (amd64 || arm64)) || (windows && (amd64 || arm64))
 
 package slowjs // import "github.com/liustack/slowjs"
 

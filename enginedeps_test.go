@@ -61,33 +61,38 @@ func TestEngineDeps(t *testing.T) {
 }
 
 // A build on a target the C engine does not run on fails with the reason as
-// its only error, not under errors of the files that need the
-// engine. The engine runs on linux, darwin and windows, on amd64 and arm64,
-// only.
+// its only error, not under errors of the files that need the engine. The
+// engine runs on linux, darwin and windows, on amd64 and arm64, only: not on
+// android, which builds with the files of linux, nor on ios, which builds with
+// those of darwin. The same holds for internal/cengine, whose generated files
+// are chosen by the architecture alone: it imports internal/hostmem, which
+// stops at that error.
 func TestEngineUnsupportedTarget(t *testing.T) {
 	gobin, err := exec.LookPath("go")
 	if err != nil {
 		t.Skip("no go command")
 	}
-	for _, target := range []string{"freebsd/amd64", "windows/386", "linux/386", "linux/riscv64"} {
-		t.Run(target, func(t *testing.T) {
-			goos, goarch, _ := strings.Cut(target, "/")
-			cmd := exec.Command(gobin, "build", "-o", os.DevNull, ".")
-			cmd.Env = append(os.Environ(), "GOFLAGS=", "GOOS="+goos, "GOARCH="+goarch, "CGO_ENABLED=0")
-			out, err := cmd.CombinedOutput()
-			if err == nil {
-				t.Fatal("the build succeeded")
-			}
-			var errs []string
-			for _, l := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-				if !strings.HasPrefix(l, "#") {
-					errs = append(errs, l)
+	for _, target := range []string{"freebsd/amd64", "windows/386", "linux/386", "linux/riscv64", "android/arm64", "android/amd64", "ios/arm64"} {
+		for _, pkg := range []string{".", "./internal/cengine"} {
+			t.Run(target+" "+pkg, func(t *testing.T) {
+				goos, goarch, _ := strings.Cut(target, "/")
+				cmd := exec.Command(gobin, "build", "-o", os.DevNull, pkg)
+				cmd.Env = append(os.Environ(), "GOFLAGS=", "GOOS="+goos, "GOARCH="+goarch, "CGO_ENABLED=0")
+				out, err := cmd.CombinedOutput()
+				if err == nil {
+					t.Fatal("the build succeeded")
 				}
-			}
-			if len(errs) != 1 || !strings.Contains(errs[0], "the_C_engine_runs_only_on_linux_darwin_and_windows_on_amd64_and_arm64_this_target_is_not_supported") {
-				t.Fatalf("the build said\n%s\nwant only the error that names the targets", out)
-			}
-		})
+				var errs []string
+				for _, l := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+					if !strings.HasPrefix(l, "#") {
+						errs = append(errs, l)
+					}
+				}
+				if len(errs) != 1 || !strings.Contains(errs[0], "the_C_engine_runs_only_on_linux_darwin_and_windows_on_amd64_and_arm64_this_target_is_not_supported") {
+					t.Fatalf("the build said\n%s\nwant only the error that names the targets", out)
+				}
+			})
+		}
 	}
 }
 
