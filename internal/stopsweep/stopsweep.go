@@ -25,8 +25,9 @@
 // A late stop is tried again, twice, for what the machine does and not the
 // call: a pause of the garbage collector for another test, the CPU taken by
 // another process. Each try of a timeout that stays late is in the error,
-// with what it took, the CPU time and page faults of the process and the GC
-// pauses during it, and the stack of the call at its timeout and grace,
+// with what it took, the CPU time and page faults of the process (on
+// windows the CPU cycles it ran, as its CPU time moves once a clock tick)
+// and the GC pauses during it, and the stack of the call at its timeout and grace,
 // which shows the part with no check. A block of memory the size of the
 // input that Go allocated and cleared in the call, with no check, was found
 // this way (docs/changes/uncatchable.md).
@@ -165,11 +166,12 @@ func Sweep(t *testing.T, vm *slowjs.VM, call string, n, piece int) {
 
 func round(d time.Duration) time.Duration { return d.Round(100 * time.Microsecond) }
 
-// usage is what the process used so far: CPU time, and page faults, -1
-// where the OS is not asked (usageNow).
+// usage is what the process used so far: CPU time, page faults and the CPU
+// cycles it ran, each of the counts -1 where the OS is not asked
+// (usageNow).
 type usage struct {
-	user, sys time.Duration
-	faults    int64
+	user, sys      time.Duration
+	faults, cycles int64
 }
 
 // A try is what the process did during one call of a sweep, to show why it
@@ -204,6 +206,9 @@ func (w *try) end() string {
 		gc.NumGC-w.gc.NumGC, round(time.Duration(gc.PauseTotalNs-w.gc.PauseTotalNs)))
 	if u.faults >= 0 && w.u.faults >= 0 {
 		s += fmt.Sprintf(", %d page faults", u.faults-w.u.faults)
+	}
+	if u.cycles >= 0 && w.u.cycles >= 0 {
+		s += fmt.Sprintf(", %d CPU cycles", u.cycles-w.u.cycles)
 	}
 	select {
 	case st := <-w.stack:

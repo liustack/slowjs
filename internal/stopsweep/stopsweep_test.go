@@ -24,8 +24,31 @@ func TestTry(t *testing.T) {
 	if runtime.GOOS != "windows" && !strings.Contains(s, "page faults") {
 		t.Errorf("a late try has no count of page faults: %q", s)
 	}
+	if runtime.GOOS == "windows" && !strings.Contains(s, " CPU cycles") {
+		t.Errorf("a late try on windows has no count of CPU cycles: %q", s)
+	}
 	w = watch(time.Hour)
 	if s := w.end(); strings.Contains(s, "grace") {
 		t.Errorf("a try in time: %q", s)
+	}
+}
+
+// On windows the CPU times of the process move once a clock tick, about
+// 15.6 ms, so a try of a few milliseconds reads 0 whether the process ran or
+// not. The cycles it ran tell the two apart: work counts some, and a process
+// the system did not run counts none.
+func TestUsageCycles(t *testing.T) {
+	u := usageNow()
+	if runtime.GOOS != "windows" {
+		if u.cycles != -1 {
+			t.Errorf("cycles %d on %s, want -1 (not asked)", u.cycles, runtime.GOOS)
+		}
+		return
+	}
+	end := time.Now().Add(5 * time.Millisecond)
+	for time.Now().Before(end) {
+	}
+	if v := usageNow(); u.cycles < 0 || v.cycles <= u.cycles {
+		t.Errorf("cycles %d, then %d after 5 ms of work, want more", u.cycles, v.cycles)
 	}
 }
