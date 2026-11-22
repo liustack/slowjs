@@ -39,6 +39,8 @@ jobs:
             goarch: amd64
           - name: windows/amd64
             os: windows-2025
+          - name: windows/arm64
+            os: windows-11-arm
     defaults:
       run:
         # Git Bash on windows.
@@ -90,6 +92,8 @@ jobs:
             goarch: amd64
           - name: windows/amd64
             os: windows-2025
+          - name: windows/arm64
+            os: windows-11-arm
     defaults:
       run:
         shell: bash

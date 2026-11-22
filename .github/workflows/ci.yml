@@ -56,6 +56,10 @@ jobs:
             os: windows-2025
             no-native: true
             no-format: true
+          - name: windows/arm64
+            os: windows-11-arm
+            no-native: true
+            no-format: true
     defaults:
       run:
         # Git Bash on windows, for the scripts.
