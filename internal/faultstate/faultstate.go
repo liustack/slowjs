@@ -29,8 +29,10 @@ const (
 	// Dispatch is what the exception record, the frames of
 	// KiUserExceptionDispatcher and those of Go's handler may take below the
 	// stack pointer besides the CONTEXT: 1,351 bytes were measured on the
-	// windows-11-arm runner of GitHub, and half again is kept for a deeper
-	// dispatch of another windows or Go. TestFaultStateFits
+	// windows-11-arm runner of GitHub, with no other vectored exception
+	// handler in the process, and half again is kept for a deeper dispatch of
+	// another windows or Go. It is not a bound windows gives: a handler a DLL
+	// adds to run before Go's may take more. TestFaultStateFits
 	// (internal/faulttest) measures it again on windows/arm64.
 	Dispatch = 2048
 
