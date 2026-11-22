@@ -6,7 +6,7 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 
 ### Added
 
-- The module runs on windows/arm64, with the same arm64 code as linux and darwin, and the release has `slowjs-windows-arm64.zip` ([c-engine.md](docs/changes/c-engine.md#room-for-a-fault-on-windows)).
+- The module runs on windows/arm64, with the same arm64 code as linux and darwin, and the release has `slowjs-windows-arm64.zip`. `NewVM` returns an error on a windows/arm64 machine whose CPU state at a fault may not fit below the stack (SME, or SVE longer than 256 bits) ([c-engine.md](docs/changes/c-engine.md#room-for-a-fault-on-windows)).
 
 ## [v0.31.11] - 2026-11-22
 

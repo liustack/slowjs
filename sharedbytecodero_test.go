@@ -17,6 +17,7 @@ import (
 // every VM reads in place: a write to them faults, while VMs that loaded them
 // run.
 func TestSharedBytecodeReadOnly(t *testing.T) {
+	faulttest.Skip(t)
 	code := compileShared(t)
 	shared := newSharedBytecode(t, code)
 	defer shared.Close()

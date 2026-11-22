@@ -598,6 +598,7 @@ var sink byte
 // TestStackLayout: a shadow stack of each size is aligned to it, can be
 // written from its base to its last byte, and faults on the guard page above.
 func TestStackLayout(t *testing.T) {
+	faulttest.Skip(t)
 	for _, size := range []uintptr{Unit, 1 << 20, DefaultStackSize} {
 		m := newMemory(t, size)
 		base, got := m.Stack()

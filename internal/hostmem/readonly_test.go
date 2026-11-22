@@ -8,11 +8,14 @@ package hostmem
 import (
 	"bytes"
 	"testing"
+
+	"github.com/liustack/slowjs/internal/faulttest"
 )
 
 // TestReadOnly: MapReadOnly holds a copy of the bytes, which can be read to
 // the end of its pages and faults when written, for any size, none too.
 func TestReadOnly(t *testing.T) {
+	faulttest.Skip(t)
 	for _, n := range []int{0, 1, int(pageSize), int(pageSize) + 1, 3 * Unit} {
 		b := make([]byte, n)
 		for i := range b {
