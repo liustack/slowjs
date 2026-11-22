@@ -4,6 +4,8 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 
 ## [Unreleased]
 
+## [v0.31.12] - 2026-11-23
+
 ### Added
 
 - The module runs on windows/arm64, with the same arm64 code as linux and darwin, and the release has `slowjs-windows-arm64.zip`. `NewVM` returns an error on a windows/arm64 machine whose CPU state at a fault may not fit below the stack (SME, or SVE longer than 256 bits) ([c-engine.md](docs/changes/c-engine.md#room-for-a-fault-on-windows)).
@@ -915,7 +917,8 @@ The first release of the fork, from modernc.org/quickjs v0.25.0 and libquickjs v
 - A VM that runs out of memory inside `JSON.parse`, or anything else that converts a string with non-ASCII characters to UTF-8, no longer leaks that string.
 - `VM.Call` and `VM.CallValue` report the exception thrown while evaluating the function expression instead of `cannot call a non-function`.
 
-[Unreleased]: https://github.com/liustack/slowjs/compare/v0.31.11...main
+[Unreleased]: https://github.com/liustack/slowjs/compare/v0.31.12...main
+[v0.31.12]: https://github.com/liustack/slowjs/compare/v0.31.11...v0.31.12
 [v0.31.11]: https://github.com/liustack/slowjs/compare/v0.31.10...v0.31.11
 [v0.31.10]: https://github.com/liustack/slowjs/compare/v0.31.9...v0.31.10
 [v0.31.9]: https://github.com/liustack/slowjs/compare/v0.31.8...v0.31.9
