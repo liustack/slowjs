@@ -6,9 +6,9 @@
 // Package slowjs is a JavaScript engine written for Go programs that render
 // pages on a server: pure Go, with no cgo and no shared library, so that it
 // builds and cross-compiles as any Go package does. It runs ES2023, modules,
-// async generators, Proxy and BigInt among it. The engine is QuickJS in C,
-// compiled to Go assembly that is checked in, so building the package needs
-// no C compiler.
+// async generators, Proxy and BigInt among it. The engine, which started
+// from QuickJS, is written in C and ships as Go assembly that is checked in,
+// so building the package needs no C compiler.
 //
 // # Intl and time zones
 //

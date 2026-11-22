@@ -22,7 +22,7 @@
 
 Your Go server renders React pages itself, faster than C QuickJS on the same code, in one static binary with no cgo and no Node process beside it.
 
-It is for Go programs that need to run JavaScript, such as rendering React on the server. The engine runs ES2023 with modules, async generators, proxies, BigInt, and `Intl` in every Chromium locale and `Temporal`, both built in. It is QuickJS compiled to Go assembly and tuned for server rendering, built for [tifa](https://github.com/liustack/tifa), a Go framework for React pages.
+It is for Go programs that need to run JavaScript, such as rendering React on the server. The engine runs ES2023 with modules, async generators, proxies, BigInt, and `Intl` in every Chromium locale and `Temporal`, both built in. It is built for [tifa](https://github.com/liustack/tifa), a Go framework for React pages.
 
 It is an engine, not Node: there is no `require`, `fs` or `process`. Code from npm runs unchanged once it is bundled as for a browser, as React is.
 
@@ -118,11 +118,11 @@ Beyond `Eval` and `Call`, the API has Go functions that JavaScript calls as buil
 - **A limit ends the call.** A script that runs past its eval timeout or its memory limit stops there, whatever it catches: no `catch`, `finally`, promise handler or Go function of the page gets to run on. `*Error` says whether it was a timeout or memory. A panic in a Go function you gave the VM comes back to your Go code, and a VM that ran out of memory still closes without a leak.
 - **The same page on every machine.** A script's local time is UTC in every VM, without setting `TZ` for the whole process. `Intl` formats in every locale Chromium has, compared with Chromium 156 on about 75,000 expressions.
 - **Strings arrive whole.** A Go string from JavaScript is always valid UTF-8, and a Go string with invalid bytes reads in JavaScript as Go itself decodes it.
-- **Faster than C, without C.** The changes of liustack/slowjs to the C of QuickJS make up for more than what compiling it to Go assembly costs (see [the table above](#how-fast)). Several VMs on several cores do not wait on one lock.
+- **Faster than C, without C.** It renders faster than C QuickJS on the same pages, even though it runs as Go assembly (see [the table above](#how-fast)). Several VMs on several cores do not wait on one lock.
 
 ## Why you can trust it
 
-- **The engine is upstream QuickJS.** `engine/` is Bellard's C at one pinned commit, with the changes of liustack/slowjs on top, each written down. LLVM compiles it to Go assembly that is checked in, so building needs no C compiler, and `make check-gen` fails when the checked-in files are not what the generator makes from `engine/` ([how to check](docs/testing.md#generate-and-check)).
+- **Every change can be traced.** `engine/` started from Bellard's QuickJS at one pinned commit, and every change since is written down. LLVM compiles it to Go assembly that is checked in, so building needs no C compiler, and `make check-gen` fails when the checked-in files are not what the generator makes from `engine/` ([how to check](docs/testing.md#generate-and-check)).
 - **The generator refuses what it has not checked.** It stops on an instruction, a call or a stack frame it has no rule for, and checks the linked code of a test binary, so a change of the C or of Go itself that breaks the engine shows up as a failed build or test, not as a wrong answer.
 - **Every change is written down.** [docs/changes](docs/changes/README.md) gives each change with why it is safe, what it costs in memory, what it gains on which machine, and its tests.
 - **The tests are upstream's and more.** test262 gives 33 known failures, 25 fewer since the fixes taken from upstream QuickJS, and the same ones from run to run. On top come the recorded outputs of the engine, checks in C under AddressSanitizer and UndefinedBehaviorSanitizer, and the Go tests of the API.
