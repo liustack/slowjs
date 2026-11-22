@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/liustack/slowjs"
+	"github.com/liustack/slowjs/internal/intlhook"
 )
 
 // firstUse touches Intl for the first time and reports the outcome as a value,
@@ -264,6 +265,18 @@ func TestInstallInterrupted(t *testing.T) {
 	}
 	before := interruptedInstalls.Load()
 	seen := globalsSeen("interrupt")
+
+	// What the format Builtin of NumberFormat got, for the message of a
+	// failure: only a test sees it, and the formatting is the same.
+	var formatArgs []string
+	format := bridge[1]
+	bridge[1] = intlhook.NewBuiltin("format", 3, func(a slowjs.Args) (slowjs.Value, error) {
+		arg, err := a.Value(1).Any()
+		formatArgs = append(formatArgs, fmt.Sprintf("%T %v %v", arg, arg, err))
+		return numberFormatted(a, false)
+	})
+	defer func() { bridge[1] = format }()
+
 	for k := 0; k <= period; k += step {
 		vm, err := slowjs.NewVM()
 		if err != nil {
@@ -282,20 +295,62 @@ func TestInstallInterrupted(t *testing.T) {
 		}
 
 		// Spend k checks' worth of the engine's countdown, so that the
-		// interrupt below lands k instructions later.
-		if _, err := vm.Eval(fmt.Sprintf(`for (let i = 0; i < %d; i++) {}`, k), slowjs.EvalGlobal); err != nil {
+		// interrupt below lands k instructions later. The stand-in is kept
+		// under a symbol, which seen does not count.
+		if _, err := vm.Eval(fmt.Sprintf(`globalThis[Symbol.for('stand-in')] = Number.prototype.toLocaleString; for (let i = 0; i < %d; i++) {}`, k), slowjs.EvalGlobal); err != nil {
 			t.Fatal(err)
 		}
 
-		vm.Eval(`interrupt(); (1234.5).toLocaleString('en-US')`, slowjs.EvalGlobal)
-		v, err := vm.Eval(`[(1234.5).toLocaleString('en-US'), new Intl.NumberFormat('de').format(1234.5), `+seen+`].join(' ')`, slowjs.EvalGlobal)
-		vm.Close()
+		i0, r0 := shimInstalls.Load(), interruptedInstalls.Load()
+		_, cut := vm.Eval(`interrupt(); (1234.5).toLocaleString('en-US')`, slowjs.EvalGlobal)
+		i1, r1 := shimInstalls.Load(), interruptedInstalls.Load()
+		formatArgs = formatArgs[:0]
+		v, err := vm.Eval(`[(globalThis[Symbol.for('result')] = (1234.5).toLocaleString('en-US')), new Intl.NumberFormat('de').format(1234.5), `+seen+`].join(' ')`, slowjs.EvalGlobal)
 		if got := fmt.Sprint(v); err != nil || got != "1,234.5 1.234,5 0" {
-			t.Fatalf("interrupted %d instructions later: got %q, %v", k, got, err)
+			// Whether the engine computes wrong or the install left the
+			// wrong state behind.
+			args := strings.Join(formatArgs, "; ")
+			i2, r2 := shimInstalls.Load(), interruptedInstalls.Load()
+			formatArgs = formatArgs[:0]
+			d, derr := vm.Eval(installDiagnostics, slowjs.EvalGlobal)
+			t.Fatalf("interrupted %d instructions later: got %q, %v\n"+
+				"first use: %v, installs begun %d, after a cut-short one %d\n"+
+				"second use: installs begun %d, after a cut-short one %d, format got: %s\n"+
+				"then: %v %v\nformat got: %s",
+				k, got, err, cut, i1-i0, r1-r0, i2-i1, r2-r1,
+				args, d, derr, strings.Join(formatArgs, "; "))
 		}
+		vm.Close()
 	}
 	t.Logf("%d interrupts landed in stub.js", interruptedInstalls.Load()-before)
 	if interruptedInstalls.Load() == before {
 		t.Fatal("no interrupt landed in stub.js")
 	}
 }
+
+// installDiagnostics tells, after TestInstallInterrupted got a wrong result,
+// a wrong state of the shim from an engine that computes wrong: the result
+// kept and its type, whether the stand-in is still in place, the same calls
+// again, and the number built-ins Intl's code does not use.
+const installDiagnostics = `(() => {
+	const r = {};
+	const t = (k, f) => {
+		try {
+			const v = f();
+			r[k] = typeof v + ' ' + String(v);
+		} catch (e) {
+			r[k] = 'threw ' + e;
+		}
+	};
+	t('result', () => globalThis[Symbol.for('result')]);
+	t('standIn', () => Number.prototype.toLocaleString === globalThis[Symbol.for('stand-in')]);
+	t('Intl', () => typeof Intl);
+	t('again', () => (1234.5).toLocaleString('en-US'));
+	t('noLocale', () => (1234.5).toLocaleString());
+	t('format', () => new Intl.NumberFormat('en-US').format(1234.5));
+	t('valueOf', () => Number.prototype.valueOf.call(1234.5));
+	t('toFixed', () => (1234.5).toFixed(1));
+	t('Number', () => Number('1234.5'));
+	t('sum', () => 1234 + 0.5);
+	return JSON.stringify(r);
+})()`
