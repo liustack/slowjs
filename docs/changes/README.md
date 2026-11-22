@@ -79,6 +79,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | `memcmp` of the small libc compares 8 bytes at a time while 8 or more are left, where musl's loop took one, and gives the same value | v0.31.6 | [libc README](../../engine/libc/README.md) |
 | Every function of the engine whose -1 says an exception is pending is marked `__exception` (`__js_must_check` in quickjs.h), so a call that drops that answer cannot be built (`-Werror=unused-result`). Built-ins that went on after a step that ran out of memory, with the error left pending and an object missing a property, now fail with it: the `prototype` of a function, the `length` of a class and of a `String` object, the seal of a template object, the tag of a module namespace, the `message`, `cause` and `errors` of an error, a descriptor given to a proxy trap, the result of `Proxy.revocable`, the `lastIndex` of a `RegExp` made with a new target, a constructor made by the API and a global variable taken from those not yet declared | v0.31.6 | `__exception` and `js_iterator_close_throw` in [quickjs.c](../../engine/quickjs.c), `__js_must_check` in [quickjs.h](../../engine/quickjs.h) |
 | An `await` in an async function whose PromiseResolve throws an error a script can catch, as a getter of `constructor` of the promise awaited that throws or the call depth refusing the call of that getter, throws it at the `await`, as the specification and the async generator do, so a `catch` or `finally` around it runs. The body stayed suspended at the `await` for good and its promise was rejected. A stop there still ends the body | v0.31.10 | `js_async_function_resume` in [quickjs.c](../../engine/quickjs.c) |
+| The engine runs on windows/arm64, with the arm64 code of linux and darwin and no room check: the state of the CPU that the system writes at a fault there takes 2.5 KiB, which fits the 4 KiB Go keeps below a stack, and `NewVM` refuses a machine whose state may not fit (SME, SVE longer than 256 bits) | Unreleased | [c-engine.md](c-engine.md#room-for-a-fault-on-windows) |
 
 ## The generator
 
@@ -430,7 +431,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 
 | Change | Release | Doc |
 | --- | --- | --- |
-| `slowjs`, a command that runs a JavaScript file in a VM set up as tifa sets it up, with `print`, `console.log` and a timeout and memory limit that hold, prebuilt for the five targets in the GitHub release of each tag | v0.31.0 | [command.md](../command.md) |
+| `slowjs`, a command that runs a JavaScript file in a VM set up as tifa sets it up, with `print`, `console.log` and a timeout and memory limit that hold, prebuilt in the GitHub release of each tag for the five targets of v0.31.0, and for windows/arm64 too from v0.31.12 | v0.31.0 | [command.md](../command.md) |
 
 ## Adding a change
 

@@ -8,5 +8,7 @@
 package cengine
 
 // makeRoom does nothing: only windows writes the state of the CPU at a fault
-// onto the goroutine's stack (room_windows_amd64.go).
+// onto the goroutine's stack, and New runs on windows/arm64 only where it
+// fits in the 4 KiB Go keeps (internal/faultstate, room_windows_amd64.go,
+// docs/changes/c-engine.md).
 func makeRoom() {}

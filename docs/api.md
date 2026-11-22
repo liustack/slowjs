@@ -27,6 +27,7 @@ The API is documented at [pkg.go.dev](https://pkg.go.dev/github.com/liustack/slo
   - After a kill (`errors.Is(err, ErrKilled)`), the VM is good only for `Close`. `Interrupt`, `MemorySize`, `MemoryFree` and `GCThreshold` still work, the methods that return an error return one that matches `ErrKilled`, and the others, `MemoryUsage` and `RunGC` among them, panic.
 
   Whatever ended a call, a call that returns a value leaves no error behind it.
+- **`NewVM` on a windows/arm64 machine whose CPU state at a fault may not fit below a goroutine stack** (Unreleased): returns an error that names the extended state windows turns on, and the sizes when windows gave them, and makes no VM, where the state is SME or SVE with vectors longer than 256 bits, or windows does not say. A fault there could write past the stack into the heap. [More](changes/c-engine.md#room-for-a-fault-on-windows)
 - **`Error()` of an `*Error` made in Go** (v0.26.17) is `Name: Message`, as `Error.prototype.toString` writes it, where it was empty. An error taken from JavaScript keeps the engine's text. [More](changes/go-api.md#error-of-an-error-made-in-go)
 - **`VM.TrackRejections(max)` and `VM.UnhandledRejections()`** (v0.31.1): keep the promises rejected with no handler, at most `max`, and take them after a script and its jobs, each reason read as an `*Error` with its texts cut to 8 KiB, to report what no handler took. A VM keeps none unless asked. While a read runs, both return an error to javascript it runs that calls them, and change nothing. [More](changes/go-api.md#trackrejections-and-unhandledrejections)
 
@@ -60,4 +61,4 @@ Each of these defines a function on the global object, written in C inside the e
 
 ## Without Go
 
-- **The `slowjs` command** (v0.31.0): runs a JavaScript file in this engine, set up as tifa sets it up (Intl, Temporal, URL), with `print`, `console.log` and a timeout and memory limit that hold: to show a problem with a script, or to run one, without writing Go. Each GitHub release has it prebuilt for the five targets. [More](command.md)
+- **The `slowjs` command** (v0.31.0): runs a JavaScript file in this engine, set up as tifa sets it up (Intl, Temporal, URL), with `print`, `console.log` and a timeout and memory limit that hold: to show a problem with a script, or to run one, without writing Go. Each GitHub release has it prebuilt for linux and darwin, on amd64 and arm64, and for windows/amd64, and from v0.31.12 for windows/arm64 too. [More](command.md)

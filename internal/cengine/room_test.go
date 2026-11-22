@@ -6,6 +6,7 @@
 package cengine
 
 import (
+	"errors"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -105,4 +106,17 @@ func makesRoomLast(fd *ast.FuncDecl) string {
 		}
 	}
 	return "its last statement before the return is not makeRoom()"
+}
+
+// TestNewChecksFaultState: New makes no VM where the state of the CPU at a
+// fault may not fit below the stack (internal/faultstate), and returns the
+// error that says why.
+func TestNewChecksFaultState(t *testing.T) {
+	refused := errors.New("refused")
+	defer func(c func() error) { checkFaultState = c }(checkFaultState)
+	checkFaultState = func() error { return refused }
+	v, err := New(Options{})
+	if v != nil || !errors.Is(err, refused) {
+		t.Fatalf("New = %v, %v, want no VM and the error of the check", v, err)
+	}
 }

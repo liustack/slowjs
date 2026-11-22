@@ -1,5 +1,5 @@
 # The GitHub release of a version: when a tag v* is pushed, it builds the
-# slowjs command (cmd/slowjs) for the five targets with
+# slowjs command (cmd/slowjs) for the six targets with
 # scripts/slowjs-release.sh, runs the tests of cmd/slowjs against each binary
 # on its own platform, and makes the release of the tag with the archives and
 # their checksums. The module itself is still the tag, as before. Run by hand
@@ -78,6 +78,9 @@ jobs:
           - name: windows/amd64
             os: windows-2025
             archive: slowjs-windows-amd64.zip
+          - name: windows/arm64
+            os: windows-11-arm
+            archive: slowjs-windows-arm64.zip
     defaults:
       run:
         # Git Bash on windows.

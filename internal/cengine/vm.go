@@ -24,6 +24,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/liustack/slowjs/internal/faultstate"
 	"github.com/liustack/slowjs/internal/gohost"
 	"github.com/liustack/slowjs/internal/hostmem"
 )
@@ -133,8 +134,16 @@ func (v *VM) usable() error {
 	return nil
 }
 
-// New makes a runtime and a context.
+// checkFaultState is faultstate.Check, which a test replaces.
+var checkFaultState = faultstate.Check
+
+// New makes a runtime and a context. On windows/arm64 it makes none where the
+// state of the CPU at a fault may not fit below a goroutine stack, and
+// returns the error of internal/faultstate.
 func New(o Options) (_ *VM, err error) {
+	if err := checkFaultState(); err != nil {
+		return nil, err
+	}
 	if o.StackSize == 0 {
 		o.StackSize = 1 << shadowSizeLog2
 	}

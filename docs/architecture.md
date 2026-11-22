@@ -54,7 +54,8 @@ The shared files hold the API: `vm.go` (making, setting and closing a VM), `eval
 | `internal/idtable/` | The table of ids that the engine passes back to Go |
 | `internal/unsupported/` | The error of a build for a target the engine does not run on |
 | `internal/goversion/` | The error of a build with a Go newer than the one the engine was checked with, which `internal/cengine` imports |
-| `internal/faulttest/` | For the tests that make a memory fault on purpose: `Room`, which a test calls right before a fault in Go code so that windows has the room to write the state of the CPU, and `Unsafe`, for the faults in Go code that `Room` cannot come right before (see [c-engine.md](changes/c-engine.md#room-for-a-fault-on-windows)) |
+| `internal/faultstate/` | Whether the state of the CPU that windows/arm64 writes below the stack pointer at a fault fits in the room Go keeps, which `internal/cengine` checks before it makes the first VM (see [c-engine.md](changes/c-engine.md#room-for-a-fault-on-windows)) |
+| `internal/faulttest/` | For the tests that make a memory fault on purpose: `Room`, which a test calls right before a fault in Go code so that windows/amd64 has the room to write the state of the CPU, `Skip`, for a windows/arm64 machine `internal/faultstate` refuses, and `Unsafe`, for the faults in Go code that `Room` cannot come right before (see [c-engine.md](changes/c-engine.md#room-for-a-fault-on-windows)) |
 | `internal/measure/` | `go tool measure bench`: builds a program at several code positions, times them in turn and counts instructions |
 | `internal/measure/pages/` | A module of its own that renders tifa's pages as tifa does, for a timing or a count ([measuring.md](measuring.md#the-pages-program)) |
 | `internal/stress/` | The render stress: tifa's pinned pages rendered for hours on pools of VMs, with memory limits, timeouts, Interrupts and kills at random points, checking the HTML, the errors and that memory stays bounded ([testing.md](testing.md#the-render-stress)) |
@@ -129,7 +130,7 @@ A call into the engine keeps its P (the processor of the Go scheduler that runs 
 
 ## Platforms
 
-The engine runs on linux and darwin, on amd64 and arm64, and on windows/amd64. Every system runs the same generated code of each architecture. Other targets are not supported, so a build for one stops with an error that names the supported ones (`internal/unsupported`). Which Go builds it, and what a newer Go does, is in [upgrading.md](upgrading.md#moving-to-a-newer-go). A change must keep `make build_all_targets` passing on all five (see [testing.md](testing.md#every-target)).
+The engine runs on linux, darwin and windows, on amd64 and arm64. Every system runs the same generated code of each architecture, and windows/amd64 adds a room check to it (see [c-engine.md](changes/c-engine.md#room-for-a-fault-on-windows)). Other targets are not supported, android and ios among them, though Go builds them with the files of linux and of darwin, so a build for one stops with an error that names the supported ones (`internal/unsupported`). Which Go builds it, and what a newer Go does, is in [upgrading.md](upgrading.md#moving-to-a-newer-go). A change must keep `make build_all_targets` passing on all six (see [testing.md](testing.md#every-target)).
 
 ## Making the engine faster
 

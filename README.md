@@ -67,7 +67,7 @@ Go 1.26.6 or later, up to Go 1.27. No cgo and no C compiler: it builds with `CGO
 
 ## Platforms
 
-linux and darwin, on amd64 and arm64, and windows/amd64. A build for any other target stops with an error that names them.
+linux, darwin and windows, on amd64 and arm64. A build for any other target stops with an error that names them.
 
 ## A first VM
 

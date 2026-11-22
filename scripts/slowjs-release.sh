@@ -5,7 +5,7 @@
 # root of this repository.
 #
 # slowjs-release.sh <version> <dir>: builds the slowjs command (cmd/slowjs)
-# for the five targets the engine runs on, with <version> stamped in, packs
+# for the six targets the engine runs on, with <version> stamped in, packs
 # each binary with the license texts NOTICE.md says a binary must carry, and
 # writes <dir>/checksums.txt. The release job (.github/workflows/release.yml)
 # runs it, see docs/releasing.md. Each archive is named after its target as
@@ -16,9 +16,10 @@
 #   slowjs-darwin-amd64.tar.gz
 #   slowjs-darwin-arm64.tar.gz
 #   slowjs-windows-amd64.zip
+#   slowjs-windows-arm64.zip
 #
 # The binaries are static: no cgo, no C library, so the linux ones run on
-# glibc and musl systems alike, and the windows one needs no runtime.
+# glibc and musl systems alike, and the windows ones need no runtime.
 set -eu
 if [ $# -ne 2 ] || [ -z "$1" ]; then
 	echo "usage: $0 <version> <dir>" >&2
@@ -48,7 +49,7 @@ if [ ! -f "$goroot/LICENSE" ] || [ ! -f "$xsys/LICENSE" ]; then
 	exit 1
 fi
 
-for t in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
+for t in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
 	goos=${t%/*}
 	goarch=${t#*/}
 	name=slowjs-$goos-$goarch

@@ -596,7 +596,7 @@ What the check takes on trust, and where it stops:
   each fixup as its format says is trusted. On amd64 Go's prologue loads g
   in the form of the system (from FS on linux, from GS on darwin, through
   `runtime.tls_g` on windows), and each form is taken only for its own
-  system. `TestPostLinkFormats` checks a binary of each of the five
+  system. `TestPostLinkFormats` checks a binary of each of the six
   targets and refuses a changed byte, a wrong pointer, a dropped fixup and
   a second fixup of one pointer in each Mach-O and PE one, a rebase of the
   load commands, of `__LINKEDIT`, of `__DATA,__bss` and of code in each

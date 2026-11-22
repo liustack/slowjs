@@ -6639,7 +6639,7 @@ JSValue JS_NewStringChars(JSContext *ctx, uint32_t len, int wide)
 /* The layout of values that a host reads and writes in place (see
    JS_HOST_LAYOUT_COUNT in quickjs.h). The length and the wide bit are the
    bit fields of JSString: the first in the low 31 bits of its first word,
-   the second in its top bit, as the ABIs of the five targets lay them out.
+   the second in its top bit, as the ABIs of the six targets lay them out.
    unit-api checks them on a string. */
 __attribute__((used)) const int64_t js_host_layout[JS_HOST_LAYOUT_COUNT] = {
     [JS_HOST_LAYOUT_REFCOUNT_OFFSET] = (int64_t)offsetof(JSMallocBlockHeader, ref_count) -

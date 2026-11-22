@@ -3,9 +3,10 @@
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-// The post-link check of the arm64 engine. It reads a linked linux/arm64
-// binary of the generated package and holds every generated function to the
-// object llvm-mc made of the lowered text, which the emit wrote as WORDs:
+// The post-link check of the arm64 engine. It reads a linked arm64 binary of
+// the generated package, for linux, darwin or windows, and holds every
+// generated function to the object llvm-mc made of the lowered text, which
+// the emit wrote as WORDs:
 //
 //   - Go's prologue: a stack check exactly when the function is not on the
 //     NOSPLIT list, the frame the TEXT asks for (with the saved LR and frame
@@ -54,8 +55,8 @@ const (
 	a64AddSP       = 0x910003ff // add sp, sp, #0: with #frame in bits 10 to 21
 )
 
-// CheckEngineARM64 runs the check on c.Bin, a linked linux/arm64 binary of
-// the package c.Pkg, against c.Lowered.
+// CheckEngineARM64 runs the check on c.Bin, a linked arm64 binary of the
+// package c.Pkg, against c.Lowered.
 func CheckEngineARM64(c EngineCheck) (*CheckReport, error) {
 	rep := &CheckReport{Checked: map[string]int{}, Skipped: map[string][]string{}}
 	o, err := readA64Object(c.Lowered)

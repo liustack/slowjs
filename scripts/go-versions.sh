@@ -20,9 +20,8 @@
 #               morestack and which functions are NOSPLIT
 #   postlink-X  the post-link check of the whole engine of architecture X (amd64
 #               and arm64) against a test binary of internal/cengine linked with
-#               this release for each system the module builds for on X: linux,
-#               darwin and windows for amd64, linux and darwin for arm64, as go
-#               builds them by default (-verify-bin, scripts/gen-engine.sh)
+#               this release for linux, darwin and windows, as go builds them
+#               by default (-verify-bin, scripts/gen-engine.sh)
 # goasm and postlink need LLVM 22.1.8 (see GO_VERSIONS_LLVM) and write the engine
 # into .build only. internal/cengine stays as it is.
 #
@@ -153,13 +152,13 @@ for v in $versions; do
 		test "$(go env GOVERSION)" = "$v"
 		step go-build go build ./...
 		step go-vet go vet ./...
-		step go-test-internal go test -count=1 -tags testhooks ./internal/cengine ./internal/gohost ./internal/hostmem ./internal/idtable
+		step go-test-internal go test -count=1 -tags testhooks ./internal/cengine ./internal/faultstate ./internal/faulttest ./internal/gohost ./internal/hostmem ./internal/idtable
 		step go-test-root go test -count=1 -p 1 -timeout 60m .
 		step go-test-root-hooks go test -count=1 -p 1 -timeout 60m -tags testhooks .
 		if [ "$use_llvm" = 1 ]; then
 			step goasm env CHECK_ONLY=goasm CHECK_LOGS="$logs/$v.check" scripts/check.sh fast
 			step postlink-amd64 postlink amd64 linux darwin windows
-			step postlink-arm64 postlink arm64 linux darwin
+			step postlink-arm64 postlink arm64 linux darwin windows
 		fi
 	) >"$log" 2>&1
 	rc=$?

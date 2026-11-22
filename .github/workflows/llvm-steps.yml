@@ -59,6 +59,15 @@ jobs:
           GEN_JOBS: "4"
       - name: Generator checks and cycles
         run: CHECK_ONLY="goasm cycles" scripts/check.sh fast
+      # The other systems are checked for each Go release in gates.yml
+      # (scripts/go-versions.sh). windows/arm64 runs the arm64 code of linux
+      # and darwin, in a PE file.
+      - name: Post-link check of a windows/arm64 test binary
+        run: |
+          GOOS=windows GOARCH=arm64 go test -c -tags goasmkeep -o .build/windows-arm64.test ./internal/cengine
+          GEN_OUT=.build/postlink-arm64 GEN_VERIFY_BIN=.build/windows-arm64.test scripts/gen-engine.sh arm64
+        env:
+          GEN_JOBS: "4"
 
       # make gointl reads go-intl and the time zone files from this folder and
       # downloads only what it lacks (about 240 MB the first time).

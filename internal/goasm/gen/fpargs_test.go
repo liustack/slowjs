@@ -188,7 +188,7 @@ func TestEngineAsmDecl(t *testing.T) {
 	if testing.Short() {
 		t.Skip("runs go vet")
 	}
-	for _, target := range []string{"linux/amd64", "windows/amd64", "darwin/amd64", "linux/arm64", "darwin/arm64"} {
+	for _, target := range []string{"linux/amd64", "windows/amd64", "darwin/amd64", "linux/arm64", "darwin/arm64", "windows/arm64"} {
 		goos, goarch, _ := strings.Cut(target, "/")
 		cmd := exec.Command("go", "vet", "-asmdecl", "./internal/cengine")
 		cmd.Dir = filepath.Join("..", "..", "..")
