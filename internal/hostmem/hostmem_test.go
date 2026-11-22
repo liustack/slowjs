@@ -18,6 +18,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/liustack/slowjs/internal/faultstate"
 	"github.com/liustack/slowjs/internal/faulttest"
 )
 
@@ -105,6 +106,12 @@ func unmapped(t *testing.T, addr, size uintptr, seed byte) bool {
 	if !anyMapped(t, addr, size) {
 		return true
 	}
+	// Another mapping took some of the range, and reading its pages may fault:
+	// on a windows/arm64 machine internal/faultstate refuses, the state of the
+	// CPU at that fault may not fit below the stack, so try again there.
+	if faultstate.Check() != nil {
+		return false
+	}
 	for off := uintptr(0); off < size; off += pageSize {
 		if holds(addr, off, pageSize, seed) {
 			t.Fatalf("the page at %#x is still mapped with what it held", addr+off)
@@ -114,7 +121,8 @@ func unmapped(t *testing.T, addr, size uintptr, seed byte) bool {
 }
 
 // holds reports whether the n bytes at addr+off can be read and hold fill's
-// pattern of a fill at addr.
+// pattern of a fill at addr. Room comes right before the reads, so that a
+// fault has room below it on windows (internal/faulttest).
 func holds(addr, off, n uintptr, seed byte) (ok bool) {
 	defer debug.SetPanicOnFault(debug.SetPanicOnFault(true))
 	defer func() {
@@ -122,7 +130,9 @@ func holds(addr, off, n uintptr, seed byte) (ok bool) {
 			ok = false
 		}
 	}()
-	for i, c := range bytesAt(addr+off, n) {
+	b := bytesAt(addr+off, n)
+	faulttest.Room()
+	for i, c := range b {
 		o := off + uintptr(i)
 		if c != byte(o)^byte(o>>9)^seed {
 			return false
