@@ -24,9 +24,9 @@ import (
 // testdata/check/mini.c for every target the module builds for, each built as
 // go build makes it by default: ELF for linux (amd64 and arm64, linked at a
 // fixed address), Mach-O for darwin (amd64 and arm64) and PE for windows
-// (amd64), the last three position independent. The check must pass on each,
-// and on the position-independent ones it must have held every pointer of
-// engine_rodata to its fixup. Then it changes each position-independent
+// (amd64 and arm64), the last four position independent. The check must pass
+// on each, and on the position-independent ones it must have held every
+// pointer of engine_rodata to its fixup. Then it changes each position-independent
 // binary one fault at a time, and the check must refuse each: a byte of a
 // generated function, a pointer of engine_rodata, and the fixup of that
 // pointer, without which the loader would leave it at the address of the
@@ -85,9 +85,6 @@ func postLinkFormatsArch(t *testing.T, work, drv, llvm, pass, src, arch string) 
 		return gen("-verify-bin", bin, "-verify-pkg", "checkmini/mini", "-verify-all")
 	}
 	systems := []string{"linux", "darwin", "windows"}
-	if arch == "arm64" {
-		systems = systems[:2] // the module does not build for windows/arm64
-	}
 	format := map[string]string{"linux": "ELF", "darwin": "Mach-O", "windows": "PE"}
 	var bins []string
 	for _, goos := range systems {
@@ -114,7 +111,7 @@ func postLinkFormatsArch(t *testing.T, work, drv, llvm, pass, src, arch string) 
 		for _, fault := range []struct {
 			name, want string
 			edit       func(t *testing.T, bin string, b []byte)
-			only       string // the system of the fault, or every one
+			only       string // the system of the fault (goos or goos/arch), or every one
 		}{
 			{"a byte of a function", "fib", func(t *testing.T, bin string, b []byte) {
 				at := binFileOffset(t, bin, binSymbol(t, bin, arch, "checkmini/mini.fib")+24)
@@ -164,7 +161,7 @@ func postLinkFormatsArch(t *testing.T, work, drv, llvm, pass, src, arch string) 
 			// times k below engine_rodata, with a relocation of its address,
 			// is in engine_rodata when the loader slides the program by that.
 			{"a relocation of an import descriptor", "inside the import descriptors", func(t *testing.T, bin string, b []byte) {
-				desc := peImportShifted(t, bin, b, firstRodataPointer(t, bin, arch))
+				desc := peImportShifted(t, bin, arch, b, firstRodataPointer(t, bin, arch))
 				peAddReloc(t, bin, b, desc+16, peRelHighLow)
 			}, "windows"},
 			{"a relocation of the load config", "inside the load config", func(t *testing.T, bin string, b []byte) {
@@ -265,32 +262,32 @@ func postLinkFormatsArch(t *testing.T, work, drv, llvm, pass, src, arch string) 
 				sectionFromCopy(t, bin, b, binSymbol(t, bin, arch, "checkmini/mini.fib")+24)
 			}, "windows"},
 			// The room for the state of the CPU at a fault, which only the
-			// code of windows has: a check that asks for less, a check
+			// code of windows/amd64 has: a check that asks for less, a check
 			// whose call is gone, and a goasm_room whose frame is too small.
 			{"a room check that asks for less", "no room check", func(t *testing.T, bin string, b []byte) {
 				at := roomLEA(t, bin, b, arch)
 				less := int32(8 - RoomBelow)
 				binary.LittleEndian.PutUint32(b[at+4:], uint32(less))
-			}, "windows"},
+			}, "windows/amd64"},
 			{"a room check without its call", "no room check", func(t *testing.T, bin string, b []byte) {
 				at := roomLEA(t, bin, b, arch) + 8 + 4 + 2 // LEA, CMP, JA
 				if b[at] != 0xe8 {
 					t.Fatalf("no call after the room check of fib: % x", b[at:at+5])
 				}
 				copy(b[at:], []byte{0x0f, 0x1f, 0x44, 0x00, 0x00})
-			}, "windows"},
+			}, "windows/amd64"},
 			{"a goasm_room whose frame leaves its caller 8 bytes short", "goasm_room does not make", func(t *testing.T, bin string, b []byte) {
 				roomSub(t, bin, b, arch, RoomBelow-16)
-			}, "windows"},
+			}, "windows/amd64"},
 			{"a goasm_room whose frame leaves its caller just the room", "", func(t *testing.T, bin string, b []byte) {
 				roomSub(t, bin, b, arch, RoomBelow-8)
-			}, "windows"},
+			}, "windows/amd64"},
 			{"a second segment over the code", "overlap", func(t *testing.T, bin string, b []byte) {
 				elfLoadOver(t, bin, b, arch, binSymbol(t, bin, arch, "checkmini/mini.fib")+24)
 			}, "linux"},
 		} {
 			// A fixed ELF executable has only faults of its own.
-			if fault.only != "" && fault.only != goos || !pie && fault.only == "" {
+			if fault.only != "" && fault.only != goos && fault.only != goos+"/"+arch || !pie && fault.only == "" {
 				continue
 			}
 			// Go writes a load config into a windows binary since Go 1.27.
@@ -1047,9 +1044,9 @@ func peDirectoryAddr(t *testing.T, bin string, i int) uint64 {
 // peImportShifted moves the import address table of the first import
 // descriptor of bin to 64 KiB times k below addr, for the first k at which
 // it overlaps no fixup, and gives the address of that descriptor.
-func peImportShifted(t *testing.T, bin string, b []byte, addr uint64) uint64 {
+func peImportShifted(t *testing.T, bin, arch string, b []byte, addr uint64) uint64 {
 	t.Helper()
-	tb := openTestBin(t, bin, "amd64")
+	tb := openTestBin(t, bin, arch)
 	n := uint64(0)
 	for _, f := range tb.fixups {
 		if f.what == "an import of descriptor 0" {
