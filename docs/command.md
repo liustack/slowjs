@@ -12,7 +12,7 @@ read_when:
 
 - **Show a problem.** A script and what `slowjs` printed for it is the whole report: the engine is the one we ship, set up as we use it.
 - **Run a script on the engine**, to see what it gives, how long it takes or how much memory it needs.
-- **Try a release without Go.** From v0.31.0, the GitHub release of each version has it prebuilt for linux, darwin and windows, on amd64 and arm64.
+- **Try a release without Go.** From v0.31.0, the GitHub release of each version has it prebuilt for linux and darwin, on amd64 and arm64, and for windows/amd64, and from v0.31.12 for windows/arm64 too.
 
 The code is `cmd/slowjs`.
 

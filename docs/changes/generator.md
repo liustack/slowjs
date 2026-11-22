@@ -150,7 +150,7 @@ It came up with the profile: on amd64 the profile makes `memmove` save RBX, and 
 
 Why it is safe: the declaration only names the function, and the code and the frame are what they were. Go code must not call a leaf, so the generator stops when `internal/cengine/gocalls.txt` names one.
 
-Tests: `TestLeafDecl` (`internal/goasm/gen`) checks that a leaf that saved registers and a leaf that calls get a declaration that `go vet -asmdecl` takes, and that a leaf with neither says `NOFRAME` and gets none. `TestEngineAsmDecl` runs `go vet -asmdecl` on the engine for the five targets.
+Tests: `TestLeafDecl` (`internal/goasm/gen`) checks that a leaf that saved registers and a leaf that calls get a declaration that `go vet -asmdecl` takes, and that a leaf with neither says `NOFRAME` and gets none. `TestEngineAsmDecl` runs `go vet -asmdecl` on the engine for the six targets.
 
 ## A jump table entry may reach the end of the code
 
