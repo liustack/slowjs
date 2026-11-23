@@ -5,7 +5,7 @@ read_when:
   - 给 Go API 加函数或类型（加在这里）
   - 想知道某个函数是哪个版本加入的
   - 不写 Go 就运行引擎（slowjs 命令）
-translatedFrom: cfce5b5975dd
+translatedFrom: a520f1ec46dc
 ---
 
 # Eval 和 Call 之外的 Go API
@@ -25,12 +25,12 @@ API 的文档在 [pkg.go.dev](https://pkg.go.dev/github.com/liustack/slowjs)。�
 ## 错误
 
 - **`*Error` 的字段 `Uncatchable`、`OutOfMemory` 和 `Interrupted`**（v0.26.7）：调用为什么结束，任何脚本都伪造不了。[详情](changes/go-api.md#error-says-why-a-call-ended)
-- **停下之后 VM 还能做什么**（未发布）：以 `Uncatchable` 为真结束的调用，会让 VM 处于两种状态之一。tifa 在任何一次渲染失败后都会关掉 VM，所以在 tifa 里这两种状态都无关紧要。
+- **停下之后 VM 还能做什么**（v0.31.7）：以 `Uncatchable` 为真结束的调用，会让 VM 处于两种状态之一。tifa 在任何一次渲染失败后都会关掉 VM，所以在 tifa 里这两种状态都无关紧要。
   - eval 超时或 `Interrupt`（`Interrupted`）之后，或者内存耗尽（`OutOfMemory`）之后，只要 `errors.Is(err, ErrKilled)` 为 false，每个方法都能用：读取值、`MemoryUsage`、`RunGC`、继续调用，以及 `Close`，它会释放 VM 持有的一切。但当时正在进行的异步工作（一个 `await`、一个 promise 任务、一个异步生成器）可能永远完成不了，所以本该由它兑现或拒绝的 promise 可能一直停在 pending：继续留着这个 VM 的程序不能等待这样的 promise。
   - VM 被杀掉之后（`errors.Is(err, ErrKilled)`），它只能用来 `Close`。`Interrupt`、`MemorySize`、`MemoryFree` 和 `GCThreshold` 仍然能用，会返回 error 的方法返回一个能匹配 `ErrKilled` 的错误，其余的方法（包括 `MemoryUsage` 和 `RunGC`）会 panic。
 
   不管调用是因什么结束的，返回了值的调用都不会留下错误。
-- **在 windows/arm64 机器上，发生故障时 CPU 的状态可能放不进 goroutine 栈下方的空间，这时调用 `NewVM`**（未发布）：返回一个错误，写明 windows 打开了哪种扩展状态，windows 给出了大小时也写上大小，并且不创建 VM。这种情况是：扩展状态是 SME，或者是向量长于 256 位的 SVE，或者 windows 没有说明。在那里发生故障时，写入可能越过栈进到堆里。[详情](changes/c-engine.md#room-for-a-fault-on-windows)
+- **在 windows/arm64 机器上，发生故障时 CPU 的状态可能放不进 goroutine 栈下方的空间，这时调用 `NewVM`**（v0.31.12）：返回一个错误，写明 windows 打开了哪种扩展状态，windows 给出了大小时也写上大小，并且不创建 VM。这种情况是：扩展状态是 SME，或者是向量长于 256 位的 SVE，或者 windows 没有说明。在那里发生故障时，写入可能越过栈进到堆里。[详情](changes/c-engine.md#room-for-a-fault-on-windows)
 - **在 Go 里创建的 `*Error` 的 `Error()`**（v0.26.17）是 `Name: Message`，和 `Error.prototype.toString` 写出来的一样，以前这里是空的。从 JavaScript 拿到的错误保留引擎给的文本。[详情](changes/go-api.md#error-of-an-error-made-in-go)
 - **`VM.TrackRejections(max)` 和 `VM.UnhandledRejections()`**（v0.31.1）：留下没有处理函数就被拒绝的 promise，最多 `max` 个，在脚本和它的任务跑完之后取出来，每个拒绝原因都读成 `*Error`，其中的文本截到 8 KiB，用来报告没有处理函数接住的拒绝。不开启的话，VM 一个也不留。读取进行的时候，如果它运行的 JavaScript 调用这两个函数，两者都会返回一个错误给这段 JavaScript，并且什么也不改。[详情](changes/go-api.md#trackrejections-and-unhandledrejections)
 

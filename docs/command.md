@@ -108,7 +108,7 @@ The command runs what the engine runs in tifa and in a Go program, and nothing a
 - **No ES modules.** `import` and `export` are a syntax error in a global script, and the Go API has no module loader since v0.27.0 ([go-api.md](changes/go-api.md#no-module-loader-shell-helpers-or-setcanblock)).
 - **No REPL and no stdin.** With no file and no `-e`, it prints how to use it and exits with 2.
 - **No file system, network or Node APIs.** There is no `load`, `require`, `process`, `fs` or `fetch`. It is the engine, not Node.
-- **No report of an unhandled promise rejection.** A rejected promise that nothing handles ends the run with 0, as the Go API has no way to tell yet.
+- **No report of an unhandled promise rejection.** A rejected promise that nothing handles ends the run with 0: the command does not ask the VM to track them (`VM.TrackRejections`).
 
 Size of the binary, built as the release builds it (`-trimpath -ldflags "-s -w"`, Go 1.27.2), in MiB:
 

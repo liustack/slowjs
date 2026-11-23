@@ -4,7 +4,7 @@ read_when:
   - 不写 Go 就在这个引擎里运行 JavaScript 文件，或者用一个脚本展示引擎的问题
   - 修改 cmd/slowjs、它的选项或 release 压缩包
   - 想知道 slowjs 为什么没有定时器、模块、REPL 或 Node API
-translatedFrom: 73517198b562
+translatedFrom: d72c13228058
 ---
 
 # slowjs 命令
@@ -108,7 +108,7 @@ Go 自身崩溃也以 2 结束，并打印 `panic:` 或 `fatal error:` 和各个
 - **没有 ES 模块。** 在全局脚本里 `import` 和 `export` 是语法错误，而且 Go API 从 v0.27.0 起就没有模块加载器（[go-api.md](changes/go-api.md#no-module-loader-shell-helpers-or-setcanblock)）。
 - **没有 REPL，也不读 stdin。** 既没有文件也没有 `-e` 时，它打印用法，并以 2 退出。
 - **没有文件系统、网络或 Node API。** 没有 `load`、`require`、`process`、`fs` 或 `fetch`。它是引擎，不是 Node。
-- **不报告未处理的 promise 拒绝。** 一个被拒绝、又没有任何处理函数的 promise，运行照样以 0 结束，因为 Go API 还没有办法知道这件事。
+- **不报告未处理的 promise 拒绝。** 一个被拒绝、又没有任何处理函数的 promise，运行照样以 0 结束，因为这个命令不让 VM 记录它们（`VM.TrackRejections`）。
 
 二进制的大小，按 release 的方式构建（`-trimpath -ldflags "-s -w"`，Go 1.27.2），单位 MiB：
 
