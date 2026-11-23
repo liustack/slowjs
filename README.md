@@ -1,4 +1,4 @@
-<h1 align="center"><img src="assets/brand/slowjs-banner.png" alt="liustack/tifajs"></h1>
+<h1 align="center"><img src="assets/brand/tifajs-banner.png" alt="liustack/tifajs"></h1>
 
 <p align="center"><b>The fastest pure Go JavaScript engine for rendering React.</b></p>
 

@@ -1,0 +1,11 @@
+<!-- Copyright (c) 2026 The liustack/tifajs Authors.
+     SPDX-License-Identifier: MIT
+     Use of this source code is governed by the MIT license in LICENSE at the
+     root of this repository. -->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="200" height="200" viewBox="0 0 200 200" role="img" aria-label="tifajs">
+  <title>tifajs</title>
+  <rect x="90" y="126" width="20" height="56" rx="10" fill="#e8c99b"/>
+  <path fill="#00add8" d="M58 60a42 42 0 0 1 61-38c-5 9 0 18 10 19-4 10 2 19 13 20v72q0 11-11 11H69q-11 0-11-11Z"/>
+  <rect x="70" y="52" width="9" height="47" rx="4.5" fill="#80d9eb"/>
+  <path fill="#ffb703" d="m103 53-19 43h19l-10 32 38-51h-21l12-24Z"/>
+</svg>

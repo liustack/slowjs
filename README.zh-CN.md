@@ -1,4 +1,4 @@
-<h1 align="center"><img src="assets/brand/slowjs-banner.png" alt="liustack/tifajs"></h1>
+<h1 align="center"><img src="assets/brand/tifajs-banner.png" alt="liustack/tifajs"></h1>
 
 <p align="center"><b>渲染 React 最快的纯 Go JS 引擎。</b></p>
 
