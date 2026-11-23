@@ -36,8 +36,7 @@
 #
 # Each of docs/use/ and docs/internals/ has an index.md with a title, an
 # audience and an order (docs/use/ also index.zh-CN.md). An index is not listed
-# and holds no summary. The check of the three index files is off while
-# require_index is false (below): set it to true when the files are there.
+# and holds no summary. --check fails when one of the three is missing.
 #
 # A user doc docs/use/x.md has a Chinese version docs/use/x.zh-CN.md, changed
 # in the same commit, whose front matter has summary and read_when in Chinese,
@@ -52,10 +51,6 @@
 # English docs only. README.md and README.zh-CN.md have their own rule
 # (AGENTS.md).
 set -euo pipefail
-
-# Set to true once docs/use/index.md, docs/use/index.zh-CN.md and
-# docs/internals/index.md exist: --check then fails when one is missing.
-require_index=false
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
 docs="$root/docs"
@@ -217,15 +212,13 @@ done <<EOF2
 $allfiles
 EOF2
 
-# The three index files exist, once require_index is true.
-if $require_index; then
-  for file in docs/use/index.md docs/use/index.zh-CN.md docs/internals/index.md; do
-    if [ ! -f "$root/$file" ]; then
-      echo "warning: $file is missing" >&2
-      unpaired=$((unpaired + 1))
-    fi
-  done
-fi
+# The three index files exist.
+for file in docs/use/index.md docs/use/index.zh-CN.md docs/internals/index.md; do
+  if [ ! -f "$root/$file" ]; then
+    echo "warning: $file is missing" >&2
+    unpaired=$((unpaired + 1))
+  fi
+done
 
 # Each user doc has a Chinese version translated from it as it is now, with the
 # same audience and order.

@@ -12,8 +12,8 @@
 # not a user doc or next to none, when a doc has no audience or an audience
 # that is not user or dev, when a doc has no order or one that is not a whole
 # number, when a user doc is outside docs/use/ or a dev doc is inside it, when
-# a doc has no summary and when a README is missing. With require_index set to
-# true it also fails when docs/use/index.md, docs/use/index.zh-CN.md or
+# a doc has no summary and when a README is missing. It also fails
+# when docs/use/index.md, docs/use/index.zh-CN.md or
 # docs/internals/index.md is missing. The hash is taken with sha256sum or with
 # shasum, whichever the PATH has, and --check stops when it has neither.
 #
@@ -44,6 +44,7 @@ setup() {
 	printf -- "---\nsummary: 'For developers'\naudience: dev\norder: 2\nread_when:\n  - Always\n---\n\n# Dev\n" > "$d/r/docs/internals/dev.md"
 	printf -- "---\nsummary: 'For users'\naudience: user\norder: 2\nread_when:\n  - Using it\n---\n\n# Use\n\nRun it.\n" > "$d/r/$U.md"
 	zh "$(sha "$d/r/$U.md")"
+	indexes
 }
 
 # zh HASH: write docs/use/guide.zh-CN.md with translatedFrom: HASH, none when
@@ -61,11 +62,6 @@ indexes() {
 	printf -- "---\ntitle: Use\naudience: user\norder: 1\n---\n\n# Use\n" > "$d/r/docs/use/index.md"
 	printf -- "---\ntitle: 使用\naudience: user\norder: 1\ntranslatedFrom: %s\n---\n\n# 使用\n" "$(sha "$d/r/docs/use/index.md")" > "$d/r/docs/use/index.zh-CN.md"
 	printf -- "---\ntitle: Internals\naudience: dev\norder: 2\n---\n\n# Internals\n" > "$d/r/docs/internals/index.md"
-}
-
-# require: turn on the check of the index files in the copy of the script.
-require() {
-	sed 's/^require_index=false$/require_index=true/' "$d/r/scripts/docs-list.sh" > "$d/x" && mv "$d/x" "$d/r/scripts/docs-list.sh"
 }
 
 # expect CODE TEXT NAME: --check exits with CODE, and its warnings hold TEXT.
@@ -160,10 +156,8 @@ setup
 rm "$d/r/README.zh-CN.md"
 expect 1 "README.zh-CN.md is missing" "a README is missing"
 
-# The index files: left alone while require_index is false, and each one
-# needed once it is true.
+# The index files: listed nowhere, and each one needed.
 setup
-indexes
 expect 0 "" "the index files pass, listed nowhere"
 if grep -q index "$d/out"; then
 	echo "FAIL the index lists an index file"; fails=$((fails + 1))
@@ -172,32 +166,21 @@ else
 fi
 
 setup
-require
-expect 1 "docs/use/index.md is missing" "require_index: no docs/use/index.md"
+rm "$d/r/docs/use/index.md" "$d/r/docs/use/index.zh-CN.md" "$d/r/docs/internals/index.md"
+expect 1 "docs/use/index.md is missing" "no index files"
 grep -qF "docs/use/index.zh-CN.md is missing" "$d/err" && grep -qF "docs/internals/index.md is missing" "$d/err" \
-	&& echo "ok   require_index: each missing index is named" \
-	|| { echo "FAIL require_index: not every missing index is named"; fails=$((fails + 1)); }
+	&& echo "ok   each missing index is named" \
+	|| { echo "FAIL not every missing index is named"; fails=$((fails + 1)); }
 
 setup
-indexes
-require
-expect 0 "" "require_index: the three index files pass"
-
-setup
-indexes
-require
 rm "$d/r/docs/internals/index.md"
-expect 1 "docs/internals/index.md is missing" "require_index: no docs/internals/index.md"
+expect 1 "docs/internals/index.md is missing" "no docs/internals/index.md"
 
 setup
-indexes
-require
 edit docs/use/index.md '/^title:/d'
 expect 1 "docs/use/index.md has no title" "an index has no title"
 
 setup
-indexes
-require
 edit docs/use/index.md 's/^audience: user$/audience: dev/'
 expect 1 "docs/use/index.md is a dev doc and is in docs/use/" "an index with the audience of the other folder"
 

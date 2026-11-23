@@ -141,7 +141,8 @@ Beyond `Eval` and `Call`, the API has Go functions that JavaScript calls as buil
 | [Testing](docs/internals/testing.md) | You are about to commit, or want to check the engine |
 | [Upgrading](docs/internals/upgrading.md) | You are taking a commit of upstream QuickJS, new locale data or a newer Go |
 | [Releasing](docs/internals/releasing.md), [Commits](docs/internals/commit.md) | You are making a release or a commit |
-| [Upstream](docs/internals/upstream.md) | You are moving from modernc.org/quickjs, or want to know where the code comes from |
+| [Moving from modernc.org/quickjs](docs/use/from-modernc.md) | You are moving a program from modernc.org/quickjs |
+| [Upstream](docs/internals/upstream.md) | You want to know where the code comes from |
 
 ## Where it comes from
 

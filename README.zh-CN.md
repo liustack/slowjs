@@ -141,7 +141,8 @@ func main() {
 | [测试](docs/internals/testing.md) | 准备提交，或者想核对引擎 |
 | [升级](docs/internals/upgrading.md) | 要合入上游 QuickJS 的提交、新的语言数据或更新的 Go |
 | [发版](docs/internals/releasing.md)、[提交](docs/internals/commit.md) | 要发版或提交 |
-| [上游](docs/internals/upstream.md) | 要从 modernc.org/quickjs 换过来，或者想知道代码从哪来 |
+| [从 modernc.org/quickjs 迁移](docs/use/from-modernc.zh-CN.md) | 要把程序从 modernc.org/quickjs 换过来 |
+| [上游](docs/internals/upstream.md) | 想知道代码从哪来 |
 
 ## 来自哪里
 
