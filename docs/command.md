@@ -1,5 +1,6 @@
 ---
 summary: 'The slowjs command: what it is for (run a script on the engine, show a problem, try a release without Go), how to get it, what a script has (Intl, Temporal, URL, fmt, print, console, scriptArgs), the exit codes, the timeout and memory limit with their defaults and why, what it leaves out on purpose (timers, modules, REPL, files, network, a report of unhandled rejections), its size and its tests'
+audience: user
 read_when:
   - Running a JavaScript file in this engine without writing Go, or showing a problem of the engine with a script
   - Changing cmd/slowjs, its flags or its release archives
@@ -7,6 +8,8 @@ read_when:
 ---
 
 # The slowjs command
+
+English · [简体中文](command.zh-CN.md)
 
 `slowjs` runs a JavaScript file in this engine, in a VM set up as tifa sets it up, with no Go program to write. It is for three things:
 

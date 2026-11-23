@@ -1,5 +1,6 @@
 ---
 summary: 'What the Go API has beyond NewVM, Eval, Call and Value: each function and type, what it is for, what it gains in tifa, and the release it came in'
+audience: user
 read_when:
   - Looking for a Go function of the API that is not Eval or Call
   - Adding a function or type to the Go API (add it here)
@@ -8,6 +9,8 @@ read_when:
 ---
 
 # The Go API beyond Eval and Call
+
+English · [简体中文](api.zh-CN.md)
 
 The API is documented at [pkg.go.dev](https://pkg.go.dev/github.com/liustack/slowjs). Every program starts with `NewVM`, `VM.Eval`, `VM.Call` and `Value`. Besides them, it has the functions below. Each links to the doc that says why it is safe and how it was measured. Releases v0.30.0 to v0.30.7 were published as `github.com/liustack/quickjs`.
 
