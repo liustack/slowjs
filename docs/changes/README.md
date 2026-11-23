@@ -437,4 +437,4 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 
 - Add one row to the table of its area, or a new area table when none fits, with "Unreleased" as its release. The release step in [releasing.md](../releasing.md#before-the-release) replaces "Unreleased" with the version, in the tables here and in the Release lines of the area docs. Never write it into README.md, which only links here.
 - The row says what the change does and links to where it is described. The reasons, the numbers and the tests live in code comments and commit messages. The longer write-ups under this folder are older and stay as they are.
-- Add it to [CHANGELOG.md](../../CHANGELOG.md) in one or two sentences, and a change for speed to [performance.md](../performance.md) (one table per release).
+- Add it to [CHANGELOG.md](../../CHANGELOG.md) in one or two sentences, and a change for speed to the table of [performance.md](../performance.md) (one row per release).

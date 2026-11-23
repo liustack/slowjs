@@ -37,7 +37,6 @@ Strings that are both atoms are told apart only when both are string atoms: the 
 
 On linux/amd64 without PGO, against v0.26.16 over 10 rounds, a render of tifa's example shop takes 0.982 of the time (0.974 to 0.989), the spiral and table pages of its bench app 0.940 and 0.942 (with wide ranges, 0.859 to 0.969 and 0.871 to 1.030), and its MUI pages 0.982 to 0.985. The HTML and the memory of a VM stay the same.
 
-
 ## instanceof without the call of Symbol.hasInstance
 
 Release: v0.31.0.
@@ -56,7 +55,7 @@ Why this is safe: nothing on the path can run JavaScript, throw or allocate, so 
 
 The memory stays the same too. `Function.prototype[Symbol.hasInstance]` is made the first time it is read, like every built-in method, and the old path reads it at every test. So the path answers only once that property is made: the first test of a realm goes the old way and makes it, as before. Without that check a script that tests `instanceof` would end with one function object less, and the goldens of the register loop, which record the objects of the runtime at the end of a run, catch it (98 corpus runs and almost every seed of rvgen).
 
-What it gains: on amd64 an `instanceof` that takes the path costs about 95 instructions on the native C tree. EarleyBoyer of the V8 suite tests 491,887 times an iteration in Boyer and 9,770 in Earley. tifa's pages test 0 (React) to 680 (the store's home page) times a render. The numbers are in [performance.md](../performance.md#instanceof-without-the-call-of-symbolhasinstance).
+What it gains: on amd64 an `instanceof` that takes the path costs about 95 instructions on the native C tree. EarleyBoyer of the V8 suite tests 491,887 times an iteration in Boyer and 9,770 in Earley. tifa's pages test 0 (React) to 680 (the store's home page) times a render.
 
 `test_uncatchable_instanceof` in `engine/test/unit-oom.c` leaves an interrupt and an out of memory error pending in an async function, then tests `instanceof` with an object and with a primitive on the left: the run must end with that uncatchable error and the statement after the test must not run.
 
@@ -79,7 +78,5 @@ What it costs and gains: each handler gets a test of the tags and a jump. Navier
 - the float pair alone inline: the MUI pages 1.1% more
 - the three register forms inline and the rest in the block: the shop 0.06% to 0.08% more
 - mul through a block of its own as add and sub do, tested in the handler, in its own tail or in an `else` of the int test: NavierStokes 2.6% to 4.1% fewer, but V8's Crypto 0.7% to 1.8% more. Crypto multiplies ints, and the int path of mul kept `ip` on the stack.
-
-The counts of each are in [performance.md](../performance.md#numbers-added-and-subtracted-without-the-shared-tail).
 
 Tests: `engine/test/compare/double_arith.js` compares add, sub and mul of floats, ints and their edges (NaN, -0, the infinities, values around 2^53, whole results, int overflow), objects with `valueOf`, strings and the BigInt `TypeError`, in each form, with what Node 24 prints. `engine/test/regvm/js/q4-floatarith.js` runs the forms with old values to free and temps a call below owns, with its goldens for the corpus and the throw injection. A part of `engine/pgo/loops.js` runs the block, which tifa's pages run too little to train it.
