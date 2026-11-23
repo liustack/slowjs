@@ -301,5 +301,5 @@ return out.join("\n");
 // engine before the change: the callee of strict arguments set in sloppy code
 // throws a TypeError here, as the specification says (the setter is
 // %ThrowTypeError%), where Node 24 ignores the store, and the stack of an
-// error is a data property here (docs/changes/errors-and-stacks.md) and an
+// error is a data property here (docs/internals/changes/errors-and-stacks.md) and an
 // accessor in Node 24.

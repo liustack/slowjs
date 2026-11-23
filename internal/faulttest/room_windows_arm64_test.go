@@ -61,7 +61,7 @@ func faultBelow(wild uintptr, top *uintptr) (at uintptr, other any) {
 // TestFaultStateFits: on windows/arm64 the state of the CPU that the system
 // writes below the stack pointer at a fault, with the rest of the dispatch,
 // fits in the 4 KiB Go keeps below each stack, which is why the generated
-// engine has no room check there (docs/changes/c-engine.md, Room for a fault
+// engine has no room check there (docs/internals/changes/c-engine.md, Room for a fault
 // on windows). internal/faultstate keeps the engine from running where the
 // CONTEXT with the extended state the system turns on, with
 // faultstate.Dispatch bytes for the rest, does not fit. This measures the

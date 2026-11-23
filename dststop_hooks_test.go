@@ -22,7 +22,7 @@ import (
 // dstCleanup are the functions of the engine that collect or free objects.
 // A poll under one of them cannot end the script: the collector and the
 // freeing of an object poll as long as they take, before the loop throws or
-// after it, and the kill judges them (docs/changes/go-api.md), not the
+// after it, and the kill judges them (docs/internals/changes/go-api.md), not the
 // stop of the loop.
 var dstCleanup = map[string]bool{
 	"JS_RunGC":           true, // with what it does after the collection (js_front_drain), and JS_RunGCInternal inlined

@@ -1,6 +1,6 @@
 # engine/pgo
 
-What `make gen` needs to compile the engine with a profile: the profile itself, the program that trains it, and the pages it trains on. What the profile does to the generated code, what it gains and where it stops is in [docs/changes/generator.md](../../docs/changes/generator.md#a-profile-of-tifas-pages).
+What `make gen` needs to compile the engine with a profile: the profile itself, the program that trains it, and the pages it trains on. What the profile does to the generated code, what it gains and where it stops is in [docs/internals/changes/generator.md](../../docs/internals/changes/generator.md#a-profile-of-tifas-pages).
 
 ## What is here
 
@@ -22,11 +22,11 @@ make gen && make gen ARCH=arm64
 git add engine/pgo/profile.txt internal/cengine
 ```
 
-`train.sh` stops when it finds no LLVM 22.1.8. It works in `.build/pgo-train` (`TRAIN_OUT` changes it). It needs nothing outside the repository. The profile and the generated files go in one commit, as `make check-gen` wants. When to train again is in [docs/releasing.md](../../docs/releasing.md#the-profile).
+`train.sh` stops when it finds no LLVM 22.1.8. It works in `.build/pgo-train` (`TRAIN_OUT` changes it). It needs nothing outside the repository. The profile and the generated files go in one commit, as `make check-gen` wants. When to train again is in [docs/internals/releasing.md](../../docs/internals/releasing.md#the-profile).
 
 ## The loops
 
-The pages leave many paths of the engine at a count of 0: typed arrays, DataView, regular expressions on text that is not Latin-1, BigInt, `Date.parse`, the slow paths of the operators, functions that pass their arguments on with `apply` and more. LLVM takes a count of 0 for a path that never runs, moves spills into it and its blocks out of the way, and a script that runs it pays for that. `loops.js` runs each such kind of path a few thousand times. It is merged with the pages as it is, neither input scaled: its counts are about 3% of the profile, enough to lift those paths above 0 and far too few to change what the pages run. What it gains and costs is in [docs/changes/generator.md](../../docs/changes/generator.md#a-second-input-plain-loops).
+The pages leave many paths of the engine at a count of 0: typed arrays, DataView, regular expressions on text that is not Latin-1, BigInt, `Date.parse`, the slow paths of the operators, functions that pass their arguments on with `apply` and more. LLVM takes a count of 0 for a path that never runs, moves spills into it and its blocks out of the way, and a script that runs it pays for that. `loops.js` runs each such kind of path a few thousand times. It is merged with the pages as it is, neither input scaled: its counts are about 3% of the profile, enough to lift those paths above 0 and far too few to change what the pages run. What it gains and costs is in [docs/internals/changes/generator.md](../../docs/internals/changes/generator.md#a-second-input-plain-loops).
 
 The loops are written for the training. The micro benchmarks of `compare/testdata` measure what the profile does to paths it was not trained on, so none of them may go into `loops.js`, not even in part.
 

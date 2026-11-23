@@ -9,7 +9,7 @@ package cengine
 // its stack check makes gen.RoomBelow bytes of room below the stack of its
 // caller, as the room check of every generated function does on windows:
 // there the system writes the state of the CPU at a fault below the stack
-// pointer, and Go keeps only 4 KiB for it (docs/changes/c-engine.md, When the
+// pointer, and Go keeps only 4 KiB for it (docs/internals/changes/c-engine.md, When the
 // engine fails).
 func goasm_room()
 

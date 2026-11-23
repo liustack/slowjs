@@ -2,7 +2,7 @@
 # against its base, counted by callgrind in the window of
 # internal/measure/pages. It runs when a branch count/<name> is pushed, or by
 # hand. The counts do not depend on the machine, so the groups of pages run as
-# jobs side by side. See "Counts in CI" in docs/measuring.md.
+# jobs side by side. See "Counts in CI" in docs/internals/measuring.md.
 name: count
 
 on:

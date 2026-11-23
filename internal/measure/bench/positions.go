@@ -4,7 +4,7 @@
 // root of this repository.
 
 // Package bench builds the code-position variants of a program, times them in
-// turn, and reads the result by the protocol of docs/measuring.md.
+// turn, and reads the result by the protocol of docs/internals/measuring.md.
 package bench
 
 import (
@@ -22,7 +22,7 @@ type Position struct {
 	// over of a shift that is not a multiple of 64, and everything after that
 	// function, the interpreter too, moves by a multiple of 64. So a shift of
 	// 32 may move nothing. The functions before the matcher move by exactly
-	// the shift (see docs/measuring.md).
+	// the shift (see docs/internals/measuring.md).
 	Shift int
 	// Front is the bytes of NOP at the start of the interpreter body, a multiple
 	// of 16 from 0 to 48: the place of the body within its 64-byte block. The
@@ -115,7 +115,7 @@ var protocolShifts2 = []int{
 // protocolFront is the front of layout i of Protocol.
 func protocolFront(i int) int { return 16 * (i / 4) }
 
-// Protocol is the set of 16 layouts of docs/measuring.md: every front from 0
+// Protocol is the set of 16 layouts of docs/internals/measuring.md: every front from 0
 // to 48 four times, with the shifts and second shifts above. The first is the
 // formal layout.
 func Protocol() []Position {
@@ -217,7 +217,7 @@ func BinName(side string, p Position) string { return side + "@" + p.String() }
 // Protocol, 0 for the formal layout. A micro benchmark run with the pairing
 // (RunOptions.Place) moves its data with each layout, k small objects before
 // the script, so that the mean of the layouts also covers where the heap puts
-// the data (docs/measuring.md). A position outside the protocol has no number.
+// the data (docs/internals/measuring.md). A position outside the protocol has no number.
 func PlaceOf(pos string) (int, error) {
 	for i, p := range Protocol() {
 		if p.String() == pos {

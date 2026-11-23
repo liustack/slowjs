@@ -14,7 +14,7 @@ A clear description of the problem.
 
 ## The script that shows it
 
-A JavaScript file, cut down as far as it still shows the problem, and the exact command you ran it with. `slowjs` runs a file in the engine, set up as tifa sets it up, with no Go to write: take it from the release, see [docs/command.md](https://github.com/liustack/slowjs/blob/main/docs/command.md).
+A JavaScript file, cut down as far as it still shows the problem, and the exact command you ran it with. `slowjs` runs a file in the engine, set up as tifa sets it up, with no Go to write: take it from the release, see [docs/use/command.md](https://github.com/liustack/slowjs/blob/main/docs/use/command.md).
 
 ```js
 ...

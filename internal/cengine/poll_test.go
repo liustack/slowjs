@@ -114,7 +114,7 @@ var gcTightPolls = map[string]int64{
 // least the polls of its floor in gcTightPolls. It does not time the
 // collections: with one P (GOMAXPROCS=1, as under taskset on one core) a
 // collection takes the spans left to sweep times the 10 ms a loop keeps the
-// P, which measures the heap and the load, not the polls (docs/testing.md).
+// P, which measures the heap and the load, not the polls (docs/internals/testing.md).
 func TestGCInTightLoops(t *testing.T) {
 	needPolls(t)
 	stop := make(chan struct{})

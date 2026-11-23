@@ -8,7 +8,7 @@
 # for the six targets the engine runs on, with <version> stamped in, packs
 # each binary with the license texts NOTICE.md says a binary must carry, and
 # writes <dir>/checksums.txt. The release job (.github/workflows/release.yml)
-# runs it, see docs/releasing.md. Each archive is named after its target as
+# runs it, see docs/internals/releasing.md. Each archive is named after its target as
 # Go names it, with no version, and holds one folder of the same name:
 #
 #   slowjs-linux-amd64.tar.gz

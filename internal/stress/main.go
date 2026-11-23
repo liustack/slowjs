@@ -10,7 +10,7 @@
 // or the error its stop documents, a VM goes on after a stop that was not a
 // kill, the memory of the engine, of the host and of Go and the goroutines
 // stay bounded with no drift after the warm-up, and closing every VM gives
-// all its memory back. See "Long runs" in docs/testing.md.
+// all its memory back. See "Long runs" in docs/internals/testing.md.
 //
 //	go run ./internal/stress -duration 10m -series series.csv
 //

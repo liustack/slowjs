@@ -2861,7 +2861,7 @@ static JSValue free_node_new(JSContext *ctx, JSValueConst this_val, int argc,
    then a cycle freed by the collection and one freed by the young
    collection. The orders were recorded on the engine before the first
    object to die was freed outside the loop of free_zero_refcount
-   (docs/changes/objects-and-shapes.md), and it passes this test. The young
+   (docs/internals/changes/objects-and-shapes.md), and it passes this test. The young
    collection frees a cycle of young objects in the order a full one does,
    the order in which their counts get to 0 in its one pass over the young
    list, where it freed them in the order they were made before that pass
@@ -2896,7 +2896,7 @@ static void test_free_order(void)
 
     CHECK(eval(ctx, tree), "the tree");
     /* the job that made the WeakRef ends, and with it the hold of its
-       target (docs/changes/weak-collections.md) */
+       target (docs/internals/changes/weak-collections.md) */
     CHECK(run_jobs(rt), "the end of the job of the tree");
     free_order[0] = '\0';
     CHECK(eval(ctx, "t = null; void 0"), "the drop");

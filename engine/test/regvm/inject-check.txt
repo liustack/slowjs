@@ -10,7 +10,7 @@
 # and of each kind the one with the fewest runs at -max 1, leaving out the
 # scripts with an "inject-hit" line (one place a site may not reach it). The
 # whole set runs before a merge into main that changes engine/
-# (docs/testing.md).
+# (docs/internals/testing.md).
 engine/test/regvm/corpus/depth.js
 engine/test/regvm/js/c-depth.js
 engine/test/regvm/js/e-interrupt.js

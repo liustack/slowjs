@@ -310,7 +310,7 @@ func (v *VM) Eval(src, file string) (out string, err error) {
 // Place allocates k small objects, each {a: i}, and holds them until Close.
 // No script sees them: they are not in any global. They move where the heap
 // puts what is allocated after them, which a timing uses to run a micro
-// benchmark at several placements of its data (docs/measuring.md). Place(0)
+// benchmark at several placements of its data (docs/internals/measuring.md). Place(0)
 // does nothing.
 func (v *VM) Place(k int) (err error) {
 	if k < 0 {

@@ -1,0 +1,656 @@
+---
+summary: 'Changes to the Go API: what Call reports, strings Go cannot convert, lone surrogates and invalid UTF-8 between Go and javascript, what *Error says about an uncatchable end, RegisterFunc on an existing name, NewVM failing cleanly, SetShapeCache, SetRegExpCache, Builtin, Args.WTF8, strings of Builtins converted in Go, Args.Latin1 and Args.UTF16 with NewStringLatin1 and NewStringUTF16, NewArray, SetStrip, the text of an Error made in Go, RunGC, MemorySize and GCThreshold, OnClose, SharedBytecode, how EvalBytecode waits for a module's top-level await, how a module frees its top level once it has run, the async context that promise jobs keep for an AsyncLocalStorage, RegisterEscapeText (React DOM's HTML escape written in C), RegisterCopyProps (the loop with which React copies the props of an element, written in C), RegisterStartTag and RegisterEndTag (the start and end tags React DOM writes for an element, written in C), MemoryUsage and ReleaseMemory, and the module loaders, shell helpers and SetCanBlock that are gone, and the builds that stop: a newer Go, and the assembler options -spectre=ret and -dynlink, a Value of another VM refused at every entry, the constructors of values reporting out of memory, a result that fails to convert leaving nothing behind, UndefinedValue and the zero Value taken as undefined, Close refused during a call into the VM, Then returning the exception of a then getter, a Go map made an object of its own data properties, a Value returned as an any taken as a Value, a place a result reaches twice taken as one reference, a result that contains itself refused, long strings and results that stop converting at the limits of the call, Args.StringLen reading the length of a string in place, a 16-bit string written as UTF-8 eight ASCII units at a time, EvalFile giving a script a file name, strings a script returns or throws stopping at the top level of a call too, TrackRejections and UnhandledRejections reporting the rejections no handler took, and package tifa'
+audience: dev
+order: 15
+read_when:
+  - Closing a VM from a Go function that javascript called
+  - Passing a Value to a method of a VM, or returning Values or a map from a Go function, who frees those Values, and what happens when that fails
+  - Changing slowjs.go, or how strings, errors or host functions cross between Go and javascript
+  - A Go string from javascript has replacement characters, or a string from Go reads differently in javascript
+  - Telling an interrupt or out of memory from an error a script threw
+  - Registering a Go function under a name the global object already has
+  - Calling VM.SetShapeCache or VM.SetRegExpCache
+  - Giving javascript a Go function that it calls often, or returning a list from Go (Builtin, NewArray)
+  - Reading a string argument whose lone surrogates matter, such as one to collate (Args.WTF8)
+  - A Builtin that takes or returns strings is slow, or looks at the characters of short strings and often returns them as they are (Args.Latin1, Args.UTF16, NewStringLatin1, NewStringUTF16)
+  - Hiding the source of a script's functions (SetStrip)
+  - Running a GC between two calls into javascript, or reading how much memory a VM takes (RunGC, MemorySize, GCThreshold)
+  - Keeping something per VM outside it, to drop when the VM is closed (OnClose)
+  - Loading the same bytecode into many VMs (SharedBytecode, EvalSharedBytecode)
+  - Evaluating the bytecode of a module (EvalBytecode), or a module whose top-level await is still pending when it returns
+  - Writing an AsyncLocalStorage, or a value that has to follow an async function across await (GetAsyncContext, SetAsyncContext)
+  - Giving a VM React DOM's HTML escape as a function written in C (RegisterEscapeText)
+  - Giving a VM the copy of the props of a React element as a function written in C (RegisterCopyProps)
+  - Giving a VM the start and end tags React DOM writes for an element as functions written in C (RegisterStartTag, RegisterEndTag)
+  - Reading what a VM holds by kind, or giving the memory it keeps free back to the system (MemoryUsage, ReleaseMemory)
+  - Moving code that called SetModuleLoader, SetDefaultModuleLoader, StdAddHelpers or SetCanBlock
+  - A build fails at internal/cengine/goasm_tripwire.<arch>.s, or you want to build with -spectre=ret, -dynlink, -buildmode=plugin, -buildmode=shared or -linkshared
+---
+
+# The Go API
+
+Changes an embedder sees in what the methods of `github.com/liustack/slowjs` return. [uncatchable.md](uncatchable.md) has the changes to how a call ends on an interrupt, a timeout or out of memory.
+
+## Call reports the exception of the function expression
+
+Release: v0.26.0.
+
+`VM.Call` and `VM.CallValue` report the exception thrown while evaluating the function expression (for example out of memory, or a name that is not defined) instead of `cannot call a non-function`.
+
+## A string Go cannot convert comes back as the error
+
+Release: v0.26.5.
+
+A string that cannot be converted to Go comes back as the error, not as `""`. Converting needs memory for a string with non-ASCII characters and for one built by concatenation, so near the memory limit `Eval`, `Call`, the JSON of an `Object`, `Value.MarshalJSON` and host function arguments used to get an empty string, and the out of memory exception stayed in the context. A BigInt whose `toString` throws now reports that exception instead of a made-up error. `ErrorFromValue` has no error result: a field it cannot read stays empty, and the exception is dropped. Reading the name and message of a thrown value that is not an object (`throw null`, which the engine throws near the memory limit, `throw undefined`, a symbol) no longer leaves a TypeError in the context.
+
+Test: `gostring_test.go`.
+
+## Valid UTF-8 for lone surrogates
+
+Release: v0.26.8.
+
+A Go string made from a JS string is valid UTF-8. A JS string can hold a lone surrogate, half of a surrogate pair without the other half, which code makes when it cuts a string inside an emoji. `JS_ToCStringLen2` wrote it as the three bytes of its code point, which is not UTF-8, so a page rendered to Go had bytes a browser shows as three replacement characters. Now each lone surrogate becomes U+FFFD, as Go's `utf16.Decode`, `TextEncoder` and Node's `Buffer` make it.
+
+Test: `surrogate_test.go`.
+
+## Invalid UTF-8 from Go becomes one U+FFFD per byte
+
+Release: v0.26.10.
+
+A Go string that is not valid UTF-8 becomes a JS string with U+FFFD for each byte that does not start a valid sequence, as Go decodes it (`for range`, `[]rune`, `utf16.Encode`) and as `encoding/json` writes it, so a string passed as it is and one inside a struct, which goes as JSON, arrive the same. This covers arguments of `Call`, results of Go functions, map keys and values, `NewString`, `NewAtom`, the message of an error a Go function returns, function names and module names. The engine used to skip the bytes after an invalid one, ASCII included: `"\x80a"` became a single U+FFFD and lost the `a`, `"\xc0\x80"` gave one U+FFFD instead of two, and the three-byte form of a surrogate (CESU-8, `0xED 0xA0` and on) became that surrogate, so two of them made an emoji. A sequence cut short, such as `"\xe4\xb8"`, now gives one U+FFFD per byte, where a browser's `TextDecoder` gives one for the sequence. Source code is not changed: the parser still reports invalid UTF-8 as a `SyntaxError`, and still takes a surrogate in the three-byte form.
+
+Test: `invalidutf8_test.go`.
+
+## *Error says why a call ended
+
+Release: v0.26.7.
+
+`*Error` says whether the call ended with an exception no script could catch, and why, so that an embedder need not compare names and messages, which a script can copy. `Uncatchable` is true when the VM ran out of memory (`OutOfMemory`, also when the engine could not build the error and threw `null`), when `Interrupt` or the eval timeout stopped the script (`Interrupted`), and when a Go function that javascript called panicked (neither of the two). The same holds for the error a Go function gets from javascript it evaluates. What a script throws is never uncatchable, even `new InternalError('interrupted')` or `{name: 'InternalError', message: 'out of memory'}`, which used to look exactly like the real thing. Taking an uncatchable error runs no page code: `Name` is `InternalError`, `Message` and `Stack` are the error's own properties, and `Error()` is `InternalError: <message>`. It used to call an `Error.prototype.toString` or a `name` getter that page code installed, which could rewrite the message. An interrupt that runs out of memory building its error counts as `OutOfMemory`.
+
+A script that runs on 50 ms past its eval timeout or an `Interrupt`, and has kept the engine at work for 1000 polls since it was asked to stop, is killed. Time in a Go function the script called, or while the OS or the Go scheduler runs something else, adds no polls. The work of the engine after the script stopped counts too: as the exception unwinds, the engine frees what the script made, and a collection that was running goes on to its end, and both poll as long as they take, so a script that made a very large array can be killed after it stopped. A compile that stopped is the exception: from its stop to its return it only frees the code and the module it made, which is bounded by what it did, and those polls do not count toward the kill. Measured on an Apple M4 at 055d56cd, 24 stops at the eval timeout and at `Interrupt` for each loop: a loop that copies an array of 1 million numbers with a spread (`[...big]`) each turn took up to 618 polls and 64.5 ms from the request to the end of the call. With 4 million numbers 21 of the 24 calls were killed, 96 to 153 ms after the request. The rest of an array of 1 or 4 million (`const [x, ...r] = big`) took at most 526 polls and 9.9 ms. On linux/amd64 (an AMD EPYC 7B13 server, the test on one core) at the same commit, 12 stops at the eval timeout for each loop: the rest of an array of 1 million numbers, its form with a hole, `Array.from` and a `for-of` to the end took at most 454 polls and 6.1 ms, and the spread 596 polls and 46.4 ms, none killed. A spread of 2 million numbers was killed in 12 of 12 calls, 51 to 91 ms after the request, and one of 4 million in 11 of 12, 131 to 173 ms after it. Not counting that work would let a call on a VM with a large heap run seconds past its timeout: freeing an array of a GiB takes that long. The call returns an interrupted `*Error` that also matches `ErrKilled` (`errors.Is(err, slowjs.ErrKilled)`), and the VM is good only for `Close`: the methods that return an error return one that matches `ErrKilled`, the others panic, and `Value.Free` does nothing. `MemorySize` and `GCThreshold` are the exceptions: they only read a counter, so they answer as on any VM, and a pool can read how much memory the VM held before it replaces it.
+
+Tests: `uncatchable_test.go`, `hostuncatchable_test.go`, `hostpanic_test.go`, and `killed_test.go`.
+
+## RegisterFunc no longer aborts on an existing name
+
+Release: v0.26.11.
+
+`RegisterFunc` and `RegisterHostFunc` no longer abort the process when the global object already has the name, for example after `globalThis.g = 1`, or for `Array` or `undefined`. They installed the function with `JS_SetPropertyFunctionList`, which is meant for new objects and aborts when the property exists. Now the function replaces a configurable property, as `Object.defineProperty` would, and stays writable, configurable and not enumerable. A property that is not configurable (`undefined`, `NaN`, `Infinity`, a script's `var` or `function`) is kept, and so is a global object that is not extensible: the call returns an error. A name is now taken once per VM as javascript sees it, after invalid UTF-8 is replaced, so `"\xc0\x80"` after `"\xe4\xb8"` (both two U+FFFD) is `func already registered` rather than an abort, and a name with a NUL byte, which ended the name, is an error. A name in brackets is a string too: the function lists read `"[Symbol.iterator]"` as that symbol and aborted on other names in brackets.
+
+Test: `register_test.go`.
+
+## NewVM leaks nothing when it fails
+
+Release: v0.26.14.
+
+When `NewVM` cannot make a context, for example with no memory left, it frees what it allocated before: the `argv` of `toString` and the interrupt flag, which it leaked.
+
+## SetShapeCache and DefaultShapeCache
+
+Release: v0.26.16.
+
+`DefaultShapeCache` (2048) is the number of shapes a new VM keeps once their objects are gone, and `VM.SetShapeCache(n)` changes it for one VM, 0 turning it off. Kept shapes count against the memory limit, and an allocation that would pass it lets them go first (since v0.31.4; before, a VM close to its limit could run out of memory with the cache on where it would not without it). [Kept shapes](objects-and-shapes.md#kept-shapes) has what it gains and costs.
+
+## SetRegExpCache and DefaultRegExpCache
+
+Release: v0.27.0.
+
+`DefaultRegExpCache` (512) and `DefaultRegExpCacheBytes` (1 MiB) are how many compiled regexps a new VM keeps at most, and in how many bytes, counting their patterns and flags. `VM.SetRegExpCache(n, bytes)` changes both for one VM and lets go of what it kept, 0 turning it off. `n` can be at most `math.MaxInt32/8`, as for `SetShapeCache`. A VM that runs close to its memory limit can run out of memory with the cache on where it would not without it: give such a VM a smaller cache, or none. [Compiled regexps kept per VM](regexp.md#compiled-regexps-kept-per-vm) has what it gains and costs.
+
+## Builtin, a Go function called as a built-in
+
+Release: v0.26.17.
+
+`Builtin` is a Go function javascript calls as a built-in function, without the reflection and conversions of `RegisterFunc` and `RegisterHostFunc`. `NewBuiltin(name, length, fn)` makes one, once per process, and `VM.NewBuiltinFunction` makes a function object of it in any VM: it has its name and length and nothing else of its own, no `prototype`, it cannot be called with `new` and its `toString` shows `[native code]`, like `Math.max`. `fn` reads the arguments it wants from `Args` (`Number`, `String`, `Bool`, `Value`, `This`, `VM`), which convert nothing, and returns a `Value` (the zero `Value` is `undefined`). VMs on several goroutines call it at once, so it has to be safe for that, and keeps what it needs per VM by `Args.VM()`.
+
+An `*Error` it returns is thrown as the constructor its `Name` says (`Error`, `TypeError`, `RangeError`, `SyntaxError`, `ReferenceError` or `InternalError`, and any other name as `Error`), with a stack that starts at the Builtin, any other error as a `TypeError`.
+
+On an Apple M4 a call that adds two numbers takes about 55 ns, loop included, where the same call of a `RegisterHostFunc` function takes about 470 ns. A VM's context now carries an id, which is how a call finds its VM without a lock. Package `intl` calls Go this way (see [time-and-intl.md](time-and-intl.md#intl-calls-go-through-builtins)).
+
+Test: `builtin_test.go`.
+
+## Args.WTF8
+
+Release: v0.27.0.
+
+`Args.WTF8(i)` reads a string argument as the engine holds it: a lone surrogate is the three bytes of its code point (0xED, then 0xA0 to 0xBF, then a continuation byte), where `Args.String` gives U+FFFD for it, and a surrogate pair is its one character in UTF-8, as before. The result is not valid UTF-8 when the string has a lone surrogate. A Builtin that has to tell lone surrogates apart reads its strings this way, as `Intl.Collator` does to order them as Chromium does.
+
+Test: `builtin_test.go`.
+
+## Strings of Builtins converted in Go
+
+Release: v0.27.2.
+
+`Args.String`, `Args.WTF8` and `VM.NewString` convert in Go, with the same results. `Args.String` and `Args.WTF8` read a string the engine holds in one piece straight from its characters, where `JS_ToCStringLen2` scanned every string in engine code, made a UTF-8 copy in engine memory of any string that was not ASCII, and Go copied that again. `NewString` (and every Go string that becomes a JS string: arguments of `Call`, results of Go functions and the rest) writes the characters straight into the new string, where it copied the Go string to C memory for `JS_NewStringLen` to decode. A string the engine left in pieces by concatenation (a rope) is still joined by the engine, and a string longer than javascript allows still goes through `JS_NewStringLen`, which throws as before.
+
+It is safe because the results are the same strings: the tests convert each string both ways and compare. For reading, every form the engine holds (8-bit and 16-bit, ASCII, Latin-1, every UTF-8 length, surrogate pairs, lone surrogates at the start, middle and end, ropes, strings up to 65,000 characters and 2,000 random ones). For making strings, the same strings with each kind of invalid UTF-8, where the new string must also be 8-bit or 16-bit as `JS_NewStringLen` made it. The UTF-8 check is compared with Go's on every string of up to three bytes. Reading a string in one piece no longer needs engine memory, so near the memory limit it can no longer fail there: only a rope still can.
+
+Measured with `BenchmarkBuiltinString` on linux/amd64 (AMD EPYC 7B13, one pinned core, 6 rounds in 3 code layouts, times per call with the loop that makes it, where a call of a javascript function takes 60 ns):
+
+| Call | Before | After |
+| --- | --- | --- |
+| A Builtin returning its argument as it is | 97 ns | 81 ns |
+| Reading a 16-character ASCII string | 131 ns | 105 ns |
+| Reading and returning it as a new string | 230 ns | 134 ns |
+| The same with 16 characters of Latin-1, or of CJK | 359, 484 ns | 211, 314 ns |
+| Reading 1,024 characters of ASCII, Latin-1, CJK | 865, 1685, 4098 ns | 316, 1096, 3387 ns |
+| Reading and returning them as a new string | 1338, 7243, 13699 ns | 522, 4792, 11286 ns |
+
+A Builtin that adds two numbers took 72 ns before and 75 to 81 ns after, depending on the code layout: nothing on its path changed, and the same layouts move it by as much.
+
+Tests: `TestArgStringSameAsEngine`, `TestNewStringSameAsEngine`, `TestUTF8Units` and `TestBuiltinStringRoundTrip` in `jsstring_test.go`.
+
+If upstream changes how `JS_ToCStringLen2` or `JS_NewStringLen` convert, change `jsstring.go` to match: the tests above compare the two on every form of string and fail first.
+
+## Args.Latin1, Args.UTF16, NewStringLatin1 and NewStringUTF16
+
+Release: v0.27.2.
+
+`Args.Latin1(i)` gives the characters of a string argument one byte each, and `Args.UTF16(i)` its 16-bit units, lone surrogates as they are, without a copy: the bytes and units are the engine's, valid until the Builtin returns, and must not be changed. The engine holds a string one way or the other, so for a string in one piece exactly one of the two answers. A rope gives neither, and so does any value that is not a string: read those with `Args.String`. `VM.NewStringLatin1(b)` makes a string of bytes that are characters U+0000 to U+00FF, and `VM.NewStringUTF16(u)` one of 16-bit units, each with one copy. `NewStringUTF16` of units all below U+0100 makes a string of 8-bit characters, as the engine makes it. A string longer than javascript allows is an error.
+
+A Builtin that looks at the characters of short strings and often returns its argument as it is, such as an escape for HTML, converts nothing this way: it reads the characters in place and returns `a.Value(0).Dup()`. React's escape of text written that way takes 99 ns a call for a 16-character string without a character to escape, against 200 ns for React's own javascript and 156 ns before (125 ns after the change above) for one that reads with `Args.WTF8`. For a string with three characters to escape it takes 163 ns, where React's javascript takes 3.3 µs.
+
+Test: `TestBuiltinLatin1UTF16` in `jsstring_test.go`, and `TestEscapeView` in `builtinstring_test.go`.
+
+## Error() of an Error made in Go
+
+Release: v0.26.17.
+
+`Error()` of an `*Error` made in Go is now `Name: Message`, as `Error.prototype.toString` writes it, where it was empty before, so the `TypeError` a `RegisterHostFunc` function throws for such an error now has that message too. `Error()` of an error taken from javascript is as before.
+
+Test: `builtin_test.go`.
+
+## NewArray
+
+Release: v0.26.17.
+
+`VM.NewArray(vals...)` makes an array of values made in Go, as an array literal makes one: its elements are its own properties, so a setter a page put on `Array.prototype` never runs, and it costs no JSON. It borrows the values, as `SetPropertyValue` does, and refuses a value of another VM, a number too. A Builtin returns a list this way.
+
+Test: `builtin_test.go`.
+
+## SetStrip
+
+Release: v0.26.17.
+
+`VM.SetStrip(StripSource)` compiles functions without their source, so their `toString` shows `[native code]` as the engine's built-ins do, and `StripDebug` leaves out line and column numbers too. Both are values of `type Strip`. It wraps `JS_SetStripInfo`: the engine ignores a `"use strip"` directive. It applies to every function the VM compiles from then on, those of the page's `eval` and `new Function` too. Bytecode from `Compile` keeps it in any VM that loads it, which is what a polyfill playing built-ins wants.
+
+Test: `strip_test.go`.
+
+## RunGC, MemorySize and GCThreshold
+
+Release: v0.26.17.
+
+`VM` has three GC methods next to `SetGCThreshold`. `RunGC` runs a GC now, `MemorySize` returns the memory the VM takes, as the memory limit counts it, and `GCThreshold` returns the threshold. The threshold counts the memory the collector can free from, which leaves out the stack of the register loop. The engine runs a GC when it makes an object and that memory would pass the threshold. After every full GC, the engine's own and `RunGC`, the threshold is 1.5 times that memory, so a threshold other than the one set last means a full GC ran since. A threshold of the largest value, which turns the GC of the engine off, stays as it is.
+
+Up to v0.29.1 `RunGC` left the threshold where it was. When a script had grown the heap past it with no object made (array elements do), the first object of the next call started another full GC after the `RunGC`: about 53 polls on an array of 2^18 elements. The threshold is now set in `JS_RunGC`, which `js_trigger_gc` calls too. An embedder that sets the threshold after `RunGC`, as tifa does, sees no change.
+
+With these an embedder can collect between two calls into javascript, where the GC holds up no call, and set the threshold for the next one, as tifa does between two renders, without reading the runtime through `reflect`. As with `SetGCThreshold`, no other goroutine may use the VM meanwhile, and a call after `Close` panics.
+
+Test: `gc_test.go` (`TestRunGC`, `TestRunGCSetsTheThreshold`), `internal/cengine/poll_test.go` (`TestRunGCSetsTheThreshold` counts the polls of the call after `RunGC`) and `engine/test/unit-api.c` (`test_run_gc_threshold`).
+
+## MemoryUsage and ReleaseMemory
+
+Release: v0.29.0.
+
+`VM.MemoryUsage()` returns a `MemoryUsage`: what `JS_ComputeMemoryUsage` counts in the VM, with Go names. `MallocSize` is what `MemorySize` returns, `MallocLimit` the memory limit (-1 for none), and the other fields count atoms, strings, objects, properties, shapes, the bytecode of functions with its line tables, functions of the engine and of Go, arrays and their elements, and ArrayBuffers. It walks every object, so it is for measurements: run `RunGC` first to leave out what javascript can no longer reach. `Footprint`, `FootprintLimit`, `Chunks` and `ReleaseCandidate` are what the VM took from the system, in how many chunks, and what was offered back.
+
+`VM.ReleaseMemory(keep)` gives memory the VM keeps free back to the system, all but `keep` bytes of it, and returns how many bytes it gave back. The objects stay as they are. It returns an error while the VM runs javascript, as from a Go function that javascript called.
+
+As with `SetGCThreshold`, no other goroutine may use the VM meanwhile, and `MemoryUsage` after `Close` panics.
+
+Test: `memory_test.go`.
+
+## OnClose
+
+Release: v0.27.0.
+
+`VM.OnClose(f)` has `Close` run `f`, after the VM is released, so `f` must not use it. `Close` runs the functions once each, in the order given. Nothing else runs them: not the garbage collector, and not a VM that is never closed.
+
+It is for a package that keeps something per VM in a table of its own. An entry whose value is a closure that references the VM keeps the VM reachable from the table, so a cleanup the garbage collector would run for the VM never runs, and the entry stays for the life of the process. Dropping the entry in `OnClose` ends that. Package `temporal` keeps the clock of a VM this way.
+
+`Close` finishes every step even when one panics. If a function of `OnClose` panics, the functions after it still run, and so do the steps after it (the VM leaves the table that finds it, the shared bytecode it loaded is released). `Close` then panics with the first panic. A `Close` inside a function of `OnClose` returns nil. On the C engine, when the OS refuses to unmap some of the VM's memory, `Close` returns the error and `Close` again unmaps what is left, as `internal/cengine`'s `VM.Close` does. Nothing else runs twice.
+
+Test: `onclose_test.go`.
+
+## EvalBytecode waits for a module's top-level await in Go
+
+Release: v0.27.0.
+
+`EvalBytecode` and `EvalBytecodeValue` of a module run pending jobs until the module's promise settles, in Go, and follow the rule of `ExecutePendingJobs`:
+
+- A fulfilled module returns its result, and a rejected one returns the rejection as the error, as before.
+- A job that throws does not stop the wait. Promise reactions throw when a page makes them throw, such as a `Promise` subclass whose species gives a resolve function that throws, and so does a `FinalizationRegistry` callback that has nothing to do with the module. The module runs on, and the first such error is what the call returns. When the module itself rejects, its rejection is the error instead, as Node reports the module's error and drops the job's.
+- An uncatchable exception (an interrupt, the eval timeout, out of memory, a panic in a Go function) ends the call at once with its `*Error`, or its panic. Other jobs the module queued stay in the queue, as `ExecutePendingJobs` leaves them (see [uncatchable.md](uncatchable.md#interrupts-cannot-be-caught-through-promises-or-iterators)).
+- When no job is left and the module is still pending, as for `await new Promise(() => {})`, the error says the module's top-level await is still pending and no job is left to run (joined with the first job error, if a job threw), and the VM can go on. What the module waits for may still settle from outside the job queue: a promise that a Go function returned and Go resolves later, or one that an outer call resolves after a nested `EvalBytecode` returned. Then a later `ExecutePendingJobs` runs the rest of the module.
+
+They called `js_std_await` of `quickjs-libc.c`, the helper of the `qjs` shell. When the job queue ran dry with the promise pending, it read the state that `js_std_init_handlers` sets up, which a VM never sets up, and the process crashed with a nil pointer dereference. A job that failed was printed to stderr and dropped, so the eval timeout after a module's first `await` crashed the same way once the queue was empty. The `qjs` shell does not crash there, it spins on the empty queue for good, and Node ends a module whose top-level await never settles with exit code 13.
+
+Test: `moduleawait_test.go`, and the module case of `TestNestedEvalKeepsTimeout` and `TestNestedEvalKeepsInterrupt` in `timeout_test.go`.
+
+## A module frees its top level once it has run
+
+Release: v0.28.4.
+
+When `EvalBytecode`, `EvalBytecodeValue`, `EvalSharedBytecode` or `EvalSharedBytecodeValue` has run a module to its end, it frees the module's top-level function: the code of the top level, and the variables of the top level that no function of the module uses, with what they hold. The functions the module made keep the variables they use, and the module keeps the ones it exports apart from the function. A module runs once, so nothing calls that function again. Upstream keeps it as long as the module, and a module in the context lives until the VM is closed, so a VM that loaded a module held more than one that ran the same code as a script, whose top-level function goes when it returns.
+
+A module that is still pending when the call returns, and one that failed, keep the function.
+
+The SSR bundle of tifa's example shop as a module: a VM holds 8.66 MiB after loading rather than 9.44 MiB, where the same bundle as a script (an IIFE) gives 8.63 MiB. Measured on darwin/arm64 with `MemorySize` after `RunGC`.
+
+Test: `TestModuleFreesItsTopLevel` in `moduleawait_test.go`.
+
+## SharedBytecode
+
+Release: v0.28.1.
+
+`NewSharedBytecode(bytecode)` copies bytecode from `Compile` once, and `VM.EvalSharedBytecode(b)` and `VM.EvalSharedBytecodeValue(b)` load it as `EvalBytecode` and `EvalBytecodeValue` do, but leave the source text and line table of each function in that one copy instead of copying them into the VM. A pool of VMs that load one bundle holds them once: a VM of tifa's example shop holds 2.36 MiB less. `toString`, error stacks and line numbers do not change. `MemorySize` and the memory limit no longer count those bytes, and `SharedBytecode.Len` returns what the copy takes.
+
+`SharedBytecode.Close` gives up the hold of the `SharedBytecode`, and each VM that loaded it holds it until `VM.Close`: the last of them frees the copy, so a VM can outlive the pool that made it. Loading after `Close` returns an error. A `SharedBytecode` is safe for several goroutines at once. [memory-and-allocation.md](memory-and-allocation.md#one-copy-of-source-text-and-line-tables-for-every-vm) has how it works and what it saves.
+
+Test: `sharedbytecode_test.go`.
+
+## The async context of promise jobs
+
+Release: v0.28.5.
+
+`GetAsyncContext` and `SetAsyncContext` are two Builtins (see [Builtin](#builtin-a-go-function-called-as-a-built-in)) that read and set the async context of a VM: an object, or none. A promise reaction, what `then`, `catch`, `finally` and `await` register, keeps the context the VM has when it is registered, and runs with it: the VM has that context while the handler runs, and gets back the one it had when the handler returns or throws. That is what an `AsyncLocalStorage` needs to find its store after an `await`, and what V8 keeps for Node as the continuation preserved embedder data. `SetAsyncContext` of anything but an object sets none, and `GetAsyncContext` then returns undefined.
+
+The object is the whole context: an `AsyncLocalStorage` keeps its stores in it, as a `Map` from each instance to its store, and `run` makes a new object with its own store in it, sets it, calls the function and sets the old one back. Nothing changes an object once it is set, so a reaction holds its context by reference.
+
+A VM starts with no context, and while it has none, a reaction costs one more test, its handler as before. With a context, each reaction with a function handler, and each `then` of a thenable, gets a small function that holds the context and the function. `Close` frees the context the VM has, and the reactions still pending free theirs with them.
+
+What follows the context and what does not, checked against Node 24 with `AsyncLocalStorage`:
+
+- An async function has the context of its call after each `await`, also when several overlap.
+- A reaction runs with the context of the `then` that registered it, not of the code that resolved the promise.
+- A context set inside a reaction lasts until the reaction ends.
+- The context covers the handler, not the whole job. What the job does after the handler, settling the promise that `then` returned and telling the host of a rejection nothing handles, sees the context the VM has when the job runs. A reaction registered with no context is not wrapped: its handler runs with the context the VM has then, and a context it sets stays after it.
+- `Promise.all`, `finally`, async generators and `for await` keep it, as they register reactions.
+- The `then` of a thenable that is not a promise runs in a job with the context of the code that resolved a promise with it, as `await thenable` does.
+- Timers, I/O and events do not exist in the engine, so a host that adds them saves and sets the context itself.
+
+It is the last final change. It fingerprints those two functions and the two jobs, `promise_reaction_job` and `js_promise_resolve_thenable_job`, in `asyncContextSites`, and stops when a release adds another store into the handler of a reaction or another place that queues the thenable job.
+
+The change is in C (`engine/quickjs.c`): `JS_GetAsyncContext` and `JS_SetAsyncContext` in `quickjs.h`, the context in the field `async_context` of `JSRuntime`, and `js_async_context_wrap` called at the same two places. `JS_FreeRuntime` frees a context still set.
+
+## RegisterEscapeText
+
+Release: v0.29.2.
+
+`VM.RegisterEscapeText(name)` defines a function named `name` on the global object that does what `escapeTextForBrowser` does in React DOM's string renderer, written in C inside the engine. React calls that function for every text and every attribute value it writes, about 15,000 times when each of the six workbench pages of tifa's example shop renders once, and in JavaScript each call costs a search of a regular expression, a loop over the characters of a string that has any of the five to escape, and the call itself.
+
+- **What it gives.** The argument becomes a string as in `"" + text`: a string stays as it is, a number, boolean or bigint becomes its text, an object goes through `valueOf` and `toString` (or `Symbol.toPrimitive`) with the hint `"default"`, and a symbol, or a `toString` that throws, throws what `"" + text` throws. Then each of `&`, `<`, `>`, `"` and `'` becomes `&amp;`, `&lt;`, `&gt;`, `&quot;` or `&#x27;`, one UTF-16 code unit at a time, so a lone surrogate passes as it is. A string with none of the five comes back as the same string, with no copy. With no argument it gives `"undefined"`. A result of more than 1,073,741,823 units throws the `RangeError` that building such a string throws.
+- **Opt in.** The engine puts nothing on the global object by itself. The function exists in a VM only when the host calls `RegisterEscapeText`, under the name the host chooses. The property is writable, configurable and not enumerable, and replaces a configurable property of that name, as `RegisterFunc` does. A name the global object cannot give up (`undefined`, `NaN`, a `var` of a script) is an error. The function is shaped as a built-in: `name` is the name given, `length` is 1, there is no `prototype`, it cannot be called with `new`, and `toString` shows `[native code]`.
+- **Limits hold.** It reads the interrupt flag at the start of each block of 4096 units of a long string, in the count and again in the write, so an `Interrupt` or the eval timeout stops it there, and no more than 4096 units pass between two reads. A render that runs out of memory while it builds the result ends with the out of memory error, as any string does.
+- **Why C and not Go.** A Go `Builtin` costs about 22 ns more a call than a C function of the engine (48 to 55 ns against 26 to 38 ns), and on a short text that is most of what an escape costs. In tifa a Go version made the shop render slower, and this one makes it render faster.
+
+The C is `js_escape_text` and `JS_NewEscapeTextFunction(ctx, name, name_len)` in `engine/quickjs.c` and `quickjs.h`, which the Go method calls.
+
+Tests: `escape_test.go` runs the function against React's own text for all strings of up to 4 units over an alphabet of 13 (both widths, lone surrogates, a pair, NUL), strings of 1 to 100,003 units with one or all five characters at the first, last and chunk-edge places, ropes, 34 values that are not strings, objects that count the calls made on them, errors, and a call with no argument or with more. It checks the property, the shape of the function, a second registration, a name that cannot be taken, that the timeout stops it, and the `RangeError` of a string too long. `engine/test/unit-api.c` runs the same comparison on the C tree under AddressSanitizer and UndefinedBehaviorSanitizer, and checks that a clean string comes back as the same pointer, that an interrupt before and in the middle of the work stops it, that the flag is read within 4096 units at every step (counted), that an interrupt while a long rope that nothing flattened yet is flattened by the first call stops the call there and keeps no flat copy, that running out of memory leaves nothing behind, and a name with a NUL byte.
+
+## RegisterCopyProps
+
+Release: v0.29.3.
+
+`VM.RegisterCopyProps(name)` defines a function named `name` on the global object that does the work of the loop with which React's `createElement` and `cloneElement` copy the keys of their config into the props of an element, written in C inside the engine. In QuickJS the loop takes about 250 ns for each key (a pass of `for in`, a call of `hasOwnProperty.call` and a set), and the pages of tifa's example app make 1,500 to 3,400 elements through them in one render.
+
+- **What it takes and gives.** `copy(config, props, hasOwnProperty, isClone)`: the config, the props object React made (`{}` in `createElement`, a copy of the props of the element in `cloneElement`), React's own `hasOwnProperty` (the `Object.prototype.hasOwnProperty` it took when it loaded) and `true` for `cloneElement`, which also leaves out `ref` when `config.ref` is undefined. It answers `true` when it copied and `false` when it changed nothing, and then the script runs React's loop. Either way the props are what the loop makes of them.
+- **When it copies.** Only where its result and the loop's cannot differ in anything a script can see. The config is an ordinary object (not a proxy, an array, a function, a class instance or a String object) whose prototype is `Object.prototype`, with at most 32 own keys, none an array index, `__proto__` or `stack`, and every key the loop reads a plain data property. A getter, a setter, a symbol key and a key that is not enumerable are either not read by the loop or send the call to it. The props are an ordinary object with the same prototype that can be extended, with only plain writable data properties. `Object.prototype` has no setter and no read-only property but `__proto__`, so that setting a key creates it. `hasOwnProperty` is the built-in and `hasOwnProperty.call` is the built-in `Function.prototype.call`. A page that changes any of these after React has loaded sends the next calls to the loop.
+- **How it copies.** A props object with no property yet, for a config whose properties are all enumerable, writable and configurable strings with nothing to leave out, takes the shape of the config and its values in one step (the step spread uses). Otherwise the keys are added one after the other, or set where the props have them.
+- **Opt in.** The engine puts nothing on the global object by itself. The function exists in a VM only when the host calls `RegisterCopyProps`, under the name the host chooses, with the rules for the property and the name of [`RegisterEscapeText`](#registerescapetext). It is shaped as a built-in: `length` is 4, there is no `prototype`, it cannot be called with `new`, and `toString` shows `[native code]`.
+- **Limits hold.** The function reads at most 32 keys of the config, and at most 64 slots (deleted keys included) in the shape of the props and in the shape of `Object.prototype`, before it writes anything. A new `Object.prototype` has 12 slots and the props of an element in tifa's pages at most 24. More of any goes to the loop, which the interrupt flag and the eval timeout stop as before, and a copy within the limits takes a few hundred nanoseconds, so the function reads no interrupt flag. Running out of memory while it adds a key ends the call with the out of memory error, as the loop's set does.
+- **Why not a check in JavaScript.** Testing the config in JavaScript and then copying it with one spread takes 310 to 380 ns a call, more than the loop takes for a config of none, one or two keys, and it could not rule out a proxy, a getter that deletes a later key, or a setter added to `Object.prototype` after React loaded. In C the checks are part of the call and rule them out: a config of no keys takes less time through the function than through the empty loop.
+
+The C is `js_copy_props` and `JS_NewCopyPropsFunction(ctx, name, name_len)` in `engine/quickjs.c` and `quickjs.h`, which the Go method calls. It uses the shape step of spread (`js_copy_shape`), the kinds of the keys the key cache holds, and `add_property`. `JSContext` holds the five atoms it compares keys with (`copy_atoms`), made when the function is made and freed with the context.
+
+Tests: `engine/test/compare/copy_props.js` has the functions of React 19.3 once as React writes them and once with the call in front of the loop, as tifa's plugin writes them, and gives them 147 configs (plain and empty, `key` and `ref` in every place, `__self` and `__source`, getters and setters on any key, getters that add, change or delete a key, symbols, a prototype, a null prototype, a class instance, `__proto__` keys, index keys, frozen and sealed objects, arrays, functions, primitives, proxies, 32 and 33 keys, a changed `Object.prototype`, a replaced `Function.prototype.call`) with 16 kinds of props for `cloneElement` (among them props with 64, 65 and 200 slots, and one with 75 deleted keys), an `Object.prototype` with 50 and with 100 more writable properties, and then 6,000 random configs from a fixed seed (each of the 3,000 rounds makes one `createElement` and one `cloneElement` with one kind of props). It also freezes, seals and gives another prototype to the config, to the props and to a third object that share a shape with the copy, and checks that the others do not change and can still grow. Each pair must give the same key, the same props in the same order with the same descriptors, the same error and the same reads and calls, and the listed configs must be copied by the function or not as the file says. It also calls the function with arguments React never gives it and checks that it answers `false` and has changed nothing. The C tree runs it under AddressSanitizer and UndefinedBehaviorSanitizer, `unit-oom` copies with the memory refused at every room, and `copyprops_test.go` runs the same file through the Go API, with the property it defines, a second registration and the names it cannot take. Each condition was removed in turn to see the file fail, and only the test for an accessor on `Object.prototype` did not, since an accessor has no writable flag and the test for a property that is not writable catches it too.
+
+## RegisterStartTag and RegisterEndTag
+
+Release: v0.29.10.
+
+`VM.RegisterStartTag(name)` defines a function named `name` on the global object that writes the start tag of an element as React DOM's server renderer does in `pushStartGenericElement` (react-dom 19.3), with the functions it calls: `startChunkForTag`, `pushAttribute`, `pushStringAttribute`, `pushBooleanAttribute`, `pushStyleAttribute`, `sanitizeURL`, `isAttributeNameSafe` and `escapeTextForBrowser`. `VM.RegisterEndTag(name)` defines one that gives the end tag, as `endChunkForTag` does. Both are written in C inside the engine. In JavaScript each attribute of an element costs a call of `pushAttribute`, a switch over string compares, a call of the escape and a push of five strings onto the target, and most elements of a page go through this path: about 9,700 start tags in one render of each of tifa's shop pages.
+
+- **What the start tag function takes and gives.** `startTag(target, props, type, formatContext, hasOwnProperty, decline)`: the four arguments of `pushStartGenericElement`, React's own `hasOwnProperty` (the `Object.prototype.hasOwnProperty` it took when it loaded) and `decline`, an object only the caller holds. It pushes onto `target` one string, the start tag with its attributes and, when `props.children` is a string, the escaped text after it. It returns what React's function returns: `null` when children is a string, else `props.children`, or `null` when there is none. React pushes the same text as several strings, and the renderer only joins them.
+- **The mode** (v0.31.2). A seventh argument picks the function of React it stands in for. `undefined` (a caller that passes six) and `0` are `pushStartGenericElement`. `1` is `pushSelfClosing`, with which React DOM writes `img` (after its image preload, which stays in React) and the void elements (`br`, `hr`, `meta`, `source` and the like): the same attributes, then `/>` and no text, and `null` returned. It declines when `children` or `dangerouslySetInnerHTML` is set, where React throws. `2` is the case `"input"` of `pushStartInstance`: the same, except that `name`, `formAction`, `formEncType`, `formMethod`, `formTarget`, `checked` and `value` (or `defaultChecked` and `defaultValue`) are written after the other attributes, in React's order, and a `formAction` that is a function declines, since React writes it as a URL of its own with hidden fields. `3` is the branch of the case `"style"` that writes the element where it is, which emotion's style elements take: the attributes, `>`, the `__html` of `dangerouslySetInnerHTML` as it is and `</style>`. It declines `children`, which React escapes in a way of its own, and an `__html` that is not a string, `null` or `undefined` or that React would read through a getter or the prototype. The bundle asks it only once React has chosen that branch. Any other mode declines, so a bundle that asks for a mode this engine does not have gets React's function. The length of the function is 7, which tells a bundle that the engine has the mode. On tifa's 23 pages of `engine/pgo/pages`, with the calls tifa's plugin would make, it takes every such element, none differs from React's, and the HTML is the same byte for byte.
+- **When it writes.** Only where React's functions can do nothing else. Otherwise it returns `decline`, having changed nothing, and the script runs React's function. It declines when:
+  - `hasOwnProperty` or `Function.prototype.call` is not the built-in, or `target` is not a plain array (prototype `Array.prototype`, no property but its length, extensible, fast, its length equal to its count), `Array.prototype` or `Object.prototype` has had an index property (where `push` would set it: a setter, or a read-only one that throws), or `Array.prototype.push` is not the built-in. The built-ins are found by their C function, so one replaced before registering is not taken for the built-in either.
+  - `type` is not a flat string that React's tag regexp `/^[a-zA-Z][a-zA-Z:_\.\-\d]*$/` takes (React throws for any other).
+  - `formatContext.viewTransition` is not an own data property that holds `null`.
+  - `props`, or a `style` that is set, is not an ordinary object whose prototype is `Object.prototype`, has more than 32 own keys, an array index key or a getter or setter among the keys `for in` lists.
+  - `dangerouslySetInnerHTML` is set, or one of the rare attributes `xlinkHref`, `capture`, `download`, `cols`, `rows`, `size`, `span`, `rowSpan` and `start`.
+  - a value React would turn into a string is an object (a function is dropped as React drops it) or a bigint, a style value is an object, a function, a symbol or a bigint, or a URL (`src`, `href`, `action`, `formAction`) is a `javascript:` URL by React's regexp or a string that is not flattened yet.
+  - the name of an attribute of the default branch of `pushAttribute` is not ASCII or is 64 characters or more, or a style name that does not start with `--` is not ASCII.
+  - the tag could be longer than a string can be: each string it writes counts 6 units (the longest entity), and 8,192 units are kept for the names and numbers in between.
+
+  It assumes that the built-in methods of `String`, `RegExp`, `Map` and `Set` that React's functions call are those of the engine. On the 16,310 start tags of one render of each page of tifa's example apps it declines none.
+- **The end tag.** `endTag(type)` gives `"</" + type + ">"`. It keeps the end tag of each string by the address of the string, so the same tag, which JSX makes as one string, gives the same end tag again without a copy. An argument that is not a string becomes one as in `"</" + type` (ToPrimitive with no hint, then ToString), and the function throws what that throws.
+- **Opt in.** The engine puts nothing on the global object by itself. The functions exist in a VM only when the host registers them, under the names the host chooses, with the rules for the property and the name of [`RegisterEscapeText`](#registerescapetext). They are shaped as built-ins: `length` is 7 and 1, there is no `prototype`, they cannot be called with `new`, and `toString` shows `[native code]`.
+- **Limits hold.** A call reads at most 32 keys of the props and 32 of the style. Each of its loops over a string longer than its step reads the interrupt flag before each step and after the last: every 4096 units while it escapes a string, writes the hyphens of a style name or skips the white space around a style value or before a URL, and every 524,288 units while it scans a tag or a style name or copies a long piece (a tag, a style name, an end tag, the finished start tag), so an `Interrupt` or the eval timeout stops it there ([uncatchable.md](uncatchable.md#the-start-and-end-tags-read-the-interrupt-flag-in-every-long-loop)). It throws only when the engine has no memory or the host stops it, and `target` is then as it was.
+- **What it keeps.** Each context keeps one small cache for both functions, made with the first of them, with the atoms it looks for (`viewTransition`, `call`, `push`). Making it runs no script: `Function.prototype.call` and `Array.prototype.push`, which the engine makes at their first use, are made then without reading them through a getter, so registering, which has no timeout, cannot run one, and the cache is put in the context only once it is whole. How each attribute name and each style name is written, and the end tag of each tag string, go into three tables. Each is made at the first call that needs it, with 16 entries, and doubles when it is half full, up to 512 names and 256 end tags. A name stays where it was put until its table would pass half of that, when the table is emptied and fills again, so a page makes each of its names once. The start tag is written into a buffer the cache keeps from one call to the next (128 units at first, freed after a call that took it past 1024 units or made it wide), then copied into a string of its length, and the names and end tags the cache keeps have their length too. A string left in its buffer would keep the block the buffer grew to, since an arena block never shrinks, and these strings live until the render is written out: the long-lived objects a render makes between them (the entries of a cache of the page, the shapes of new props) would then hold arenas that are almost empty once the render is freed. Registering makes no table and no buffer: the two functions add 1.8 KB to `MemorySize`, most of it the two properties of the global object. On tifa's shop a VM holds 1.6 KB more than one that does not register them once the bundle is loaded, and the tables hold about 8 KB once the pages have been rendered. In tifa's pool, with a young collection after each render, a VM of the shop holds 26 KB more after 64 or 1,000 renders (107 KB when the start tag kept its buffer as the string). Nothing in the cache is visible to a script, and it is freed with the context.
+
+The C is `js_start_tag`, `js_end_tag`, `JS_NewStartTagFunction(ctx, name, name_len)` and `JS_NewEndTagFunction(ctx, name, name_len)` in `engine/quickjs.c` and `quickjs.h`, which the Go methods call. The check of `hasOwnProperty.call` is the one of `RegisterCopyProps` (`js_copy_props_call_plain`). `JSContext` holds the cache (`emit_cache`).
+
+Tests: `engine/test/compare/start_tag.js` holds the functions of react-dom 19.3.1 as they are and runs each call through them and through `startTag`. 139 listed calls go through every branch of `pushAttribute` and `pushStyleAttribute` (escapes, numbers, booleans, functions, symbols, aliases, `data-` and `aria-` names, `on` names, unsafe names, URLs, the `ms` prefix, custom properties, white space to trim) and each decline above, each with the answer it must give. More calls replace `hasOwnProperty`, `Function.prototype.call` and `Array.prototype.push` (with `unshift`, the same C function with another magic), give targets that are frozen, sealed, longer than their count, of a subclass or of another prototype, and `formatContext` values without a plain `null` `viewTransition`. 2,400 calls go through more attribute and style names than the caches hold, and 4,000 calls take random props from a fixed seed. For each call `startTag` must push the text React pushes and return what React returns, or decline and leave `target` as it was, and it must never take a call where React throws. The end tag is checked against `endChunkForTag` for strings, numbers, objects with `toString`, `valueOf` and `Symbol.toPrimitive`, and the errors of a symbol and of a `toString` that throws. `unit-oom` writes start and end tags with the memory refused at every room, while the tables are made and grow and the buffer grows past its most for a long text, and checks that the target is unchanged. `unit-white` (`test_emit_tables`) checks that no table is made before the first call, that 200 names and 100 end tags stay in their tables so that a second pass adds none, and that a table past its most is emptied and fills again. `test_emit_buffer` checks that the strings of short, long and wide tags, the names, the style names and the end tags have the size class of their length, that the buffer is kept after a tag of 300 units and freed after a text of 2,000 units or a wide one, and that a call made while the buffer is out makes its own, the cache keeping one of the two and freeing the other. `tags_test.go` runs the same file through the Go API, with the property each function defines, a second registration, the names it cannot take, the timeout on a long children text, attribute, style value, style name, tag and end tag, and the exact length where a tag is left to React. `TestTagsMemory` checks that registering makes no table, and `TestTagsMemoryLimit` that running out of memory while the tables grow is an uncatchable out of memory error with the target unchanged, and that the calls work once the limit is raised. `TestRegisterTagsRunsNoScript` puts getters on `Array.prototype.push` and `Function.prototype.call` that register another function or never return, and replaces both before registering: registering runs neither getter, and the calls decline. `TestStartTagIndexOnPrototype` puts a setter or a read-only index on `Array.prototype` or `Object.prototype` and the calls decline, and `start_tag.js` checks a setter at index 0 against React. Names with a NUL (`children\u0000x`, `id\u0000x` and others) are skipped as React skips them. `unit-oom` (`test_tags_register_oom`) registers with the memory refused at every room and checks that registering again works.
+
+## No module loader, shell helpers or SetCanBlock
+
+Release: v0.29.0.
+
+`VM.SetModuleLoader` with `ModuleLoaderFunc` and `ModuleNormalizeFunc`, `VM.SetDefaultModuleLoader`, `VM.StdAddHelpers` and `VM.SetCanBlock` are gone. They are not part of what a renderer needs, and the engine of C has none of them: it reads no files and has no threads.
+
+- A module evaluated with `EvalModule` can import only a module the VM already has. Its own name is `<eval>`, so it can import itself. An import of anything else throws a `ReferenceError` (`could not load module`). Bundle the modules of a script into one before you evaluate it.
+- `console.log`, `print`, `performance.now` and `__loadScript` are not defined. Give a VM what it needs as Builtins or with `RegisterFunc`.
+- `Atomics.wait` throws a `TypeError` (`cannot block in this thread`), which it already did unless `SetCanBlock(true)` was called.
+
+Test: `own_keys_test.go` (a module that imports itself by `<eval>`).
+
+## A Go newer than the one the engine was checked with stops the build
+
+Release: v0.29.11.
+
+A build with a Go newer than the one the engine was checked with stops with one error:
+
+```
+undefined: slowjs_is_checked_up_to_go1_27_see_docs_upgrading_md_or_build_with_tags_slowjs_anygo
+```
+
+The Go assembly of the engine leans on things of Go that the Go 1 promise does not cover: how the assembler lays out a frame and starts a function, which small functions it leaves without a stack check, and what Go puts on the stack when a memory fault turns into a panic ([upgrading.md](../upgrading.md#moving-to-a-newer-go)). A newer Go builds the module either way, and a change in one of these would show only when the program runs. The build now stops instead. Every Go the module lets build, 1.26.6 and later releases of 1.26 and every release of 1.27, builds as before: the `go1.N` tags of a build line follow the Go that builds, so the line `go1.28 && !slowjs_anygo` is false for all of them. The lower bound is the `go` line of `go.mod`, lowered at the same time from 1.27.0 to 1.26.6 once the engine was checked with Go 1.26 (see [upgrading.md](../upgrading.md#moving-to-a-newer-go) for why 1.26.6 and not 1.26.0).
+
+- **To build anyway**, with a Go that liustack/slowjs has not been checked with, add `-tags slowjs_anygo`.
+- **When a new Go comes out**, liustack/slowjs runs the checks of [upgrading.md](../upgrading.md#moving-to-a-newer-go) with it and moves the line to the next version in a patch release. A program that moves to the new Go then moves to that release of liustack/slowjs.
+- **Patch releases of Go** are not told apart: a build line can name `go1.28` but not `go1.27.3`.
+
+The error is in its own package, `internal/goversion`, which `internal/cengine` imports, so the go command builds it first and it is the only error the build reports.
+
+Tests: `TestNewerGoStops` (`internal/goversion`) reads the build line with the release tags of the Go that was checked, of the next two and with `slowjs_anygo`, and checks that the name of the error and the line give the same version. `TestEngineNewerGo` (`enginedeps_test.go`) builds the package with the `go1.N` tag of the line given by hand: the build fails with the errors of `internal/goversion/newer.go` only, one of them the name above, and with `slowjs_anygo` as well it builds. A tag given by hand also makes the go command say that the file asks for a newer Go, which a newer Go does not say.
+
+## A build option that changes how the assembler encodes the engine stops the build
+
+Release: v0.29.11.
+
+The generated engine writes the body of each function as raw bytes (`BYTE`, `WORD`, `QUAD`) with the branch offsets fixed, and leaves only the calls and the loads of symbol addresses between them to the Go assembler. A build option that makes the assembler encode one of those with another length moves the targets of the fixed branches. The build succeeds, and the first `NewVM` crashes with SIGSEGV. Two options do that:
+
+- `-asmflags=all=-spectre=ret` (and `-spectre=all`), on amd64. `CALL AX` of 2 bytes becomes a call of 5 bytes through a retpoline (`runtime.retpolineAX`), in `src/cmd/internal/obj/x86/asm6.go` (the `ctxt.Retpoline` block of `span6`). On arm64 the assembler refuses the option itself (`-spectre=ret not supported on arm64`).
+- `-dynlink`, which the go command passes to the assembler for `-buildmode=plugin`, `-buildmode=shared` and `-linkshared` (a linked program needs cgo and linux for them). On amd64 `LEAQ sym+off(SB)` becomes a load from the GOT and an `LEAQ`, two instructions, and R15 carries the address (`rewriteToUseGot` in `obj6.go`). On arm64 `MOVD $sym(SB)` becomes a load from the GOT and an `ADD` (`rewriteToUseGot` in `obj7.go`).
+
+Both builds now stop in the assembler, with an error at a line of `internal/cengine/goasm_tripwire.<arch>.s`:
+
+```
+asm: non-retpoline-compatible: 00002 (.../internal/cengine/goasm_tripwire.amd64.s:26)	CALL	(AX)
+asm: goasm_tripwire.amd64.s:32: when dynamic linking, R15 is clobbered by a global variable access and is used here: ...	MOVQ	R15, BX
+asm: do not know how to handle TYPE_ADDR in 00002 (.../goasm_tripwire.arm64.s:26)	MOVWU	$...goasmTripwireVar(SB), R0 with -dynlink
+```
+
+The comment above each of those lines in the file says which option it is and that liustack/slowjs does not build with it. The function is never called and never linked, so it adds nothing to a program. The files are named `goasm_tripwire.<arch>.s` with a dot, since `make gen` deletes every `*_<arch>.s` of the folder. Each of the lines is an instruction that the assembler accepts as written and refuses under the option (`CALL (AX)` is a call through memory, which a retpoline cannot replace, and a read of R15 after a global access is refused under `-dynlink`).
+
+- **Options that leave the engine as it is.** `-shared` (what `-buildmode=pie` passes on linux and darwin), `-spectre=index`, `-race`, `-msan`, `-asan`, `-cover` and `-gcflags` do not reach the assembler, or change only the prologue the assembler writes before the fixed bytes. On linux/amd64 `-shared` makes the stack check at the start of a function 2 bytes longer (seen in `quickjs_0_amd64.s`), which shifts the body and no branch inside it. The engine passes its tests when built with `-buildmode=pie` on linux/amd64.
+- **When a new Go comes out**, the steps of [upgrading.md](../upgrading.md#moving-to-a-newer-go) include building with these options again.
+
+Tests: `TestEngineAsmOptions` (`enginedeps_test.go`) builds the engine with `-asmflags=<engine package>=-spectre=ret` and `-dynlink` on the targets they affect, and expects the errors of the tripwire and no other. It also builds with `-shared` and `-spectre=index`, which must work. `TestEngineBuildmodeShared` builds with `-buildmode=shared` for linux/amd64, which needs no cgo, and expects the same.
+
+## A Value of another VM is refused at every entry
+
+Release: v0.30.2.
+
+A `Value` holds a reference into the memory of its VM. Given to another VM, that VM would keep a pointer into memory it does not own: `SetPropertyValue` stored it in an object, and once the other VM was closed the object pointed at memory that was unmapped, and while both were open the wrong allocator could free it. `Call`, `Value.Call`, `NewArray` and the result of a `Builtin` checked for it. `SetPropertyValue` (its value and its receiver), the receiver of `SetProperty`, `GetPropertyValue` and `GetProperty`, the `this` of `EvalThis` and `EvalThisValue`, and a `Value` that a Go function of `RegisterFunc` returned, alone, among several results, or in a slice or a map, did not.
+
+Now one check, `VM.foreign`, guards every entry that takes a `Value`, before it reaches the engine: a `Value` belongs to the VM or to none (`UndefinedValue`, the zero `Value`), and any other is refused, a number too, as `NewArray` and a `Builtin` already did. A method returns an error, a Go function throws a `TypeError` in the script that called it, as a `Builtin` does. The refused `Value` is neither used nor freed: it stays its owner's, for its owner to free. So `EvalThis` and `EvalThisValue`, which free `obj` when they return, leave a `Value` of another VM as it is.
+
+`Call` and `Value.Call` refused only a `Value` of another VM that has a reference count, and passed a number of another VM on. They now refuse it too.
+
+Cost: one compare of two pointers for each `Value` an entry takes.
+
+Test: `TestValueOfAnotherVM` (`othervm_test.go`) gives a string and an object of one VM to each of these entries of another, and requires an error or a `TypeError`, and the two values with the counts they had.
+
+## The constructors of values report running out of memory
+
+Release: v0.30.2.
+
+`NewString`, `NewStringLatin1`, `NewStringUTF16` and `NewObjectValue` did not look at what the engine gave back. When it ran out of memory they returned the engine's exception marker wrapped as a `Value`, with a nil error, and left the out of memory error pending in the context, for the next call to find.
+
+Now each returns the out of memory error, an `*Error` with `Uncatchable` and `OutOfMemory` set, and takes it out of the context, as every other method does. Inside a Go function that javascript called it stays pending, so the script that called the function ends with it ([uncatchable.md](uncatchable.md#interrupts-and-out-of-memory-inside-go-functions)): a `Builtin` that returns the error of `NewString`, or the `Value` it gave before, ends the same way. The check is in `newString`, which every Go string goes through on its way to javascript, so arguments and results of Go functions are covered too.
+
+Cost: one compare of the tag of the new value.
+
+Tests: `TestConstructorsOutOfMemory` (`memory_test.go`) makes a string of 2 MiB with each string constructor under a 1 MiB limit, passes one to `Call`, and makes objects until the limit is reached, and requires the out of memory error and no exception left pending.
+
+## A result that fails to convert leaves nothing behind
+
+Release: v0.30.2.
+
+A Go function of `RegisterFunc` or `RegisterHostFunc` hands the call the references to `Value`s of the VM that its results hold. When the conversion of the results failed part way, such as at a channel, the values made for the results before it were never freed, and neither were the `Value`s after it: a string of 4 KiB before the channel stayed in the VM for good, about 4 KiB for each call that a script caught, which no GC could collect. The `Value`s in a result the conversion refuses stayed too: an array, a pointer to a pointer, a map with a `Value` as a key or with keys of a type javascript cannot use (when it has an entry: an empty one is `{}`, as before). So did those of a value a host function returned with an error, and everything when the conversion panicked, as at an `Error` method that panics.
+
+Now the call takes a snapshot of its results before it converts anything, in one walk through every slice, array, map (its keys and its values), pointer and interface (`result.go`). The snapshot has every reference the results hand over, each once, and the call frees each of them once when it is done: when the results convert, when they fail to convert, when a host function returns an error, and when the conversion panics. The conversion only `Dup`s the `Value`s it puts in the javascript value, and frees what it made when it fails or panics, so the two are freed apart. A `Value` of another VM is not freed (see [A Value of another VM is refused at every entry](#a-value-of-another-vm-is-refused-at-every-entry)).
+
+The walk stops at a leaf, which converts as a whole and whose `Value`s stay the caller's: a struct, which converts through `encoding/json` as before, and a value whose type has an `Error` method, such as `type E []Value` with one, which converts to the string of `Error` as before, a nil one too. A `String` method changes nothing: a slice or a map that has one is walked like another.
+
+Cost: none for a Go function whose result types can hold no `Value`, such as an int, a string, a struct or a `map[string]string`: the call skips the walk, as the types tell when the function is registered. A `Value` alone, or in an `any`, needs no walk either. For the others, a node of the snapshot for each value inside, and an entry for each element, pointer target or map that holds a `Value` (see [A place a result reaches twice is one reference](#a-place-a-result-reaches-twice-is-one-reference)). The walk goes through a `[]any` and a `map[string]any` with a range of Go. A call whose snapshot has up to 256 nodes, one for each value inside and each result, 256 elements and properties, 256 references and 256 places leaves the room of its snapshot on the VM for the next call, so a call of that size allocates nothing for its walk after one like it. A map that is not a `map[string]any` costs two allocations for its walk. Measured on the GCP machine against the code before these changes (cpu 0, GOMAXPROCS=1, 8 runs of each side in turns, the medians of one call from javascript): an int, a string, a struct and a `Value` take the same time, and the string of a host function 711 ns where it took 735 ns. A `[]any` of a number, a string and a bool takes 1.15 µs where it took 1.45 µs, a `[]any` of a number and an `[]int` of 20 4.07 µs where it took 4.93 µs, a `[]Value` of 10 1.75 µs where it took 2.17 µs, and a `map[string]any` of 20 strings 4.59 µs where it took 11.78 µs, with 2 allocations where it made 52, since the walk reads the map with a range of Go in place of reflection.
+
+Tests: `TestResultReferences` and `TestResultsReferences` (`result_test.go`) return one object in every shape above, from both kinds of Go function: arrays, a map of arrays, a pointer to a pointer, a `Value` as a map key, each with an error from a host function, and an `Error` method that panics in a slice, a nested slice, a map and the error of a host function. They require the object to have, after a GC, the two references the test holds. `TestResultErrorKeepsItsValues` returns a `[]Value` that has an `Error` method, and requires its string in the script and its `Value` still the caller's. `TestResultReferencesNested` returns a struct with a `Value` whose `toJSON` calls another Go function that returns `Value`s, and requires each call to free its own references. `TestResultWalkAllocs` requires a call that returns 40 `Value`s, and one that returns 250, to allocate as much as one that returns 2. `TestHoldsRefs` checks which types the walk goes into. `TestResultShapesMatchMain` (`result_shapes_test.go`) returns results with no `Value` in them, nil and empty slices and maps, nil pointers, error types with nil receivers, named types, structs and values in an any, alone, in an any and beside a `Value`, and requires javascript to see what it saw on main before these changes, with no object met twice where main made two. `TestFailedResultLeaksNothing` (`register_test.go`) calls Go functions that return strings of 4 KiB and `Value`s around a channel, as results, in a slice, in a nested slice and in a map, nested in a slice, a map and a pointer after the channel, and a map of `Value`s with float keys, 500 times each, catching the `TypeError` each time. It requires the memory of the VM after a GC to grow by less than 100 KiB. It grew by 2 to 6 MB before the change.
+
+## UndefinedValue as an argument and a property value
+
+Release: v0.30.2.
+
+`UndefinedValue` belongs to no VM, and the doc of `Value.Call` says to pass it as `this`. Passed as an argument of `Call` and the other call methods, or as the value of `SetPropertyValue`, it panicked with a nil pointer: those copied it with `Value.Dup`, which needs the VM of the value. Now they copy the value itself, which has no reference count and needs no VM, so `UndefinedValue` and the zero `Value` are `undefined` there, as they are for `NewArray` and the result of a `Builtin`. A `Value` that a Go function of `RegisterFunc` returns, alone or in a slice or a map, is read the same way, so the zero `Value` is `undefined` there too, where it was the number 0. So it is as the `this` of `Value.Call` and `EvalThis` and the receiver of the property methods.
+
+`Value.Dup` of a `Value` of no VM still panics, which catches a `Value` used after its `Free`.
+
+Cost: none. The copy is the same move of two words.
+
+Test: `TestValueOfNoVM` (`othervm_test.go`) passes `UndefinedValue` and the zero `Value` to `Call`, as the `this` of `Value.Call`, to `SetPropertyValue` and `GetProperty`, and returns them from Go functions, alone and in a slice, and requires `undefined` in the script.
+
+## Close inside a call into the VM is refused
+
+Release: v0.30.2.
+
+`Close` of a VM from a Go function that javascript on that VM called freed the runtime, unmapped the memory and cleared the state of the VM while the engine was still running below the Go function, on frames and memory that `Close` had just given back. When the Go function returned, the code around the call read the cleared state and panicked with a nil pointer, out of the `Eval` that ran the script.
+
+Now `Close` checks first that no call into the VM is in progress: no script, no Go function that javascript called and no other call into the engine. During one it returns an error and changes nothing, and the VM goes on. A `Close` after the call returns closes it. An error fits the rules of the API ([architecture.md](../architecture.md#core-types)): `Close` already returns an error, for the memory the OS refuses, and a method that has an error to return does not panic. A `Close` from a function of `OnClose` still returns nil, as `Close` is already running then.
+
+Cost: one compare when `Close` starts.
+
+Test: `TestCloseInsideACall` (`closetwice_test.go`) closes the VM from a Go function that javascript called, and requires the error, the result of the script, the next call to work, and the `Close` after it to close the VM.
+
+## Then returns the exception of a then getter
+
+Release: v0.30.2.
+
+`Value.Then` read the `then` of the promise and called it without looking at the read. When a getter of `then` threw, it called the exception marker, and returned `TypeError: not a function` in place of what the getter threw. Now it returns the exception of the read, as `GetPropertyValue` does.
+
+Cost: one compare of a tag.
+
+Test: `TestThenGetterThrows` (`then_test.go`) calls `Then` on a promise whose `then` getter throws a `RangeError`, and requires that error and no exception left pending.
+
+## A Go map becomes an object of its own data properties
+
+Release: v0.30.2.
+
+A Go map that a Go function returns becomes an object whose keys are the keys of the map. Each was set with `JS_SetPropertyStr`, which takes a C string and assigns as `obj[key] = value` does. So a key was cut at its first NUL byte, and `"a"` and `"a\x00b"` became one key, one value lost. The key `"__proto__"` ran the setter of `Object.prototype` and changed the prototype of the object, where it should be a key, and a setter a page had put on `Object.prototype` under the name of a key ran with the value of the map and kept the key off the object.
+
+Now each key is made an atom from its bytes and length (`JS_NewAtomLen`), defined as an own data property, enumerable, writable and configurable, as `JSON.parse` and an object literal define their keys (`JS_DefinePropertyValue`), and the atom is freed after. So every key of the map is a key of the object, whole, `__proto__` included, and no setter runs. Keys are in sorted order, as before.
+
+Cost: three calls into the engine for each key where there was one. The key goes to the engine with its length, not as a C string. Measured on the GCP machine (cpu 0, GOMAXPROCS=1, 8 runs of each side in turns), a Go function that returns a map of 20 string keys, called from javascript, takes 8.60 µs a call where it took 10.58 µs, the medians. A map is a result of `RegisterFunc` and `RegisterHostFunc`, not of a `Builtin`.
+
+Test: `TestMapResultKeys` (`register_test.go`) returns a map with a key that has a NUL byte, one with the key `__proto__`, and one under a name a setter of `Object.prototype` catches, and requires every key on the object, the prototype unchanged and the setter not run.
+
+## A Value returned as an any is taken as a Value
+
+Release: v0.30.2.
+
+A Go function of `RegisterFunc` whose result type is `any`, or a function of `RegisterHostFunc`, can return a `Value`. Only a result of the type `Value` and a `Value` in a slice or a map were read as one. A `Value` in an `any` went through the JSON of `Value.MarshalJSON`: one of another VM was read through that VM, `UndefinedValue` and the zero `Value` panicked with a nil pointer, and one of the VM was copied into a new value while the reference it held stayed in the VM for good, about 4 KiB for each call that returned a string of 4 KiB.
+
+Now the conversion of every result reads a `Value` first, whatever the type that holds it: a `Value` of the VM hands its reference to the call, as a result of the type `Value` does ([A result that fails to convert leaves nothing behind](#a-result-that-fails-to-convert-leaves-nothing-behind)), one of another VM throws a `TypeError` and is not freed, and `UndefinedValue` and the zero `Value` are `undefined`. A host function that returns an error with its value throws the error, and the `Value`s of the VM in the value are freed.
+
+Cost: none for a `Value` alone in an `any`, which the call takes as it takes a result of the type `Value`. For one inside a slice or a map, see [A result that fails to convert leaves nothing behind](#a-result-that-fails-to-convert-leaves-nothing-behind).
+
+Tests: `TestResultValueTaken` (`register_test.go`) returns a string of 4 KiB as an `any` from both kinds of Go function, and with an error from a host function, 500 times each, and requires the string in the script and the memory of the VM after a GC to grow by less than 100 KiB. It grew by 2 MB before the change. `TestValueOfAnotherVM` and `TestValueOfNoVM` (`othervm_test.go`) return a `Value` of another VM, `UndefinedValue` and the zero `Value` as an `any`.
+
+## A place a result reaches twice is one reference
+
+Release: v0.30.2.
+
+Nothing in a `Value` tells a copy from a `Dup`: both are the same two words. So a reference is a place that holds a `Value` of the VM: a result, an element of a slice or an array, a key or a value of a map, the target of a pointer, and the `any` that holds one of them. A `Value` copied into two places without `Dup` is two references the function does not have, as the doc of `Value` says. The conversion took one reference each time it met a `Value`, so a place the results reach twice, such as a slice `s` of `Value`s returned as `[]any{s, s}`, a map returned twice, or two slices of one array that overlap, gave the engine two references where the function had one: the object was freed while the script still used it.
+
+Now the walk of the results (see [A result that fails to convert leaves nothing behind](#a-result-that-fails-to-convert-leaves-nothing-behind)) goes through each place once: it keeps the address and the type of each element, pointer target and `any` it has been through, and each map by the map alone, so that a map is one place under every name of its type, as `M(mp)` and `mp` for a `type M map[string]Value`. A place met again is the part of the snapshot it made the first time. The conversion `Dup`s each `Value` each time it puts it in the javascript value, so `[]any{s, s}` is two arrays that hold the same objects, and the reference of each place is freed once. A `Value` and its `Dup` in two places are two references.
+
+Cost: see the section above.
+
+Tests: `TestResultReferences` (`result_test.go`) returns one slice twice, two slices of one array that overlap, one pointer twice, a slice and a pointer to its element, one map twice, a map and a slice each under two names of their types, a map with one slice under two keys, a `Value` and its `Dup`, and one slice twice with an error from a host function. `TestResultsReferences` returns one slice and one pointer as two results. `TestResultReferencesRandom` makes 2000 random results of slices, maps and pointers, nested, shared, some under names of their own and some that contain themselves, and requires the javascript value to be what `encoding/json` makes of the result, or the `TypeError` of a cycle. They require the object to have, after a GC, the two references the test holds.
+
+## A result that contains itself is an error
+
+Release: v0.30.2.
+
+A slice, map or pointer that a Go function returned and that contains itself, such as a slice `s` with `s[0] = s`, made the conversion recurse until Go stopped it at the stack limit of 1 GB with `fatal error: stack overflow`, which no `recover` catches: the process died. A type that holds itself, such as `type loop []loop`, did the same.
+
+Now the walk of the results keeps the slices, maps, pointers and `any`s it is inside, and a result that leads back to one of them throws a `TypeError`, `a result that contains itself`, as `encoding/json` refuses such a value. The walk goes on through the rest, so the references of the result are freed. One slice or map reached twice beside itself, not inside it, is not a cycle. A struct that contains itself goes through `encoding/json`, which already refuses it.
+
+Cost: see [A result that fails to convert leaves nothing behind](#a-result-that-fails-to-convert-leaves-nothing-behind).
+
+Tests: `TestResultReferences` (`result_test.go`) returns a slice, a map and a pointer that contain themselves, a cycle with no `Value` in it, a value of `type loop []loop` that holds itself, and a cycle with an error from a host function. `TestResultsReferences` returns a cycle after a `Value` among two results, and `TestResultReferencesRandom` random ones. They require the `TypeError` and, after a GC, only the two references the test holds. Before the change, each but the one with an error killed the test process.
+
+## The references of a result are taken before code of the program runs
+
+Release: v0.30.2.
+
+The conversion of a result runs code of the program: the `Error` method of an error, the `MarshalJSON` of a struct, and the `toJSON` of a `Value` in a struct, which can call Go again. That code could change the result while it converted. A slice that came to hold itself, as when an `Error` sets `s[1] = s`, made the conversion recurse until the process died of a stack overflow, a `Value` of another VM put in had its count changed in a VM that does not own it, and a `Value` taken out was never freed.
+
+Now the walk of the results takes a snapshot of them before any of that code runs, and runs none itself (see [A result that fails to convert leaves nothing behind](#a-result-that-fails-to-convert-leaves-nothing-behind)): each reference the results hand over, the slices, maps and pointers that can hold a `Value` as they are, and the checks for a cycle and for a `Value` of another VM. The conversion goes by the snapshot, so a cycle or a `Value` the code of the program puts in is not converted, and each reference is freed once, wherever that code moves it. The data with no `Value` in it, such as a string, an `[]int` or a struct, is a leaf of the snapshot: the walk keeps the leaf itself, the string or the slice it found, and the conversion reads what the leaf points to when it converts. So a slot of a slice or a map of the result that the code of the program sets to another leaf afterwards is not converted, but a change to what a leaf shares, such as the elements of an `[]int`, is in the javascript value, as before. A Go function whose result types can hold no `Value` takes no snapshot, and its results are read when they convert.
+
+Cost: see [A result that fails to convert leaves nothing behind](#a-result-that-fails-to-convert-leaves-nothing-behind).
+
+Tests: `TestResultReferences` (`result_test.go`) returns a slice whose `Error` makes it hold itself, one whose `Error` takes a `Value` out, and a map with a struct whose `MarshalJSON` makes the map hold itself. `TestResultChangedDuringConversion` returns a slice whose `Error` puts a `Value` of another VM in it, and requires `null` in its place and the count of that `Value` unchanged. `TestResultExceptionMovesValue` returns a slice with a `Value` and an empty `*Object`, whose JSON fails to parse, and replaces the `toString` of `SyntaxError`, which the conversion calls for the message, with one that moves the `Value` to another element of the slice. It requires the two references the test holds after a GC. `TestResultLeafKeptByWalk` returns a slice whose `Error` sets one of its strings to another, and requires the string the walk found. Before the change, the two cycles killed the test process.
+
+## NewArray stops at the limits of the call
+
+Release: v0.30.2.
+
+`VM.NewArray`, in a Go function that javascript called, now reads whether the call is to end every 16,384 elements, and ends at `Interrupt`, the eval timeout or an uncatchable error of the call, with that error, which the Builtin returns. The engine adds an element in about 50 ns, a call of its own from Go for each, and reads no interrupt flag while it does: an array of 4 Mi elements took 0.14 to 0.2 seconds on an M-series Mac. A stop that came while it was made was held off until the end, and past the grace after which a script is killed ([ErrKilled](go-api.md#error-says-why-a-call-ended)): `toLocaleUpperCase('tr')` of 2M lone surrogates, each before an `i`, makes such an array, and a timeout that came while it was made got its VM killed. An array of fewer than 16,384 elements reads nothing, and takes the time it took: a Builtin that returns an array of 3 took 155 ns a call before and after on an M-series Mac. An array made outside a call into javascript, or that is done before a stop, is made as before.
+
+Test: `TestNewArrayInterrupted` in `builtin_test.go` (an array of 4 Mi elements after `Interrupt`: NewArray returns the interrupt and no array, and the VM is usable after; outside a call, after the interrupted call and after `Interrupt` while the VM is idle, the whole array is made).
+
+## Long strings and results stop converting at the limits of the call
+
+Release: v0.30.3.
+
+In a Go function that javascript called, a conversion between a Go string and a string of the engine now reads whether the call is to end every 256 Ki characters, or bytes of UTF-8, and ends at `Interrupt`, the eval timeout or an uncatchable error of the call, as [NewArray](#newarray-stops-at-the-limits-of-the-call) does. `Args.String` and `Args.WTF8` then return ok false, `VM.NewString`, `VM.NewStringLatin1` and `VM.NewStringUTF16` return the error and no string, and the call ends with that error whatever the Go function returns. The same holds for the string arguments and results of a Go function of `RegisterFunc`, for the keys of a map it returns and for `VM.NewAtom`. The conversion of a result of such a function also reads every 16,384 elements or properties, counted across the slices and maps it nests, as each costs a call into the engine of 50 ns or more.
+
+No poll runs while Go converts. On the amd64 server, reading a string of 16 Mi lone surrogates took 129 ms and of 64 Mi 0.5 seconds, and making a string of 16 Mi CJK characters 151 ms. A stop that came meanwhile was held off until the end, and past the grace of 50 ms after which a script is killed ([ErrKilled](#error-says-why-a-call-ended)).
+
+`NewString` of a string longer than 1 GiB, more bytes than the engine holds characters, went through `JS_NewStringLen`, which decodes it with no read. Now it converts in Go like any other string, and a string of more characters than the engine holds throws the same `InternalError: string too long`.
+
+What one step takes, the worst of three rounds of a test that took the time at each read, for every way a string converts: ASCII, Latin-1, CJK, surrogate pairs, lone surrogates, and invalid UTF-8 with each kind of character after it:
+
+| Step | amd64 server (EPYC, t2d) | Apple M4 |
+| --- | --- | --- |
+| a piece of a loop, strings of 16 Mi and 64 Mi characters | at most 1.6 ms | at most 2.7 ms |
+| the step that allocates the Go string a read returns, 16 Mi characters | at most 14 ms | at most 2.7 ms |
+| the same, 64 Mi characters | at most 52 ms | at most 55 ms |
+
+The slowest piece is the one of invalid UTF-8, where each bad byte becomes U+FFFD. The allocation of the Go string a read returns, which Go zeroes and for which the goroutine may have to help the GC, is one step that cannot be cut, and it takes longer with the size of the string and with what the GC is doing at the time. So a stop that comes just before it can still pass the grace on a string of tens of millions of characters, and the VM is then killed, as it was before. That takes a single string of tens of millions of characters: one of 64 Mi characters takes 64 MiB of the VM's memory as 8-bit characters and 128 MiB as 16-bit units, so a VM with a memory limit below that never holds one. The stop is read once more after the count and right before the allocation, so a stop that came by then allocates nothing. A string of at most 256 Ki reads nothing and converts with the code it had, after one more compare of its length. No difference shows above the noise: on an Apple M4, with the two builds run in turn six times, `BenchmarkBuiltinString` reading short strings with `Args.String` and `Args.WTF8` and sending them back through `NewString` stayed within 1.7% of before (at most 0.8 ns a call), while its loop of javascript alone, which runs no changed code, moved by up to 6% between the same builds, and `BenchmarkUTF16String` of a page of 200 Ki units was within 2.1%, slower in one run and faster in another.
+
+What still converts with no read, and why:
+
+- `Args.Latin1` and `Args.UTF16` copy nothing, and `Args.Number` and `Args.Bool` read one value.
+- An argument of `Call`, `CallValue` or `SetProperty` that is not a string or a number goes through `encoding/json` and then the engine's JSON parser, which reads the interrupt flag itself. So does a struct in a result. `encoding/json` is Go code that runs on the program's own value.
+- The walk that takes a snapshot of the results ([The references of a result are taken before code of the program runs](#the-references-of-a-result-are-taken-before-code-of-the-program-runs)) is Go alone, a few ns an element, about as long as the Go function took to make the result, and it must finish to free the references the results hand over.
+
+Tests: in `stringstop_test.go`, `TestArgStringStops`, `TestNewStringStops` and `TestNewStringCharsStops` (each way a string converts, after `Interrupt` and at the eval timeout: no string, the call ends with the interrupt and not killed, and the VM runs scripts after; outside a call the whole string), `TestConversionStopsMidway` (`Interrupt` from another goroutine at the first read ends the conversion there), `TestArgStringStopsBeforeAllocation` (a stop at the read before the allocation allocates nothing) and `TestConversionPieces` (pieces of 1 to 7 characters or bytes give what the whole conversion gives). In `resultstop_test.go`, `TestResultConversionStops` and `TestResultConversionStopsMidway` (a slice, slices in a slice, a map, an `[]any` and a `map[string]any` of 65,536 elements), `TestRegisterFuncStringStops` (a string argument, and the Go function does not run, and a string result), `TestResultLongKeys` (keys made a piece at a time are the properties they are whole, and a long key stops) and `TestNewStringTooLong`. Before the change, each test of a stop failed: no read, ok true, the whole string.
+
+## Args.StringLen reads the length of a string in place
+
+Release: v0.30.3.
+
+`Args.StringLen(i)` returns the length of argument `i`, in UTF-16 code units as javascript counts it, when it is a string, and false otherwise. It reads the length where the engine keeps it, in the header of the string, and converts nothing. A rope, a string the engine keeps as the pieces `+` joined, is not joined either, as its header holds its length too. So a Builtin can refuse a string too long for it before it reads any of it: `Args.String` of a rope of 32 Mi characters joins it under the memory limit of the VM and then copies it into Go, where `StringLen` reads one word.
+
+It takes the same time for a string of any length and allocates nothing. The Builtins of `intl` and `temporal` measure each short argument with it before they read it.
+
+Test: `TestStringLenRope` in `vmhook_test.go` (the longest rope javascript makes, of 2^30-1 units: the length, no growth of the VM, and no allocation in Go over 1,000 calls), and `TestVMHookChars` (a number, nothing, flat strings of one and two bytes a character, and ropes).
+
+## A 16-bit string goes to UTF-8 eight ASCII units at a time
+
+Release: v0.30.7.
+
+A string that Go reads from javascript (the result of `Call`, an argument of a Go function or a Builtin) is written as UTF-8 in Go. The engine holds a string in 16-bit units as soon as one of its characters is above U+00FF, and then each run of ASCII went four units at a time. It now goes eight at a time (`asciiUnits` in `jsstring.go`): one check of two words, and the eight units narrowed to eight bytes with shifts and one store. A string of more than 262,144 units (`stringStep`) is counted before it is written, and its runs of ASCII are now counted eight at a time too, where they were counted one unit at a time. Every other character goes as before, four at a time for text from U+0800 such as Chinese.
+
+The HTML of a page is such a string: every page of tifa's shop, its MUI test app and React's page has at least one character above U+00FF, and is 97% to 100% ASCII. It reaches Go as a rope, which the engine joins first (`JS_ToString`), as before.
+
+It is safe because the output is the same, byte for byte, and the tests compare it with the conversion of v0.30.6, kept in `utf16ref_test.go`, whole and in pieces of 1 to 9 units: every edge of the UTF-8 lengths (U+007F, U+0080, U+07FF, U+0800, U+FFFF, U+10000, U+10FFFF), lone high and low surrogates at the start, the middle and the end, and a pair, a lone surrogate, a character of two or three bytes after a run of ASCII of each length from 0 to 20, so that it falls on every place of a block of eight or four. Without `wtf8` the output is also what Go's `utf16.Decode` gives, a lone surrogate as U+FFFD. `asciiUnits` reads and writes without Go's bounds checks, which cost more than the work: it reads only units that `u` holds (a multiple of eight that fits), and writes eight bytes for eight units into the room of three bytes a unit that `utf16Write` checks when it starts. It reads through arrays of bytes, so no pointer needs an alignment, and the race detector's pointer checks pass. It is a function of its own that is not inlined: inside the loop of `utf16Write` it made the loop's other paths slower.
+
+Counted with the conversion alone, on the HTML of each page (retired instructions on an Apple M4, the lowest of 5 rounds of 50 conversions): the workbench studio page 2.02 million to 0.75 million, the store's home in English 7.45 to 1.61 million and in Chinese 7.51 to 2.20 million, React's page 0.27 to 0.13 million. The store's large pages gained most, as they are longer than `stringStep` and were counted one unit at a time first. The memory is the same: one allocation of the string, and the same scratch memory as before.
+
+What it costs: text with no runs of ASCII (Cyrillic, Chinese, emoji) takes from 2% fewer to 2.2% more instructions than before, and a string of ten units up to about 30 more. A string made only of runs of 8 to 15 ASCII units between other characters runs up to 18% more, a call for each run: no page has that shape.
+
+Tests: `TestUTF16Boundaries` and `FuzzUTF16String` (with its seed corpus in `testdata/fuzz/FuzzUTF16String`) in `utf16_test.go`, `TestUTF16RealCuts` (strings of 9 units under to 9 over `stringStep` and `stepScratch`, each kind of unit at the cut), `TestUTF16WritesStayInRoom` (canary bytes around the room) and `TestUTF16ScratchReused` (three strings through one pooled buffer) in `utf16room_test.go`, `TestUTF16ReadsStayInSource` in `utf16fault_test.go` (units that end at the end of a mapped page with a page after it that cannot be read, linux and darwin), and `TestUTF16StringUnitByUnit`, `TestArgStringSameAsEngine` and `TestScratchPutBack` as before.
+
+## EvalFile gives a script a file name
+
+Release: v0.31.0.
+
+`VM.EvalFile(name, javascript, flags)` is `EvalValue` with `name` as the file of the script, where every other eval names it `<eval>`. The frames of its stack and its syntax errors show `at f (repro.js:1:31)` instead of `at f (<eval>:1:31)`, and a module of `EvalModule` gets `name` as its name. It reads no file. A program that runs several scripts in one VM, or a command that runs a file, can tell from a stack which script a frame is in.
+
+The engine has always taken a file name with the source: the Go API passed `<eval>`, copied in front of the source into the memory it hands to `JS_Eval` (`evalSource` in `engine.go`). EvalFile copies the name given instead, so nothing changes in C or in the generated engine. The name is cleaned in Go first (`cleanEvalName` in `eval.go`), so that a stack keeps one line per frame and the engine reads a string it can take: bytes that are not UTF-8, the control characters (a newline and a 0 byte among them, which would also end the name early in C) and U+2028 and U+2029 become U+FFFD, and a name longer than 1,024 bytes is cut at the last character that fits. An empty name is `<eval>`.
+
+The name of a module is its identity, which a cleaned name would lose: `a\nb` and `a\rb` would both become `a`, U+FFFD, `b`, and two long names that share their first 1,024 bytes would become one. So with `EvalModule`, a name the cleaning would change (other than the empty one) is an error, and nothing is copied or run. What is true of two modules given the same name stays as it was for the modules of `Eval`, which are all named `<eval>`: both run, and `import.meta` and an import of that name find the first.
+
+It is safe because the bytes `evalSource` writes are bounded the same way as before: it computes their count from the lengths of the cleaned name and of the source before it asks for memory, gets that many bytes on the VM's shadow stack or in its heap or none at all (out of memory, before anything is written), and writes through a slice of exactly that many bytes. With no name, the bytes are the same as before: `<eval>`, a 0 byte, the source and a 0 byte.
+
+What it costs: nothing when no name is given, as every other eval passes `<eval>` as before. With a name, the engine keeps it as an atom while the functions of the script live, and a name that needs cleaning is one allocation in Go.
+
+Tests in `evalfile_test.go`: `TestEvalFile` (the result, the frames and a syntax error with the name, an empty name, and `Eval` still `<eval>`), `TestEvalFileName` (a newline, a carriage return, a 0 byte, a tab, DEL, U+2028 and U+2029, bytes that are not UTF-8, a name of 1,200 bytes cut between characters, one cut before a character that does not fit and one of 1 MiB, each through a stack), `TestEvalFileNameBound` (names of 1 MiB with sources around the size where the copy moves from the shadow stack to the heap: the bytes written are the name, a 0 byte, the source and a 0 byte, and a mark past them on the shadow stack is untouched. A source the memory limit has no room for ends with out of memory and the VM goes on) and `TestEvalFileSameAsEval` (the same result, the same number of Go allocations, and the same blocks, bytes and atoms of the engine once the functions are gone, with no name, `<eval>` and `repro.js`). Also `TestEvalFileModuleName` (with `EvalModule`, the names the cleaning would change are refused: a newline, a carriage return, a 0 byte, invalid UTF-8, U+2028, and two names that share their first 1,024 bytes, and a name it keeps is what an import finds), `TestEvalModuleSameName` (two modules of the same name, given by `EvalFile` and by `Eval`, both run, and `import.meta` and an import find the first), `TestEvalFileStops` (a source in a block of the heap stopped by the eval timeout and by `Interrupt`: the block is given back and the VM goes on) and `TestEvalSourceRounding` (for the smallest block, 3 bytes, the shadow stack reserves 16 from a 16-byte boundary: the engine reads the name with `strlen`, a whole aligned word at a time, so up to 7 bytes past its 0 byte, inside that rounding, and inside the rounding to 8 bytes of a block of the heap). `TestEvalFileName` also has C1 controls and cuts inside a character of 3 and 4 bytes and next to a replaced character.
+## Strings a script returns or throws stop converting at the top level too
+
+Release: v0.31.1.
+
+A long string now stops converting at `Interrupt` and the eval timeout at the top level of a call too, not only in a Go function that javascript called: where `Eval`, `Call`, `Value.Any` and the other functions that return a Go value convert the string a script returned or threw, or the JSON of an object, after the script ran. How long that string is, and so how long it takes to convert, is up to the script, as far as the memory limit lets it: reading a string of 64 Mi characters took 0.5 seconds on amd64 with no read of the stop, so a call could end that long after its timeout. Now the call ends with the interrupt, read every 256 Ki characters as in a Go function, and the VM runs scripts after. Outside a call into the VM, as when `NewString` converts a Go string, there is no stop to read, as before.
+
+A value that is not a string, such as a thrown object with its own `toString`, went through `JS_ToCStringLen2`, which made a UTF-8 copy of the whole string that Go then copied in one go. Now the engine makes the string (`JS_ToString`, which reads the interrupt flag while javascript runs), and Go reads it where it is, as any other string.
+
+Tests: `TestTopLevelConversionStops` in `stringstop_test.go`: a string returned by `Eval`, an `Error` thrown with it as its message and an object thrown whose `toString` returns it, for each kind of string, at `Interrupt` and at the eval timeout. The call ends at the first read with the interrupt, not killed, and the VM runs scripts after. Before the change, the string came back whole, and an object thrown converted with no read at all.
+
+## TrackRejections and UnhandledRejections
+
+Release: v0.31.1.
+
+`VM.TrackRejections(max)` makes a VM keep the promises that are rejected while no handler is attached to them, at most `max` (up to `MaxTrackedRejections`, 1,024), oldest first, until a handler is attached (`then`, `catch`, `finally`, an `await`) or `VM.UnhandledRejections()` takes them. `UnhandledRejections` returns each reason read as the error of a call that threw it (`Name`, `Message`, `Stack` for an Error, the text of any other value), and how many rejections were dropped since the last call: past `max`, or with no memory to keep them. Another `max` changes the limit and keeps what is kept, even past a lower one. `max` 0 turns it off and forgets what is kept. A VM starts with it off.
+
+A host runs a script and its jobs, then reports what no handler took, as Node does for an unhandled rejection. Before, such a rejection left no trace in a VM: the host saw the result of the script, or none, with nothing to say why.
+
+The engine keeps the list (`JS_TrackRejections`, `JS_RejectionMark`, `JS_HasRejection`, `JS_TakeRejection` and `JS_TakeDroppedRejections` in `engine/quickjs.c`), as the tracker of `JS_SetHostPromiseRejectionTracker`, which QuickJS calls when a promise is rejected with no handler and when a handler is attached to such a promise later: the first adds an entry, the second takes it off. The tracker is a C function, as Go is reached only through `host_call`.
+
+What a read holds and how long it takes are bounded, as a reason is for a log and javascript decides how large it is:
+
+- Each text Go reads of a reason, its string, `Name`, `Message`, `Stack` and `FileName`, is cut to its first 8 KiB of UTF-8, or up to three bytes fewer so that no character is cut, followed by ` [cut]` when it was longer. The cut reads at most that many characters of the engine's string, so a reason of hundreds of MiB, or a thousand references to one, costs no more than a short one. A rope or a value that is not a string is first made one string by the engine, as for any conversion.
+- Go allocates each text once, of the bytes it keeps, and an `*Error` of 112 bytes for each reason. Go rounds an allocation up to its size class, at most a quarter more and 16 bytes, so for n bytes the read takes n + n/4 + 16 from the room: 10,263 for a text of 8,198 bytes, 51,471 for a whole reason, and 10,256 for the slice of reasons, made with the first. So a read of 1,024 reasons allocates at most 52,716,560 bytes in Go (50.3 MiB), of which it keeps at most 41,973,760 bytes of texts (40 MiB). Before each reason, the read checks that the room the VM has left under its memory limit holds 51,471 bytes more than what it took: when it does not, it ends with the out of memory error, as the Go functions of `fmt` and `url` do, and the reason stays kept. Then each text takes its room before it is copied, after the getters that ran before it, so a getter that uses the room up ends the read before the next copy. Before, with 64 MiB of memory and 1,024 references to one string of 1 MiB, a read allocated 1 GiB in Go, and a reason of five texts of 16-bit characters, mostly ASCII, made Go allocate 106,526 bytes where the read checked for 82,236.
+- The error a read ends with is cut the same way, its `Message` and `Stack`, and for a value a getter threw each text, so that all a read returns is under these bounds. Only the read cuts it: the errors of `Eval`, `Call` and the other calls are as before. Before, a getter that ran out of memory in a function with a name of 128 KiB made the `Stack` of that error 128 KiB.
+- The eval timeout and `Interrupt` are read before each reason, and the javascript a read runs, the getters of a reason, reads them itself. When one ends the read, it returns the reasons read before and the interrupt, and the rejections after the one it was reading stay kept.
+- A read takes the rejections kept when it began (`JS_RejectionMark`, a number of 64 bits each entry gets in order, which the runtime keeps and never resets, also when tracking is turned off and on, so it never wraps): one that a getter of a reason makes is for the next read, after its jobs could attach a handler. Before, a getter that rejected its reason again made one read take 100 reasons from `max` 1, and with no counter never end. And turning tracking off and on, from a getter through a Go function, started the numbers again at 0, so that a read took a rejection made after it began.
+- A read is the only one on a VM while it runs: javascript it runs that calls `UnhandledRejections` or `TrackRejections` of the same VM, through a Go function, gets an error, and nothing changes. Before, such a getter could take the rejections after its own in a read of its own, or turn tracking off and back on and change the limit, in the middle of the read.
+
+It is safe because:
+
+- A VM that keeps nothing runs as before: the rejection of a promise reads the tracker it always read, which is NULL, and the functions of promises are unchanged. The list hangs off the tracker's opaque pointer. `JSRuntime` has one new field, at its end so that the fields before it keep their offsets: the number the next rejection kept gets.
+- The tracker throws nothing: it allocates an entry with `js_malloc_rt`, and a rejection it has no room or no memory for is counted in `dropped`, never an error of the script.
+- What the list holds are references of their own, to the promise and to the reason, which the collector counts as it counts those of the job list: they stay alive, cycles and all, until they are taken, and `JS_FreeRuntime` frees the list after the job list, before its last collection. Setting another tracker frees the list too.
+- The list is bounded: at most 1,024 entries of 56 bytes each under the VM's memory limit, and a handler attached to a promise that was rejected with none walks at most 1,024 entries to take it off. On an Apple M4, a walk of 1,024 takes about 2 µs. 1,000,000 promises rejected past the 1,024 kept, each given a handler in reverse order, took 2.98 s against 1.06 s with tracking off, and the eval timeout and `Interrupt` ended that loop within 1 ms of 20 ms and of 100 ms, as the loop of javascript reads them between two walks.
+
+What it costs: nothing for a VM that keeps none. With it on, an entry and two references for each rejection no handler took when it happened, a walk of the list for each handler attached to such a promise later, and the reasons stay alive until taken. What a read holds in Go is not in the memory size of the VM: javascript a getter runs after a text was copied can use the room that text took, so the VM and the read together may pass the memory limit by what the read holds, at most 51,471 bytes for each reason read and 10,256 more, 50.3 MiB for 1,024 reasons.
+
+Tests: `test_rejections_kept`, `test_rejections_max`, `test_rejections_mark`, `test_rejections_context` and `test_rejections_collected` in `engine/test/unit.c` (the order, a handler attached later, the promise of `then` and of an async function, the limit and the count of dropped ones, off frees, a take with a mark leaving what was kept after it, also once tracking was turned off and on, a reason in a cycle with its promise kept through a full and a young collection, a runtime freed with rejections kept, a reason made in a context that is freed read from another context of the runtime), `test_rejections_oom` in `engine/test/unit-oom.c` (no memory for the list: `-1`, nothing kept, and no memory for an entry: counted, the promise rejected, nothing leaked), and in `rejections_test.go` `TestRejectionsOff`, `TestRejections`, `TestRejectionsMax`, `TestRejectionsReadStops` (a getter that never ends stopped by the eval timeout, the next reason still kept), `TestRejectionsClose` (a VM closed with rejections kept, and the two methods panicking after `Close` as the others do), `TestRejectionsText` (each text of a reason of strings of 8-bit, 16-bit and paired characters cut where no character is), `TestRejectionsGoMemory` (1,024 references to 1 MiB in a VM of 64 MiB: at most 10,256 and 1,024 times 51,471 bytes allocated), `TestRejectionsWideMemory` (64 reasons of five texts of 8,192 ASCII characters and one Chinese character, read with the memory Go kept for conversions emptied: Go allocates no more than the room taken), `TestRejectionsGetterRoom` (a getter of the stack that uses the room up: the read ends with the out of memory error before it copies the file name), `TestRejectionsRoom` (out of memory with some read and the others kept for the next read), `TestRejectionsReadSweep` (eval timeouts from 1 to 32 ms over 64 reasons that run javascript for 1 ms each: the read ends within the timeout and the grace of a kill, with the interrupt or all of them, and none is lost but the one being read), `TestRejectionsLongReasonsTimeout` (64 references to 4 Mi characters under a timeout of 1 ms), `TestRejectionsStopBetween` (`Interrupt` before a read that runs no javascript: none taken, all kept), `TestRejectionsReadRange` (the case of the getter that rejects its reason again, with and without a counter, and a rejection a getter makes handled by its jobs before the next read), `TestRejectionsReadAlone` (a getter that calls both methods through a Go function: errors, nothing taken, the limit the same), `TestRejectionsErrorCut` (the case of the function named with 128 KiB: the `Stack` of the out of memory error cut), `TestRejectionsOddReasons` (a Symbol, a revoked Proxy, a Proxy whose trap throws and a toString that throws a primitive: read with the texts they give, and the read goes on), `TestRejectionsLoneSurrogateCut` (a lone surrogate, U+FFFD, kept where it fits and left out where it does not) and `TestRejectionsInterruptGetter` (`Interrupt` from another goroutine while a getter runs: the interrupt, the next reason kept). Before the change, `TestRejectionsText`, `TestRejectionsGoMemory`, `TestRejectionsWideMemory`, `TestRejectionsGetterRoom`, `TestRejectionsRoom`, `TestRejectionsStopBetween`, `TestRejectionsReadRange`, `TestRejectionsReadAlone` and `TestRejectionsErrorCut` failed.
+
+## More values than the engine can count fail
+
+Release: v0.31.1.
+
+`Call` and a Go slice converted to an array hand the engine a list of values with their count as a C int, and the results of a Go function are walked into a snapshot that numbers its nodes and kids in int32. More than 2^31 - 1 values (32 GiB of values in Go) are now an error, `slowjs: N values, the engine takes at most 2147483647`
+, before anything is cut to 32 bits (`maxValues` and `valuesFit` in `engine.go`, which `tmpValues` and the walk of results in `result.go` use). Before, `tmpValues` copied the whole list into one block of engine memory, which is under 4 GiB, so such a call failed with out of memory before the count was cut: the check states the limit and stays right if that block grows. The walk of results had no such check: a Go function that returned a slice of 2^31 values, on a machine with the memory for its snapshot, cut a node number to a negative int32 and panicked with an index out of range. It is one test of a length where a list is copied or walked, so a call costs the same.
+
+Tests: `TestValuesFit` in `valuesfit_test.go` checks the limit (`maxValues`) at its edges. `TestSnapshotTooManyValues` gives the walk of results a limit of 3 or 4 (its field `max`, `maxValues` but in a test) and walks a slice, a `[]any` and maps of more `Value`s: the walk fails with the error before a node or a kid past the limit, and still takes every reference for the snapshot to free. No test makes a list of 2^31 values: it takes 32 GiB in Go.
+
+## Package tifa
+
+Release: v0.31.1.
+
+`tifa.Register(vm)` gives a VM what tifa gives each VM of its pool, in tifa's order: `URL`, `Intl`, `Temporal`, then the functions named `__tifa_*` that tifa's bundles ask for (`tifa.Hooks()` lists them). tifa, the `slowjs` command and the program that measures tifa's pages call it, so the three set a VM up the same way. The hash, the random bytes and the async context moved here from tifa. Limits, the bundle and the collections stay with the host.

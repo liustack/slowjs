@@ -3,7 +3,7 @@
 
 # compare/engines
 
-The comparison of liustack/slowjs with other JavaScript engines for Go and with three native engines. A Go module of its own, so the other engines never enter the `go.mod` of the root. The results and what they say are in [docs/benchmarks.md](../../docs/benchmarks.md).
+The comparison of liustack/slowjs with other JavaScript engines for Go and with three native engines. A Go module of its own, so the other engines never enter the `go.mod` of the root. The results and what they say are in [docs/use/benchmarks.md](../../docs/use/benchmarks.md).
 
 ## What is compared
 
@@ -38,7 +38,7 @@ Each engine runs the way a person would use it. It has its own Intl and URL wher
 
 ## Run it again
 
-On a Linux machine with four cores that nothing else uses, with Go, clang, and Node and npm (the Node of `native/build.sh` will do). The run measures the checkout it is in, so check out the commit to measure first: for a release, the commit of its branch that holds the final generated engine, before the tag ([releasing.md](../../docs/releasing.md#the-comparison-with-the-other-engines)).
+On a Linux machine with four cores that nothing else uses, with Go, clang, and Node and npm (the Node of `native/build.sh` will do). The run measures the checkout it is in, so check out the commit to measure first: for a release, the commit of its branch that holds the final generated engine, before the tag ([releasing.md](../../docs/internals/releasing.md#the-comparison-with-the-other-engines)).
 
 ```sh
 cd compare/engines
@@ -66,7 +66,7 @@ A run is cut into pieces on a shared machine: `-name` makes a run and `-add` add
 
 ## Make the bundles again
 
-`tifa/bundles/*.js` and `tifa/in/*/*.json` come from a throwaway clone of tifa (never build in a working copy of tifa): the commit, Node, pnpm and Go versions, and the SHA256 of each bundle are in [docs/benchmarks.md](../../docs/benchmarks.md#the-pages). In the clone, `go tool tifa build` in `test/apps/bench`, `test/apps/mui` and `examples/shop` writes each app's `.tifa/dist/ssr.js`. `go run ./cmd/modulescript <ssr.js> tifa/bundles/<app>.js` turns it into a script. The inputs are what each app's server sends to `startRender` for a page: the recipe of [engine/pgo/README.md](../../engine/pgo/README.md) records them (a file `zz_dump.go` in `internal/ssr`, `TIFA_DUMP_INPUT` set, one request per page, `SHOP_OPEN=1` for the shop's workbench). `go run ./cmd/notices <tifa clone> tifa` writes the third-party notices again, and `shasum -a 256` the `SHA256SUMS`.
+`tifa/bundles/*.js` and `tifa/in/*/*.json` come from a throwaway clone of tifa (never build in a working copy of tifa): the commit, Node, pnpm and Go versions, and the SHA256 of each bundle are in [docs/use/benchmarks.md](../../docs/use/benchmarks.md#the-pages). In the clone, `go tool tifa build` in `test/apps/bench`, `test/apps/mui` and `examples/shop` writes each app's `.tifa/dist/ssr.js`. `go run ./cmd/modulescript <ssr.js> tifa/bundles/<app>.js` turns it into a script. The inputs are what each app's server sends to `startRender` for a page: the recipe of [engine/pgo/README.md](../../engine/pgo/README.md) records them (a file `zz_dump.go` in `internal/ssr`, `TIFA_DUMP_INPUT` set, one request per page, `SHOP_OPEN=1` for the shop's workbench). `go run ./cmd/notices <tifa clone> tifa` writes the third-party notices again, and `shasum -a 256` the `SHA256SUMS`.
 
 ## How it measures
 

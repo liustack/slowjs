@@ -67,7 +67,7 @@ func TestRegExpCache(t *testing.T) {
 // of memory with the cache full reports it as out of memory, uncatchable,
 // and is usable after the call, with the cache in use. The limit is lifted
 // before the array is let go: the VM is full to within one allocation, and
-// small blocks come in arenas of 4 KiB (docs/allocator.md), so even
+// small blocks come in arenas of 4 KiB (docs/internals/allocator.md), so even
 // `a = null` needs room the loop may not have left, by how its last
 // allocations fell. Each limit makes the loop run out at another
 // allocation, with 2.8 to 12 KiB left.
@@ -142,7 +142,7 @@ func TestRegExpCacheStops(t *testing.T) {
 			// The goroutine of interruptAfter runs when the scheduler lets
 			// it: with one P, held by the call, that is when the call gives
 			// it up, at times tens of milliseconds after d
-			// (docs/architecture.md, A long call and the Go scheduler). A
+			// (docs/internals/architecture.md, A long call and the Go scheduler). A
 			// request that comes late must still find the work going on.
 			{"late interrupt", func(m *VM) func() { return interruptAfter(m, 100*time.Millisecond) }},
 		} {

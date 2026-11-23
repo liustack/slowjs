@@ -70,7 +70,7 @@
    Every function the compiler makes runs here: one past the limits of the
    loop fails to compile (add_var, add_arg, compute_stack_size), and a stack
    trace walks the frames of the loop too (JSFrameWalk, rv_frame_func). The
-   whole design is in docs/changes/c-engine.md, under "The register
+   whole design is in docs/internals/changes/c-engine.md, under "The register
    interpreter".
 
    The files: regvm-func.h has RVFunc and rv_entry_fast, read by quickjs.c

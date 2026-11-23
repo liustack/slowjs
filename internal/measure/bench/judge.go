@@ -14,7 +14,7 @@ import (
 	"strings"
 )
 
-// The defaults of docs/measuring.md.
+// The defaults of docs/internals/measuring.md.
 const (
 	// DefaultDelta is the regression that matters: 1%, about the smallest
 	// change to the engine that 2 rounds over the 16 layouts can show.

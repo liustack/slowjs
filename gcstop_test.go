@@ -25,7 +25,7 @@ const gcLoopWait = 30 * time.Second
 
 // TestGCStopsLoopWithoutCalls shows that a GC is not held up by a script that
 // loops without calling anything. Go's asynchronous preemption cannot stop the
-// generated engine (docs/architecture.md): the goroutine in it stops at the
+// generated engine (docs/internals/architecture.md): the goroutine in it stops at the
 // entry of a Go function, and a loop like these enters one only at its polls
 // (gohost.Poll). The loops keep their counter a small integer, so no slow
 // path of an overflow gives the GC another way in.

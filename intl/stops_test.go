@@ -20,7 +20,7 @@ import (
 // refuses the input with a RangeError. It never runs the whole input with no
 // check, and between two checks it allocates in Go no more than the VM has
 // room for. These tests count the checks and what Go allocated between two
-// of them. They read no clock (docs/testing.md, "Time in a test").
+// of them. They read no clock (docs/internals/testing.md, "Time in a test").
 
 // workPerStop is the most UTF-16 units of input a Builtin works on between
 // two reads of vmhook.Stop.

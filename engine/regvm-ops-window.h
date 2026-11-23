@@ -270,7 +270,7 @@ static BOOL rv_for_in_branch(RVPass *s)
 /* Copies. The bodies run here call these in place of a function of the
    engine (a #define around the body), each with the hook of the throw
    injection. js_for_in_start is here only, and rv_define_object_name is a
-   copy of JS_DefineObjectName and must change with it: docs/upgrading.md. */
+   copy of JS_DefineObjectName and must change with it: docs/internals/upgrading.md. */
 
 /* The throw-injection test (engine/regvm-inject.h) in a body: where the
    body calls the function of the engine that can fail, the hook fails in

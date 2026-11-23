@@ -21,7 +21,7 @@
 // sort, forEach, the iterators, toString and size.
 //
 // The parser is internal/whatwgurl, which follows the standard of 2026 and
-// passes the web-platform-tests URL data (see docs/changes/url.md for
+// passes the web-platform-tests URL data (see docs/internals/changes/url.md for
 // the list of cases it does not). Hosts are processed by IDNA with Unicode
 // 17 tables.
 //
@@ -61,7 +61,7 @@
 // last base each VM parsed and the last record it made, at most 3.5 KiB a VM,
 // until the VM closes, and for the buffer in which package slowjs converts a
 // long string, which holds the bytes of the last one it read, at most 192 KiB
-// through this package, until the next one (see docs/changes/url.md).
+// through this package, until the next one (see docs/internals/changes/url.md).
 //
 // # Differences from a browser
 //

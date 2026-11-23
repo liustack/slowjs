@@ -36,7 +36,7 @@ func TestNewInput(t *testing.T) {
 // TestSpacesCount checks the limit of an input counts the spaces, tabs and
 // newlines the parser removes: an input is refused by its length as given,
 // before any of its work (the seventh finding of the third review, written
-// down as a limit in docs/changes/url.md).
+// down as a limit in docs/internals/changes/url.md).
 func TestSpacesCount(t *testing.T) {
 	url := "http://h/"
 	at := strings.Repeat(" ", MaxUnits-len(url)) + url
@@ -142,7 +142,7 @@ func TestFormEncodeLimit(t *testing.T) {
 // MaxDomainUnits UTF-16 units after percent-decoding, whatever the mapping of
 // IDNA makes of them, here a name and an IPv4 address that are short (the
 // sixth finding of the third review, written down as a limit in
-// docs/changes/url.md). A host that is ASCII is not run through IDNA and has
+// docs/internals/changes/url.md). A host that is ASCII is not run through IDNA and has
 // no limit but that of the URL.
 func TestDomainLimit(t *testing.T) {
 	shy, zero := "\u00ad", "\uff10" // a soft hyphen, which the mapping deletes, and a fullwidth 0

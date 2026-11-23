@@ -22,7 +22,7 @@
 # are left over whatever they hold.
 #
 # The lines of the generator that start with "warning: profile:", "profile:" or "profile "
-# (the functions whose profile is stale, see docs/releasing.md) are always
+# (the functions whose profile is stale, see docs/internals/releasing.md) are always
 # printed, with the architecture in front. They never fail the check.
 #
 # Environment: LLVM_BIN, GEN_JOBS as for gen-engine.sh.
@@ -46,7 +46,7 @@ for arch in amd64 arm64; do
 		echo "check-gen: the generator failed for $arch" >&2
 		exit 1
 	fi
-	# The profile lines of the generator (the stale list, see docs/releasing.md) are
+	# The profile lines of the generator (the stale list, see docs/internals/releasing.md) are
 	# shown whether or not the check passes. A failed generator shows its whole log
 	# above, so they are not repeated there.
 	grep -E '^(warning: )?profile[: ]' "$tmp/$arch.log" | sed "s/^/check-gen: $arch: /" >&2 || true

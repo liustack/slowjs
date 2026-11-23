@@ -2814,7 +2814,7 @@ static void test_string_append_oom(void)
    sweep's answer comes from the same engine: an append done wrong in
    place gives "cut".
    The strings are past 504 bytes, so that each new one is a large block
-   the heap gives (docs/allocator.md): a small one takes a free slot of an
+   the heap gives (docs/internals/allocator.md): a small one takes a free slot of an
    arena that is counted already, and would not fail. An add fails only
    when its block takes the count past the limit, so the runs free no large
    block before their adds: a freed one waits in the cache of large blocks,

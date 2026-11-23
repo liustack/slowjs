@@ -5,10 +5,10 @@
 
 // Command measure times builds of the C engine against each other. It makes the
 // code-position variants of a program, runs them in turn, reads the result by
-// the rule of "Code positions" in docs/performance.md and counts instructions
+// the rule of "Code positions" in docs/internals/performance.md and counts instructions
 // with callgrind. It uses only the standard library and is registered as a
 // tool, so `go tool measure bench ...` runs it. Generating the engine, the checks
-// and running on another machine are make targets (see docs/testing.md).
+// and running on another machine are make targets (see docs/internals/testing.md).
 //
 //	measure bench build   a binary per code position
 //	measure bench run     time the binaries in turn
@@ -35,7 +35,7 @@ const usage = `usage: measure bench build|run|judge|report|cg|cgdiff|addrs [flag
 
   build   build a binary per code position of the C engine
   run     time the binaries in turn, round after round
-  judge   read the records of a run by the protocol of docs/measuring.md
+  judge   read the records of a run by the protocol of docs/internals/measuring.md
   report  the older reading: medians and the rule of 2%
   addrs   where the interpreter and its hot handlers sit in binaries
   cg      count instructions per render with callgrind
@@ -104,7 +104,7 @@ func cmdBench(ctx context.Context, args []string) error {
 func benchBuild(ctx context.Context, args []string) error {
 	fs := newFlags("bench build")
 	var o bench.BuildOptions
-	pos := fs.String("positions", "protocol", "protocol (16, see docs/measuring.md), full (8), all (8), quick (4) or a list such as 0.0,32.16 or 64.16.2208 (shift.front or shift.front.shift2)")
+	pos := fs.String("positions", "protocol", "protocol (16, see docs/internals/measuring.md), full (8), all (8), quick (4) or a list such as 0.0,32.16 or 64.16.2208 (shift.front or shift.front.shift2)")
 	fs.BoolVar(&o.Layouts, "layouts", true, "write where the interpreter landed in each binary to OUT/layouts.tsv")
 	fs.StringVar(&o.Side, "side", "", "label of this side, such as base or new")
 	fs.StringVar(&o.Tree, "tree", ".", "the liustack/slowjs checkout, with the engine generated")
@@ -156,7 +156,7 @@ func benchRun(ctx context.Context, args []string) error {
 	fs.IntVar(&o.Tries, "tries", 3, "tries of a disturbed block")
 	fs.BoolVar(&o.FreshPages, "fresh-pages", runtime.GOOS == "linux", "before each process, drop the cached pages of its binary and check with mincore that none is left (linux only, on by default there)")
 	fs.DurationVar(&o.Timeout, "timeout", 30*time.Minute, "limit of one process")
-	fs.StringVar(&o.Place, "place", "", "pair the placement of the data with the layout, for micro benchmarks: give each process this flag of the program with the number K of its layout in the protocol (0 for the formal one), such as -place of jsrun, which holds K small objects in each VM before its run (docs/measuring.md)")
+	fs.StringVar(&o.Place, "place", "", "pair the placement of the data with the layout, for micro benchmarks: give each process this flag of the program with the number K of its layout in the protocol (0 for the formal one), such as -place of jsrun, which holds K small objects in each VM before its run (docs/internals/measuring.md)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}

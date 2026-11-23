@@ -17,7 +17,7 @@ liustack/slowjs is a JavaScript engine for Go programs, kept for [tifa](https://
 
 - pure Go, built with `CGO_ENABLED=0`, with no C compiler and no shared library for the user of the module
 - an engine, not Node: no `require`, `fs`, `process` or event loop of its own. A host gives a script what it needs through the Go API
-- QuickJS at a pinned commit with the changes written up in [docs/changes](docs/changes/README.md). Commits of upstream QuickJS are taken in one at a time ([docs/upgrading.md](docs/upgrading.md))
+- QuickJS at a pinned commit with the changes written up in [docs/internals/changes](docs/internals/changes/README.md). Commits of upstream QuickJS are taken in one at a time ([docs/internals/upgrading.md](docs/internals/upgrading.md))
 - the same output on every machine, and a change for speed leaves what the engine gives the same
 
 ## Setup
@@ -29,7 +29,7 @@ scripts/docs-list.sh --check
 go test -count=1 -p 1 .   # about a minute
 ```
 
-Go 1.26.6 or later. Making the engine again from the C of `engine/` (`make gen`) needs LLVM 22.1.8, and `make check-full` runs every check, test262 and the sanitizers among them. [docs/testing.md](docs/testing.md) has all of it.
+Go 1.26.6 or later. Making the engine again from the C of `engine/` (`make gen`) needs LLVM 22.1.8, and `make check-full` runs every check, test262 and the sanitizers among them. [docs/internals/testing.md](docs/internals/testing.md) has all of it.
 
 ## Tests
 
@@ -42,4 +42,4 @@ Go 1.26.6 or later. Making the engine again from the C of `engine/` (`make gen`)
 - `type(scope): imperative summary`, at most 72 characters, no period at the end.
 - One commit does one thing, and the tree builds and passes its tests after each one.
 
-Full rules are in [docs/commit.md](docs/commit.md). The map of the code is in [docs/architecture.md](docs/architecture.md), and the rules for working on it are in [AGENTS.md](AGENTS.md).
+Full rules are in [docs/internals/commit.md](docs/internals/commit.md). The map of the code is in [docs/internals/architecture.md](docs/internals/architecture.md), and the rules for working on it are in [AGENTS.md](AGENTS.md).

@@ -12,5 +12,5 @@ var goasmTripwireVar uintptr
 
 // goasmTripwire is never called and never linked. It exists so that the
 // assembler stops a build that would break the engine (see
-// goasm_tripwire.arm64.s and docs/upgrading.md).
+// goasm_tripwire.arm64.s and docs/internals/upgrading.md).
 func goasmTripwire()

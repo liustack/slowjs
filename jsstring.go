@@ -213,7 +213,7 @@ func (m *VM) argBlock(v jsValue, wtf8 bool) (s string, give func(), ok bool) {
 // (gohost.DefaultKillGrace). The allocation of the Go string a read returns
 // cannot be cut: Go zeroes it and may have the goroutine help the GC, up to
 // 14 ms (amd64) and 2.7 ms (M4) for 16 Mi characters, 52 and 55 ms for 64
-// Mi (docs/changes/go-api.md). A string of at most stringStep is converted
+// Mi (docs/internals/changes/go-api.md). A string of at most stringStep is converted
 // as before, with no read. Tests make it small.
 var stringStep = 1 << 18
 

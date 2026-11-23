@@ -24,7 +24,7 @@ runs its own checks and lowering in Go (`debug/elf`,
    target feature `slow-unaligned-mem-16` (`EngineValueFlags`), so that LLVM
    copies a JSValue (16 bytes) as two 8-byte moves and not one SSE move: the
    interpreter writes the two halves one at a time, and Zen 3 cannot forward a
-   16-byte load from them (see [c-engine.md](../../../docs/changes/c-engine.md#how-a-jsvalue-is-copied)).
+   16-byte load from them (see [c-engine.md](../../../docs/internals/changes/c-engine.md#how-a-jsvalue-is-copied)).
    The small libc is left out, since its `memcpy` moves 16 bytes at a time on
    purpose. CheckIR rejects variadics, byval, sret and long double. With a
    profile (`-profile engine/pgo/profile.txt`, which `make gen` passes) each
@@ -32,7 +32,7 @@ runs its own checks and lowering in Go (`debug/elf`,
    inlined, then with it and that inlining replayed. The post-link optimizer
    does the same. clang, opt and llc get `-pgso=false`, and clang and opt
    `-loop-vectorize-with-block-frequency=false`. What the profile may decide is in
-   [generator.md](../../../docs/changes/generator.md#a-profile-of-tifas-pages).
+   [generator.md](../../../docs/internals/changes/generator.md#a-profile-of-tifas-pages).
 2. The shadow-stack pass (`pass/shadow.cpp`) moves every address-taken local
    and dynamic alloca onto the VM's shadow stack: argument 0 of every engine
    function is the first free shadow byte, each function hands its callees
@@ -320,7 +320,7 @@ compile jobs (`-j`) and the order the compiles finish in, and no file holds the
 path of the work folder (`TestOutputReproducible`).
 
 The engine polls (`pass/poll.cpp`, see
-[c-engine.md](../../../docs/changes/c-engine.md#polls-and-interrupts)):
+[c-engine.md](../../../docs/internals/changes/c-engine.md#polls-and-interrupts)):
 every cycle of the code counts down a counter at `-poll-offset` bytes from
 the base of the shadow-stack region (`gen.PollCounterOffset`, 384, which
 `engine_decl_<arch>.go` records as `pollCounterOffset`), and calls `host_poll`
@@ -393,7 +393,7 @@ The post-link check of a windows binary holds every unified function to the
 check, its call to `goasm_room` and its branch to right after that call,
 and `goasm_room` to a stack check of at least `RoomBelow` - 8 bytes below
 its own stack pointer, so that its caller has `RoomBelow`. `TestPostLinkFormats` changes each of these in a
-windows binary and the check must refuse it. See docs/changes/c-engine.md
+windows binary and the check must refuse it. See docs/internals/changes/c-engine.md
 (When the engine fails) for the numbers.
 
 Where a body starts: after Go's prologue each function has a `PCALIGN $16`,
@@ -403,7 +403,7 @@ function `offset` bytes past a multiple of 64 instead (a `PCALIGN $64`, which
 also puts the function on 64 bytes, then `offset` bytes of 8-byte no-ops,
 which run once per call). The default of the amd64 engine is
 `lre_exec_backtrack:16`: the matcher at the fastest place measured
-(see [performance.md](../../../docs/performance.md#code-positions)). The
+(see [performance.md](../../../docs/internals/performance.md#code-positions)). The
 interpreter, the register loop `JS_RegvmRun`, has no fixed place: its place
 is not measured yet. arm64 and a `-src` build have none unless the flag is given. The post-link check holds each body
 to its place and the padding before it to no-ops.

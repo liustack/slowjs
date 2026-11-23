@@ -480,7 +480,7 @@ static void span_remove(Span *sp, int *n, uintptr_t lo)
    chunk is not a pool of TLSF, so nothing else limits it. */
 #define TOO_BIG(sz) ((sz) > JS_HEAP_MAX_REQUEST)
 
-/* ---- what a growth costs, from docs/allocator.md and not from heap.c ----
+/* ---- what a growth costs, from docs/internals/allocator.md and not from heap.c ----
 
    The rules the model holds the heap to when a footprint budget leaves little
    room. A chunk is a multiple of 64 KiB. The next chunk the policy takes is a

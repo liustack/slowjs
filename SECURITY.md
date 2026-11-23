@@ -14,4 +14,4 @@ Fixes land in a new patch release of the latest minor version, so upgrade to the
 
 ## What to keep in mind
 
-The engine runs the scripts you give it, with what you give them through the Go API, and nothing else: no file system, network or process of its own. A limit you set (`SetEvalTimeout`, `SetMemoryLimit`) ends the call whatever the script catches. A VM is not safe for several goroutines at once, and code that shares one that way is outside what the engine promises ([docs/architecture.md](docs/architecture.md)).
+The engine runs the scripts you give it, with what you give them through the Go API, and nothing else: no file system, network or process of its own. A limit you set (`SetEvalTimeout`, `SetMemoryLimit`) ends the call whatever the script catches. A VM is not safe for several goroutines at once, and code that shares one that way is outside what the engine promises ([docs/internals/architecture.md](docs/internals/architecture.md)).

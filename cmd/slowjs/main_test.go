@@ -465,7 +465,7 @@ print(__tifa_escape("<a&b>"), __tifa_murmur2__("color:red;"), __tifa_random_byte
 // runs emotionHash of engine/test/render-test/murmur2.js.
 const murmur2Red = "tokvmb"
 
-// TestDefaults: the limits are those docs/command.md gives.
+// TestDefaults: the limits are those docs/use/command.md gives.
 func TestDefaults(t *testing.T) {
 	r := runCmd(t, "-h")
 	if !strings.Contains(r.stdout, "(default 1m0s)") || !strings.Contains(r.stdout, "(default 1GiB)") {

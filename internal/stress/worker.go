@@ -87,7 +87,7 @@ func (c *counts) total() int64 {
 // that never stopped, a normal render gives its HTML and a render under a
 // stop gives its HTML or the error of that stop. On a VM that went on after a
 // stop, a render may also fail cleanly: async work of the render that
-// stopped may never settle (docs/api.md), and the page code that stopped
+// stopped may never settle (docs/use/api.md), and the page code that stopped
 // halfway may throw.
 func allowed(o op, reused bool, out outcome) bool {
 	switch out {
@@ -109,7 +109,7 @@ func allowed(o op, reused bool, out outcome) bool {
 	return false
 }
 
-// classify says how a render ended. A kill must give the error docs/api.md
+// classify says how a render ended. A kill must give the error docs/use/api.md
 // describes.
 func classify(p *page, html string, err error) (outcome, string) {
 	if err == nil {
@@ -440,7 +440,7 @@ func (w *worker) after(v *pvm, o op, p *page, it *interrupter) bool {
 	it.end()
 	// The jobs the collection queued, with no stop pending: an Interrupt
 	// that came after the render, while the VM collected, is cleared by
-	// this call, the outermost (docs/api.md).
+	// this call, the outermost (docs/use/api.md).
 	if err := v.finalize(w.s.cfg.renderTimeout); err != nil {
 		fout, detail := classify(p, "", err)
 		switch {
@@ -488,7 +488,7 @@ func (w *worker) between(v *pvm, o op, p *page) bool {
 	return true
 }
 
-// checkKilled holds a killed VM to docs/api.md: Interrupt, MemorySize,
+// checkKilled holds a killed VM to docs/use/api.md: Interrupt, MemorySize,
 // MemoryFree and GCThreshold still work, and a method that returns an error
 // returns one that matches ErrKilled.
 func (w *worker) checkKilled(v *pvm, o op, p *page) {
@@ -507,7 +507,7 @@ func (w *worker) checkKilled(v *pvm, o op, p *page) {
 }
 
 // checkAfterStop holds a VM a stop that was not a kill ended a call of to
-// docs/api.md: every method works.
+// docs/use/api.md: every method works.
 func (w *worker) checkAfterStop(v *pvm, o op, p *page) {
 	if err := v.SetEvalTimeout(w.s.cfg.renderTimeout); err != nil {
 		w.s.unexpected(w.id, v.id, opNames[o], p.name, fmt.Sprintf("SetEvalTimeout after a stop: %v", err))

@@ -112,7 +112,7 @@ type chromiumICU struct {
 func loadChromiumICU(path string, files map[string][]byte) *chromiumICU {
 	f, err := os.Open(path)
 	if err != nil {
-		fail(fmt.Errorf("%v (docs/upgrading.md says how to record Chromium's data)", err))
+		fail(fmt.Errorf("%v (docs/internals/upgrading.md says how to record Chromium's data)", err))
 	}
 
 	defer f.Close()

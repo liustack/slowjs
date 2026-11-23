@@ -16,7 +16,7 @@ import (
 // the length but for the IDNA of a host, which MaxDomainUnits bounds, so the
 // longest any call works is bounded by the length, and what it makes can be
 // given back to it. package url refuses a longer string before it reads it (see
-// docs/changes/url.md).
+// docs/internals/changes/url.md).
 const MaxUnits = 1 << 16
 
 // MaxDomainUnits is the longest a domain that is not ASCII may be, in UTF-16

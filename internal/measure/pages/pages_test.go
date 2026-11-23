@@ -18,7 +18,7 @@ import (
 )
 
 // The flags of the program. Run it with -test.run '^$' -test.bench Pages -test.benchtime 1x: each
-// page is one sub-benchmark that does its own renders, whatever b.N is. docs/testing.md has the
+// page is one sub-benchmark that does its own renders, whatever b.N is. docs/internals/testing.md has the
 // commands of a count and of a timing.
 var (
 	flagMode    = flag.String("mode", string(Tifa), "how the VM is set up: tifa (as tifa does) or standin (as the program that measured v0.31.1 and before did)")

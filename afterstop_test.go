@@ -5,7 +5,7 @@
 
 package slowjs // import "github.com/liustack/slowjs"
 
-// What docs/api.md says a host may call on a VM after a call ended with an
+// What docs/use/api.md says a host may call on a VM after a call ended with an
 // uncatchable error: after a stop (the eval timeout, Interrupt) or running
 // out of memory every method works and Close frees what the VM holds, while
 // async work that was in flight may never settle. After a kill only Close,
@@ -32,7 +32,7 @@ globalThis.p1 = g.next();
 globalThis.p2 = g.next();
 `
 
-// wholeAfterStop calls what docs/api.md says works after a stop or running
+// wholeAfterStop calls what docs/use/api.md says works after a stop or running
 // out of memory, then closes m.
 func wholeAfterStop(t *testing.T, m *VM, what string) {
 	t.Helper()

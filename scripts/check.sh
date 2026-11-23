@@ -6,12 +6,12 @@
 #
 # check.sh fast|full: the checks of a change to the C engine, one table at the
 # end (make check-fast, make check-full). The list is below. A change to it
-# goes together with docs/testing.md.
+# goes together with docs/internals/testing.md.
 #
 # Needs the engine generated (make gen) and LLVM 22.1.8 for the generator tests,
 # on Linux or on macOS: scripts/llvm-bin.sh finds it. With LLVM found, its folder
 # goes first in PATH, so the native steps use its clang. On macOS the clang of
-# Homebrew gets -isysroot of the SDK xcrun names, through CC (docs/testing.md).
+# Homebrew gets -isysroot of the SDK xcrun names, through CC (docs/internals/testing.md).
 #
 # Environment:
 #   CHECK_ONLY   space separated step names: run only these

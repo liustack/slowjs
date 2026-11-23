@@ -174,7 +174,7 @@
 
 ## 2026-10-28: moejs moved
 
-- moejs is now `github.com/MoeForge/moejs`, v0.1.0-alpha.11 (it was `github.com/Calcium-Ion/moejs`, v0.1.0-alpha.9). Numbers in earlier result files are those of alpha.9. The C QuickJS rows keep their Makefile's build, which has no `-DNDEBUG` (see `docs/benchmarks.md`).
+- moejs is now `github.com/MoeForge/moejs`, v0.1.0-alpha.11 (it was `github.com/Calcium-Ion/moejs`, v0.1.0-alpha.9). Numbers in earlier result files are those of alpha.9. The C QuickJS rows keep their Makefile's build, which has no `-DNDEBUG` (see `docs/use/benchmarks.md`).
 
 What changed in how the comparison measures, so that numbers from different
 runs can be read side by side. A run's file in `results/` says which
@@ -266,7 +266,7 @@ version of the comparison made it (the commit of this repository).
   JavaScript on the polyfill as every engine. The tifa row has bench, shop and
   MUI runs on its own Intl and no polyfill run, and the C QuickJS and Node
   rows have no counterpart: they cannot take Go functions or a Go `Intl`.
-  Docs say what each row measures (docs/benchmarks.md, "slowjs as tifa runs
+  Docs say what each row measures (docs/use/benchmarks.md, "slowjs as tifa runs
   it").
 - A bundle with `@emotion/hash` (MUI) gets the one-line change the tifa plugin
   makes to `murmur2`, in the adapter, since the pinned bundles were built

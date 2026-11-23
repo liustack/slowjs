@@ -3453,7 +3453,7 @@ static void test_young_leaves_no_zero_count(void)
                  "globalThis.old = {inner: {deep: [1, 2, 3]}}; %s void 0", observe[i]);
         eval_ok(v.ctx, src);
         /* the job of the setup ends, and with it the hold of the target of
-           a new WeakRef (docs/changes/weak-collections.md) */
+           a new WeakRef (docs/internals/changes/weak-collections.md) */
         JS_ClearKeptObjects(v.rt);
         JS_RunGC(v.rt);
         eval_ok(v.ctx, "(() => { const a = {old}, b = {a}; a.b = b; old = null })(); void 0");
@@ -4605,7 +4605,7 @@ static void test_gc_in_free(void)
     for (way = 0; way < IN_FREE_WAYS; way++) {
         for (action = 0; action < IN_FREE_ACTIONS; action++) {
             /* a finalizer must not make an object as the runtime is freed
-               (see docs/changes/c-engine.md) */
+               (see docs/internals/changes/c-engine.md) */
             if (way == IN_FREE_RUNTIME && action == IN_FREE_NEW_OBJECT)
                 continue;
             snprintf(way_arg, sizeof(way_arg), "%d", way);

@@ -14,7 +14,7 @@
 // between them to the assembler. A build option that makes the assembler encode
 // those with other lengths moves the targets of the fixed branches, and the
 // engine crashes on its first call, though the build succeeds.
-// See docs/upgrading.md ("Moving to a newer Go").
+// See docs/internals/upgrading.md ("Moving to a newer Go").
 // The name has a dot and no underscore before the architecture, because the
 // generator deletes every file that matches *_arm64.s when it makes the engine
 // again.

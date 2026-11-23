@@ -15,7 +15,7 @@
 // assembler encode those with other lengths moves the targets of the fixed
 // branches, and the engine crashes on its first call, though the build
 // succeeds. Both options below are refused here instead.
-// See docs/upgrading.md ("Moving to a newer Go").
+// See docs/internals/upgrading.md ("Moving to a newer Go").
 // The name has a dot and no underscore before the architecture, because the
 // generator deletes every file that matches *_amd64.s when it makes the engine
 // again.

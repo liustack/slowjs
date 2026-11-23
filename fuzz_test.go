@@ -20,7 +20,7 @@ package slowjs // import "github.com/liustack/slowjs"
 //     runtime is freed, and the host keeps no chunk and no stack.
 //
 // Run one with go test -run '^$' -fuzz '^FuzzEval$' -fuzztime 3m . (see
-// docs/testing.md). While fuzzing, the scripts of the repository are seeds
+// docs/internals/testing.md). While fuzzing, the scripts of the repository are seeds
 // too (fuzzRepoSeeds), and SLOWJS_FUZZ_SEEDS lists folders of more, such as
 // test262/test.
 

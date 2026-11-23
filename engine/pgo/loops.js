@@ -7,7 +7,7 @@
 // pages never run these paths, so the profile of the pages alone leaves them
 // at a count of 0, and the compiler then treats them as never taken: it moves
 // their spills into them and their blocks out of the way, and a script that
-// does run them pays for it (docs/changes/generator.md). Each part below runs
+// does run them pays for it (docs/internals/changes/generator.md). Each part below runs
 // one kind of path a few thousand times, enough for a count above 0 and far
 // too little to outweigh the pages.
 //

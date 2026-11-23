@@ -13,7 +13,7 @@ import (
 
 // A block is the memory a Go function that javascript called works in when
 // it holds a copy of a long input or a long output for the call, mapped
-// from the OS in place of a Go allocation (docs/changes/uncatchable.md).
+// from the OS in place of a Go allocation (docs/internals/changes/uncatchable.md).
 // Go clears an allocation in one call that reads nothing, and the OS hands
 // over the pages of memory Go gave back a page at a time while it does: 30
 // ms for 16 MiB on a slow virtual machine, during which the call cannot

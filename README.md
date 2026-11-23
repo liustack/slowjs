@@ -5,8 +5,8 @@
 <p align="center">
   <a href="./README.zh-CN.md">简体中文</a> ·
   <a href="#how-fast">How fast</a> ·
-  <a href="docs/api.md">API</a> ·
-  <a href="docs/benchmarks.md">Benchmarks</a> ·
+  <a href="docs/use/api.md">API</a> ·
+  <a href="docs/use/benchmarks.md">Benchmarks</a> ·
   <a href="CHANGELOG.md">Changelog</a>
 </p>
 
@@ -55,7 +55,7 @@ It is not the fastest on everything: on the V8 benchmark suite Node scores highe
 
 It scores 1.79 times C QuickJS, 1.25 times go-quickjs and 1.15 times moejs, and is ahead of each of them in every round. go-quickjs leads on the RegExp benchmark, moejs on NavierStokes.
 
-[docs/benchmarks.md](docs/benchmarks.md) has both tables in full, what each engine was given to run, and how to run it all again.
+[docs/use/benchmarks.md](docs/use/benchmarks.md) has both tables in full, what each engine was given to run, and how to run it all again.
 
 ## Install
 
@@ -63,7 +63,7 @@ It scores 1.79 times C QuickJS, 1.25 times go-quickjs and 1.15 times moejs, and 
 go get github.com/liustack/slowjs
 ```
 
-Go 1.26.6 or later, up to Go 1.27. No cgo and no C compiler: it builds with `CGO_ENABLED=0` and cross-compiles like any Go code. The Go assembly of the engine was checked against every patch release from Go 1.26.6 to 1.27.4, and a new patch release is checked every week. It leans on how Go starts a function and handles a fault, so a newer Go stops the build until liustack/slowjs has been checked with it and moves its limit in a patch release. `-tags slowjs_anygo` builds anyway (see [Moving to a newer Go](docs/upgrading.md#moving-to-a-newer-go)).
+Go 1.26.6 or later, up to Go 1.27. No cgo and no C compiler: it builds with `CGO_ENABLED=0` and cross-compiles like any Go code. The Go assembly of the engine was checked against every patch release from Go 1.26.6 to 1.27.4, and a new patch release is checked every week. It leans on how Go starts a function and handles a fault, so a newer Go stops the build until liustack/slowjs has been checked with it and moves its limit in a patch release. `-tags slowjs_anygo` builds anyway (see [Moving to a newer Go](docs/internals/upgrading.md#moving-to-a-newer-go)).
 
 ## Platforms
 
@@ -111,7 +111,7 @@ func main() {
 
 A VM is not safe for several goroutines at once: give each goroutine its own, or keep a pool. Intl and Temporal use embedded tz 2026e, so they need no host zoneinfo.
 
-Beyond `Eval` and `Call`, the API has Go functions that JavaScript calls as built-ins, control of the GC and the memory of a VM, a clock per VM, `Temporal`, and parts of React's server renderer written in C. [docs/api.md](docs/api.md) lists them, and [pkg.go.dev](https://pkg.go.dev/github.com/liustack/slowjs) documents each.
+Beyond `Eval` and `Call`, the API has Go functions that JavaScript calls as built-ins, control of the GC and the memory of a VM, a clock per VM, `Temporal`, and parts of React's server renderer written in C. [docs/use/api.md](docs/use/api.md) lists them, and [pkg.go.dev](https://pkg.go.dev/github.com/liustack/slowjs) documents each.
 
 ## What changes for you
 
@@ -122,9 +122,9 @@ Beyond `Eval` and `Call`, the API has Go functions that JavaScript calls as buil
 
 ## Why you can trust it
 
-- **Every change can be traced.** `engine/` started from Bellard's QuickJS at one pinned commit, and every change since is written down. LLVM compiles it to Go assembly that is checked in, so building needs no C compiler, and `make check-gen` fails when the checked-in files are not what the generator makes from `engine/` ([how to check](docs/testing.md#generate-and-check)).
+- **Every change can be traced.** `engine/` started from Bellard's QuickJS at one pinned commit, and every change since is written down. LLVM compiles it to Go assembly that is checked in, so building needs no C compiler, and `make check-gen` fails when the checked-in files are not what the generator makes from `engine/` ([how to check](docs/internals/testing.md#generate-and-check)).
 - **The generator refuses what it has not checked.** It stops on an instruction, a call or a stack frame it has no rule for, and checks the linked code of a test binary, so a change of the C or of Go itself that breaks the engine shows up as a failed build or test, not as a wrong answer.
-- **Every change is written down.** [docs/changes](docs/changes/README.md) gives each change with why it is safe, what it costs in memory, what it gains on which machine, and its tests.
+- **Every change is written down.** [docs/internals/changes](docs/internals/changes/README.md) gives each change with why it is safe, what it costs in memory, what it gains on which machine, and its tests.
 - **The tests are upstream's and more.** test262 gives 33 known failures, 25 fewer since the fixes taken from upstream QuickJS, and the same ones from run to run. On top come the recorded outputs of the engine, checks in C under AddressSanitizer and UndefinedBehaviorSanitizer, and the Go tests of the API.
 - **Someone depends on it.** It is kept for [tifa](https://github.com/liustack/tifa), a Go framework that renders React pages in it, and each release is measured on tifa's pages before tifa takes it.
 
@@ -132,20 +132,20 @@ Beyond `Eval` and `Call`, the API has Go functions that JavaScript calls as buil
 
 | Doc | Read it when |
 | :-- | :-- |
-| [API](docs/api.md) | You want the Go API beyond `Eval` and `Call` |
-| [Changes](docs/changes/README.md) | You want to know why each change to the engine is safe, what it costs and what it gains |
-| [Performance](docs/performance.md) | You want to know how fast each release renders, or what was tried |
-| [Benchmarks](docs/benchmarks.md) | You want to know how this engine compares with the other pure Go JavaScript engines |
+| [API](docs/use/api.md) | You want the Go API beyond `Eval` and `Call` |
+| [Changes](docs/internals/changes/README.md) | You want to know why each change to the engine is safe, what it costs and what it gains |
+| [Performance](docs/internals/performance.md) | You want to know how fast each release renders, or what was tried |
+| [Benchmarks](docs/use/benchmarks.md) | You want to know how this engine compares with the other pure Go JavaScript engines |
 | [Changelog](CHANGELOG.md) | You are upgrading and want to know what changed |
-| [Architecture](docs/architecture.md) | You are about to change the code |
-| [Testing](docs/testing.md) | You are about to commit, or want to check the engine |
-| [Upgrading](docs/upgrading.md) | You are taking a commit of upstream QuickJS, new locale data or a newer Go |
-| [Releasing](docs/releasing.md), [Commits](docs/commit.md) | You are making a release or a commit |
-| [Upstream](docs/upstream.md) | You are moving from modernc.org/quickjs, or want to know where the code comes from |
+| [Architecture](docs/internals/architecture.md) | You are about to change the code |
+| [Testing](docs/internals/testing.md) | You are about to commit, or want to check the engine |
+| [Upgrading](docs/internals/upgrading.md) | You are taking a commit of upstream QuickJS, new locale data or a newer Go |
+| [Releasing](docs/internals/releasing.md), [Commits](docs/internals/commit.md) | You are making a release or a commit |
+| [Upstream](docs/internals/upstream.md) | You are moving from modernc.org/quickjs, or want to know where the code comes from |
 
 ## Where it comes from
 
-The engine is [QuickJS](https://bellard.org/quickjs) by Fabrice Bellard and Charlie Gordon, the release of 2026-06-04. [docs/upstream.md](docs/upstream.md) has the exact version, how new QuickJS commits are taken in, and what to expect when you move from modernc.org/quickjs.
+The engine is [QuickJS](https://bellard.org/quickjs) by Fabrice Bellard and Charlie Gordon, the release of 2026-06-04. [docs/internals/upstream.md](docs/internals/upstream.md) has the exact version, how new QuickJS commits are taken in, and what to expect when you move from modernc.org/quickjs.
 
 Thanks to Fabrice Bellard and Charlie Gordon for QuickJS, and to Jan Mercl, Dan Kortschak and the other authors of [modernc.org/quickjs](https://gitlab.com/cznic/quickjs) and [modernc.org/libquickjs](https://gitlab.com/cznic/libquickjs). Their work showed that QuickJS can run inside a pure Go program, and it inspired liustack/slowjs.
 

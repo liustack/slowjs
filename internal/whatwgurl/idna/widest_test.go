@@ -8,7 +8,7 @@ package idna
 import "testing"
 
 // TestWidest checks what Widest finds in the tables of Unicode 17, which the
-// limits of docs/changes/url.md name: a code point that maps to 18, U+FDFA,
+// limits of docs/internals/changes/url.md name: a code point that maps to 18, U+FDFA,
 // and one that decomposes to 3, U+01D6. New tables that change them change
 // what the docs say.
 func TestWidest(t *testing.T) {

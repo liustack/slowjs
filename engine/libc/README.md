@@ -15,7 +15,7 @@ The small libc of the C tree in `engine/`. The engine C is built with `-ffreesta
 | `sqrt`, `fabs` | `math.c` | written here, one instruction each. musl's `sqrt` is in software |
 | Headers: `stddef.h stdint.h inttypes.h limits.h float.h stdarg.h stdatomic.h stdlib.h stdio.h string.h strings.h math.h assert.h endian.h fenv.h` | the root | written here, on the compiler's own macros and builtins. `abort()` asks the host (below), `alloca` is the builtin, a failed `assert` is an `abort()` |
 
-There is no malloc family here, and the engine files do not call one: the engine has its own allocator (`engine/heap.c` and `engine/tlsf.c`, see [docs/allocator.md](../../docs/allocator.md)) behind `js_malloc`.
+There is no malloc family here, and the engine files do not call one: the engine has its own allocator (`engine/heap.c` and `engine/tlsf.c`, see [docs/internals/allocator.md](../../docs/internals/allocator.md)) behind `js_malloc`.
 
 There is no `errno`, no `pthread`, no time and no standard stream. The wall clock is the `host_now` callback.
 
@@ -53,4 +53,4 @@ On arm64 `-mno-outline-atomics` comes with them, so that an atomic stays an inst
 - `engine/test/math.sh` checks the `Math.*` results, and the libc math functions themselves, against recorded hashes.
 - `engine/libc/vendor.sh --verify` checks the files taken from musl.
 
-See [docs/testing.md](../../docs/testing.md#the-c-tree-and-its-native-test-host).
+See [docs/internals/testing.md](../../docs/internals/testing.md#the-c-tree-and-its-native-test-host).

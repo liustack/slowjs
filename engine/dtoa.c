@@ -1002,7 +1002,7 @@ static uint64_t mul_pow_round_to_d(int *pe, mpb_t *a,
    multiply at a time, and a table of 617 powers of ten (9872 bytes of read-only
    data, dtoa-pow10.h, written by internal/dtoatable). It gives the digits and
    the exponent the big number loop of js_dtoa gives (the shortest that read
-   back, the closest of them, a tie to the even one): see docs/changes/strings.md. */
+   back, the closest of them, a tie to the even one): see docs/internals/changes/strings.md. */
 #include "dtoa-pow10.h"
 
 static inline uint64_t dtoa_round_to_odd(const uint64_t *g, uint64_t cp)

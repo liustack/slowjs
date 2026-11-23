@@ -8,7 +8,7 @@
 # counted by callgrind in the window of internal/measure/pages (-cg), and the
 # HTML of each page compared between the two. .github/workflows/count.yml runs
 # it, and it runs the same on any linux/amd64 machine with valgrind and Go.
-# See docs/measuring.md.
+# See docs/internals/measuring.md.
 #
 #   count-pages.sh build BASE_TREE NEW_TREE BIN
 #       the formal binaries of internal/measure/pages, BIN/base@0.0 from

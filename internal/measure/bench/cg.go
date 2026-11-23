@@ -253,7 +253,7 @@ func CG(ctx context.Context, o CGOptions, run measure.Runner, w io.Writer) error
 	return nil
 }
 
-// Window is the mode of docs/measuring.md: with -dumps (or -toggle) and -small 0, one run
+// Window is the mode of docs/internals/measuring.md: with -dumps (or -toggle) and -small 0, one run
 // per binary that counts only the window the program marks (or the toggle function), after the warm-up
 // the program does outside it.
 func (o CGOptions) Window() bool { return (o.Toggle != "" || o.Dumps) && o.Small == 0 }

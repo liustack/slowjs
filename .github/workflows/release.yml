@@ -4,7 +4,7 @@
 # on its own platform, and makes the release of the tag with the archives and
 # their checksums. The module itself is still the tag, as before. Run by hand
 # (workflow_dispatch) on a branch, it builds and tests the binaries and makes
-# no release. See docs/releasing.md.
+# no release. See docs/internals/releasing.md.
 name: release
 
 on:
@@ -143,7 +143,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: |
-          notes="Prebuilt binaries of slowjs, the command that runs a JavaScript file in this engine: see [docs/command.md](https://github.com/$GITHUB_REPOSITORY/blob/$TAG/docs/command.md). Check an archive against checksums.txt, then unpack it and run \`slowjs file.js\`.
+          notes="Prebuilt binaries of slowjs, the command that runs a JavaScript file in this engine: see [docs/use/command.md](https://github.com/$GITHUB_REPOSITORY/blob/$TAG/docs/use/command.md). Check an archive against checksums.txt, then unpack it and run \`slowjs file.js\`.
 
           The Go module is the tag: \`go get github.com/$GITHUB_REPOSITORY@$TAG\`. What changed is in [CHANGELOG.md](https://github.com/$GITHUB_REPOSITORY/blob/$TAG/CHANGELOG.md)."
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then

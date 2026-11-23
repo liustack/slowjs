@@ -18,7 +18,7 @@ import (
 // or a year at a time, and a duration of millions of days makes millions of
 // turns. It reads vmhook.Stop at least once every turnsPerStop turns, or
 // refuses the duration with a RangeError. The test counts the reads and
-// reads no clock (docs/testing.md, "Time in a test").
+// reads no clock (docs/internals/testing.md, "Time in a test").
 
 // turnsPerStop is the most turns, months or years, the arithmetic of a
 // calendar goes through between two reads of vmhook.Stop.
