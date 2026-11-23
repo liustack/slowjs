@@ -2,7 +2,7 @@
 # whole throw injection of the register loop (about 10 hours on one core) and
 # scripts/go-versions.sh, one job for each Go release. They run when a branch
 # gates/<name> is pushed, by hand, and every night on main from nightly.yml.
-# See "CI" in docs/testing.md.
+# See "CI" in docs/internals/testing.md.
 name: gates
 
 on:

@@ -4,7 +4,7 @@
 // root of this repository.
 
 // Package pages renders tifa's pages for the counts of callgrind and the timings of go tool
-// measure bench (see docs/measuring.md): one VM set up as tifa sets up each VM of its pool, the
+// measure bench (see docs/internals/measuring.md): one VM set up as tifa sets up each VM of its pool, the
 // bundle loaded once, each page rendered a few times to warm up, then the timed renders, with
 // tifa's collections between renders. BenchmarkPages, in pages_test.go, is the program: build it
 // with go test -c, or with go tool measure bench build -pkg . -test.

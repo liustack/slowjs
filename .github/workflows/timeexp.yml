@@ -1,6 +1,6 @@
 # An experiment, not a gate: can a hosted runner time a change? Twenty jobs do
 # the same thing: each times the same binaries by the protocol of
-# docs/measuring.md, as far as a runner allows, and keeps its raw records. The
+# docs/internals/measuring.md, as far as a runner allows, and keeps its raw records. The
 # sides: main at the 16 layouts, aa (the same binaries under a second name),
 # and s1 and s3 (main built with the tag pagesspin1 or pagesspin3 of
 # internal/measure/pages: every timed render also waits on the clock for 1% or

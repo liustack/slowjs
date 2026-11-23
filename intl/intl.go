@@ -54,7 +54,7 @@
 // up to 1024 of them, and an object whose formatter it dropped makes it
 // again, from the same arguments, on its next call, with the same results.
 // A date formatter is told apart by the pattern it writes with, beside its
-// options. docs/changes/time-and-intl.md has the timings.
+// options. docs/internals/changes/time-and-intl.md has the timings.
 //
 // # License of the data
 //

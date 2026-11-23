@@ -15,7 +15,7 @@ import (
 // renders of its page: a slowdown of a known size with the code of the engine
 // and its layout the same as the program built without the tag, to check
 // what a way of timing can tell (.github/workflows/timeexp.yml, and the known
-// slowdowns of docs/measuring.md). The program as it is waits for nothing:
+// slowdowns of docs/internals/measuring.md). The program as it is waits for nothing:
 // spinShare is 0 (spin_off.go).
 
 // spinTarget returns share of the median of warm, as the P50 takes it (the

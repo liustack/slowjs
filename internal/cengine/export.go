@@ -40,7 +40,7 @@ const (
 // SPAlign is the alignment of every shadow pointer the host passes the engine.
 // The generated code lays out a frame at multiples of 16 bytes from the
 // pointer it is given, and on amd64 it reads and writes a local of 16 bytes
-// with SSE instructions that fault off 16 (docs/changes/c-engine.md). So
+// with SSE instructions that fault off 16 (docs/internals/changes/c-engine.md). So
 // every shadow pointer the host makes comes from AlignSP.
 const SPAlign = 16
 

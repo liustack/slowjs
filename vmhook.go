@@ -61,7 +61,7 @@ func (m *VM) goRoom() int64 {
 // A Go function that javascript called takes the memory for a long input or
 // output of its call from goTake: from hostmem.BlockMin bytes, a block mapped
 // from the OS outside Go's heap, which a stop can end the call in while it is
-// filled (docs/changes/uncatchable.md). The VM keeps the last block given
+// filled (docs/internals/changes/uncatchable.md). The VM keeps the last block given
 // back, of at most keepMax bytes, for the next call that takes one, which
 // finds its pages in memory: the OS hands over the pages of a new block one
 // at a time as they are written, 25 to 40 ms for 16 MiB on the virtual M1

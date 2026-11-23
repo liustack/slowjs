@@ -18,7 +18,7 @@
 // (stderr for console.error), and scriptArgs, the arguments after the flags.
 // It has no file system, network, timers or modules. The run ends at the
 // timeout and at the memory limit whatever the script catches.
-// docs/command.md has the exit codes and why the defaults are what they are.
+// docs/use/command.md has the exit codes and why the defaults are what they are.
 package main
 
 import (
@@ -41,7 +41,7 @@ import (
 	"github.com/liustack/slowjs/tifa"
 )
 
-// The exit codes, in docs/command.md.
+// The exit codes, in docs/use/command.md.
 const (
 	exitOK        = 0
 	exitException = 1 // an uncaught exception, a syntax error included
@@ -50,7 +50,7 @@ const (
 	exitMemory    = 4 // the VM passed --memory-limit
 )
 
-// The defaults of the limits, in docs/command.md: a script run by hand, or
+// The defaults of the limits, in docs/use/command.md: a script run by hand, or
 // one that shows a problem, that hangs or keeps allocating ends while
 // someone still waits for it, and a longer or larger run asks for it.
 const (

@@ -5,7 +5,7 @@
 # every build tag of every module, the render stress, the fuzz targets, and
 # gates.yml (the
 # whole throw injection and every Go release). A schedule runs on the
-# default branch only. See "Nightly" in docs/testing.md.
+# default branch only. See "Nightly" in docs/internals/testing.md.
 name: nightly
 
 on:
@@ -228,7 +228,7 @@ jobs:
       - name: The race detector
         run: CHECK_ONLY="race" scripts/check.sh full
       # tifa's pages rendered on pools of VMs with stops at random points:
-      # the HTML, the errors and bounded memory (docs/testing.md, "The
+      # the HTML, the errors and bounded memory (docs/internals/testing.md, "The
       # render stress"). The series goes with the logs.
       - name: The render stress, 12 minutes
         run: |

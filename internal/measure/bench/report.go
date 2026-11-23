@@ -14,7 +14,7 @@ import (
 	"strings"
 )
 
-// The rule of "Code positions" in docs/performance.md.
+// The rule of "Code positions" in docs/internals/performance.md.
 const (
 	// MinChange is the smallest change that can count: 2%.
 	MinChange = 0.02

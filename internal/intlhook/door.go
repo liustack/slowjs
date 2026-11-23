@@ -14,7 +14,7 @@ import (
 
 // The door is the only way a string of javascript comes into the Go of
 // packages intl and temporal, and the only way one goes back
-// (docs/changes/uncatchable.md, the door of Intl and Temporal).
+// (docs/internals/changes/uncatchable.md, the door of Intl and Temporal).
 //
 // A Builtin opens a Door on its arguments and reads each string through it,
 // and through nothing else (TestDoorIsTheOnlyWayIn in intl and temporal
@@ -24,7 +24,7 @@ import (
 // before any of it is read. Then the room under the memory limit is checked
 // for what Go may take for all the arguments the call admitted so far, and
 // only then is the argument read. Behind the door the work on short
-// arguments is short: docs/changes/uncatchable.md gives the worst input
+// arguments is short: docs/internals/changes/uncatchable.md gives the worst input
 // measured at each cap.
 //
 // Long content, the text of a compare, a segmenter or a case mapping, the

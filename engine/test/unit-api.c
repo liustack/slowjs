@@ -499,7 +499,7 @@ static void test_host_release(void)
 /* Release order at the end of a call. The end of a call frees its locals
    from the first to the last, and skips the ones with no reference count
    (see "The end of a call skips the values with no reference count" in
-   docs/changes/c-engine.md). A function of JS_NewHostFunctionRelease calls
+   docs/internals/changes/c-engine.md). A function of JS_NewHostFunctionRelease calls
    host_release when it is freed, so the handles seen by the time the call has
    returned say which values the end of the call freed, how many times and in
    which order. */

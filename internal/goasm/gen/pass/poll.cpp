@@ -688,7 +688,7 @@ static constexpr unsigned PollRegs = 20;
 // are not alike: a register costs a few instructions each time the loop is
 // entered, memory two each turn. A loop the training ran three times on
 // average would count in memory, and an array of a thousand elements pays
-// for it a thousand times (docs/changes/generator.md). The weights of __builtin_expect,
+// for it a thousand times (docs/internals/changes/generator.md). The weights of __builtin_expect,
 // which the build without a profile has too, stay, and so do those of the
 // branches this pass adds (pollUnlikely): both carry the "expected" mark.
 struct StaticWeights {

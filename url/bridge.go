@@ -260,7 +260,7 @@ var canParseBuiltin = newBuiltin("canParse", 2, func(a slowjs.Args) (slowjs.Valu
 
 // errNotParts is the error of set for arguments that url.js does not hand it:
 // a part that is not a setter's, or a record that is not a URL's. A script
-// cannot reach set (see docs/changes/url.md), so only a fault of url.js could.
+// cannot reach set (see docs/internals/changes/url.md), so only a fault of url.js could.
 var errNotParts = &slowjs.Error{Name: "TypeError", Message: "URL: the record of the URL is not that of a URL"}
 
 // setBuiltin is set(part, value, flags, protocol, username, password,

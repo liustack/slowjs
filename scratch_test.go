@@ -13,7 +13,7 @@ import (
 )
 
 // TestScratchPutBack checks the buffer utf16String puts back into
-// utf16Scratch for the next string (see docs/changes/url.md): a string of at
+// utf16Scratch for the next string (see docs/internals/changes/url.md): a string of at
 // most utf16Short units takes none, a longer one takes one, and puts back the
 // one it took, as it was when it had room for 3 bytes a unit, or else grown to
 // exactly 3 bytes a unit. A string longer than stringStep takes none: it is

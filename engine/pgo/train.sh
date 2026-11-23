@@ -12,7 +12,7 @@
 # The engine and its libc are built as the generator compiles them, with
 # -fprofile-instr-generate (engine/test/build.sh pgo). The profile holds two
 # inputs, merged as they are, neither one scaled (scaling a profile is not
-# neutral, see docs/changes/generator.md):
+# neutral, see docs/internals/changes/generator.md):
 #
 #   - the pages of engine/pgo/pages, each rendered twice, with the counters set
 #     to zero when the second pass starts: warm renders only, no load of a

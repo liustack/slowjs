@@ -19,7 +19,7 @@
 // the timeout waking and a pause of the garbage collector, and with one P
 // (GOMAXPROCS=1, as under taskset on one core) the goroutine of the timeout
 // waits up to one preemption of the scheduler, 10 ms, for it
-// (docs/testing.md, Time in a test). A slower machine takes a longer T, and
+// (docs/internals/testing.md, Time in a test). A slower machine takes a longer T, and
 // gets a longer grace.
 //
 // A late stop is tried again, twice, for what the machine does and not the
@@ -30,7 +30,7 @@
 // and the GC pauses during it, and the stack of the call at its timeout and grace,
 // which shows the part with no check. A block of memory the size of the
 // input that Go allocated and cleared in the call, with no check, was found
-// this way (docs/changes/uncatchable.md).
+// this way (docs/internals/changes/uncatchable.md).
 //
 // Under -short a sweep stops a call at three places in it, a quarter, a half
 // and three quarters of its time, so that it takes a few runs of the call

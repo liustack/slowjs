@@ -3,7 +3,7 @@
 # Use of this source code is governed by the MIT license in LICENSE at the
 # root of this repository.
 
-# The targets are described in docs/testing.md (Makefile targets).
+# The targets are described in docs/internals/testing.md (Makefile targets).
 
 .PHONY: benchmark bench build_all_targets check-fast check-full check-gen \
 	clean compare-engines cover cpu editor gen gointl inject-goldens mem \

@@ -14,7 +14,7 @@ import (
 )
 
 // The engine is generated with a profile of tifa's pages (engine/pgo, see
-// docs/changes/generator.md, "A profile of tifa's pages"). The profile tells
+// docs/internals/changes/generator.md, "A profile of tifa's pages"). The profile tells
 // llc where to place blocks and spills, which is the whole gain. What is
 // inlined stays what the build without the profile inlines: make gen compiles
 // twice, first without the profile to write the inlining decisions down
@@ -37,7 +37,7 @@ var PGORequired = []string{"JS_RegvmRun"}
 var RemarksFlags = []string{"-gline-tables-only", "-Rpass=inline"}
 
 // PGOPinned are the options of LLVM that keep a decision from the profile
-// whose cost depends on the data (docs/changes/generator.md, what the profile
+// whose cost depends on the data (docs/internals/changes/generator.md, what the profile
 // decides).
 var PGOPinned = []string{
 	// No size optimization of code the training ran little or never: code
@@ -214,19 +214,19 @@ func BareName(name string) string {
 // or it is new), and more than max functions whose C changed. make gen goes on:
 // a function without a profile compiles as the build without one does and only
 // loses the gain. Before a release a stale JS_RegvmRun is trained again
-// (docs/releasing.md).
+// (docs/internals/releasing.md).
 func StaleWarnings(stale, fresh, required []string, max int) []string {
 	var w []string
 	for _, r := range required {
 		for _, s := range append(append([]string{}, stale...), fresh...) {
 			if BareName(s) == r {
-				w = append(w, fmt.Sprintf("warning: profile: %s has no profile, its C changed since the training or it is new: it loses the gain until engine/pgo/train.sh runs again (docs/upgrading.md)", r))
+				w = append(w, fmt.Sprintf("warning: profile: %s has no profile, its C changed since the training or it is new: it loses the gain until engine/pgo/train.sh runs again (docs/internals/upgrading.md)", r))
 				break
 			}
 		}
 	}
 	if len(stale) > max {
-		w = append(w, fmt.Sprintf("warning: profile: the C of %d functions changed since the training (more than %d): the profile is old, engine/pgo/train.sh makes a new one (docs/upgrading.md)", len(stale), max))
+		w = append(w, fmt.Sprintf("warning: profile: the C of %d functions changed since the training (more than %d): the profile is old, engine/pgo/train.sh makes a new one (docs/internals/upgrading.md)", len(stale), max))
 	}
 	return w
 }

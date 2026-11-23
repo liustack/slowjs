@@ -9,7 +9,7 @@
 # release, up to the minor version internal/goversion/newer.go stops. Or with
 # the releases given (such as go1.27.1). The go command fetches each release
 # (GOTOOLCHAIN), so it needs the network the first time. One line per release
-# at the end. See docs/testing.md.
+# at the end. See docs/internals/testing.md.
 #
 # The checks of each release:
 #   go          go build, go vet, and the Go tests of the engine (internal/cengine

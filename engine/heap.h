@@ -15,7 +15,7 @@
    its own, a dedicated chunk, which is not under TLSF: it goes back to the host
    as soon as its block is freed or moved (host_call, see host.h). quickjs.c sits on top (small blocks in arenas, the
    front cache). The state of a heap is the start of its JSRuntime, which lives
-   in the first chunk, so there is no global. See docs/allocator.md. */
+   in the first chunk, so there is no global. See docs/internals/allocator.md. */
 
 /* The one thing the heap asks of its host: size bytes (a multiple of 64 KiB)
    of read and write memory for the VM vm, aligned to the page size and not

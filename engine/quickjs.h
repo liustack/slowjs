@@ -395,7 +395,7 @@ JSMemRange JS_ReleaseNextChunk(JSRuntime *rt);
 JSMemRange JS_ReleaseNextRange(JSRuntime *rt);
 /* the most freed small blocks of a size class the allocator keeps for the
    next allocation, 0 to 256. 0 also turns off the cache of freed large
-   blocks (blocks of 505 to 4096 bytes, see docs/allocator.md), and any other
+   blocks (blocks of 505 to 4096 bytes, see docs/internals/allocator.md), and any other
    value leaves it on. For tests and measuring */
 void JS_SetFrontCache(JSRuntime *rt, int max);
 /* The call depth: how many calls may run at once, each call of a function
@@ -413,7 +413,7 @@ int JS_GetMaxCallDepth(JSRuntime *rt);
    call depth: at most this many levels at once. Past it a script gets a
    RangeError (a SyntaxError from a regexp). Unlike the call depth it is a
    constant of the build, not a setting: the proof of the bound on the stack the
-   engine may use (docs/changes/c-engine.md) multiplies it by the stack
+   engine may use (docs/internals/changes/c-engine.md) multiplies it by the stack
    of the deepest recursion, so it needs one fixed biggest value. The parser
    counts 3 levels for each nested parenthesis, call or array. Of 79525 files
    of real code (npm packages, compiled JSX, the output of code generators)
@@ -446,7 +446,7 @@ int JS_SetInternalDepth(JSRuntime *rt, int depth);
    changes nothing while code runs. */
 __js_must_check int JS_SetDirectCCalls(JSContext *ctx, int on);
 /* For tests. The compiler joins a few pairs of instructions into one opcode
-   that does both (fuse_code in quickjs.c, docs/changes/c-engine.md), and a
+   that does both (fuse_code in quickjs.c, docs/internals/changes/c-engine.md), and a
    typeof test of any type name into typeof_is, and drops the checks of the
    temporal dead zone that cannot fail (tdz_checks). With on 0 the runtime of
    ctx compiles every pair apart, typeof tests as before typeof_is, and every

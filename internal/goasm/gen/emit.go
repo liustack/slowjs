@@ -146,7 +146,7 @@ func LeafDecl(goName string, m Meta) string {
 }
 
 // RoomBelow is how many bytes past Go's stack guard every unified function
-// on windows has below its frame before its body runs (docs/changes/c-engine.md,
+// on windows has below its frame before its body runs (docs/internals/changes/c-engine.md,
 // When the engine fails). Windows writes the state of the CPU at a fault
 // below the stack pointer of the faulting thread, which is the goroutine's
 // stack, and Go keeps 4 KiB below each stack for it (golang/go#81238). With

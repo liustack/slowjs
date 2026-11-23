@@ -4,7 +4,7 @@
 // root of this repository.
 // x instanceof C, which the register loop answers without calling
 // Function.prototype[Symbol.hasInstance] when that is what C would call (see
-// docs/changes/c-engine.md). Every right side and left side that must not
+// docs/internals/changes/c-engine.md). Every right side and left side that must not
 // take that path, or must take it and give the same: classes and their
 // subclasses, built-ins, primitives and objects with a null prototype on the
 // left, arrow and bound functions, callable proxies and proxies in either

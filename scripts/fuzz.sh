@@ -9,7 +9,7 @@
 # leaves its input in testdata/fuzz/FuzzX of its package, which go test then
 # runs as a test, and the script goes on with the others. It exits 1 when a
 # target failed. The nightly run (.github/workflows/nightly.yml) runs it, and
-# docs/testing.md says how to run a target for longer.
+# docs/internals/testing.md says how to run a target for longer.
 #
 #   scripts/fuzz.sh [PATTERN]
 #

@@ -644,7 +644,7 @@ int main(int argc, char **argv)
 #ifndef RENDER_OLD_API
     /* the shapes a context keeps, as NewVM of the Go API keeps them
        (DefaultShapeCache of vm.go) unless shapes= says otherwise: 0 turns
-       the cache off, as the strict soak of docs/testing.md runs */
+       the cache off, as the strict soak of docs/internals/testing.md runs */
     if (JS_SetShapeCache(ctx, atoi(arg(argc, argv, "shapes", "2048"))) < 0) {
         fprintf(stderr, "render: no shape cache\n");
         return 1;

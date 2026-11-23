@@ -15,7 +15,7 @@
 // code itself. windows/arm64 runs the arm64 code of linux and darwin as it
 // is, which is safe only while the state fits: Check asks windows how large
 // the CONTEXT is with the extended state it turns on, and Decide refuses what
-// was not shown to fit (docs/changes/c-engine.md, Room for a fault on
+// was not shown to fit (docs/internals/changes/c-engine.md, Room for a fault on
 // windows).
 package faultstate
 
@@ -54,7 +54,7 @@ const (
 // has a bit other than SVE, and when the CONTEXT with Dispatch passes
 // StackSystem.
 func Decide(mask uint64, size uint32, err error) error {
-	const doc = "the engine does not run there (docs/changes/c-engine.md, Room for a fault on windows)"
+	const doc = "the engine does not run there (docs/internals/changes/c-engine.md, Room for a fault on windows)"
 	if err != nil {
 		return fmt.Errorf("slowjs: windows/arm64 did not say how large the state of the CPU at a fault is, and %s: %w", doc, err)
 	}

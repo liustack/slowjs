@@ -226,7 +226,7 @@ func TestHasOwnCallDepth(t *testing.T) {
 // (js_call_c_direct), without the frame of JS_CallInternal, and counts that
 // frame as taken, so each must end at the depth, and with the RangeError,
 // it gave when every call of a C function went through JS_CallInternal
-// (docs/changes/c-engine.md). The tail ones return the call of the C
+// (docs/internals/changes/c-engine.md). The tail ones return the call of the C
 // function, a tail call (test_tail_c_calls of engine/test/unit-white.c),
 // and abs calls one with no receiver on each level before going down. The
 // getter and the Proxy trap put a call of JavaScript from C between two

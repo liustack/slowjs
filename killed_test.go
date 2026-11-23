@@ -301,7 +301,7 @@ for (let i = 0; i < 64000; i++) kept.push({ i, s: 'v' + i }); undefined`, EvalGl
 
 // TestKillWhileFreeing: the polls of the engine while it frees what a
 // stopped script made count toward the kill like any other
-// (docs/changes/go-api.md#error-says-why-a-call-ended). The script asks to
+// (docs/internals/changes/go-api.md#error-says-why-a-call-ended). The script asks to
 // stop from a host function, so the request comes at the same place on any
 // machine, and the loop after it throws at its next poll. The unwinding then
 // frees an array the script made. With no grace and a poll every 100 ticks,

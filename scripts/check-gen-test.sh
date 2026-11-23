@@ -6,7 +6,7 @@
 #
 # Test that check-gen.sh shows the profile lines of the generator (the lines
 # that start with "warning: profile:" and "profile:", the stale list of
-# docs/releasing.md) also when the check passes, and shows them once when it
+# docs/internals/releasing.md) also when the check passes, and shows them once when it
 # fails. It runs check-gen.sh in a folder of its own with a stand-in for
 # gen-engine.sh, so it needs no LLVM.
 #

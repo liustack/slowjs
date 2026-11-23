@@ -20,7 +20,7 @@ import (
 // TestSpreadCopyStops: the spread of a long string gives each of its
 // characters a property, and the copy of a source with many keys, a string
 // or an object, defines one key after another in C. The copy reads the
-// interrupt flag every 4,096 keys (docs/changes/uncatchable.md), so the eval
+// interrupt flag every 4,096 keys (docs/internals/changes/uncatchable.md), so the eval
 // timeout stops it within copyStopPolls polls of the copy wherever in it the
 // stop comes. The polls under the freeing of what the copy made, an object of
 // as many properties as it copied and the list of the keys of its source,

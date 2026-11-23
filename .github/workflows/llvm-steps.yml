@@ -1,7 +1,7 @@
 # The steps that need LLVM 22.1.8 (the generated C engine is what the generator
 # makes, and the goasm and cycles checks) and make gointl, which needs no LLVM.
 # linux/amd64 only. See "CI" in
-# docs/testing.md.
+# docs/internals/testing.md.
 name: llvm-steps
 
 on:

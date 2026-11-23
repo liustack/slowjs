@@ -5,7 +5,7 @@
 
 // Command xform moves the code of generated Go assembly, to measure how much a
 // speed result depends on where the code sits (see "Code positions" in
-// docs/performance.md).
+// docs/internals/performance.md).
 //
 //	go run ./internal/goasm/cmd/xform DIR OP...
 //

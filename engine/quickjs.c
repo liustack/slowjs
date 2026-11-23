@@ -297,7 +297,7 @@ typedef enum OPCodeEnum OPCodeEnum;
 #define JS_MALLOC_FRONT_LISTS 32
 #define JS_MALLOC_FRONT_MAX 256
 
-/* The cache of freed large blocks (docs/allocator.md): a block of 505 to 4096
+/* The cache of freed large blocks (docs/internals/allocator.md): a block of 505 to 4096
    usable bytes that is freed waits in the list of its class, one class per 64
    bytes, so that the next request of that class does not go through TLSF. It
    is on while the front cache is (JS_SetFrontCache). While it is on, a request
@@ -445,7 +445,7 @@ struct JSRuntime {
     struct list_head string_list; /* list of JSString.link */
 #endif
     /* the calls running now, and how many may run at once (see
-       js_call_enter and docs/changes/c-engine.md) */
+       js_call_enter and docs/internals/changes/c-engine.md) */
     int call_depth;
     int max_call_depth;
     /* the bytes of stack a frame of JS_CallInternal takes before its check
@@ -2327,7 +2327,7 @@ static BOOL js_front_drain(JSMallocContext *s)
    a shape it finds by its parent id too, and abort when they differ, and
    JS_SHAPE_ID_HIT() is called for each shape found by its parent id. white.c
    sets both, and a build for a check can set the first (see
-   docs/changes/objects-and-shapes.md). The engine has neither. */
+   docs/internals/changes/objects-and-shapes.md). The engine has neither. */
 #ifndef JS_SHAPE_ID_CHECK
 #define JS_SHAPE_ID_CHECK 0
 #endif
@@ -2906,7 +2906,7 @@ static void js_trigger_gc(JSRuntime *rt, size_t size)
    entry of the built-in, after the conversions of its arguments, which may
    run JavaScript, every value it holds is counted, by the frame of the
    caller or by its own locals, and no object is half made
-   (docs/changes/memory-and-allocation.md). A heap under the limit is left
+   (docs/internals/changes/memory-and-allocation.md). A heap under the limit is left
    alone: the threshold does not count the block, so a page that fits runs
    the same collections as before. size is what the count of the heap gains,
    as the heap checks it against the limit (heap_over): a new block counts
@@ -3095,7 +3095,7 @@ void *js_realloc2(JSContext *ctx, void *ptr, size_t size, size_t *pslack)
    flag before each step (heap_copy), and a stop throws the interrupt and
    leaves the block as it was. Other callers of js_realloc are not all made
    for a failure that a run with memory to spare can give, so the heap reads
-   the flag for these alone (see docs/allocator.md). */
+   the flag for these alone (see docs/internals/allocator.md). */
 static void *js_realloc_stop(JSContext *ctx, void *ptr, size_t size,
                              size_t *pslack)
 {
@@ -3290,7 +3290,7 @@ static int init_class_range(JSRuntime *rt, JSClassShortDef const *tab,
 /* The bytes of stack left. The generator turns this into the room left on the
    VM's shadow stack, which holds the locals whose address is taken and every
    alloca, and the native test host gives the room left on its thread's stack.
-   The engine never reads a stack address itself (docs/changes/c-engine.md). */
+   The engine never reads a stack address itself (docs/internals/changes/c-engine.md). */
 extern long __shadow_remaining(void);
 
 static JSValue JS_ThrowStackOverflow(JSContext *ctx);
@@ -4746,7 +4746,7 @@ static inline BOOL is_strict_mode(JSContext *ctx)
 
 /* return the max count from the hash size: at most one atom for two
    buckets, so that a lookup walks a short chain (upstream allows two atoms
-   a bucket, see docs/changes/strings.md) */
+   a bucket, see docs/internals/changes/strings.md) */
 #define JS_ATOM_COUNT_RESIZE(n) ((n) / 2)
 
 static inline BOOL __JS_AtomIsConst(JSAtom v)
@@ -12538,7 +12538,7 @@ static BOOL js_uncatchable_pending(JSRuntime *rt)
    return as if it had not failed, and the script goes on: every read of
    the flag then stops it, the backward jump of a loop with no call in it
    too, and the exception ends the call. The host's stop is 1 (see
-   JS_GetInterruptFlag and docs/changes/uncatchable.md). */
+   JS_GetInterruptFlag and docs/internals/changes/uncatchable.md). */
 #define JS_INTERRUPT_UNCATCHABLE 2
 
 /* sets or clears JS_INTERRUPT_UNCATCHABLE to say whether an uncatchable
@@ -18146,7 +18146,7 @@ __exception int JS_ToBool(JSContext *ctx, JSValueConst val)
 /* The length of the spaces at the start of pc, or -1 with "interrupted"
    thrown: the flag is read every JS_ROPE_STEP bytes (js_poll_at), for a
    string of millions of spaces around a number
-   (docs/changes/uncatchable.md). */
+   (docs/internals/changes/uncatchable.md). */
 static __exception int skip_spaces(JSContext *ctx, const char *pc)
 {
     const uint8_t *p, *p_next, *p_start;
@@ -18326,7 +18326,7 @@ static js_limb_t mp_add_mul1(js_limb_t *tabr, const js_limb_t *taba, js_limb_t n
    of two) and the loops over each digit of a string read the interrupt flag
    whenever they have gone through JS_BIGINT_POLL_STEP limbs or digits since
    the last reading, so that one operation on BigInts of a million bits stops
-   within a few polls (docs/changes/uncatchable.md). A loop that goes once
+   within a few polls (docs/internals/changes/uncatchable.md). A loop that goes once
    through the limbs (an add, a shift, asUintN) goes through at most
    JS_BIGINT_MAX_SIZE of them, a step, and reads no flag. */
 #define JS_BIGINT_POLL_STEP JS_BIGINT_MAX_SIZE
@@ -24092,7 +24092,7 @@ typedef struct JSArrayIteratorData {
 
 /* The copy of the keys of a source reads the interrupt flag every
    JS_COPY_POLL_KEYS keys: a string of n characters gives n keys, and a
-   source may have millions (docs/changes/uncatchable.md). So does the copy
+   source may have millions (docs/internals/changes/uncatchable.md). So does the copy
    of the elements of a spread and of the arguments of a call. */
 #define JS_COPY_POLL_KEYS 4096
 
@@ -24123,7 +24123,7 @@ static no_inline JSValue js_spread_iterator(JSContext *ctx, JSValueConst obj,
     return JS_GetIterator2(ctx, obj, method);
 }
 
-/* A spread of a plain array with no Array Iterator (docs/changes/c-engine.md).
+/* A spread of a plain array with no Array Iterator (docs/internals/changes/c-engine.md).
    When js_dst_ok holds for the array sp[-1], GetIterator calls the built-in
    values, which makes an Array Iterator of it and nothing else, and reads the
    built-in next. Each step of that next reads the length and the element at
@@ -44750,7 +44750,7 @@ static __exception int add_global_variables(JSContext *ctx, JSFunctionDef *fd)
    no write of it can run in the frame (until a close_loc of it ends that
    capture), and no function that reaches it writes it. Such a closure
    variable can hold the value itself rather than a JSVarRef shared with
-   the frame (docs/changes/c-engine.md). It runs on the final code, after
+   the frame (docs/internals/changes/c-engine.md). It runs on the final code, after
    share_local_slots, when the functions of the constant pool are made
    (their closure variables are what it reads and marks), in the compiler
    and again in JS_ReadObject, which holds the marks the file gives to
@@ -54638,7 +54638,7 @@ static __exception int js_for_of_array_next(JSContext *ctx, JSValueConst iter,
 }
 
 /* Array destructuring with no iterator (DSTART and DNEXT of the register
-   loop, engine/regvm-ops-dst.h, and docs/changes/c-engine.md). When
+   loop, engine/regvm-ops-dst.h, and docs/internals/changes/c-engine.md). When
    js_dst_ok holds, GetIterator of the array would call the built-in values,
    which makes an Array Iterator of it and nothing else, and read the
    built-in next from %ArrayIteratorPrototype%. Then the iterator record
@@ -78390,7 +78390,7 @@ static uint32_t js_kept_slot(const void *p, uint32_t mask)
 /* AddToKeptObjects: keeps target, an object or a symbol, alive to the end of
    the job, once however often it is asked, in a set counted under the memory
    limit. JS_ClearKeptObjects lets them go when the job ends. Returns -1 with
-   the out of memory error thrown. See docs/changes/weak-collections.md. */
+   the out of memory error thrown. See docs/internals/changes/weak-collections.md. */
 static __exception int js_keep_target(JSContext *ctx, JSValueConst target)
 {
     JSRuntime *rt = ctx->rt;

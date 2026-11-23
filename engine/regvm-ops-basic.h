@@ -1631,7 +1631,7 @@ static inline BOOL rv_unwrap_in_loop(JSValueConst f)
        case of all eight. The handlers test the tags, which they have in
        registers, and the number code is here once: written into each
        handler it moved registers of the whole loop and made the pages run
-       more instructions (docs/changes/operators.md). */
+       more instructions (docs/internals/changes/operators.md). */
  rv_arith_num:
     arith = ip[-1] - RV_ADD;
     {

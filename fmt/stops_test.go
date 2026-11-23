@@ -19,7 +19,7 @@ import (
 // The output of fmt, which a script can make long, is made and written a
 // piece at a time, with a read of vmhook.Stop at least once per
 // bytesPerStop bytes, or refused. The tests count the reads and read no
-// clock (docs/testing.md, "Time in a test").
+// clock (docs/internals/testing.md, "Time in a test").
 
 // bytesPerStop is the most bytes of output fmt makes or writes between two
 // reads of vmhook.Stop.

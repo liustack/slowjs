@@ -18,7 +18,7 @@
 // where it may not.
 //
 // The generated engine makes the room for it at the start of every function
-// on windows/amd64 (docs/changes/c-engine.md, When the engine fails), so a
+// on windows/amd64 (docs/internals/changes/c-engine.md, When the engine fails), so a
 // fault in the engine is safe, and the engine does not run on a windows/arm64
 // machine faultstate refuses. A test whose fault is in Go code calls Skip
 // first, which skips it on such a machine, and calls Room right before the

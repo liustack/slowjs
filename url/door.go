@@ -13,7 +13,7 @@ import (
 )
 
 // The door is the only way a string of javascript comes into Go, and the only
-// way one goes back (see docs/changes/url.md, the limits).
+// way one goes back (see docs/internals/changes/url.md, the limits).
 //
 // A Builtin of this package reads its string arguments with admit, and with
 // nothing else (TestDoorIsTheOnlyWayIn reads the source and fails on any other
