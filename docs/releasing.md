@@ -25,7 +25,7 @@ On the branch, before it is merged:
 
 2. Each change is in the doc of its area under [changes](changes/README.md), with its row in the index, and a change for speed is in [performance.md](performance.md).
 3. [CHANGELOG.md](../CHANGELOG.md) says what the branch changes for users. The last commit of the branch puts it under the new version and the date (`docs(changelog): release <version>`), so that the merge commit you tag carries it.
-4. In [changes](changes/README.md), the changes of this release still say "Unreleased". Replace it with the new version in the tables of the index and in the `Release:` line of each area doc (`grep -rn Unreleased docs/changes`, leaving the sentence under "Adding a change"), in the same last commit as the changelog. Nothing else does it, and a row left at "Unreleased" after the tag is wrong from then on.
+4. The changes of this release still say "Unreleased" in [changes](changes/README.md) (the tables of the index and the `Release:` line of each area doc) and in [api.md](api.md), and say "未发布" in api.zh-CN.md. Replace each with the new version (`grep -rn "Unreleased\|未发布" docs`, leaving the sentence under "Adding a change"), set the `translatedFrom` of api.zh-CN.md to the hash the check prints, and do it in the same last commit as the changelog. Nothing else does it, and a row left at "Unreleased" after the tag is wrong from then on.
 5. The profile is not stale where it matters: see [The profile](#the-profile) below.
 6. When this release runs the comparison with the other engines, it is run now, on the branch, and its tables are in the branch: see [The comparison with the other engines](#the-comparison-with-the-other-engines) below.
 
