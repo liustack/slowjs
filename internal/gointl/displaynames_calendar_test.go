@@ -5,7 +5,7 @@ package intl_test
 import (
 	"testing"
 
-	intl "github.com/liustack/slowjs/internal/gointl"
+	intl "github.com/liustack/tifajs/internal/gointl"
 )
 
 // A calendar is named by CLDR's key, or by the two BCP 47 spellings V8 maps

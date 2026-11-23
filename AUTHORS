@@ -1,7 +1,8 @@
-# This file lists the authors of github.com/liustack/slowjs (named
-# github.com/liustack/quickjs from v0.30.0 to v0.30.7) for copyright purposes:
-# "The liustack/slowjs Authors" in LICENSE and in the headers of the files
-# written for liustack/slowjs.
+# This file lists the authors of github.com/liustack/tifajs (named
+# github.com/liustack/slowjs from v0.28.0 to v0.31.12, and github.com/liustack/quickjs
+# from v0.30.0 to v0.30.7) for copyright purposes:
+# "The liustack/tifajs Authors" in LICENSE and in the headers of the files
+# written for liustack/tifajs.
 #
 # Names should be added to this file as:
 #     Name or Organization <email address>

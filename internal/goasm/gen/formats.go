@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 //
 // The format strings engine C hands to its libc. engine/libc/stdio.c does

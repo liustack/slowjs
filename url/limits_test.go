@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/liustack/slowjs"
-	"github.com/liustack/slowjs/internal/whatwgurl"
+	"github.com/liustack/tifajs"
+	"github.com/liustack/tifajs/internal/whatwgurl"
 )
 
 // The work package url does for a script stays inside the limits of its VM:
@@ -29,7 +29,7 @@ import (
 // as an interrupt when interrupted is set.
 func wantUncatchable(t *testing.T, err error, interrupted bool) {
 	t.Helper()
-	var e *slowjs.Error
+	var e *tifajs.Error
 	if !errors.As(err, &e) || !e.Uncatchable || e.Interrupted != interrupted || e.OutOfMemory == interrupted {
 		t.Fatalf("got %v (%#v), want the uncatchable error of %s", err, e, map[bool]string{false: "running out of memory", true: "an interrupt"}[interrupted])
 	}
@@ -107,7 +107,7 @@ func TestTimeout(t *testing.T) {
 			for try := 0; try < 3 && late > grace*slow; try++ {
 				vm.SetEvalTimeout(timeout)
 				start := time.Now()
-				_, err := vm.Eval(quiet(js), slowjs.EvalGlobal)
+				_, err := vm.Eval(quiet(js), tifajs.EvalGlobal)
 				late = min(late, time.Since(start)-timeout)
 				vm.SetEvalTimeout(0)
 				wantUncatchable(t, err, true)
@@ -140,7 +140,7 @@ func TestInterrupt(t *testing.T) {
 					fired = time.Now()
 					vm.Interrupt()
 				})
-				_, err := vm.Eval(quiet(js), slowjs.EvalGlobal)
+				_, err := vm.Eval(quiet(js), tifajs.EvalGlobal)
 				end := time.Now()
 				timer.Stop()
 				wantUncatchable(t, err, true)
@@ -171,7 +171,7 @@ func TestOutOfMemory(t *testing.T) {
 			keep := "var keep = []; " + s.hungry
 			vm.RunGC()
 			vm.SetMemoryLimit(vm.MemorySize() + 8<<20)
-			_, err := vm.Eval(quiet(keep), slowjs.EvalGlobal)
+			_, err := vm.Eval(quiet(keep), tifajs.EvalGlobal)
 			vm.SetMemoryLimit(^uintptr(0))
 			wantUncatchable(t, err, false)
 			vm.RunGC()
@@ -212,7 +212,7 @@ func TestCanParseCountsFixedAllocations(t *testing.T) {
 	for _, js := range []string{`URL.canParse("")`, `URL.canParse("a:")`, `URL.canParse("http://h/")`, `new URL("http://h/")`} {
 		vm.RunGC()
 		vm.SetMemoryLimit(vm.MemorySize() + 1000)
-		_, err := vm.Eval(js, slowjs.EvalGlobal)
+		_, err := vm.Eval(js, tifajs.EvalGlobal)
 		vm.SetMemoryLimit(^uintptr(0))
 		if !isOOM(err) {
 			t.Errorf("%s with 1,000 bytes of room: err = %v, want the out of memory error", js, err)
@@ -299,7 +299,7 @@ func TestManyURLsCountedInVM(t *testing.T) {
 			const u = new URL("/products/" + i + "?page=" + i + "#h", "http://localhost");
 			u.searchParams.get("page");
 			keep.push(u);
-		}`, slowjs.EvalGlobal)
+		}`, tifajs.EvalGlobal)
 	runtime.GC()
 	runtime.ReadMemStats(&after)
 	wantUncatchable(t, err, false)
@@ -421,7 +421,7 @@ func TestStopAtNextCall(t *testing.T) {
 			// A script that calls Go less than five times, which the polls stop,
 			// ends at the timeout.
 			vm.SetEvalTimeout(time.Second)
-			_, err := vm.Eval(quiet(s.js), slowjs.EvalGlobal)
+			_, err := vm.Eval(quiet(s.js), tifajs.EvalGlobal)
 			vm.SetEvalTimeout(0)
 			callHook = nil
 			if calls < 5 {

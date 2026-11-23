@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package temporal // import "github.com/liustack/slowjs/temporal"
+package temporal // import "github.com/liustack/tifajs/temporal"
 
 import (
 	"errors"
@@ -12,10 +12,10 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/liustack/slowjs"
-	gointl "github.com/liustack/slowjs/internal/gointl"
-	"github.com/liustack/slowjs/internal/gointl/temporal"
-	"github.com/liustack/slowjs/internal/intlhook"
+	"github.com/liustack/tifajs"
+	gointl "github.com/liustack/tifajs/internal/gointl"
+	"github.com/liustack/tifajs/internal/gointl/temporal"
+	"github.com/liustack/tifajs/internal/intlhook"
 )
 
 // How the values of temporal.js cross to Go. A Temporal object keeps its
@@ -45,7 +45,7 @@ var zones sync.Map // string -> temporal.TimeZone
 
 // args reads the arguments of a Builtin in turn.
 type args struct {
-	a slowjs.Args
+	a tifajs.Args
 	// door reads its strings, each a string of Temporal: an ISO string, an
 	// id, an offset, a field or an option.
 	door intlhook.Door
@@ -240,12 +240,12 @@ func epochParts(i temporal.Instant) (ms, sub float64) {
 
 // results collects the values a Builtin returns as an array.
 type results struct {
-	vm   *slowjs.VM
-	vals []slowjs.Value
+	vm   *tifajs.VM
+	vals []tifajs.Value
 	err  error
 }
 
-func newResults(vm *slowjs.VM) *results { return &results{vm: vm, vals: make([]slowjs.Value, 0, 16)} }
+func newResults(vm *tifajs.VM) *results { return &results{vm: vm, vals: make([]tifajs.Value, 0, 16)} }
 
 func (r *results) num(f float64) *results {
 	if f == math.Trunc(f) && f >= math.MinInt32 && f <= math.MaxInt32 && (f != 0 || !math.Signbit(f)) {
@@ -259,7 +259,7 @@ func (r *results) num(f float64) *results {
 func (r *results) int(n int) *results { return r.num(float64(n)) }
 
 func (r *results) undefined() *results {
-	r.vals = append(r.vals, slowjs.UndefinedValue)
+	r.vals = append(r.vals, tifajs.UndefinedValue)
 	return r
 }
 
@@ -302,7 +302,7 @@ func (r *results) duration(d temporal.Duration) *results {
 }
 
 // array is the results as a javascript array.
-func (r *results) array() (slowjs.Value, error) {
+func (r *results) array() (tifajs.Value, error) {
 	defer func() {
 		for i := range r.vals {
 			// UndefinedValue belongs to no VM, and undefined needs no
@@ -313,7 +313,7 @@ func (r *results) array() (slowjs.Value, error) {
 		}
 	}()
 	if r.err != nil {
-		return slowjs.Value{}, r.err
+		return tifajs.Value{}, r.err
 	}
 	return intlhook.EmitValues(r.vm, r.vals)
 }
@@ -347,21 +347,21 @@ func jsErr(err error) error {
 	if err == nil {
 		return nil
 	}
-	var qe *slowjs.Error
+	var qe *tifajs.Error
 	if errors.As(err, &qe) {
 		return err
 	}
 	msg := err.Error()
 	switch {
 	case errors.Is(err, temporal.ErrRange):
-		return &slowjs.Error{Name: "RangeError", Message: "Temporal error: " + strings.TrimPrefix(msg, "RangeError: ")}
+		return &tifajs.Error{Name: "RangeError", Message: "Temporal error: " + strings.TrimPrefix(msg, "RangeError: ")}
 	case errors.Is(err, temporal.ErrType):
-		return &slowjs.Error{Name: "TypeError", Message: "Temporal error: " + strings.TrimPrefix(msg, "TypeError: ")}
+		return &tifajs.Error{Name: "TypeError", Message: "Temporal error: " + strings.TrimPrefix(msg, "TypeError: ")}
 	case errors.Is(err, temporal.ErrInternal):
-		return &slowjs.Error{Name: "Error", Message: "Temporal error: Internal error: " + strings.TrimPrefix(msg, "Error: ") + "."}
+		return &tifajs.Error{Name: "Error", Message: "Temporal error: Internal error: " + strings.TrimPrefix(msg, "Error: ") + "."}
 	}
 	return err
 }
 
-func rangeErr(msg string) error { return &slowjs.Error{Name: "RangeError", Message: msg} }
-func typeErr(msg string) error  { return &slowjs.Error{Name: "TypeError", Message: msg} }
+func rangeErr(msg string) error { return &tifajs.Error{Name: "RangeError", Message: msg} }
+func typeErr(msg string) error  { return &tifajs.Error{Name: "TypeError", Message: msg} }

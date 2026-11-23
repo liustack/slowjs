@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package intl // import "github.com/liustack/slowjs/intl"
+package intl // import "github.com/liustack/tifajs/intl"
 
 import (
 	"errors"
@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/liustack/slowjs"
-	"github.com/liustack/slowjs/internal/stopsweep"
-	"github.com/liustack/slowjs/internal/vmhook"
+	"github.com/liustack/tifajs"
+	"github.com/liustack/tifajs/internal/stopsweep"
+	"github.com/liustack/tifajs/internal/vmhook"
 )
 
 // uncuttable are calls whose input has one piece no Builtin can cut into
@@ -88,12 +88,12 @@ func TestUncuttableRunsTimeout(t *testing.T) {
 				t.Fatal(err)
 			}
 			start := time.Now()
-			_, err := vm.Eval(c.call, slowjs.EvalGlobal)
+			_, err := vm.Eval(c.call, tifajs.EvalGlobal)
 			took := time.Since(start)
-			if errors.Is(err, slowjs.ErrKilled) {
+			if errors.Is(err, tifajs.ErrKilled) {
 				t.Fatalf("killed after %v, want the interrupt", took)
 			}
-			var e *slowjs.Error
+			var e *tifajs.Error
 			if !errors.As(err, &e) || !e.Interrupted || !e.Uncatchable {
 				t.Fatalf("got %v after %v, want interrupted", err, took)
 			}
@@ -104,7 +104,7 @@ func TestUncuttableRunsTimeout(t *testing.T) {
 			if err := vm.SetEvalTimeout(0); err != nil {
 				t.Fatal(err)
 			}
-			if v, err := vm.Eval(`1+1`, slowjs.EvalGlobal); err != nil || v != 2 {
+			if v, err := vm.Eval(`1+1`, tifajs.EvalGlobal); err != nil || v != 2 {
 				t.Fatalf("the VM after the stop: 1+1 got %v, %v", v, err)
 			}
 		})
@@ -119,7 +119,7 @@ func TestSegmenterAfterStop(t *testing.T) {
 	if err := vm.SetEvalTimeout(20 * time.Millisecond); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := vm.Eval(`segs.containing(0)`, slowjs.EvalGlobal); err == nil {
+	if _, err := vm.Eval(`segs.containing(0)`, tifajs.EvalGlobal); err == nil {
 		t.Fatal("the first call was not stopped")
 	}
 	if err := vm.SetEvalTimeout(0); err != nil {
@@ -141,7 +141,7 @@ func TestCJKRunRoom(t *testing.T) {
 	eval(t, vm, `var s = '我们今天去北京大学看书'.repeat(800000), g = new Intl.Segmenter('zh', {granularity: 'word'}); g.segment('中文').containing(0); 0`)
 	runtime.GC()
 	vm.SetMemoryLimit(vm.MemorySize() + 64<<20)
-	_, err := vm.Eval(`g.segment(s).containing(0)`, slowjs.EvalGlobal)
+	_, err := vm.Eval(`g.segment(s).containing(0)`, tifajs.EvalGlobal)
 	if !isOutOfMemory(err) {
 		t.Fatalf("got %v, want the out of memory error", err)
 	}
@@ -238,8 +238,8 @@ func TestLongReadInterrupt(t *testing.T) {
 				return stop(v)
 			}
 			defer func() { vmhook.Stop = stop }()
-			_, err := vm.Eval(c.call, slowjs.EvalGlobal)
-			var e *slowjs.Error
+			_, err := vm.Eval(c.call, tifajs.EvalGlobal)
+			var e *tifajs.Error
 			if !errors.As(err, &e) || !e.Interrupted {
 				t.Fatalf("%s, interrupted at read %d of vmhook.Stop: got %v after %d reads, want the interrupt", c.call, at, err, stops)
 			}

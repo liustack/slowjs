@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	intl "github.com/liustack/slowjs/internal/gointl"
+	intl "github.com/liustack/tifajs/internal/gointl"
 )
 
 // In Japanese, in the Japanese calendar, a pattern with a 年 in it writes

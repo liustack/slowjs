@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -11,7 +11,7 @@ import (
 	"testing"
 	"unsafe"
 
-	"github.com/liustack/slowjs/internal/gohost"
+	"github.com/liustack/tifajs/internal/gohost"
 )
 
 // The functions of the host of the tests, by id, and the VMs they run in, by

@@ -1,11 +1,11 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
 //go:build testhooks
 
-package slowjs // import "github.com/liustack/slowjs"
+package tifajs // import "github.com/liustack/tifajs"
 
 import (
 	"errors"
@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/liustack/slowjs/internal/gohost"
+	"github.com/liustack/tifajs/internal/gohost"
 )
 
 // TestSpreadCopyStops: the spread of a long string gives each of its

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	intl "github.com/liustack/slowjs/internal/gointl"
+	intl "github.com/liustack/tifajs/internal/gointl"
 )
 
 // The legacy Date methods differ from Intl.DateTimeFormat only in what they

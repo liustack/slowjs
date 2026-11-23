@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -18,8 +18,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/liustack/slowjs"
-	"github.com/liustack/slowjs/internal/gohost"
+	"github.com/liustack/tifajs"
+	"github.com/liustack/tifajs/internal/gohost"
 )
 
 // op is what a step does to a render.
@@ -118,7 +118,7 @@ func classify(p *page, html string, err error) (outcome, string) {
 		}
 		return outHTML, ""
 	}
-	var e *slowjs.Error
+	var e *tifajs.Error
 	var re *resultError
 	switch {
 	case errors.Is(err, errBudget):
@@ -129,7 +129,7 @@ func classify(p *page, html string, err error) (outcome, string) {
 		return outResult, re.Error()
 	case !errors.As(err, &e):
 		return outOther, fmt.Sprintf("%T: %v", err, err)
-	case errors.Is(err, slowjs.ErrKilled):
+	case errors.Is(err, tifajs.ErrKilled):
 		if !e.Interrupted || !e.Uncatchable || e.OutOfMemory || err.Error() != "InternalError: interrupted" {
 			return outOther, fmt.Sprintf("a kill with the error %#v", e)
 		}
@@ -189,7 +189,7 @@ type interrupter struct {
 	once       sync.Once
 }
 
-func (s *stress) interruptAfter(vm *slowjs.VM, d time.Duration) *interrupter {
+func (s *stress) interruptAfter(vm *tifajs.VM, d time.Duration) *interrupter {
 	it := &interrupter{stop: make(chan struct{}), done: make(chan struct{})}
 	go func() {
 		defer close(it.done)
@@ -263,7 +263,7 @@ var errRefused = errors.New("stress: the OS refused the memory (-refuse)")
 // isRefusal says that err is what a map -refuse refused leads to: that error,
 // or running out of memory.
 func isRefusal(err error) bool {
-	var e *slowjs.Error
+	var e *tifajs.Error
 	return errors.Is(err, errRefused) || errors.As(err, &e) && e.OutOfMemory
 }
 
@@ -332,7 +332,7 @@ func (w *worker) step(i int) (keep bool) {
 		// timeout or the Interrupt stops the render: the loop never reads
 		// the flag, so a poll kills it 50 ms and 1000 polls later.
 		n := 1 + w.rng.IntN(p.push+p.push/4)
-		if _, err := v.Eval(fmt.Sprintf(killJS, n), slowjs.EvalGlobal); err != nil {
+		if _, err := v.Eval(fmt.Sprintf(killJS, n), tifajs.EvalGlobal); err != nil {
 			w.s.unexpected(w.id, v.id, "kill setup", p.name, err.Error())
 			w.closeVM(v, "after its kill setup failed")
 			return false
@@ -498,10 +498,10 @@ func (w *worker) checkKilled(v *pvm, o op, p *page) {
 	if size == 0 || free > size {
 		w.s.unexpected(w.id, v.id, opNames[o], p.name, fmt.Sprintf("after a kill MemorySize %d and MemoryFree %d", size, free))
 	}
-	if _, err := v.Eval(`1`, slowjs.EvalGlobal); !errors.Is(err, slowjs.ErrKilled) {
+	if _, err := v.Eval(`1`, tifajs.EvalGlobal); !errors.Is(err, tifajs.ErrKilled) {
 		w.s.unexpected(w.id, v.id, opNames[o], p.name, fmt.Sprintf("an Eval after a kill gave %v, want ErrKilled", err))
 	}
-	if _, err := v.ExecutePendingJobs(); !errors.Is(err, slowjs.ErrKilled) {
+	if _, err := v.ExecutePendingJobs(); !errors.Is(err, tifajs.ErrKilled) {
 		w.s.unexpected(w.id, v.id, opNames[o], p.name, fmt.Sprintf("ExecutePendingJobs after a kill gave %v, want ErrKilled", err))
 	}
 }
@@ -513,7 +513,7 @@ func (w *worker) checkAfterStop(v *pvm, o op, p *page) {
 		w.s.unexpected(w.id, v.id, opNames[o], p.name, fmt.Sprintf("SetEvalTimeout after a stop: %v", err))
 		return
 	}
-	r, err := v.Eval(`6 * 7`, slowjs.EvalGlobal)
+	r, err := v.Eval(`6 * 7`, tifajs.EvalGlobal)
 	if (err != nil || r != 42) && !(w.s.refusing && isRefusal(err)) {
 		w.s.unexpected(w.id, v.id, opNames[o], p.name, fmt.Sprintf("an Eval after a stop gave %v, %v", r, err))
 	}

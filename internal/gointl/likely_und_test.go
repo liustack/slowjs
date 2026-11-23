@@ -5,7 +5,7 @@ package intl_test
 import (
 	"testing"
 
-	intl "github.com/liustack/slowjs/internal/gointl"
+	intl "github.com/liustack/tifajs/internal/gointl"
 )
 
 // An unknown language with a script and a region is looked up by its

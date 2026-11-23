@@ -6,7 +6,7 @@ import (
 	"errors"
 	"testing"
 
-	intl "github.com/liustack/slowjs/internal/gointl"
+	intl "github.com/liustack/tifajs/internal/gointl"
 )
 
 // Rounding up to a calendar unit smaller than the largest, where the

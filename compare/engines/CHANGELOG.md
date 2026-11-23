@@ -1,5 +1,9 @@
 # Changes to the engine comparison
 
+## 2026-11-23: rows named liustack-tifajs
+
+- The module is `github.com/liustack/tifajs`, so its rows are `liustack-tifajs` and `liustack-tifajs-polyfill`, in the reports, `TIFA_ONLY` and `-engines`. The results files of earlier runs keep their old row names, and `cmd/compare` still reads them.
+
 ## 2026-11-16: the run of v0.31.3
 
 - The bundles and inputs of the pages are made again from tifa 63a2099e (v0.0.10), so the page table of this run is not to be set beside the one of v0.31.2: the shop bundle has i18next 27.1.2 and react-i18next 18.0.1 (were 26.5.3 and 17.1.0), and the inputs are new.

@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-// Package url gives a [slowjs.VM] the globals URL and URLSearchParams, as
+// Package url gives a [tifajs.VM] the globals URL and URLSearchParams, as
 // the URL standard (https://url.spec.whatwg.org/) defines them, with the
 // parsing done in Go.
 //
@@ -49,17 +49,17 @@
 //     RangeError, and change neither the list nor the URL, when the href would
 //     be longer than that.
 //
-// Within these, the eval timeout and [slowjs.VM.Interrupt] end the script at
+// Within these, the eval timeout and [tifajs.VM.Interrupt] end the script at
 // the next call of Go, which looks at the stop flag as it starts, or at the
 // engine's next poll, whichever comes first, and a call checks the room under the
-// memory limit ([slowjs.VM.SetMemoryLimit]) for what Go may take before it
+// memory limit ([tifajs.VM.SetMemoryLimit]) for what Go may take before it
 // reads a string, and ends with the out of memory error when it does not fit.
 // The lists of URLSearchParams are split, sorted and walked in javascript, under
 // the engine's own checks. A URL, and the list of a URLSearchParams, are
 // javascript objects: they take their memory from the VM and give it back with
 // the garbage collector. Go keeps nothing of them between calls, but for the
 // last base each VM parsed and the last record it made, at most 3.5 KiB a VM,
-// until the VM closes, and for the buffer in which package slowjs converts a
+// until the VM closes, and for the buffer in which package tifajs converts a
 // long string, which holds the bytes of the last one it read, at most 192 KiB
 // through this package, until the next one (see docs/internals/changes/url.md).
 //
@@ -69,7 +69,7 @@
 // Blob. The messages of the TypeErrors are worded differently, though the
 // errors are the same. A punycode label of more than 1024 characters is
 // refused, as golang.org/x/net/idna refuses it.
-package url // import "github.com/liustack/slowjs/url"
+package url // import "github.com/liustack/tifajs/url"
 
 import (
 	_ "embed"
@@ -77,8 +77,8 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/liustack/slowjs"
-	"github.com/liustack/slowjs/internal/whatwgurl"
+	"github.com/liustack/tifajs"
+	"github.com/liustack/tifajs/internal/whatwgurl"
 )
 
 //go:embed url.js
@@ -114,13 +114,13 @@ func bytecode() ([]byte, error) {
 // functions are compiled without their source and debug information: they
 // stand for built-ins, whose toString shows [native code].
 func compile(src string) ([]byte, error) {
-	vm, err := slowjs.NewVM()
+	vm, err := tifajs.NewVM()
 	if err != nil {
 		return nil, err
 	}
 	defer vm.Close()
-	vm.SetStrip(slowjs.StripDebug)
-	return vm.Compile(src, slowjs.EvalGlobal)
+	vm.SetStrip(tifajs.StripDebug)
+	return vm.Compile(src, tifajs.EvalGlobal)
 }
 
 type config struct{}
@@ -131,7 +131,7 @@ type Option func(*config)
 
 // marker is the well known symbol the script stamps on the global object of a
 // VM it has registered, keyed by this package's import path.
-const marker = "github.com/liustack/slowjs/url"
+const marker = "github.com/liustack/tifajs/url"
 
 // Register installs URL and URLSearchParams on vm's global object. See the
 // package documentation for what they do and what they do not.
@@ -146,7 +146,7 @@ const marker = "github.com/liustack/slowjs/url"
 // intl.Register. Nothing has to be released: vm.Close does it all. It costs
 // one load of the script's bytecode (compiled once per process) and the
 // making of the two classes.
-func Register(vm *slowjs.VM, opts ...Option) error {
+func Register(vm *tifajs.VM, opts ...Option) error {
 	switch already, err := registered(vm); {
 	case err != nil:
 		return err
@@ -185,13 +185,13 @@ func Register(vm *slowjs.VM, opts ...Option) error {
 		defer v.Free()
 		args = append(args, v)
 	}
-	_, err = f.Call(slowjs.UndefinedValue, args...)
+	_, err = f.Call(tifajs.UndefinedValue, args...)
 	return err
 }
 
 // registered reports whether this package has already installed URL on vm.
-func registered(vm *slowjs.VM) (bool, error) {
-	v, err := vm.Eval("globalThis[Symbol.for("+strconv.Quote(marker)+")] === true", slowjs.EvalGlobal)
+func registered(vm *tifajs.VM) (bool, error) {
+	v, err := vm.Eval("globalThis[Symbol.for("+strconv.Quote(marker)+")] === true", tifajs.EvalGlobal)
 	if err != nil {
 		return false, err
 	}

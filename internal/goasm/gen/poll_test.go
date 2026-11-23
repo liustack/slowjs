@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -287,12 +287,12 @@ done:
 // marks without their ticks, and a count in a register that is not stored
 // before a call that may tick, not loaded again after it, or not stored where
 // its loop is left. An offset that is not a word inside the region stops it
-// too. It needs LLVM 22.1.8 (SLOWJS_LLVM) and the built pass
-// (SLOWJS_SHADOW_PASS).
+// too. It needs LLVM 22.1.8 (TIFAJS_LLVM) and the built pass
+// (TIFAJS_SHADOW_PASS).
 func TestPassPolls(t *testing.T) {
-	llvm, pass := os.Getenv("SLOWJS_LLVM"), os.Getenv("SLOWJS_SHADOW_PASS")
+	llvm, pass := os.Getenv("TIFAJS_LLVM"), os.Getenv("TIFAJS_SHADOW_PASS")
 	if llvm == "" || pass == "" {
-		t.Skip("set SLOWJS_LLVM and SLOWJS_SHADOW_PASS")
+		t.Skip("set TIFAJS_LLVM and TIFAJS_SHADOW_PASS")
 	}
 	dir := t.TempDir()
 	ir, outIR := filepath.Join(dir, "f.ll"), filepath.Join(dir, "out.ll")
@@ -859,9 +859,9 @@ exit:
 // place, and an array of a thousand elements would then pay a load and a
 // store each turn.
 func TestPassPollsProfile(t *testing.T) {
-	llvm, pass := os.Getenv("SLOWJS_LLVM"), os.Getenv("SLOWJS_SHADOW_PASS")
+	llvm, pass := os.Getenv("TIFAJS_LLVM"), os.Getenv("TIFAJS_SHADOW_PASS")
 	if llvm == "" || pass == "" {
-		t.Skip("set SLOWJS_LLVM and SLOWJS_SHADOW_PASS")
+		t.Skip("set TIFAJS_LLVM and TIFAJS_SHADOW_PASS")
 	}
 	dir := t.TempDir()
 	for _, c := range []struct{ name, ir string }{

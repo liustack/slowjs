@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package slowjs // import "github.com/liustack/slowjs"
+package tifajs // import "github.com/liustack/tifajs"
 
 // Helpers of the tests that read the C engine, with the names and the
 // results of the ones of lib (enginehelp_lib_test.go).
@@ -11,7 +11,7 @@ package slowjs // import "github.com/liustack/slowjs"
 import (
 	"testing"
 
-	"github.com/liustack/slowjs/internal/cengine"
+	"github.com/liustack/tifajs/internal/cengine"
 )
 
 // engineMemoryUsage holds the fields of JSMemoryUsage the tests read,.

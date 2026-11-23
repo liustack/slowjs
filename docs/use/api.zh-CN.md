@@ -6,15 +6,15 @@ read_when:
   - 想找 Eval 和 Call 之外的 Go 函数
   - 给 Go API 加函数或类型（加在这里）
   - 想知道某个函数是哪个版本加入的
-  - 不写 Go 就运行引擎（slowjs 命令）
-translatedFrom: 65729a3355a5
+  - 不写 Go 就运行引擎（tifajs 命令）
+translatedFrom: dae5ddf1da9c
 ---
 
 # Eval 和 Call 之外的 Go API
 
 [English](api.md) · 简体中文
 
-API 的文档在 [pkg.go.dev](https://pkg.go.dev/github.com/liustack/slowjs)。每个程序都从 `NewVM`、`VM.Eval`、`VM.Call` 和 `Value` 开始。除此之外，还有下面这些函数。每一项都链接到一篇文档，说明它为什么安全、是怎么测量的。v0.30.0 到 v0.30.7 这几个版本是以 `github.com/liustack/quickjs` 发布的。
+API 的文档在 [pkg.go.dev](https://pkg.go.dev/github.com/liustack/tifajs)。每个程序都从 `NewVM`、`VM.Eval`、`VM.Call` 和 `Value` 开始。除此之外，还有下面这些函数。每一项都链接到一篇文档，说明它为什么安全、是怎么测量的。v0.31.12 及之前的版本是以 `github.com/liustack/slowjs` 发布的（v0.30.0 到 v0.30.7 是以 `github.com/liustack/quickjs` 发布的）。
 
 ## 从 JavaScript 调用 Go
 
@@ -66,4 +66,4 @@ API 的文档在 [pkg.go.dev](https://pkg.go.dev/github.com/liustack/slowjs)。�
 
 ## 不写 Go
 
-- **`slowjs` 命令**（v0.31.0）：在这个引擎里运行一个 JavaScript 文件，设置和 tifa 一样（Intl、Temporal、URL），带有 `print`、`console.log`，以及一定生效的超时和内存上限：用来展示一个脚本遇到的问题，或者不写 Go 就跑一个脚本。每个 GitHub release 都带有预先构建好的版本，覆盖 linux 和 darwin 的 amd64 与 arm64，以及 windows/amd64，从 v0.31.12 起也有 windows/arm64。[详情](command.zh-CN.md)
+- **`tifajs` 命令**（v0.31.0）：在这个引擎里运行一个 JavaScript 文件，设置和 tifa 一样（Intl、Temporal、URL），带有 `print`、`console.log`，以及一定生效的超时和内存上限：用来展示一个脚本遇到的问题，或者不写 Go 就跑一个脚本。每个 GitHub release 都带有预先构建好的版本，覆盖 linux 和 darwin 的 amd64 与 arm64，以及 windows/amd64，从 v0.31.12 起也有 windows/arm64。[详情](command.zh-CN.md)

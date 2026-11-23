@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 package gen
 
@@ -12,11 +12,11 @@ import (
 // TestRejectSamples runs each sample in testdata/reject through the real
 // pipeline (clang, IR checks, shadow-stack pass, llc, object checks,
 // lowering) and requires the named rule to stop it. It needs LLVM 22.1.8
-// (SLOWJS_LLVM, a bin dir) and the built pass (SLOWJS_SHADOW_PASS).
+// (TIFAJS_LLVM, a bin dir) and the built pass (TIFAJS_SHADOW_PASS).
 func TestRejectSamples(t *testing.T) {
-	llvm, pass := os.Getenv("SLOWJS_LLVM"), os.Getenv("SLOWJS_SHADOW_PASS")
+	llvm, pass := os.Getenv("TIFAJS_LLVM"), os.Getenv("TIFAJS_SHADOW_PASS")
 	if llvm == "" || pass == "" {
-		t.Skip("set SLOWJS_LLVM and SLOWJS_SHADOW_PASS")
+		t.Skip("set TIFAJS_LLVM and TIFAJS_SHADOW_PASS")
 	}
 	cases := map[string]string{
 		"writable_bss.c":           "writable data section",

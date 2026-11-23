@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package slowjs // import "github.com/liustack/slowjs"
+package tifajs // import "github.com/liustack/tifajs"
 
 // Evaluating source and bytecode, compiling, and the queue of jobs.
 
@@ -70,7 +70,7 @@ func (m *VM) EvalValue(javascript string, flags int) (r Value, err error) {
 func (m *VM) EvalFile(name, javascript string, flags int) (r Value, err error) {
 	clean := cleanEvalName(name)
 	if flags&evalTypeMask == EvalModule && name != "" && clean != name {
-		return r, fmt.Errorf("slowjs: EvalFile: the module name %.64q is not usable: %s", name, evalNameFault(name))
+		return r, fmt.Errorf("tifajs: EvalFile: the module name %.64q is not usable: %s", name, evalNameFault(name))
 	}
 	if err = m.enter(); err != nil {
 		return r, err
@@ -212,7 +212,7 @@ func (m *VM) evalBytecode(obj jsValue) (jsValue, error) {
 
 // errAwaitPending is the error of a module whose top-level await is still
 // pending once no job is left to run.
-var errAwaitPending = errors.New("slowjs: the module's top-level await is still pending and no job is left to run")
+var errAwaitPending = errors.New("tifajs: the module's top-level await is still pending and no job is left to run")
 
 // await runs the jobs of m until the promise v settles, and returns its value
 // or its error. It takes v. The first job that fails is the error, once v is
@@ -334,7 +334,7 @@ func (m *VM) ExecutePendingJobs() (n int, err error) {
 		}
 	}
 	if err == nil {
-		err = fmt.Errorf("slowjs: aborted draining after %d pending jobs", maxPendingJobs)
+		err = fmt.Errorf("tifajs: aborted draining after %d pending jobs", maxPendingJobs)
 	}
 	return n, err
 }

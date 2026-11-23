@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	intl "github.com/liustack/slowjs/internal/gointl"
+	intl "github.com/liustack/tifajs/internal/gointl"
 )
 
 func newDateTime(t *testing.T, tag string, opts intl.DateTimeFormatOptions) *intl.DateTimeFormat {

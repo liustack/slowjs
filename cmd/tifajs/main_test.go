@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -19,27 +19,27 @@ import (
 	"testing"
 	"time"
 
-	"github.com/liustack/slowjs"
+	"github.com/liustack/tifajs"
 )
 
 // bin is the command, built once by TestMain with a version stamped in, as
-// the release job stamps it. With SLOWJS_BIN set, the tests run that binary
-// instead, which must report the version SLOWJS_VERSION: the release job
+// the release job stamps it. With TIFAJS_BIN set, the tests run that binary
+// instead, which must report the version TIFAJS_VERSION: the release job
 // checks each binary it made this way, on its own platform.
 var bin string
 
 var testVersion = "v0.0.0-test"
 
 func TestMain(m *testing.M) {
-	if b := os.Getenv("SLOWJS_BIN"); b != "" {
-		bin, testVersion = b, os.Getenv("SLOWJS_VERSION")
+	if b := os.Getenv("TIFAJS_BIN"); b != "" {
+		bin, testVersion = b, os.Getenv("TIFAJS_VERSION")
 		os.Exit(m.Run())
 	}
-	dir, err := os.MkdirTemp("", "slowjs-test")
+	dir, err := os.MkdirTemp("", "tifajs-test")
 	if err != nil {
 		panic(err)
 	}
-	bin = filepath.Join(dir, "slowjs")
+	bin = filepath.Join(dir, "tifajs")
 	if runtime.GOOS == "windows" {
 		bin += ".exe"
 	}
@@ -47,7 +47,7 @@ func TestMain(m *testing.M) {
 	build.Stderr = os.Stderr
 	if err := build.Run(); err != nil {
 		os.RemoveAll(dir)
-		panic("building slowjs: " + err.Error())
+		panic("building tifajs: " + err.Error())
 	}
 	code := m.Run()
 	os.RemoveAll(dir)
@@ -73,7 +73,7 @@ func runCmd(t *testing.T, args ...string) result {
 	err := cmd.Run()
 	r := result{stdout: stdout.String(), stderr: stderr.String(), took: time.Since(start)}
 	if ctx.Err() != nil {
-		t.Fatalf("slowjs %q did not end in five minutes", args)
+		t.Fatalf("tifajs %q did not end in five minutes", args)
 	}
 	var exit *exec.ExitError
 	switch {
@@ -286,18 +286,18 @@ func TestNoMemoryLimit(t *testing.T) {
 }
 
 func TestVersion(t *testing.T) {
-	// The Go release may differ from the test's when SLOWJS_BIN is a
+	// The Go release may differ from the test's when TIFAJS_BIN is a
 	// release binary, the platform may not.
 	r := runCmd(t, "--version")
 	f := strings.Fields(r.stdout)
-	if r.code != 0 || len(f) != 4 || f[0] != "slowjs" || f[1] != testVersion || !strings.HasPrefix(f[2], "go1.") || f[3] != runtime.GOOS+"/"+runtime.GOARCH {
-		t.Fatalf("exit %d, stdout %q, want slowjs %s go1.N %s/%s", r.code, r.stdout, testVersion, runtime.GOOS, runtime.GOARCH)
+	if r.code != 0 || len(f) != 4 || f[0] != "tifajs" || f[1] != testVersion || !strings.HasPrefix(f[2], "go1.") || f[3] != runtime.GOOS+"/"+runtime.GOARCH {
+		t.Fatalf("exit %d, stdout %q, want tifajs %s go1.N %s/%s", r.code, r.stdout, testVersion, runtime.GOOS, runtime.GOARCH)
 	}
 }
 
 func TestHelp(t *testing.T) {
 	r := runCmd(t, "-h")
-	if r.code != 0 || !strings.Contains(r.stdout, "usage: slowjs") {
+	if r.code != 0 || !strings.Contains(r.stdout, "usage: tifajs") {
 		t.Fatalf("exit %d, stdout %q, stderr %q", r.code, r.stdout, r.stderr)
 	}
 }
@@ -314,7 +314,7 @@ func TestUsageErrors(t *testing.T) {
 	} {
 		r := runCmd(t, args...)
 		if r.code != exitUsage || r.stdout != "" || r.stderr == "" {
-			t.Errorf("slowjs %q: exit %d, stdout %q, stderr %q", args, r.code, r.stdout, r.stderr)
+			t.Errorf("tifajs %q: exit %d, stdout %q, stderr %q", args, r.code, r.stdout, r.stderr)
 		}
 	}
 }
@@ -406,7 +406,7 @@ func TestV8Suite(t *testing.T) {
 // v8Library runs the suite in a VM of the library, each file a global
 // script, as compare/engines runs it, and returns each benchmark's result.
 func v8Library(t *testing.T) map[string]string {
-	vm, err := slowjs.NewVM()
+	vm, err := tifajs.NewVM()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -416,7 +416,7 @@ func v8Library(t *testing.T) map[string]string {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := vm.Eval(string(src), slowjs.EvalGlobal); err != nil {
+		if _, err := vm.Eval(string(src), tifajs.EvalGlobal); err != nil {
 			t.Fatalf("%s: %v", f, err)
 		}
 	}
@@ -426,7 +426,7 @@ BenchmarkSuite.RunSuites({
   NotifyError: function (name, error) { res[name] = "error: " + error },
   NotifyScore: function (score) {}
 });
-JSON.stringify(res)`, slowjs.EvalGlobal)
+JSON.stringify(res)`, tifajs.EvalGlobal)
 	if err != nil {
 		t.Fatal(err)
 	}

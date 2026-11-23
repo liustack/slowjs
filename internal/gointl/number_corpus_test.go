@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	intl "github.com/liustack/slowjs/internal/gointl"
-	"github.com/liustack/slowjs/internal/gointl/internal/corpus"
+	intl "github.com/liustack/tifajs/internal/gointl"
+	"github.com/liustack/tifajs/internal/gointl/internal/corpus"
 )
 
 // The corpus is what ICU answered. This runs the NumberFormat part of it

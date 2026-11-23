@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -9,7 +9,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/liustack/slowjs"
+	"github.com/liustack/tifajs"
 )
 
 // manyVMs is how many VMs TestRegisterManyVMs makes: more than a third of
@@ -38,7 +38,7 @@ func TestRegisterManyVMs(t *testing.T) {
 		if i == manyVMs/10 {
 			before = heapAfterGC()
 		}
-		vm, err := slowjs.NewVM()
+		vm, err := tifajs.NewVM()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -74,7 +74,7 @@ func keptStates() int {
 // redefined. A failed Register leaves one state and one close function for
 // the VM, however often it is tried, and Close removes the state.
 func TestRegisterFailsAgain(t *testing.T) {
-	vm, err := slowjs.NewVM()
+	vm, err := tifajs.NewVM()
 	if err != nil {
 		t.Fatal(err)
 	}

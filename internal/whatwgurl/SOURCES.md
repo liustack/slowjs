@@ -11,7 +11,7 @@ The URL parser of package `url`. Nothing here keeps state between calls.
 | Path | From | License |
 | --- | --- | --- |
 | `parser.go`, `host.go`, `url.go`, `setters.go`, `codesets.go` | The state machine, the host parser and the serializer started from `url/` of github.com/nlnwa/whatwg-url v0.6.2 (commit `605b909`, 2025-03-28), and were rewritten: they read the input as UTF-8 in place, keep no options, no encoding override and no list of validation errors, follow the standard of 2026 and take and make no string longer than `MaxUnits` | Apache-2.0, [LICENSE-WHATWG-URL](LICENSE-WHATWG-URL), for what remains of it. The changes are offered under MIT as well |
-| `input.go`, `form.go`, `toascii.go`, `idna/encode.go`, the tests | liustack/slowjs | MIT |
+| `input.go`, `form.go`, `toascii.go`, `idna/encode.go`, the tests | liustack/tifajs | MIT |
 | `idna/` | `idna/` of golang.org/x/net v0.62.0: `idna.go` (one profile, no options, no ToUnicode, NFC from `internal/gointl`, the algorithm of UTS #46 revision 35 only), `punycode.go` (the decoder, without the encoder), `idna/encode_rfc_test.go` (the encoder, as the reference of the tests), `trie.go`, `trieval.go` and `tables17.0.0.go` (as `tables.go`, Unicode 17, without the `go1.27` build tag) | BSD-3-Clause, [LICENSE-GO](LICENSE-GO) |
 | `bidi/` | `unicode/bidi/` of golang.org/x/text v0.44.0: `prop.go`, `trieval.go` and `tables17.0.0.go` (without the build tag), and `secure/bidirule/bidirule.go` without `transform` (the check of the Bidi Rule on a string, as `rule.go`) | BSD-3-Clause, [LICENSE-GO](LICENSE-GO) |
 | `testdata/` | web-platform-tests, see [testdata/SOURCES.md](testdata/SOURCES.md) | BSD-3-Clause, [testdata/WPT-LICENSE.md](testdata/WPT-LICENSE.md) |

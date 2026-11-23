@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -12,8 +12,8 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/liustack/slowjs"
-	"github.com/liustack/slowjs/internal/intlhook"
+	"github.com/liustack/tifajs"
+	"github.com/liustack/tifajs/internal/intlhook"
 )
 
 // The original options, including omitted fields, distinguish Temporal
@@ -52,31 +52,31 @@ var temporalDateFormatCtor = &ctor{
 	},
 }
 
-func temporalDateFormatted(a slowjs.Args, wantParts, isRange bool) (slowjs.Value, error) {
+func temporalDateFormatted(a tifajs.Args, wantParts, isRange bool) (tifajs.Value, error) {
 	r, ok, err := formatterOf[*temporalDateFormat](a)
 	if !ok {
-		return slowjs.UndefinedValue, err
+		return tifajs.UndefinedValue, err
 	}
 	f := r.f
 	door := intlhook.Open(a)
 	cal, _ := door.Short(2, intlhook.KindTemporal)
 	if err := f.checkCalendar(cal); err != nil {
-		return slowjs.Value{}, jsErr(err)
+		return tifajs.Value{}, jsErr(err)
 	}
 	ms, _ := a.Number(1)
 	start, err := f.instant(ms)
 	if err != nil {
-		return slowjs.Value{}, jsErr(err)
+		return tifajs.Value{}, jsErr(err)
 	}
 	if isRange {
 		cal, _ = door.Short(4, intlhook.KindTemporal)
 		if err := f.checkCalendar(cal); err != nil {
-			return slowjs.Value{}, jsErr(err)
+			return tifajs.Value{}, jsErr(err)
 		}
 		endMS, _ := a.Number(3)
 		end, err := f.instant(endMS)
 		if err != nil {
-			return slowjs.Value{}, jsErr(err)
+			return tifajs.Value{}, jsErr(err)
 		}
 		parts := f.f.FormatRangeToParts(start, end)
 		list := make([]string, 0, 3*len(parts))

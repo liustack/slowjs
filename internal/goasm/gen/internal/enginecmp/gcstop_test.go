@@ -1,7 +1,7 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 
-// Package enginecmp measures the current engine of liustack/slowjs under the same GC
+// Package enginecmp measures the current engine of liustack/tifajs under the same GC
 // stop setup as the generated prototype, for comparison.
 package enginecmp
 
@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/liustack/slowjs"
+	"github.com/liustack/tifajs"
 )
 
 // TestGCStopsJSLoop runs GOMAXPROCS-1 VMs, each on its own goroutine, in an
@@ -24,10 +24,10 @@ func TestGCStopsJSLoop(t *testing.T) {
 	if n < 1 {
 		n = 1
 	}
-	var vms []*slowjs.VM
+	var vms []*tifajs.VM
 	var wg sync.WaitGroup
 	for i := 0; i < n; i++ {
-		m, err := slowjs.NewVM()
+		m, err := tifajs.NewVM()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -35,7 +35,7 @@ func TestGCStopsJSLoop(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			m.Eval(`let acc = 0; for (let i = 0; ; i++) { acc += i * i }`, slowjs.EvalGlobal)
+			m.Eval(`let acc = 0; for (let i = 0; ; i++) { acc += i * i }`, tifajs.EvalGlobal)
 		}()
 	}
 	read := func() *metrics.Float64Histogram {
@@ -63,7 +63,7 @@ func TestGCStopsJSLoop(t *testing.T) {
 		counts[i] = after.Counts[i] - before.Counts[i]
 		total += counts[i]
 	}
-	fmt.Printf("current liustack/slowjs JS loop: %d workers, %d stops\n", n, total)
+	fmt.Printf("current liustack/tifajs JS loop: %d workers, %d stops\n", n, total)
 	for i, c := range counts {
 		if c > 0 {
 			fmt.Printf("  [%.1f, %.1f) µs: %d\n", after.Buckets[i]*1e6, after.Buckets[i+1]*1e6, c)

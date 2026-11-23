@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/liustack/slowjs/internal/gointl"
+	"github.com/liustack/tifajs/internal/gointl"
 )
 
 var durationUnitNames = [intl.DurationUnits]string{"years", "months", "weeks", "days", "hours",

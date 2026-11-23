@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	intl "github.com/liustack/slowjs/internal/gointl"
+	intl "github.com/liustack/tifajs/internal/gointl"
 )
 
 // names maps each JavaScript spelling of an option type's values to the

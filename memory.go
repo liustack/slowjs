@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package slowjs // import "github.com/liustack/slowjs"
+package tifajs // import "github.com/liustack/tifajs"
 
 import "errors"
 
@@ -73,7 +73,7 @@ func (m *VM) ReleaseMemory(keep uintptr) (uintptr, error) {
 		return 0, err
 	}
 	if m.depth != 0 {
-		return 0, errors.New("slowjs: ReleaseMemory while the VM runs javascript")
+		return 0, errors.New("tifajs: ReleaseMemory while the VM runs javascript")
 	}
 
 	return m.releaseMemory(keep), nil

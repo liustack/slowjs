@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	intl "github.com/liustack/slowjs/internal/gointl"
-	"github.com/liustack/slowjs/internal/gointl/internal/corpus"
+	intl "github.com/liustack/tifajs/internal/gointl"
+	"github.com/liustack/tifajs/internal/gointl/internal/corpus"
 )
 
 // The legacy methods format without a named formatter: Number's

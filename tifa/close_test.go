@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/liustack/slowjs"
+	"github.com/liustack/tifajs"
 )
 
 // heapAfterGC returns the bytes of the Go heap in use after a collection.
@@ -38,7 +38,7 @@ func TestRegisterManyVMs(t *testing.T) {
 		if i == n/10 {
 			before = heapAfterGC()
 		}
-		vm, err := slowjs.NewVM()
+		vm, err := tifajs.NewVM()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -50,7 +50,7 @@ func TestRegisterManyVMs(t *testing.T) {
 			vm.Close()
 			t.Fatal(err)
 		}
-		got, err := vm.Eval(use, slowjs.EvalGlobal)
+		got, err := vm.Eval(use, tifajs.EvalGlobal)
 		vm.Close()
 		if i == 0 {
 			want = got

@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package intl // import "github.com/liustack/slowjs/intl"
+package intl // import "github.com/liustack/tifajs/intl"
 
 import (
 	"encoding/json"
@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/liustack/slowjs"
-	gointl "github.com/liustack/slowjs/internal/gointl"
+	"github.com/liustack/tifajs"
+	gointl "github.com/liustack/tifajs/internal/gointl"
 )
 
 // listItem is an item of a list, as a javascript literal and as the WTF-8
@@ -169,7 +169,7 @@ func TestListFormatTakesNoGo(t *testing.T) {
 			var before, after runtime.MemStats
 			runtime.GC()
 			runtime.ReadMemStats(&before)
-			if _, err := vm.Eval(c.call, slowjs.EvalGlobal); err != nil {
+			if _, err := vm.Eval(c.call, tifajs.EvalGlobal); err != nil {
 				t.Fatal(err)
 			}
 			runtime.ReadMemStats(&after)

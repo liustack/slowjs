@@ -1,45 +1,45 @@
 ---
-summary: 'slowjs 命令：它用来做什么（在引擎上跑脚本、展示问题、不装 Go 试用某个版本），怎么获取，脚本里有什么（Intl、Temporal、URL、fmt、print、console、scriptArgs），退出码，超时和内存上限的默认值及理由，它有意不做什么（定时器、模块、REPL、文件、网络、报告未处理的拒绝），它的大小和测试'
+summary: 'tifajs 命令：它用来做什么（在引擎上跑脚本、展示问题、不装 Go 试用某个版本），怎么获取，脚本里有什么（Intl、Temporal、URL、fmt、print、console、scriptArgs），退出码，超时和内存上限的默认值及理由，它有意不做什么（定时器、模块、REPL、文件、网络、报告未处理的拒绝），它的大小和测试'
 audience: user
 order: 3
 read_when:
   - 不写 Go 就在这个引擎里运行 JavaScript 文件，或者用一个脚本展示引擎的问题
-  - 修改 cmd/slowjs、它的选项或 release 压缩包
-  - 想知道 slowjs 为什么没有定时器、模块、REPL 或 Node API
-translatedFrom: e479d3497cdf
+  - 修改 cmd/tifajs、它的选项或 release 压缩包
+  - 想知道 tifajs 为什么没有定时器、模块、REPL 或 Node API
+translatedFrom: 2d19e3ef2e52
 ---
 
-# slowjs 命令
+# tifajs 命令
 
 [English](command.md) · 简体中文
 
-`slowjs` 在这个引擎里运行一个 JavaScript 文件，VM 的设置和 tifa 一样，不用写 Go 程序。它用来做三件事：
+`tifajs` 在这个引擎里运行一个 JavaScript 文件，VM 的设置和 tifa 一样，不用写 Go 程序。它用来做三件事：
 
-- **展示问题。** 一个脚本，加上 `slowjs` 为它打印的内容，就是完整的报告：引擎就是我们发布的那个，设置也和我们用的一样。
+- **展示问题。** 一个脚本，加上 `tifajs` 为它打印的内容，就是完整的报告：引擎就是我们发布的那个，设置也和我们用的一样。
 - **在引擎上跑脚本**，看它给出什么结果、要多久、要多少内存。
 - **不装 Go 试用某个版本。** 从 v0.31.0 起，每个版本的 GitHub release 都带有预先构建好的它，覆盖 linux 和 darwin 的 amd64 与 arm64，以及 windows/amd64，从 v0.31.12 起也有 windows/arm64。
 
-代码在 `cmd/slowjs`。
+代码在 `cmd/tifajs`。
 
 ## 获取
 
-从[最新的 release](https://github.com/liustack/slowjs/releases/latest) 下载你系统对应的压缩包，用 `checksums.txt` 核对，然后解压。压缩包按 Go 对目标平台的叫法命名：`slowjs-linux-amd64.tar.gz`、`slowjs-linux-arm64.tar.gz`、`slowjs-darwin-amd64.tar.gz`（macOS，Intel）、`slowjs-darwin-arm64.tar.gz`（macOS，Apple 芯片）、`slowjs-windows-amd64.zip` 和 `slowjs-windows-arm64.zip`。
+从[最新的 release](https://github.com/liustack/tifajs/releases/latest) 下载你系统对应的压缩包，用 `checksums.txt` 核对，然后解压。压缩包按 Go 对目标平台的叫法命名：`tifajs-linux-amd64.tar.gz`、`tifajs-linux-arm64.tar.gz`、`tifajs-darwin-amd64.tar.gz`（macOS，Intel）、`tifajs-darwin-arm64.tar.gz`（macOS，Apple 芯片）、`tifajs-windows-amd64.zip` 和 `tifajs-windows-arm64.zip`。
 
 ```sh
-curl -LO https://github.com/liustack/slowjs/releases/latest/download/slowjs-linux-amd64.tar.gz
-curl -LO https://github.com/liustack/slowjs/releases/latest/download/checksums.txt
+curl -LO https://github.com/liustack/tifajs/releases/latest/download/tifajs-linux-amd64.tar.gz
+curl -LO https://github.com/liustack/tifajs/releases/latest/download/checksums.txt
 sha256sum -c --ignore-missing checksums.txt
-tar -xzf slowjs-linux-amd64.tar.gz
-./slowjs-linux-amd64/slowjs --version
+tar -xzf tifajs-linux-amd64.tar.gz
+./tifajs-linux-amd64/tifajs --version
 ```
 
-每个压缩包里有一个文件夹，放着二进制和它必须附带的许可证文本（[NOTICE.md](../../NOTICE.md#what-a-program-that-ships-a-binary-must-include)）。二进制是静态的，用 `CGO_ENABLED=0` 构建：linux 版在 glibc 和 musl 系统上都能跑。浏览器下载的二进制没有开发者签名，macOS 会阻止它运行：`curl` 不会打上这种标记，`xattr -d com.apple.quarantine slowjs` 可以去掉它。
+每个压缩包里有一个文件夹，放着二进制和它必须附带的许可证文本（[NOTICE.md](../../NOTICE.md#what-a-program-that-ships-a-binary-must-include)）。二进制是静态的，用 `CGO_ENABLED=0` 构建：linux 版在 glibc 和 musl 系统上都能跑。浏览器下载的二进制没有开发者签名，macOS 会阻止它运行：`curl` 不会打上这种标记，`xattr -d com.apple.quarantine tifajs` 可以去掉它。
 
 ## 运行文件
 
 ```sh
-slowjs [flags] file.js [args...]
-slowjs [flags] -e code [args...]
+tifajs [flags] file.js [args...]
+tifajs [flags] -e code [args...]
 ```
 
 | 选项 | 作用 |
@@ -47,7 +47,7 @@ slowjs [flags] -e code [args...]
 | `-e code` | 运行 `code`，不运行文件 |
 | `--timeout d` | 运行 `d` 之后结束，比如 `30s` 或 `2m`。`0` 表示永不结束。默认 `1m` |
 | `--memory-limit n` | VM 占用超过 `n` 字节时结束运行。`K`、`M` 和 `G`（或 `KiB`、`MiB`、`GiB`）是 1024、1024² 和 1024³。`0` 表示不设上限。默认 `1GiB` |
-| `--version` | 在一行里打印 `slowjs <version> <go release> <os>/<arch>` 后退出，比如 `slowjs v0.31.0 go1.27.2 linux/amd64` |
+| `--version` | 在一行里打印 `tifajs <version> <go release> <os>/<arch>` 后退出，比如 `tifajs v0.31.0 go1.27.2 linux/amd64` |
 | `-h`、`--help` | 打印选项说明后退出 |
 
 文件在一个新的 VM 里作为全局脚本（不是模块）运行，然后运行它排进队列的 promise 任务，所以 `then` 回调和 async 函数都会执行完。
@@ -77,8 +77,8 @@ VM 的设置和 tifa 的渲染器设置它每个 VM 的一样，顺序也一样�
 ## 展示问题
 
 1. 把脚本尽量删短，只要问题还在。
-2. 运行它：`slowjs repro.js; echo $?`。
-3. 报告脚本、命令、它打印的全部内容、退出码，以及 `slowjs --version` 打印的那一行（bug 报告模板会要这些）。
+2. 运行它：`tifajs repro.js; echo $?`。
+3. 报告脚本、命令、它打印的全部内容、退出码，以及 `tifajs --version` 打印的那一行（bug 报告模板会要这些）。
 
 用默认的上限，卡住不动的复现脚本一分钟后以退出码 3 结束，无休止分配内存的复现脚本在 1 GiB 时以退出码 4 结束，所以从来不用手动杀掉一次运行。
 
@@ -114,7 +114,7 @@ Go 自身崩溃也以 2 结束，并打印 `panic:` 或 `fatal error:` 和各个
 
 二进制的大小，按 release 的方式构建（`-trimpath -ldflags "-s -w"`，Go 1.27.2），单位 MiB：
 
-| 目标平台 | slowjs |
+| 目标平台 | tifajs |
 | --- | --: |
 | linux/amd64 | 19.6 |
 | linux/arm64 | 18.5 |
@@ -127,6 +127,6 @@ Go 自身崩溃也以 2 结束，并打印 `panic:` 或 `fatal error:` 和各个
 
 ## 测试
 
-`go test ./cmd/slowjs` 构建一个写入了版本号的命令，并在一些小脚本上运行它：`print` 和 `console` 写出什么、按什么顺序，一个代理对跨在两段之间的长字符串，`scriptArgs`，带调用栈的未捕获异常，语法错误，promise 任务，`Intl`、`Temporal`、`URL` 和 `fmt`，调用深度，超时结束一个会 catch 的死循环（以及一次任务超过超时的运行），内存上限结束一个不停分配内存的循环，默认值，`--version`、`-h` 和写错的命令行。`TestV8Suite`（`-short` 会跳过它）通过命令、不设超时地跑一个用到引擎很多部分的长脚本，并拿它打印的内容和 Go API 的 VM 对比。
+`go test ./cmd/tifajs` 构建一个写入了版本号的命令，并在一些小脚本上运行它：`print` 和 `console` 写出什么、按什么顺序，一个代理对跨在两段之间的长字符串，`scriptArgs`，带调用栈的未捕获异常，语法错误，promise 任务，`Intl`、`Temporal`、`URL` 和 `fmt`，调用深度，超时结束一个会 catch 的死循环（以及一次任务超过超时的运行），内存上限结束一个不停分配内存的循环，默认值，`--version`、`-h` 和写错的命令行。`TestV8Suite`（`-short` 会跳过它）通过命令、不设超时地跑一个用到引擎很多部分的长脚本，并拿它打印的内容和 Go API 的 VM 对比。
 
-设了 `SLOWJS_BIN` 和 `SLOWJS_VERSION` 时，测试运行那个二进制，而不是自己构建一个，并期望它是那个版本。发版任务就是这样，在它构建的每个二进制自己的系统上跑这些测试（[releasing.md](../internals/releasing.md#the-release-job)）。
+设了 `TIFAJS_BIN` 和 `TIFAJS_VERSION` 时，测试运行那个二进制，而不是自己构建一个，并期望它是那个版本。发版任务就是这样，在它构建的每个二进制自己的系统上跑这些测试（[releasing.md](../internals/releasing.md#the-release-job)）。

@@ -1,11 +1,11 @@
 /*
- * Copyright (c) 2026 The liustack/slowjs Authors.
+ * Copyright (c) 2026 The liustack/tifajs Authors.
  * SPDX-License-Identifier: MIT
  * Use of this source code is governed by the MIT license in LICENSE at the
  * root of this repository.
  */
-#ifndef SLOWJS_LIBC_STDDEF_H
-#define SLOWJS_LIBC_STDDEF_H
+#ifndef TIFAJS_LIBC_STDDEF_H
+#define TIFAJS_LIBC_STDDEF_H
 
 typedef __SIZE_TYPE__ size_t;
 typedef __PTRDIFF_TYPE__ ptrdiff_t;

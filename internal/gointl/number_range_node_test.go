@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	intl "github.com/liustack/slowjs/internal/gointl"
+	intl "github.com/liustack/tifajs/internal/gointl"
 )
 
 // TestNumberRangeMatchesNode holds FormatRange and FormatRangeToParts to what

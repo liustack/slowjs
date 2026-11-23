@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -36,7 +36,7 @@ var (
 	flagTimeout = flag.Duration("evaltimeout", defaultTimeout, "the eval timeout of the tifa mode, tifa's ssr.timeout. Any value above 0 does the same work: raise it under callgrind")
 	flagHash    = flag.Bool("hash", false, "print the SHA-256 of the HTML of the first render of each page (html NAME HASH)")
 	flagWindow  = flag.Bool("cg", false, "mark the window of callgrind (bench cg -dumps -small 0, amd64 only): render every page -warm times, zero the counts, render every page -timed times, then dump the counts")
-	flagRepo    = flag.String("repo", "", "the liustack/slowjs checkout that holds the pages (default: the one the working directory is in)")
+	flagRepo    = flag.String("repo", "", "the liustack/tifajs checkout that holds the pages (default: the one the working directory is in)")
 	flagCollect = flag.Bool("collect", false, "also report p50-collect-ms, the median of each timed render together with the collection the pool runs after it (After), which p50-ms leaves out")
 )
 

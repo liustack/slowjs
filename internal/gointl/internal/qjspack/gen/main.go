@@ -1,10 +1,10 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
 // Command gen writes internal/gointl/qjsdata, the packs of go-intl's data that
-// liustack/slowjs embeds in place of go-intl's data.pack, from go-intl's data
+// liustack/tifajs embeds in place of go-intl's data.pack, from go-intl's data
 // directory. Run it from the root of the module, with the build tag that lets
 // it see which pool parts a locale reads (data.sh pack does this):
 //
@@ -79,16 +79,16 @@ import (
 	"sort"
 	"strings"
 
-	intl "github.com/liustack/slowjs/internal/gointl"
-	"github.com/liustack/slowjs/internal/gointl/internal/blob"
-	"github.com/liustack/slowjs/internal/gointl/internal/datedata"
-	"github.com/liustack/slowjs/internal/gointl/internal/layout"
-	"github.com/liustack/slowjs/internal/gointl/internal/namedata"
-	"github.com/liustack/slowjs/internal/gointl/internal/numdata"
-	"github.com/liustack/slowjs/internal/gointl/internal/qjspack"
-	"github.com/liustack/slowjs/internal/gointl/internal/reltimedata"
-	"github.com/liustack/slowjs/internal/gointl/internal/unitdata"
-	"github.com/liustack/slowjs/internal/gointl/internal/zonedata"
+	intl "github.com/liustack/tifajs/internal/gointl"
+	"github.com/liustack/tifajs/internal/gointl/internal/blob"
+	"github.com/liustack/tifajs/internal/gointl/internal/datedata"
+	"github.com/liustack/tifajs/internal/gointl/internal/layout"
+	"github.com/liustack/tifajs/internal/gointl/internal/namedata"
+	"github.com/liustack/tifajs/internal/gointl/internal/numdata"
+	"github.com/liustack/tifajs/internal/gointl/internal/qjspack"
+	"github.com/liustack/tifajs/internal/gointl/internal/reltimedata"
+	"github.com/liustack/tifajs/internal/gointl/internal/unitdata"
+	"github.com/liustack/tifajs/internal/gointl/internal/zonedata"
 )
 
 var (

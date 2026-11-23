@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package slowjs // import "github.com/liustack/slowjs"
+package tifajs // import "github.com/liustack/tifajs"
 
 import (
 	"errors"
@@ -41,7 +41,7 @@ type SharedBytecode struct {
 }
 
 // errSharedClosed is the error of loading a SharedBytecode after its Close.
-var errSharedClosed = errors.New("slowjs: the shared bytecode is closed")
+var errSharedClosed = errors.New("tifajs: the shared bytecode is closed")
 
 // NewSharedBytecode copies bytecode, which [VM.Compile] returned, once, for
 // VMs to load with [VM.EvalSharedBytecode]. As with [VM.EvalBytecode], the

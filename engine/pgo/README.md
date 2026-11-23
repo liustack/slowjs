@@ -66,12 +66,12 @@ git clone https://github.com/liustack/tifa && cd tifa && git checkout d668f2d911
 # 2. the bundles: <app>/.tifa/dist/ssr.js, then the script form
 (cd examples/shop && go tool tifa build)
 (cd test/apps/mui && go tool tifa build)
-(cd /path/to/slowjs/compare/engines &&
-  go run ./cmd/modulescript /path/to/tifa/examples/shop/.tifa/dist/ssr.js /path/to/slowjs/engine/pgo/pages/shop/shop.js &&
-  go run ./cmd/modulescript /path/to/tifa/test/apps/mui/.tifa/dist/ssr.js /path/to/slowjs/engine/pgo/pages/mui/mui.js)
+(cd /path/to/tifajs/compare/engines &&
+  go run ./cmd/modulescript /path/to/tifa/examples/shop/.tifa/dist/ssr.js /path/to/tifajs/engine/pgo/pages/shop/shop.js &&
+  go run ./cmd/modulescript /path/to/tifa/test/apps/mui/.tifa/dist/ssr.js /path/to/tifajs/engine/pgo/pages/mui/mui.js)
 
 # 3. the notices, which read the source maps of the build
-(cd /path/to/slowjs/compare/engines && go run ./cmd/notices /path/to/tifa ../../engine/pgo/pages)
+(cd /path/to/tifajs/compare/engines && go run ./cmd/notices /path/to/tifa ../../engine/pgo/pages)
 ```
 
 The SHA-256 of `shop.js` is `62063f81d6cb6145bf31117bd03d95e78e1922d1f98b7673dfaaec1dcf55d165` and that of `mui.js` is `d075f9293197a0f1410cd71e77b4d687186805d84526b2312cac86c2860ce65c`. The notices tool stops when a bundle is not the one in `pages/`.

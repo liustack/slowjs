@@ -1,18 +1,18 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package slowjs_test
+package tifajs_test
 
 import (
 	"fmt"
 
-	"github.com/liustack/slowjs"
+	"github.com/liustack/tifajs"
 )
 
 // pipe is a VM with a send and a receive over two Go channels.
-func pipe(out chan<- string, in <-chan string) *slowjs.VM {
+func pipe(out chan<- string, in <-chan string) *tifajs.VM {
 	m := newVM()
 	if err := m.RegisterFunc("send", func(s string) { out <- s }, false); err != nil {
 		panic(err)
@@ -32,14 +32,14 @@ func Example_ping() {
 	go func() {
 		server := pipe(toClient, toServer)
 		defer server.Close()
-		if _, err := server.Eval(`send(receive() + ' reply')`, slowjs.EvalGlobal); err != nil {
+		if _, err := server.Eval(`send(receive() + ' reply')`, tifajs.EvalGlobal); err != nil {
 			panic(err)
 		}
 	}()
 
 	client := pipe(toServer, toClient)
 	defer client.Close()
-	fmt.Println(client.Eval(`send('ping'); receive();`, slowjs.EvalGlobal))
+	fmt.Println(client.Eval(`send('ping'); receive();`, tifajs.EvalGlobal))
 	// Output:
 	// ping reply <nil>
 }

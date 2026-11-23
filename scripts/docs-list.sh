@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright (c) 2026 The liustack/slowjs Authors.
+# Copyright (c) 2026 The liustack/tifajs Authors.
 # SPDX-License-Identifier: MIT
 # Use of this source code is governed by the MIT license in LICENSE at the
 # root of this repository.
@@ -27,7 +27,7 @@
 # read_when also accepts the inline form: read_when: [a, b]
 #
 # audience says who the doc is for: user (people who use the module or the
-# slowjs command) or dev (people who change liustack/slowjs). order is a whole
+# tifajs command) or dev (people who change liustack/tifajs). order is a whole
 # number that puts the doc in reading order within its folder.
 #
 # Folders: user docs are in docs/use/, and every other doc, dev docs, is under

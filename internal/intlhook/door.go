@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -8,8 +8,8 @@ package intlhook
 import (
 	"strconv"
 
-	"github.com/liustack/slowjs"
-	"github.com/liustack/slowjs/internal/vmhook"
+	"github.com/liustack/tifajs"
+	"github.com/liustack/tifajs/internal/vmhook"
 )
 
 // The door is the only way a string of javascript comes into the Go of
@@ -114,7 +114,7 @@ func (k Kind) Message() string {
 // NewBuiltin returns as a RangeError.
 type tooLong struct{ kind Kind }
 
-func (e tooLong) error() error { return &slowjs.Error{Name: "RangeError", Message: e.kind.Message()} }
+func (e tooLong) error() error { return &tifajs.Error{Name: "RangeError", Message: e.kind.Message()} }
 
 // RefuseDigits ends the Builtin with the RangeError of a number whose
 // written form would have more than MaxDigits digits, before it is
@@ -130,17 +130,17 @@ func RefuseTag() { panic(tooLong{KindTag}) }
 // NewBuiltin. It counts what Go may take for the arguments it admitted, so
 // that the room is checked for all of them together.
 type Door struct {
-	a    slowjs.Args
+	a    tifajs.Args
 	need int64
 	// list is 1 + the argument of a list of locales the door counted.
 	list int
 }
 
 // Open returns the door of the call whose arguments are a.
-func Open(a slowjs.Args) Door { return Door{a: a, need: RoomFixed} }
+func Open(a tifajs.Args) Door { return Door{a: a, need: RoomFixed} }
 
 // VM is the VM of the call.
-func (d *Door) VM() *slowjs.VM { return d.a.VM() }
+func (d *Door) VM() *tifajs.VM { return d.a.VM() }
 
 // Short reads argument i, a short argument of kind k, as String does: a
 // string longer than the cap of k ends the Builtin with a RangeError before

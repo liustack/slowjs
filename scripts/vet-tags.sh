@@ -1,5 +1,5 @@
 #!/bin/sh
-# Copyright (c) 2026 The liustack/slowjs Authors.
+# Copyright (c) 2026 The liustack/tifajs Authors.
 # SPDX-License-Identifier: MIT
 # Use of this source code is governed by the MIT license in LICENSE at the
 # root of this repository.
@@ -34,10 +34,10 @@ list='
 . testhooks all
 . cenginehammer all
 . goasmkeep all
-. slowjs_anygo all
+. tifajs_anygo all
 . gointl_all all
 . gointl_walk all
-. slowjs_intl_nonames,slowjs_intl_nocjdict all
+. tifajs_intl_nonames,tifajs_intl_nocjdict all
 internal/measure/pages - all
 internal/measure/pages pagesspin1 all
 internal/measure/pages pagesspin3 all

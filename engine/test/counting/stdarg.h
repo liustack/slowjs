@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2026 The liustack/slowjs Authors.
+ * Copyright (c) 2026 The liustack/tifajs Authors.
  * SPDX-License-Identifier: MIT
  * Use of this source code is governed by the MIT license in LICENSE at the
  * root of this repository.
@@ -8,8 +8,8 @@
    so that the formatter counts the arguments it takes. The test can then tell
    a format that is refused before any argument is read from one that reads
    arguments and refuses after. */
-#ifndef SLOWJS_TEST_COUNTING_STDARG_H
-#define SLOWJS_TEST_COUNTING_STDARG_H
+#ifndef TIFAJS_TEST_COUNTING_STDARG_H
+#define TIFAJS_TEST_COUNTING_STDARG_H
 
 #include_next <stdarg.h>
 

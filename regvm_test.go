@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package slowjs // import "github.com/liustack/slowjs"
+package tifajs // import "github.com/liustack/tifajs"
 
 import (
 	"crypto/sha256"
@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/liustack/slowjs/internal/cengine"
+	"github.com/liustack/tifajs/internal/cengine"
 )
 
 // regvmStat is JS_RegvmStat: 0 converted, 1 refused, 2 entries, 3 and 4 the

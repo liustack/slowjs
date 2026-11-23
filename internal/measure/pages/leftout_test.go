@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/liustack/slowjs"
+	"github.com/liustack/tifajs"
 )
 
 // countCalls puts counters in front of __tifa_random_bytes__ and of get and set of
@@ -42,12 +42,12 @@ func TestLeftOutNotCalled(t *testing.T) {
 			t.Fatal(err)
 		}
 		r, err := Open(Options{Setup: Setup{Mode: Tifa}, Limit: defaultMemory, Timeout: time.Minute, Bundle: k.Bundle,
-			BeforeBundle: func(vm *slowjs.VM) error { _, err := vm.Eval(countCalls, slowjs.EvalGlobal); return err }})
+			BeforeBundle: func(vm *tifajs.VM) error { _, err := vm.Eval(countCalls, tifajs.EvalGlobal); return err }})
 		if err != nil {
 			t.Fatal(err)
 		}
 		calls := func() any {
-			v, err := r.VM().Eval(`__pagesHookCalls()`, slowjs.EvalGlobal)
+			v, err := r.VM().Eval(`__pagesHookCalls()`, tifajs.EvalGlobal)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -71,7 +71,7 @@ func TestLeftOutNotCalled(t *testing.T) {
 		}
 		// The counters are on the path the bundle takes: crypto and AsyncLocalStorage, which its
 		// host script made from the hooks, count.
-		if _, err := r.VM().Eval(`crypto.randomUUID(); new AsyncLocalStorage().run({}, () => 1)`, slowjs.EvalGlobal); err != nil {
+		if _, err := r.VM().Eval(`crypto.randomUUID(); new AsyncLocalStorage().run({}, () => 1)`, tifajs.EvalGlobal); err != nil {
 			t.Fatal(err)
 		}
 		if got := calls(); got != `{"random":1,"get":2,"set":2}` {

@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/liustack/slowjs/internal/gointl/internal/corpus"
+	"github.com/liustack/tifajs/internal/gointl/internal/corpus"
 )
 
 // TestListWrittenInOrder pins that writing a list from the front gives the

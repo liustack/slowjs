@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	intl "github.com/liustack/slowjs/internal/gointl"
+	intl "github.com/liustack/tifajs/internal/gointl"
 )
 
 // TestDateTimeTemporalMatchesNode holds the writing of Temporal values to

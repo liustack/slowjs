@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -9,7 +9,7 @@ import _ "embed"
 
 // The packs, which internal/qjspack/gen writes (data.sh pack). The
 // display names and the CJK dictionary are packs of their own, which the
-// build tags slowjs_intl_nonames and slowjs_intl_nocjdict leave out. The
+// build tags tifajs_intl_nonames and tifajs_intl_nocjdict leave out. The
 // time zones and calendar tables the temporal package reads are one too, so
 // that a binary that reads only those (EmbeddedTemporalSource) links only
 // tz.bin.
