@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package temporal // import "github.com/liustack/slowjs/temporal"
+package temporal // import "github.com/liustack/tifajs/temporal"
 
 import (
 	"errors"
@@ -12,9 +12,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/liustack/slowjs"
-	"github.com/liustack/slowjs/internal/vmhook"
-	"github.com/liustack/slowjs/intl"
+	"github.com/liustack/tifajs"
+	"github.com/liustack/tifajs/internal/vmhook"
+	"github.com/liustack/tifajs/intl"
 )
 
 // A string argument longer than the cap of a string of Temporal is refused
@@ -39,13 +39,13 @@ func TestStringArgumentOutOfMemory(t *testing.T) {
 					for (let i = 0; i < 15; i++) s = s + s;
 					`+js+`;
 				} catch (e) { r = "caught " + e; }
-				r`, slowjs.EvalGlobal)
+				r`, tifajs.EvalGlobal)
 			if r, _ := got.(string); err != nil || !strings.HasPrefix(r, "caught RangeError") {
 				t.Fatalf("got %v, %v, want a RangeError", got, err)
 			}
 			vm.SetMemoryLimit(vm.MemorySize() + 16<<10)
-			_, err = vm.Eval(`var s = "1".repeat(100); try { `+js+` } catch (e) { "caught " + e }`, slowjs.EvalGlobal)
-			var e *slowjs.Error
+			_, err = vm.Eval(`var s = "1".repeat(100); try { `+js+` } catch (e) { "caught " + e }`, tifajs.EvalGlobal)
+			var e *tifajs.Error
 			if !errors.As(err, &e) || !e.Uncatchable || !e.OutOfMemory {
 				t.Fatalf("got %v, want the uncatchable out of memory error", err)
 			}
@@ -69,7 +69,7 @@ func TestFormatCachesAfterClose(t *testing.T) {
 			runtime.ReadMemStats(&before)
 			const n = 40
 			for i := range n {
-				vm, err := slowjs.NewVM()
+				vm, err := tifajs.NewVM()
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -79,7 +79,7 @@ func TestFormatCachesAfterClose(t *testing.T) {
 				if err := Register(vm); err != nil {
 					t.Fatal(err)
 				}
-				_, err = vm.Eval(fmt.Sprintf(c.js, i), slowjs.EvalGlobal)
+				_, err = vm.Eval(fmt.Sprintf(c.js, i), tifajs.EvalGlobal)
 				vm.Close()
 				if err != nil {
 					t.Fatal(err)
@@ -118,7 +118,7 @@ func TestToStringBounded(t *testing.T) {
 		`Temporal.PlainYearMonth.from({year: 275700, month: 13, calendar: 'ethiopic'}).toString({calendarName: 'critical'})`,
 		`Temporal.PlainDate.from('+275760-09-13').toLocaleString('hi-u-nu-adlm', {era: 'long', year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', calendar: 'ethiopic'})`,
 	} {
-		got, err := vm.Eval(js, slowjs.EvalGlobal)
+		got, err := vm.Eval(js, tifajs.EvalGlobal)
 		if err != nil {
 			t.Errorf("%s: %v", js, err)
 			continue
@@ -169,8 +169,8 @@ func TestRoomCoversGo(t *testing.T) {
 			room := vmhook.Room
 			vmhook.Room = func(any) int64 { return took - 1 }
 			defer func() { vmhook.Room = room }()
-			_, err := vm.Eval(src, slowjs.EvalGlobal)
-			var e *slowjs.Error
+			_, err := vm.Eval(src, tifajs.EvalGlobal)
+			var e *tifajs.Error
 			if !errors.As(err, &e) || !e.OutOfMemory {
 				t.Errorf("Go took %d bytes, and with one less of room the call gave %v, want the out of memory error", took, err)
 			}

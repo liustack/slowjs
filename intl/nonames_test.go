@@ -1,15 +1,15 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-//go:build slowjs_intl_nonames
+//go:build tifajs_intl_nonames
 
 package intl
 
 import "testing"
 
-// Built with slowjs_intl_nonames, Intl.DisplayNames has no names: of
+// Built with tifajs_intl_nonames, Intl.DisplayNames has no names: of
 // answers what the option fallback says, the code or undefined, and nothing
 // throws but for a code that is not one.
 func TestDisplayNamesWithoutNames(t *testing.T) {

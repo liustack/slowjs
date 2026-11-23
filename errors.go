@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package slowjs // import "github.com/liustack/slowjs"
+package tifajs // import "github.com/liustack/tifajs"
 
 // The errors of calls into javascript: reading an exception into an *Error,
 // the exceptions no script can catch, and the panic of a Go function that
@@ -17,8 +17,8 @@ import (
 // Error is a javascript exception that ended a call, read into Go. Get it from
 // the error of a call with errors.As:
 //
-//	if _, err := m.Eval(js, slowjs.EvalGlobal); err != nil {
-//		var e *slowjs.Error
+//	if _, err := m.Eval(js, tifajs.EvalGlobal); err != nil {
+//		var e *tifajs.Error
 //		if errors.As(err, &e) && e.Interrupted {
 //			// the eval timeout or Interrupt stopped the script
 //		}
@@ -94,10 +94,10 @@ func ErrorFromValue(v Value) *Error {
 var (
 	// errForeignValue is the error of a method given a Value of another VM,
 	// which it neither uses nor frees.
-	errForeignValue = errors.New("slowjs: a Value of another VM")
+	errForeignValue = errors.New("tifajs: a Value of another VM")
 	// errKilledVM is the error of a method on a VM a kill left good only for
 	// Close.
-	errKilledVM = fmt.Errorf("slowjs: the VM is good only for Close: %w", ErrKilled)
+	errKilledVM = fmt.Errorf("tifajs: the VM is good only for Close: %w", ErrKilled)
 )
 
 // foreign reports whether v belongs to a VM other than m. A Value of no VM,

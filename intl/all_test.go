@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package intl // import "github.com/liustack/slowjs/intl"
+package intl // import "github.com/liustack/tifajs/intl"
 
 import (
 	"fmt"
@@ -13,7 +13,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/liustack/slowjs"
+	"github.com/liustack/tifajs"
 )
 
 func TestMain(m *testing.M) {
@@ -22,9 +22,9 @@ func TestMain(m *testing.M) {
 
 // newVM is a VM with Intl, closed when the test ends. Without opts its
 // default time zone is UTC.
-func newVM(tb testing.TB, opts ...Option) *slowjs.VM {
+func newVM(tb testing.TB, opts ...Option) *tifajs.VM {
 	tb.Helper()
-	vm, err := slowjs.NewVM()
+	vm, err := tifajs.NewVM()
 	if err != nil {
 		tb.Fatal(err)
 	}
@@ -40,9 +40,9 @@ func newVM(tb testing.TB, opts ...Option) *slowjs.VM {
 }
 
 // eval is what src gives on vm, evaluated as a global script.
-func eval(tb testing.TB, vm *slowjs.VM, src string) any {
+func eval(tb testing.TB, vm *tifajs.VM, src string) any {
 	tb.Helper()
-	v, err := vm.Eval(src, slowjs.EvalGlobal)
+	v, err := vm.Eval(src, tifajs.EvalGlobal)
 	if err != nil {
 		tb.Fatalf("%s: %v", src, err)
 	}
@@ -51,10 +51,10 @@ func eval(tb testing.TB, vm *slowjs.VM, src string) any {
 
 // evalTests evaluates each source of tests on vm, in turn, and checks that
 // it gives the text next to it.
-func evalTests(t *testing.T, vm *slowjs.VM, tests [][2]string) {
+func evalTests(t *testing.T, vm *tifajs.VM, tests [][2]string) {
 	t.Helper()
 	for _, tc := range tests {
-		v, err := vm.Eval(tc[0], slowjs.EvalGlobal)
+		v, err := vm.Eval(tc[0], tifajs.EvalGlobal)
 		if err != nil {
 			t.Errorf("%s: %v", tc[0], err)
 			continue
@@ -280,7 +280,7 @@ func TestDefaultTimeZone(t *testing.T) {
 // a page renders the same wherever the server runs.
 func TestUTCByDefault(t *testing.T) {
 	t.Setenv("TZ", "Asia/Tokyo")
-	vm, err := slowjs.NewVM()
+	vm, err := tifajs.NewVM()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -299,7 +299,7 @@ func TestRegisterPerRealm(t *testing.T) {
 	vm := newVM(t)
 	evalTests(t, vm, [][2]string{{"typeof Intl", "object"}})
 
-	next, err := slowjs.NewVM()
+	next, err := tifajs.NewVM()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -372,7 +372,7 @@ func TestConcurrentVMs(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			vm, err := slowjs.NewVM()
+			vm, err := tifajs.NewVM()
 			if err != nil {
 				errs[g] = err
 				return
@@ -385,7 +385,7 @@ func TestConcurrentVMs(t *testing.T) {
 				return
 			}
 			for _, src := range concurrentExprs {
-				v, err := vm.Eval(src, slowjs.EvalGlobal)
+				v, err := vm.Eval(src, tifajs.EvalGlobal)
 				if err != nil {
 					errs[g] = fmt.Errorf("%s: %w", src, err)
 					return
@@ -437,7 +437,7 @@ func BenchmarkNewDateTimeFormat(b *testing.B) {
 }
 
 func ExampleRegister() {
-	vm, err := slowjs.NewVM()
+	vm, err := tifajs.NewVM()
 	if err != nil {
 		panic(err)
 	}
@@ -454,7 +454,7 @@ func ExampleRegister() {
 		"Intl.DateTimeFormat().resolvedOptions().timeZone",
 		"new Intl.NumberFormat('en-US', {style: 'currency', currency: 'USD'}).format(1234.5)",
 	} {
-		v, err := vm.Eval(src, slowjs.EvalGlobal)
+		v, err := vm.Eval(src, tifajs.EvalGlobal)
 		if err != nil {
 			panic(err)
 		}

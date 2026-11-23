@@ -1,16 +1,16 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package intl // import "github.com/liustack/slowjs/intl"
+package intl // import "github.com/liustack/tifajs/intl"
 
 import (
 	"strconv"
 
-	"github.com/liustack/slowjs"
-	gointl "github.com/liustack/slowjs/internal/gointl"
-	"github.com/liustack/slowjs/internal/intlhook"
+	"github.com/liustack/tifajs"
+	gointl "github.com/liustack/tifajs/internal/gointl"
+	"github.com/liustack/tifajs/internal/intlhook"
 )
 
 // Intl.NumberFormat on go-intl's NumberFormat.
@@ -313,7 +313,7 @@ func (f *numberFormat) admit(door *intlhook.Door, v any, parts bool) any {
 // rangeEnd is argument i of a formatRange call as a Decimal: a Number as V8
 // hands one to ICU, or a string, exact when argument i+1 says it is the
 // digits of a BigInt.
-func (f *numberFormat) rangeEnd(a slowjs.Args, door *intlhook.Door, i int) gointl.Decimal {
+func (f *numberFormat) rangeEnd(a tifajs.Args, door *intlhook.Door, i int) gointl.Decimal {
 	if x, ok := a.Number(i); ok {
 		return gointl.DecimalFromFloat(x)
 	}

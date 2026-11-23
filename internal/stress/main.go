@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -34,8 +34,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/liustack/slowjs/internal/gohost"
-	"github.com/liustack/slowjs/internal/hostmem"
+	"github.com/liustack/tifajs/internal/gohost"
+	"github.com/liustack/tifajs/internal/hostmem"
 )
 
 // config is what a run does.
@@ -140,7 +140,7 @@ func (st *steadyVMs) sums() (kept, maxKept, size int64, n int) {
 func main() {
 	var c config
 	var kinds string
-	flag.StringVar(&c.repo, "repo", "", "the root of the liustack/slowjs checkout (default: the first one above the working directory)")
+	flag.StringVar(&c.repo, "repo", "", "the root of the liustack/tifajs checkout (default: the first one above the working directory)")
 	flag.DurationVar(&c.duration, "duration", time.Minute, "how long the workers render")
 	flag.DurationVar(&c.warmup, "warmup", 0, "the start of the run the drift checks leave out (default: a fifth of -duration)")
 	flag.DurationVar(&c.every, "every", 0, "how often a row of the series is taken (default: -duration/120, at least a second)")
@@ -172,7 +172,7 @@ func main() {
 }
 
 // findRepo returns the first folder from the working directory up whose
-// go.mod is the module of slowjs.
+// go.mod is the module of tifajs.
 func findRepo() (string, error) {
 	d, err := os.Getwd()
 	if err != nil {
@@ -180,12 +180,12 @@ func findRepo() (string, error) {
 	}
 	for {
 		b, err := os.ReadFile(filepath.Join(d, "go.mod"))
-		if err == nil && bytes.HasPrefix(b, []byte("module github.com/liustack/slowjs\n")) {
+		if err == nil && bytes.HasPrefix(b, []byte("module github.com/liustack/tifajs\n")) {
 			return d, nil
 		}
 		up := filepath.Dir(d)
 		if up == d {
-			return "", errors.New("stress: no liustack/slowjs checkout above the working directory: pass -repo")
+			return "", errors.New("stress: no liustack/tifajs checkout above the working directory: pass -repo")
 		}
 		d = up
 	}

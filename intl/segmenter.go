@@ -1,17 +1,17 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package intl // import "github.com/liustack/slowjs/intl"
+package intl // import "github.com/liustack/tifajs/intl"
 
 import (
 	"errors"
 	"sync"
 
-	"github.com/liustack/slowjs"
-	gointl "github.com/liustack/slowjs/internal/gointl"
-	"github.com/liustack/slowjs/internal/intlhook"
+	"github.com/liustack/tifajs"
+	gointl "github.com/liustack/tifajs/internal/gointl"
+	"github.com/liustack/tifajs/internal/intlhook"
 )
 
 // segmenter is a resolved Intl.Segmenter.
@@ -96,9 +96,9 @@ type vmCursors struct {
 }
 
 // cursors holds the cursors of each VM until it is closed.
-var cursors sync.Map // *slowjs.VM -> *vmCursors
+var cursors sync.Map // *tifajs.VM -> *vmCursors
 
-func cursorsOf(vm *slowjs.VM) *vmCursors {
+func cursorsOf(vm *tifajs.VM) *vmCursors {
 	if c, ok := cursors.Load(vm); ok {
 		return c.(*vmCursors)
 	}
@@ -157,7 +157,7 @@ func (v *vmCursors) add(c *cursor) {
 // each next segment ends, in UTF-16 code units, as twice the offset, plus one
 // for a segment that is word-like. The breaks are all
 // there once the last one is the length of the text.
-var segBreaks = intlhook.NewBuiltin("breaks", 4, func(a slowjs.Args) (slowjs.Value, error) {
+var segBreaks = intlhook.NewBuiltin("breaks", 4, func(a tifajs.Args) (tifajs.Value, error) {
 	vm := a.VM()
 	id, _ := a.Number(2)
 	have, _ := a.Number(3)
@@ -175,7 +175,7 @@ var segBreaks = intlhook.NewBuiltin("breaks", 4, func(a slowjs.Args) (slowjs.Val
 	if c == nil || c.n != int(have) {
 		s, ok, err := formatterOf[*segmenter](a)
 		if !ok {
-			return slowjs.UndefinedValue, err
+			return tifajs.UndefinedValue, err
 		}
 
 		door := intlhook.Open(a)
@@ -193,7 +193,7 @@ var segBreaks = intlhook.NewBuiltin("breaks", 4, func(a slowjs.Args) (slowjs.Val
 			_, ok := c.it.Next()
 			inNext = false
 			if !ok {
-				return slowjs.Value{}, errors.New("intl: internal error: a Segments object has more breaks than its text")
+				return tifajs.Value{}, errors.New("intl: internal error: a Segments object has more breaks than its text")
 			}
 			c.n++
 		}

@@ -1,4 +1,4 @@
-# Copyright (c) 2026 The liustack/slowjs Authors.
+# Copyright (c) 2026 The liustack/tifajs Authors.
 # SPDX-License-Identifier: MIT
 # Use of this source code is governed by the MIT license in LICENSE at the
 # root of this repository.
@@ -76,8 +76,8 @@ shorttest:
 
 gointl:
 	go test -count=1 -tags gointl_walk ./internal/gointl/internal/...
-	go test -count=1 -tags slowjs_intl_nonames,slowjs_intl_nocjdict ./internal/gointl/...
-	go test -count=1 -tags slowjs_intl_nonames,slowjs_intl_nocjdict -run WithoutNames ./intl/
+	go test -count=1 -tags tifajs_intl_nonames,tifajs_intl_nocjdict ./internal/gointl/...
+	go test -count=1 -tags tifajs_intl_nonames,tifajs_intl_nocjdict -run WithoutNames ./intl/
 	internal/gointl/data.sh checkout
 	internal/gointl/data.sh pack -check
 	internal/gointl/data.sh test -count=1 -p 2

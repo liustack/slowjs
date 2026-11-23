@@ -1,4 +1,4 @@
-<h1 align="center"><img src="assets/brand/slowjs-banner.png" alt="liustack/slowjs"></h1>
+<h1 align="center"><img src="assets/brand/slowjs-banner.png" alt="liustack/tifajs"></h1>
 
 <p align="center"><b>渲染 React 最快的纯 Go JS 引擎。</b></p>
 
@@ -12,8 +12,8 @@
 
 <p align="center">
   <a href="https://x.com/liustack"><img src="https://img.shields.io/badge/follow-%40liustack-black?style=flat-square&logo=x&logoColor=white" alt="在 X 上关注 @liustack"></a>
-  <a href="https://pkg.go.dev/github.com/liustack/slowjs"><img src="https://img.shields.io/badge/go.dev-reference-007d9c?style=flat-square&logo=go&logoColor=white" alt="Go 文档"></a>
-  <a href="go.mod"><img src="https://img.shields.io/github/go-mod/go-version/liustack/slowjs?style=flat-square" alt="Go 版本"></a>
+  <a href="https://pkg.go.dev/github.com/liustack/tifajs"><img src="https://img.shields.io/badge/go.dev-reference-007d9c?style=flat-square&logo=go&logoColor=white" alt="Go 文档"></a>
+  <a href="go.mod"><img src="https://img.shields.io/github/go-mod/go-version/liustack/tifajs?style=flat-square" alt="Go 版本"></a>
   <img src="https://img.shields.io/badge/CGO-off-success?style=flat-square" alt="不用 CGO">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="许可证"></a>
   <img src="https://img.shields.io/badge/Not%20backed%20by-Y%20Combinator-FF6600?style=flat-square&logo=ycombinator&logoColor=white" alt="没有 Y Combinator 投资">
@@ -28,26 +28,26 @@
 
 ## 有多快
 
-tifa 几个应用的服务端代码渲染一次的 CPU 时间，跑在一个核上，以 liustack/slowjs 为 1（越小越快）：
+tifa 几个应用的服务端代码渲染一次的 CPU 时间，跑在一个核上，以 liustack/tifajs 为 1（越小越快）：
 
 | 引擎 | 纯 Go | React bench 页面 | MUI 页面 | 商店页面 |
 | :-- | :-: | --: | --: | --: |
-| **liustack/slowjs** | 是 | **1.00** | **1.00** | **1.00** |
-| liustack/slowjs，用 polyfill | 是 | 1.01 | 1.64 | 1.65 |
+| **liustack/tifajs** | 是 | **1.00** | **1.00** | **1.00** |
+| liustack/tifajs，用 polyfill | 是 | 1.01 | 1.64 | 1.65 |
 | moejs | 是 | 1.42 | 1.50 | 1.83 |
 | go-quickjs | 是 | 2.70 | 2.51 | 3.59 |
 | C QuickJS 2026-06-04 | 否，C | 1.96 | 3.59 | 2.47 |
 | Hermes V1 | 否，C++ | 1.04 | 1.84 | 1.78 |
 | Node 26 `--jitless` | 否，C++ | 0.97 | 1.10 | 0.89 |
 
-在 v0.31.3 上量的，机器是 GCP t2d-standard-4（AMD EPYC 7B13），Go 1.27.4。对比只比解释器：go-quickjs 按它的默认设置跑，JIT 是关的，Hermes 跑 `hermesc -O` 的字节码，Node 加 `--jitless`。每个引擎都按它本来的样子跑，有自己的 `Intl` 就用自己的，没有的（C QuickJS 和 Hermes）用 FormatJS polyfill。第二行是不带内置 `Intl`、`URL`、`Temporal` 的 liustack/slowjs，和 C QuickJS、Hermes 用同样的 polyfill：它显示 MUI 和商店页面上的领先有多少来自解释器，多少来自用 Go 写的 `Intl`。bench 页面用不到 `Intl`，所以这一列每个引擎跑的是同样的 JavaScript。
+在 v0.31.3 上量的，机器是 GCP t2d-standard-4（AMD EPYC 7B13），Go 1.27.4。对比只比解释器：go-quickjs 按它的默认设置跑，JIT 是关的，Hermes 跑 `hermesc -O` 的字节码，Node 加 `--jitless`。每个引擎都按它本来的样子跑，有自己的 `Intl` 就用自己的，没有的（C QuickJS 和 Hermes）用 FormatJS polyfill。第二行是不带内置 `Intl`、`URL`、`Temporal` 的 liustack/tifajs，和 C QuickJS、Hermes 用同样的 polyfill：它显示 MUI 和商店页面上的领先有多少来自解释器，多少来自用 Go 写的 `Intl`。bench 页面用不到 `Intl`，所以这一列每个引擎跑的是同样的 JavaScript。
 
 它不是每一项都最快：在 V8 测试套件上，Node 得分更高，Hermes 和它打平。
 
 | 引擎 | 纯 Go | V8 套件得分 |
 | :-- | :-: | --: |
 | Node 26 `--jitless` | 否，C++ | 2286 |
-| **liustack/slowjs** | 是 | **2136** |
+| **liustack/tifajs** | 是 | **2136** |
 | Hermes V1 | 否，C++ | 2124 |
 | moejs | 是 | 1870 |
 | go-quickjs | 是 | 1708 |
@@ -60,10 +60,10 @@ tifa 几个应用的服务端代码渲染一次的 CPU 时间，跑在一个核�
 ## 安装
 
 ```sh
-go get github.com/liustack/slowjs
+go get github.com/liustack/tifajs
 ```
 
-需要 Go 1.26.6 或更新，最高到 Go 1.27。不用 cgo，也不用 C 编译器：`CGO_ENABLED=0` 就能构建，和普通 Go 代码一样交叉编译。引擎的 Go 汇编对 Go 1.26.6 到 1.27.4 的每个补丁版本都核对过，新的补丁版本每周核对一次。它依赖 Go 怎么开始一个函数、怎么处理出错，所以用更新的 Go 构建会直接报错，等 liustack/slowjs 用新版核对过、在补丁版本里放开上限再用。加 `-tags slowjs_anygo` 可以照样构建（见[换用更新的 Go](docs/internals/upgrading.md#moving-to-a-newer-go)）。
+需要 Go 1.26.6 或更新，最高到 Go 1.27。不用 cgo，也不用 C 编译器：`CGO_ENABLED=0` 就能构建，和普通 Go 代码一样交叉编译。引擎的 Go 汇编对 Go 1.26.6 到 1.27.4 的每个补丁版本都核对过，新的补丁版本每周核对一次。它依赖 Go 怎么开始一个函数、怎么处理出错，所以用更新的 Go 构建会直接报错，等 liustack/tifajs 用新版核对过、在补丁版本里放开上限再用。加 `-tags tifajs_anygo` 可以照样构建（见[换用更新的 Go](docs/internals/upgrading.md#moving-to-a-newer-go)）。
 
 ## 支持的平台
 
@@ -79,12 +79,12 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/liustack/slowjs"
-	"github.com/liustack/slowjs/intl"
+	"github.com/liustack/tifajs"
+	"github.com/liustack/tifajs/intl"
 )
 
 func main() {
-	vm, err := slowjs.NewVM()
+	vm, err := tifajs.NewVM()
 	if err != nil {
 		panic(err)
 	}
@@ -98,11 +98,11 @@ func main() {
 		panic(err)
 	}
 
-	v, err := vm.Eval(`new Date(0).toLocaleString('zh-CN', {timeZone: 'Asia/Shanghai'})`, slowjs.EvalGlobal)
+	v, err := vm.Eval(`new Date(0).toLocaleString('zh-CN', {timeZone: 'Asia/Shanghai'})`, tifajs.EvalGlobal)
 	fmt.Println(v, err) // 1970/1/1 08:00:00 <nil>
 
-	_, err = vm.Eval(`try { for (;;) {} } catch (e) { 'caught' }`, slowjs.EvalGlobal)
-	var e *slowjs.Error
+	_, err = vm.Eval(`try { for (;;) {} } catch (e) { 'caught' }`, tifajs.EvalGlobal)
+	var e *tifajs.Error
 	if errors.As(err, &e) && e.Interrupted {
 		fmt.Println("timed out, and no catch saw it")
 	}
@@ -111,7 +111,7 @@ func main() {
 
 一个 VM 不能同时给多个 goroutine 用：每个 goroutine 一个，或者用池。Intl 和 Temporal 内嵌了 tz 2026e，不需要主机的 zoneinfo。
 
-除了 `Eval` 和 `Call`，API 还有：JavaScript 像调内建函数一样调用的 Go 函数、控制 VM 的 GC 和内存、每个 VM 一个时钟、`Temporal`，以及用 C 写的 React 服务端渲染器的几个部分。清单见 [docs/use/api.md](docs/use/api.md)，每个函数的文档在 [pkg.go.dev](https://pkg.go.dev/github.com/liustack/slowjs)。
+除了 `Eval` 和 `Call`，API 还有：JavaScript 像调内建函数一样调用的 Go 函数、控制 VM 的 GC 和内存、每个 VM 一个时钟、`Temporal`，以及用 C 写的 React 服务端渲染器的几个部分。清单见 [docs/use/api.md](docs/use/api.md)，每个函数的文档在 [pkg.go.dev](https://pkg.go.dev/github.com/liustack/tifajs)。
 
 ## 用了以后有什么不同
 
@@ -148,27 +148,27 @@ func main() {
 
 引擎是 Fabrice Bellard 和 Charlie Gordon 的 [QuickJS](https://bellard.org/quickjs)，用的是 2026-06-04 版。确切版本、怎么合入 QuickJS 的新提交，以及从 modernc.org/quickjs 换过来会遇到什么，见 [docs/internals/upstream.md](docs/internals/upstream.md)。
 
-感谢 Fabrice Bellard 和 Charlie Gordon 写了 QuickJS，感谢 [modernc.org/quickjs](https://gitlab.com/cznic/quickjs) 和 [modernc.org/libquickjs](https://gitlab.com/cznic/libquickjs) 的作者 Jan Mercl、Dan Kortschak 等人。他们的工作证明了 QuickJS 可以跑在纯 Go 程序里，也启发了 liustack/slowjs。
+感谢 Fabrice Bellard 和 Charlie Gordon 写了 QuickJS，感谢 [modernc.org/quickjs](https://gitlab.com/cznic/quickjs) 和 [modernc.org/libquickjs](https://gitlab.com/cznic/libquickjs) 的作者 Jan Mercl、Dan Kortschak 等人。他们的工作证明了 QuickJS 可以跑在纯 Go 程序里，也启发了 liustack/tifajs。
 
 ## 社区
 
-随时欢迎提 issue：[新建一个](https://github.com/liustack/slowjs/issues/new/choose)。你拿它跑什么、哪里慢、下一步该做什么，都可以说。推荐你关注公众号 liustack，也欢迎你来 X 上聊：**[@liustack](https://x.com/liustack)**。liustack/slowjs 和 tifa 有什么变化，都会在公众号和 X 同步更新。
+随时欢迎提 issue：[新建一个](https://github.com/liustack/tifajs/issues/new/choose)。你拿它跑什么、哪里慢、下一步该做什么，都可以说。推荐你关注公众号 liustack，也欢迎你来 X 上聊：**[@liustack](https://x.com/liustack)**。liustack/tifajs 和 tifa 有什么变化，都会在公众号和 X 同步更新。
 
 关注微信公众号「liustack」：AI 创业机会、独立开发见解、AI 实战与工具，第一时间推送。微信扫码，或搜一搜「liustack」：
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/liustack/slowjs/main/assets/wechat-qrcode.png" width="420" alt="微信公众号 liustack" />
+  <img src="https://raw.githubusercontent.com/liustack/tifajs/main/assets/wechat-qrcode.png" width="420" alt="微信公众号 liustack" />
 </p>
 
 ## 参与贡献
 
-liustack/slowjs 不接受 pull request。每一行都由一个维护者审读、负责到底，这是有意的选择，为的是引擎靠得住。真正有用的参与方式有两种：
+liustack/tifajs 不接受 pull request。每一行都由一个维护者审读、负责到底，这是有意的选择，为的是引擎靠得住。真正有用的参与方式有两种：
 
-- **[提一个 issue](https://github.com/liustack/slowjs/issues/new/choose)。** 算错了，渲染慢，限制没拦住，文档不清楚，都可以提。每个 issue 都会读，它决定下一步做什么。
+- **[提一个 issue](https://github.com/liustack/tifajs/issues/new/choose)。** 算错了，渲染慢，限制没拦住，文档不清楚，都可以提。每个 issue 都会读，它决定下一步做什么。
 - **Fork 一份。** 你的那份完全归你，想怎么改、怎么发布都行。
 
 安全问题请按 [SECURITY.md](SECURITY.md) 私下报告。其余见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ## 许可证
 
-liustack/slowjs 用 [MIT 许可证](LICENSE)。来自其他项目的代码保留各自的许可证：QuickJS 的 C 代码、TLSF 分配器、musl 的 libc 函数、来自 go-intl、ICU 和 Chromium 的 `Intl` 与 `Temporal` 的 Go 代码和语言数据、来自 nlnwa/whatwg-url 的 URL 解析器，以及几个 Go 自带的文件。banner 里的 gopher 照 Renée French 画的 Go gopher 画成（CC BY 4.0）。哪条路径用哪个许可证、发布用到本模块的程序要带哪些声明，见 [NOTICE.md](NOTICE.md)。
+liustack/tifajs 用 [MIT 许可证](LICENSE)。来自其他项目的代码保留各自的许可证：QuickJS 的 C 代码、TLSF 分配器、musl 的 libc 函数、来自 go-intl、ICU 和 Chromium 的 `Intl` 与 `Temporal` 的 Go 代码和语言数据、来自 nlnwa/whatwg-url 的 URL 解析器，以及几个 Go 自带的文件。banner 里的 gopher 照 Renée French 画的 Go gopher 画成（CC BY 4.0）。哪条路径用哪个许可证、发布用到本模块的程序要带哪些声明，见 [NOTICE.md](NOTICE.md)。

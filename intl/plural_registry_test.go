@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/liustack/slowjs"
+	"github.com/liustack/tifajs"
 )
 
 func TestPluralRulesRoundingRegistry(t *testing.T) {
@@ -17,7 +17,7 @@ func TestPluralRulesRoundingRegistry(t *testing.T) {
 		for _, order := range [][2]int{{0, 2}, {2, 0}} {
 			t.Run(fmt.Sprintf("separateVMs=%t/first=%d", separate, order[0]), func(t *testing.T) {
 				first := newVM(t)
-				vms := []*slowjs.VM{first, first}
+				vms := []*tifajs.VM{first, first}
 				if separate {
 					vms[1] = newVM(t)
 				}

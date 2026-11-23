@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -13,13 +13,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/liustack/slowjs"
+	"github.com/liustack/tifajs"
 )
 
 // newVM returns a VM with URL and URLSearchParams.
-func newVM(t testing.TB) *slowjs.VM {
+func newVM(t testing.TB) *tifajs.VM {
 	t.Helper()
-	vm, err := slowjs.NewVM()
+	vm, err := tifajs.NewVM()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,22 +75,22 @@ func TestWPT(t *testing.T) {
 		name := filepath.Base(file)
 		t.Run(name, func(t *testing.T) {
 			vm := newVM(t)
-			if _, err := vm.Eval(harness, slowjs.EvalGlobal); err != nil {
+			if _, err := vm.Eval(harness, tifajs.EvalGlobal); err != nil {
 				t.Fatal(err)
 			}
 			for k, v := range data {
-				if _, err := vm.Eval("__files["+strconv.Quote(k)+"] = "+strconv.Quote(v), slowjs.EvalGlobal); err != nil {
+				if _, err := vm.Eval("__files["+strconv.Quote(k)+"] = "+strconv.Quote(v), tifajs.EvalGlobal); err != nil {
 					t.Fatal(err)
 				}
 			}
 			vm.SetEvalTimeout(0)
-			if _, err := vm.Eval(readFile(t, file), slowjs.EvalGlobal); err != nil {
+			if _, err := vm.Eval(readFile(t, file), tifajs.EvalGlobal); err != nil {
 				t.Fatal(err)
 			}
 			if _, err := vm.ExecutePendingJobs(); err != nil {
 				t.Fatal(err)
 			}
-			out, err := vm.Eval("JSON.stringify(__results)", slowjs.EvalGlobal)
+			out, err := vm.Eval("JSON.stringify(__results)", tifajs.EvalGlobal)
 			if err != nil {
 				t.Fatal(err)
 			}

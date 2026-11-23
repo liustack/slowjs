@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -9,7 +9,7 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/liustack/slowjs/internal/faulttest"
+	"github.com/liustack/tifajs/internal/faulttest"
 )
 
 // TestReadOnly: MapReadOnly holds a copy of the bytes, which can be read to

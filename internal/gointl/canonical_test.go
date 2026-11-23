@@ -5,7 +5,7 @@ package intl_test
 import (
 	"testing"
 
-	"github.com/liustack/slowjs/internal/gointl"
+	"github.com/liustack/tifajs/internal/gointl"
 )
 
 // V8 answers a lone two-letter language without consulting ICU's aliases;

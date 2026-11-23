@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -19,7 +19,7 @@
 // generator deletes every file that matches *_arm64.s when it makes the engine
 // again.
 TEXT ·goasmTripwire(SB), NOSPLIT|NOFRAME, $0-0
-	// BUILD ERROR: liustack/slowjs does not build with -dynlink, which the go command
+	// BUILD ERROR: liustack/tifajs does not build with -dynlink, which the go command
 	// passes for -buildmode=plugin, -buildmode=shared and -linkshared. It
 	// rewrites a load of a symbol address into a load through the GOT, and the
 	// engine's branches land wrong. Build without it.

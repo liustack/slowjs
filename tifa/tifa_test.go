@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -16,12 +16,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/liustack/slowjs"
+	"github.com/liustack/tifajs"
 )
 
-func newVM(t testing.TB) *slowjs.VM {
+func newVM(t testing.TB) *tifajs.VM {
 	t.Helper()
-	vm, err := slowjs.NewVM()
+	vm, err := tifajs.NewVM()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,9 +32,9 @@ func newVM(t testing.TB) *slowjs.VM {
 	return vm
 }
 
-func eval(t testing.TB, vm *slowjs.VM, js string) any {
+func eval(t testing.TB, vm *tifajs.VM, js string) any {
 	t.Helper()
-	v, err := vm.Eval(js, slowjs.EvalGlobal)
+	v, err := vm.Eval(js, tifajs.EvalGlobal)
 	if err != nil {
 		t.Fatalf("%s: %v", js, err)
 	}
@@ -48,14 +48,14 @@ const kinds = `(names) => names.map((n) => {
   return typeof v === 'function' ? 'function' : v && typeof v.get === 'function' && typeof v.set === 'function' ? 'get set' : typeof v
 }).join(',')`
 
-func hookKinds(t *testing.T, vm *slowjs.VM) string {
+func hookKinds(t *testing.T, vm *tifajs.VM) string {
 	t.Helper()
-	f, err := vm.EvalValue(kinds, slowjs.EvalGlobal)
+	f, err := vm.EvalValue(kinds, tifajs.EvalGlobal)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer f.Free()
-	r, err := f.Call(slowjs.UndefinedValue, Hooks())
+	r, err := f.Call(tifajs.UndefinedValue, Hooks())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,14 +167,14 @@ func BenchmarkMurmur2(b *testing.B) {
 	if err := RegisterHook(vm, "__tifa_murmur2__"); err != nil {
 		b.Fatal(err)
 	}
-	f, err := vm.EvalValue(`(s) => { let n = 0; for (let i = 0; i < 1000; i++) n += __tifa_murmur2__(s).length; return n }`, slowjs.EvalGlobal)
+	f, err := vm.EvalValue(`(s) => { let n = 0; for (let i = 0; i < 1000; i++) n += __tifa_murmur2__(s).length; return n }`, tifajs.EvalGlobal)
 	if err != nil {
 		b.Fatal(err)
 	}
 	defer f.Free()
 	style := strings.Repeat("display:flex;align-items:center;padding:8px 16px;", 6)
 	for b.Loop() {
-		if _, err := f.Call(slowjs.UndefinedValue, style); err != nil {
+		if _, err := f.Call(tifajs.UndefinedValue, style); err != nil {
 			b.Fatal(err)
 		}
 	}

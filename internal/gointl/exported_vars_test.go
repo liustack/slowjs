@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	intl "github.com/liustack/slowjs/internal/gointl"
-	"github.com/liustack/slowjs/internal/gointl/temporal"
+	intl "github.com/liustack/tifajs/internal/gointl"
+	"github.com/liustack/tifajs/internal/gointl/temporal"
 )
 
 // No exported package-level variable holds state an importer could change

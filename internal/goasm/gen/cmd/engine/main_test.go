@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -14,7 +14,7 @@ import (
 	"strings"
 	"testing"
 
-	gen "github.com/liustack/slowjs/internal/goasm/gen"
+	gen "github.com/liustack/tifajs/internal/goasm/gen"
 )
 
 // TestFirstGroups: a function two files define goes with the first one, as
@@ -162,7 +162,7 @@ func TestGoFileHeaders(t *testing.T) {
 	defer func(old string) { *buildTag = old }(*buildTag)
 	for _, c := range []struct{ tag, decl, keep, neg string }{
 		{"", "", "//go:build goasmkeep\n", "//go:build !goasmnegative\n"},
-		{"slowjs_cengine", "//go:build slowjs_cengine\n", "//go:build slowjs_cengine && goasmkeep\n", "//go:build slowjs_cengine && !goasmnegative\n"},
+		{"tifajs_cengine", "//go:build tifajs_cengine\n", "//go:build tifajs_cengine && goasmkeep\n", "//go:build tifajs_cengine && !goasmnegative\n"},
 	} {
 		*buildTag = c.tag
 		if got := declBuildLine(); got != c.decl {

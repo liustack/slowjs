@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -11,14 +11,14 @@ import (
 	"errors"
 	"math"
 
-	"github.com/liustack/slowjs"
+	"github.com/liustack/tifajs"
 )
 
 // registerRandom defines __tifa_random_bytes__(n), n bytes of crypto/rand in base64, n an integer
 // from 0 to 65536. The bytes are read on each call, including calls made while the bundle loads:
 // there is no pool of random bytes to keep per VM or to reuse between renders by mistake. Moved
 // here from internal/ssr/random.go of tifa.
-func registerRandom(vm *slowjs.VM) error {
+func registerRandom(vm *tifajs.VM) error {
 	return vm.RegisterHostFunc("__tifa_random_bytes__", func(args []any) (any, error) {
 		if len(args) != 1 {
 			return nil, errors.New("random bytes requires a length")

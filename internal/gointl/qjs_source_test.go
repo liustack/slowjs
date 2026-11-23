@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -14,7 +14,7 @@ import (
 	"time"
 	"unicode/utf16"
 
-	"github.com/liustack/slowjs/internal/gointl/internal/qjspack"
+	"github.com/liustack/tifajs/internal/gointl/internal/qjspack"
 )
 
 // A qjsProbe uses one service the way a program does, from a source, and

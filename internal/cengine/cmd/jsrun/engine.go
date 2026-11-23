@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -8,7 +8,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/liustack/slowjs/internal/cengine"
+	"github.com/liustack/tifajs/internal/cengine"
 )
 
 const engineName = "C engine as Go assembly (internal/cengine)"

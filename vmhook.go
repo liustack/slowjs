@@ -1,15 +1,15 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package slowjs // import "github.com/liustack/slowjs"
+package tifajs // import "github.com/liustack/tifajs"
 
 import (
 	"unsafe"
 
-	"github.com/liustack/slowjs/internal/hostmem"
-	"github.com/liustack/slowjs/internal/vmhook"
+	"github.com/liustack/tifajs/internal/hostmem"
+	"github.com/liustack/tifajs/internal/vmhook"
 )
 
 // The functions of internal/vmhook, with which the Go functions of packages
@@ -29,7 +29,7 @@ func init() {
 func hookVM(vm any) *VM {
 	m := vm.(*VM)
 	if m.host == 0 {
-		panic("slowjs: a function of internal/vmhook outside a Go function called from javascript")
+		panic("tifajs: a function of internal/vmhook outside a Go function called from javascript")
 	}
 	return m
 }

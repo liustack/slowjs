@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -43,8 +43,8 @@ type variant struct {
 }
 
 var variants = []variant{
-	{"liustack-slowjs", "liustack", "eng_liustack", nil, false},
-	{"liustack-slowjs-polyfill", "liustackpolyfill", "eng_liustackpolyfill", nil, true},
+	{"liustack-tifajs", "liustack", "eng_liustack", nil, false},
+	{"liustack-tifajs-polyfill", "liustackpolyfill", "eng_liustackpolyfill", nil, true},
 	{"go-quickjs-interp", "goquickjs", "eng_goquickjs", nil, false},
 	{"moejs", "moejs", "eng_moejs", nil, false},
 }
@@ -130,7 +130,7 @@ func main() {
 	}
 	res.MemCap = capDesc()
 	if res.Name == "" {
-		// The version of liustack/slowjs: the tag of the commit the
+		// The version of liustack/tifajs: the tag of the commit the
 		// binaries were built from.
 		ver := strings.SplitN(res.Source.Describe, "-", 2)[0]
 		if ver == "" || ver == "unknown" {

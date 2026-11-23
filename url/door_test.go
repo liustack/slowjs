@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -18,9 +18,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/liustack/slowjs"
-	"github.com/liustack/slowjs/internal/intlhook"
-	"github.com/liustack/slowjs/internal/whatwgurl"
+	"github.com/liustack/tifajs"
+	"github.com/liustack/tifajs/internal/intlhook"
+	"github.com/liustack/tifajs/internal/whatwgurl"
 )
 
 // doorReads are the names through which Go reads a string a script gave, or
@@ -39,7 +39,7 @@ func doorLeaks(files map[string]*ast.File) []string {
 	for name, f := range files {
 		for _, imp := range f.Imports {
 			p, _ := strconv.Unquote(imp.Path.Value)
-			if strings.HasPrefix(p, "github.com/liustack/slowjs/internal/whatwgurl/") || p == "net/url" {
+			if strings.HasPrefix(p, "github.com/liustack/tifajs/internal/whatwgurl/") || p == "net/url" {
 				leaks = append(leaks, name+" imports "+p)
 			}
 		}
@@ -51,8 +51,8 @@ func doorLeaks(files map[string]*ast.File) []string {
 			if !ok || !doorReads[s.Sel.Name] {
 				return true
 			}
-			// The type slowjs.Value is not a read.
-			if id, ok := s.X.(*ast.Ident); ok && id.Name == "slowjs" && s.Sel.Name == "Value" {
+			// The type tifajs.Value is not a read.
+			if id, ok := s.X.(*ast.Ident); ok && id.Name == "tifajs" && s.Sel.Name == "Value" {
 				return true
 			}
 			leaks = append(leaks, name+" uses "+s.Sel.Name)
@@ -144,7 +144,7 @@ func TestDoorCheckCatches(t *testing.T) {
 		`b, u, release, _ := vmhook.Chars(a, 0)`,
 		`d := intlhook.Open(a)`,
 	} {
-		src := "package url\nfunc f(a slowjs.Args) {\n" + body + "\n}\n"
+		src := "package url\nfunc f(a tifajs.Args) {\n" + body + "\n}\n"
 		f, err := parser.ParseFile(token.NewFileSet(), "new.go", src, 0)
 		if err != nil {
 			t.Fatal(err)
@@ -153,7 +153,7 @@ func TestDoorCheckCatches(t *testing.T) {
 			t.Errorf("%s: found %v", body, leaks)
 		}
 	}
-	f, _ := parser.ParseFile(token.NewFileSet(), "new.go", "package url\nimport _ \"github.com/liustack/slowjs/internal/whatwgurl/idna\"\n", 0)
+	f, _ := parser.ParseFile(token.NewFileSet(), "new.go", "package url\nimport _ \"github.com/liustack/tifajs/internal/whatwgurl/idna\"\n", 0)
 	if leaks := doorLeaks(map[string]*ast.File{"new.go": f}); len(leaks) != 1 {
 		t.Errorf("an import of idna: found %v", leaks)
 	}
@@ -179,7 +179,7 @@ const ropeJS = `
 // joining them, and that it says false for what is not a string.
 func TestStringLen(t *testing.T) {
 	vm := newVM(t)
-	b := intlhook.NewBuiltin("stringLen", 1, func(a slowjs.Args) (slowjs.Value, error) {
+	b := intlhook.NewBuiltin("stringLen", 1, func(a tifajs.Args) (tifajs.Value, error) {
 		n, ok := a.StringLen(0)
 		if !ok {
 			return a.VM().NewInt(-1), nil
@@ -261,7 +261,7 @@ func TestDoor(t *testing.T) {
 		took    time.Duration
 		refused bool
 	}
-	run := func(vm *slowjs.VM, js string) (string, []cost) {
+	run := func(vm *tifajs.VM, js string) (string, []cost) {
 		var costs []cost
 		var before runtime.MemStats
 		var start time.Time
@@ -364,21 +364,21 @@ func TestDoor(t *testing.T) {
 func TestDoorNineLikeOne(t *testing.T) {
 	vm := newVM(t)
 	define := func(name string, idx ...int) {
-		b := newBuiltin(name, len(idx), func(a slowjs.Args) (slowjs.Value, error) {
+		b := newBuiltin(name, len(idx), func(a tifajs.Args) (tifajs.Value, error) {
 			admit(a, 0, 0, idx...)
-			return slowjs.UndefinedValue, nil
+			return tifajs.UndefinedValue, nil
 		})
 		f, err := vm.NewBuiltinFunction(b)
 		if err != nil {
 			t.Fatal(err)
 		}
 		defer f.Free()
-		set, err := vm.EvalValue(`(name, f) => { globalThis[name] = f }`, slowjs.EvalGlobal)
+		set, err := vm.EvalValue(`(name, f) => { globalThis[name] = f }`, tifajs.EvalGlobal)
 		if err != nil {
 			t.Fatal(err)
 		}
 		defer set.Free()
-		if _, err := set.Call(slowjs.UndefinedValue, name, f); err != nil {
+		if _, err := set.Call(tifajs.UndefinedValue, name, f); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -405,7 +405,7 @@ func TestDoorNineLikeOne(t *testing.T) {
 // them, and counts in that sum only the parts: here the last two strings.
 func TestDoorSumsTheParts(t *testing.T) {
 	vm := newVM(t)
-	b := newBuiltin("sum", 3, func(a slowjs.Args) (slowjs.Value, error) {
+	b := newBuiltin("sum", 3, func(a tifajs.Args) (tifajs.Value, error) {
 		_, _, v := admit(a, 0, 2, 0, 1, 2)
 		return a.VM().NewInt(int(v)), nil
 	})
@@ -414,12 +414,12 @@ func TestDoorSumsTheParts(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer f.Free()
-	set, err := vm.EvalValue(`(f) => { globalThis.sum = f }`, slowjs.EvalGlobal)
+	set, err := vm.EvalValue(`(f) => { globalThis.sum = f }`, tifajs.EvalGlobal)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer set.Free()
-	if _, err := set.Call(slowjs.UndefinedValue, f); err != nil {
+	if _, err := set.Call(tifajs.UndefinedValue, f); err != nil {
 		t.Fatal(err)
 	}
 	half := strconv.Itoa(whatwgurl.MaxUnits / 2)
@@ -429,7 +429,7 @@ func TestDoorSumsTheParts(t *testing.T) {
 		`sum("v".repeat(2 * ` + half + `), "a".repeat(` + half + `), "b".repeat(` + half + `))`: admitted,
 		`sum("", "a".repeat(2 * ` + half + ` + 1), "")`:                                         tooLong,
 	} {
-		v, err := vm.Eval(js, slowjs.EvalGlobal)
+		v, err := vm.Eval(js, tifajs.EvalGlobal)
 		if err != nil {
 			t.Fatal(err)
 		}

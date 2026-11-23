@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package slowjs // import "github.com/liustack/slowjs"
+package tifajs // import "github.com/liustack/tifajs"
 
 import (
 	"fmt"
@@ -90,7 +90,7 @@ func (t *textCut) take(m *VM, n int) bool {
 // UnhandledRejections called from javascript that a read of the rejections
 // runs.
 func errReadingRejections(name string) error {
-	return fmt.Errorf("slowjs: %s: called while UnhandledRejections reads the rejections", name)
+	return fmt.Errorf("tifajs: %s: called while UnhandledRejections reads the rejections", name)
 }
 
 func (m *VM) TrackRejections(max int) (err error) {
@@ -98,7 +98,7 @@ func (m *VM) TrackRejections(max int) (err error) {
 		return errReadingRejections("TrackRejections")
 	}
 	if max < 0 || max > MaxTrackedRejections {
-		return fmt.Errorf("slowjs: TrackRejections(%d): max is from 0 to %d", max, MaxTrackedRejections)
+		return fmt.Errorf("tifajs: TrackRejections(%d): max is from 0 to %d", max, MaxTrackedRejections)
 	}
 	if err = m.enter(); err != nil {
 		return err

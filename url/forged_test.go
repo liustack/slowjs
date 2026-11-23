@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/liustack/slowjs"
+	"github.com/liustack/tifajs"
 )
 
 // newForgingVM returns a VM with URL whose set Builtin is reached through
@@ -17,9 +17,9 @@ import (
 // and set gets what it returns. No script of a page can do this (see
 // TestStateIsUnreachable). It is how the tests hand set parts that are not
 // those of a URL, as only a fault of url.js could.
-func newForgingVM(t *testing.T) *slowjs.VM {
+func newForgingVM(t *testing.T) *tifajs.VM {
 	t.Helper()
-	vm, err := slowjs.NewVM()
+	vm, err := tifajs.NewVM()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,7 +36,7 @@ func newForgingVM(t *testing.T) *slowjs.VM {
 	wrap, err := vm.EvalValue(`(set) => {
 		globalThis.forge = (args) => args;
 		return function () { return set(...globalThis.forge([...arguments])); };
-	}`, slowjs.EvalGlobal)
+	}`, tifajs.EvalGlobal)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,14 +51,14 @@ func newForgingVM(t *testing.T) *slowjs.VM {
 		}
 		defer v.Free()
 		if i == 1 { // set
-			if v, err = wrap.CallValue(slowjs.UndefinedValue, v); err != nil {
+			if v, err = wrap.CallValue(tifajs.UndefinedValue, v); err != nil {
 				t.Fatal(err)
 			}
 			defer v.Free()
 		}
 		args = append(args, v)
 	}
-	if _, err := install.Call(slowjs.UndefinedValue, args...); err != nil {
+	if _, err := install.Call(tifajs.UndefinedValue, args...); err != nil {
 		t.Fatal(err)
 	}
 	return vm

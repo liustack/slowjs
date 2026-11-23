@@ -6,7 +6,7 @@ labels: bug
 assignees: ''
 ---
 
-A security problem (memory outside the VM, a crash of the Go process, a limit a script got past) goes in a [private report](https://github.com/liustack/slowjs/security/advisories/new), not here.
+A security problem (memory outside the VM, a crash of the Go process, a limit a script got past) goes in a [private report](https://github.com/liustack/tifajs/security/advisories/new), not here.
 
 ## What happened
 
@@ -14,27 +14,27 @@ A clear description of the problem.
 
 ## The script that shows it
 
-A JavaScript file, cut down as far as it still shows the problem, and the exact command you ran it with. `slowjs` runs a file in the engine, set up as tifa sets it up, with no Go to write: take it from the release, see [docs/use/command.md](https://github.com/liustack/slowjs/blob/main/docs/use/command.md).
+A JavaScript file, cut down as far as it still shows the problem, and the exact command you ran it with. `tifajs` runs a file in the engine, set up as tifa sets it up, with no Go to write: take it from the release, see [docs/use/command.md](https://github.com/liustack/tifajs/blob/main/docs/use/command.md).
 
 ```js
 ...
 ```
 
 ```sh
-slowjs repro.js
+tifajs repro.js
 ```
 
 For a problem of the Go API (a call from Go, a Value, a Builtin, a limit set from Go), give the Go program instead, cut down the same way.
 
 ```go
-vm, _ := slowjs.NewVM()
+vm, _ := tifajs.NewVM()
 defer vm.Close()
-v, err := vm.Eval(`...`, slowjs.EvalGlobal)
+v, err := vm.Eval(`...`, tifajs.EvalGlobal)
 ```
 
 ## The full output
 
-Paste the complete output, not a paraphrase: what `slowjs` printed and its exit code (`echo $?`), or what the Go program printed. For a crash, the whole Go stack trace.
+Paste the complete output, not a paraphrase: what `tifajs` printed and its exit code (`echo $?`), or what the Go program printed. For a crash, the whole Go stack trace.
 
 ```
 ...
@@ -42,8 +42,8 @@ Paste the complete output, not a paraphrase: what `slowjs` printed and its exit 
 
 ## Environment
 
-- `slowjs --version`:
-- For a Go program instead: the version (`go list -m github.com/liustack/slowjs`), `go version`, and the packages registered on the VM (`intl`, `temporal`, `url`, `fmt`):
+- `tifajs --version`:
+- For a Go program instead: the version (`go list -m github.com/liustack/tifajs`), `go version`, and the packages registered on the VM (`intl`, `temporal`, `url`, `fmt`):
 - OS and CPU model:
 
 ## Expected

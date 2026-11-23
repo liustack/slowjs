@@ -1,16 +1,16 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package fmt // import "github.com/liustack/slowjs/fmt"
+package fmt // import "github.com/liustack/tifajs/fmt"
 
 import (
 	"fmt"
 	"os"
 	"testing"
 
-	"github.com/liustack/slowjs"
+	"github.com/liustack/tifajs"
 )
 
 func TestMain(m *testing.M) {
@@ -18,7 +18,7 @@ func TestMain(m *testing.M) {
 }
 
 func ExampleRegister_printf() {
-	vm, err := slowjs.NewVM()
+	vm, err := tifajs.NewVM()
 	if err != nil {
 		panic(err)
 	}
@@ -33,7 +33,7 @@ func ExampleRegister_printf() {
 		panic(err)
 	}
 
-	v, err := vm.Eval(`fmt.printf('Math.PI=%v\n', Math.PI)`, slowjs.EvalGlobal)
+	v, err := vm.Eval(`fmt.printf('Math.PI=%v\n', Math.PI)`, tifajs.EvalGlobal)
 	if err != nil {
 		panic(err)
 	}
@@ -45,7 +45,7 @@ func ExampleRegister_printf() {
 }
 
 func ExampleRegister_sprint() {
-	vm, err := slowjs.NewVM()
+	vm, err := tifajs.NewVM()
 	if err != nil {
 		panic(err)
 	}
@@ -60,7 +60,7 @@ func ExampleRegister_sprint() {
 		panic(err)
 	}
 
-	v, err := vm.Eval(`fmt.sprint([2*21, 'foo', {bar: Math.exp(1)}])`, slowjs.EvalGlobal)
+	v, err := vm.Eval(`fmt.sprint([2*21, 'foo', {bar: Math.exp(1)}])`, tifajs.EvalGlobal)
 	if err != nil {
 		panic(err)
 	}

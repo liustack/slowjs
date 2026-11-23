@@ -1,11 +1,11 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
 //go:build (((linux && !android) || (darwin && !ios)) && (amd64 || arm64)) || (windows && (amd64 || arm64))
 
-package slowjs // import "github.com/liustack/slowjs"
+package tifajs // import "github.com/liustack/tifajs"
 
 // Memory on the engine: what a VM holds, what it gives back, and the shared
 // bytecode outside every VM.
@@ -13,8 +13,8 @@ package slowjs // import "github.com/liustack/slowjs"
 import (
 	"unsafe"
 
-	"github.com/liustack/slowjs/internal/cengine"
-	"github.com/liustack/slowjs/internal/hostmem"
+	"github.com/liustack/tifajs/internal/cengine"
+	"github.com/liustack/tifajs/internal/hostmem"
 )
 
 // allocShared returns a copy of the bytes of a SharedBytecode in a read-only
@@ -28,7 +28,7 @@ func allocShared(b []byte) (uintptr, error) {
 // more.
 func freeShared(p uintptr, n int) {
 	if err := hostmem.UnmapReadOnly(p, n); err != nil {
-		panic("slowjs: " + err.Error())
+		panic("tifajs: " + err.Error())
 	}
 }
 

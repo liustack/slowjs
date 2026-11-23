@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -32,7 +32,7 @@
 // atomic reads in a table (package idtable), and a shadow pointer finds the
 // base of its stack by its alignment, where New wrote the VM's id
 // (StackHeader).
-package gohost // import "github.com/liustack/slowjs/internal/gohost"
+package gohost // import "github.com/liustack/tifajs/internal/gohost"
 
 import (
 	"cmp"
@@ -46,8 +46,8 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/liustack/slowjs/internal/hostmem"
-	"github.com/liustack/slowjs/internal/idtable"
+	"github.com/liustack/tifajs/internal/hostmem"
+	"github.com/liustack/tifajs/internal/idtable"
 )
 
 // Value is a JSValue as the engine passes it: the word of its union, then its

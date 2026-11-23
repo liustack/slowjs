@@ -1,11 +1,11 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-// Package fmt gives a [slowjs.VM] some of Go's fmt: printf, println, sprint
+// Package fmt gives a [tifajs.VM] some of Go's fmt: printf, println, sprint
 // and sprintf.
-package fmt // import "github.com/liustack/slowjs/fmt"
+package fmt // import "github.com/liustack/tifajs/fmt"
 
 import (
 	"fmt"
@@ -14,8 +14,8 @@ import (
 	"runtime"
 	"unsafe"
 
-	"github.com/liustack/slowjs"
-	"github.com/liustack/slowjs/internal/vmhook"
+	"github.com/liustack/tifajs"
+	"github.com/liustack/tifajs/internal/vmhook"
 )
 
 type options struct {
@@ -74,7 +74,7 @@ func budget(n, more int64) int64 {
 // no limit, ends the call with the out of memory error.
 //
 // Register takes obj over and frees it.
-func Register(obj slowjs.Value, opts ...Option) error {
+func Register(obj tifajs.Value, opts ...Option) error {
 	defer obj.Free()
 
 	o := options{}
@@ -85,7 +85,7 @@ func Register(obj slowjs.Value, opts ...Option) error {
 	// EvalThis takes over the value it is given as this: each call gets a
 	// reference of its own.
 	vm := obj.VM()
-	if _, err := vm.EvalThis(obj.Dup(), "this.fmt = {}", slowjs.EvalGlobal); err != nil {
+	if _, err := vm.EvalThis(obj.Dup(), "this.fmt = {}", tifajs.EvalGlobal); err != nil {
 		return err
 	}
 
@@ -115,18 +115,18 @@ func Register(obj slowjs.Value, opts ...Option) error {
 			defer give()
 			return write(vm, w(), s)
 		}},
-		{"sprint", func(a ...any) slowjs.Value {
+		{"sprint", func(a ...any) tifajs.Value {
 			s, give, ok := formatPrint(vm, a, false)
 			if !ok {
-				return slowjs.Value{}
+				return tifajs.Value{}
 			}
 			defer give()
 			return newString(vm, s)
 		}},
-		{"sprintf", func(format string, a ...any) slowjs.Value {
+		{"sprintf", func(format string, a ...any) tifajs.Value {
 			s, give, ok := formatPrintf(vm, format, a)
 			if !ok {
-				return slowjs.Value{}
+				return tifajs.Value{}
 			}
 			defer give()
 			return newString(vm, s)
@@ -138,7 +138,7 @@ func Register(obj slowjs.Value, opts ...Option) error {
 			return err
 		}
 
-		if _, err := vm.EvalThis(obj.Dup(), "this.fmt."+f.name+" = "+global, slowjs.EvalGlobal); err != nil {
+		if _, err := vm.EvalThis(obj.Dup(), "this.fmt."+f.name+" = "+global, tifajs.EvalGlobal); err != nil {
 			return err
 		}
 	}
@@ -146,7 +146,7 @@ func Register(obj slowjs.Value, opts ...Option) error {
 }
 
 // room is what the output of a call on vm may take.
-func room(vm *slowjs.VM) int64 {
+func room(vm *tifajs.VM) int64 {
 	if r := vmhook.Room(vm); r >= 0 {
 		return r
 	}
@@ -157,7 +157,7 @@ func room(vm *slowjs.VM) int64 {
 // function that gives back its memory once the string is no longer used.
 // It is false, with the error that ends the call pending, when the call is
 // to end or the output would not fit.
-func formatPrintf(vm *slowjs.VM, format string, a []any) (string, func(), bool) {
+func formatPrintf(vm *tifajs.VM, format string, a []any) (string, func(), bool) {
 	r := room(vm)
 	n, read, ok, stopped := sizePrintfStop(format, a, r, func() bool { return vmhook.Stop(vm) })
 	if stopped {
@@ -178,7 +178,7 @@ func formatPrintf(vm *slowjs.VM, format string, a []any) (string, func(), bool) 
 
 // formatPrint is formatPrintf for fmt.Sprint, or fmt.Sprintln when ln is
 // true.
-func formatPrint(vm *slowjs.VM, a []any, ln bool) (string, func(), bool) {
+func formatPrint(vm *tifajs.VM, a []any, ln bool) (string, func(), bool) {
 	n := sizePrint(a)
 	if budget(n, 0) > room(vm) {
 		vmhook.OutOfMemory(vm)
@@ -191,7 +191,7 @@ func formatPrint(vm *slowjs.VM, a []any, ln bool) (string, func(), bool) {
 // printfOf makes fmt.Sprintf(format, a...), whose output is at most n bytes:
 // in one go when that is short, else a piece at a time, which stops when
 // the call on vm is to end. vm may be nil, for the tests.
-func printfOf(vm *slowjs.VM, n int64, format string, a []any) (string, func(), bool) {
+func printfOf(vm *tifajs.VM, n int64, format string, a []any) (string, func(), bool) {
 	if n <= direct {
 		return fmt.Sprintf(format, a...), func() {}, true
 	}
@@ -199,7 +199,7 @@ func printfOf(vm *slowjs.VM, n int64, format string, a []any) (string, func(), b
 }
 
 // printOf is printfOf for fmt.Sprint, or fmt.Sprintln when ln is true.
-func printOf(vm *slowjs.VM, n int64, a []any, ln bool) (string, func(), bool) {
+func printOf(vm *tifajs.VM, n int64, a []any, ln bool) (string, func(), bool) {
 	switch {
 	case n > direct && ln:
 		return sprintln(vm, n, a)
@@ -213,7 +213,7 @@ func printOf(vm *slowjs.VM, n int64, a []any, ln bool) (string, func(), bool) {
 
 // write writes s to w a piece at a time, and stops between two pieces when
 // the call on vm is to end. It returns the bytes written.
-func write(vm *slowjs.VM, w io.Writer, s string) (int, error) {
+func write(vm *tifajs.VM, w io.Writer, s string) (int, error) {
 	// The bytes may be given back once the call ends: w gets a slice it
 	// must not keep, as an io.Writer, rather than a string it could.
 	b := unsafe.Slice(unsafe.StringData(s), len(s))
@@ -236,13 +236,13 @@ func write(vm *slowjs.VM, w io.Writer, s string) (int, error) {
 
 // newString is s as a javascript string, made before the memory of s is
 // given back.
-func newString(vm *slowjs.VM, s string) slowjs.Value {
+func newString(vm *tifajs.VM, s string) tifajs.Value {
 	v, err := vm.NewString(s)
 	if err != nil {
 		if !vmhook.Stop(vm) {
 			vmhook.OutOfMemory(vm)
 		}
-		return slowjs.Value{}
+		return tifajs.Value{}
 	}
 	return v
 }

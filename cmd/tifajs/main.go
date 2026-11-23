@@ -1,13 +1,13 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-// Command slowjs runs a JavaScript file in the engine of this module, set up
+// Command tifajs runs a JavaScript file in the engine of this module, set up
 // as tifa sets it up, without writing Go:
 //
-//	slowjs [flags] file.js [args...]
-//	slowjs [flags] -e code [args...]
+//	tifajs [flags] file.js [args...]
+//	tifajs [flags] -e code [args...]
 //
 // The script runs as a global script in one VM, then the promise jobs it
 // queued. The VM has what package tifa gives it, as tifa gives it to each VM
@@ -36,9 +36,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/liustack/slowjs"
-	qjsfmt "github.com/liustack/slowjs/fmt"
-	"github.com/liustack/slowjs/tifa"
+	"github.com/liustack/tifajs"
+	qjsfmt "github.com/liustack/tifajs/fmt"
+	"github.com/liustack/tifajs/tifa"
 )
 
 // The exit codes, in docs/use/command.md.
@@ -81,8 +81,8 @@ func versionString() string {
 	return "(devel)"
 }
 
-const usage = `usage: slowjs [flags] file.js [args...]
-       slowjs [flags] -e code [args...]
+const usage = `usage: tifajs [flags] file.js [args...]
+       tifajs [flags] -e code [args...]
 
 Runs a JavaScript file, or the code of -e, as a global script, then the
 promise jobs it queued, in a VM set up as tifa sets it up: Intl, Temporal,
@@ -104,7 +104,7 @@ file, 3 timeout, 4 out of memory.
 `
 
 func run(args []string) int {
-	fs := flag.NewFlagSet("slowjs", flag.ContinueOnError)
+	fs := flag.NewFlagSet("tifajs", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	eval := fs.String("e", "", "")
 	timeout := fs.Duration("timeout", defaultTimeout, "")
@@ -118,7 +118,7 @@ func run(args []string) int {
 		return usageError(err.Error())
 	}
 	if *showVersion {
-		fmt.Printf("slowjs %s %s %s/%s\n", versionString(), runtime.Version(), runtime.GOOS, runtime.GOARCH)
+		fmt.Printf("tifajs %s %s %s/%s\n", versionString(), runtime.Version(), runtime.GOOS, runtime.GOARCH)
 		return exitOK
 	}
 	if *timeout < 0 {
@@ -145,8 +145,8 @@ func run(args []string) int {
 }
 
 func usageError(msg string) int {
-	fmt.Fprintf(os.Stderr, "slowjs: %s\n", msg)
-	fmt.Fprintf(os.Stderr, "usage: slowjs [flags] file.js [args...], or slowjs -h for the flags\n")
+	fmt.Fprintf(os.Stderr, "tifajs: %s\n", msg)
+	fmt.Fprintf(os.Stderr, "usage: tifajs [flags] file.js [args...], or tifajs -h for the flags\n")
 	return exitUsage
 }
 
@@ -185,30 +185,30 @@ var out = [3]*bufio.Writer{
 // write is write(fd, piece, last): it writes piece, a string of at most
 // 65,536 UTF-16 units, to stdout (1) or stderr (2), and flushes after
 // the last piece of a line. A write error ends the run as an exception.
-var write = slowjs.NewBuiltin("write", 3, func(a slowjs.Args) (slowjs.Value, error) {
+var write = tifajs.NewBuiltin("write", 3, func(a tifajs.Args) (tifajs.Value, error) {
 	fd, _ := a.Number(0)
 	s, ok := a.String(1)
 	if !ok {
 		// Out of memory or a stop of the call, which ends it whatever
 		// is returned.
-		return slowjs.UndefinedValue, nil
+		return tifajs.UndefinedValue, nil
 	}
 	last, _ := a.Bool(2)
 	w := out[int(fd)]
 	if fd == 2 {
 		if err := out[1].Flush(); err != nil {
-			return slowjs.UndefinedValue, err
+			return tifajs.UndefinedValue, err
 		}
 	}
 	if _, err := w.WriteString(s); err != nil {
-		return slowjs.UndefinedValue, err
+		return tifajs.UndefinedValue, err
 	}
 	if last {
 		if err := w.Flush(); err != nil {
-			return slowjs.UndefinedValue, err
+			return tifajs.UndefinedValue, err
 		}
 	}
-	return slowjs.UndefinedValue, nil
+	return tifajs.UndefinedValue, nil
 })
 
 // setup defines print, console and scriptArgs. A line is cut into pieces of
@@ -251,7 +251,7 @@ func runScript(name, src string, args []string, timeout time.Duration, limit uin
 		out[1].Flush()
 		out[2].Flush()
 	}()
-	vm, err := slowjs.NewVM()
+	vm, err := tifajs.NewVM()
 	if err != nil {
 		return failed(err, exitException)
 	}
@@ -289,8 +289,8 @@ func runScript(name, src string, args []string, timeout time.Duration, limit uin
 		err = arm()
 	}
 	if err == nil {
-		var v slowjs.Value
-		if v, err = vm.EvalFile(name, src, slowjs.EvalGlobal); err == nil {
+		var v tifajs.Value
+		if v, err = vm.EvalFile(name, src, tifajs.EvalGlobal); err == nil {
 			v.Free()
 		}
 	}
@@ -304,7 +304,7 @@ func runScript(name, src string, args []string, timeout time.Duration, limit uin
 		return exitOK
 	}
 
-	var e *slowjs.Error
+	var e *tifajs.Error
 	switch {
 	case errors.As(err, &e) && e.Interrupted:
 		return failed(fmt.Errorf("the run did not end within its timeout of %v (--timeout)", timeout), exitTimeout)
@@ -325,7 +325,7 @@ func runScript(name, src string, args []string, timeout time.Duration, limit uin
 // register sets the VM up as tifa's renderer does, after the eval timeout:
 // the call depth, then what tifa.Register defines (URL, Intl, Temporal and
 // the functions named __tifa_*), then fmt, which tifa does not have.
-func register(vm *slowjs.VM) error {
+func register(vm *tifajs.VM) error {
 	vm.SetMaxStackSize(stackDepth)
 	err := tifa.Register(vm)
 	if err == nil {
@@ -335,8 +335,8 @@ func register(vm *slowjs.VM) error {
 }
 
 // define runs setup with the write Builtin and the script arguments.
-func define(vm *slowjs.VM, argsJSON string) error {
-	f, err := vm.EvalValue(setup, slowjs.EvalGlobal)
+func define(vm *tifajs.VM, argsJSON string) error {
+	f, err := vm.EvalValue(setup, tifajs.EvalGlobal)
 	if err != nil {
 		return err
 	}
@@ -346,7 +346,7 @@ func define(vm *slowjs.VM, argsJSON string) error {
 		return err
 	}
 	defer w.Free()
-	r, err := f.CallValue(slowjs.UndefinedValue, w, argsJSON)
+	r, err := f.CallValue(tifajs.UndefinedValue, w, argsJSON)
 	if err == nil {
 		r.Free()
 	}
@@ -355,7 +355,7 @@ func define(vm *slowjs.VM, argsJSON string) error {
 
 func failed(err error, code int) int {
 	out[1].Flush()
-	fmt.Fprintf(out[2], "slowjs: %v\n", err)
+	fmt.Fprintf(out[2], "tifajs: %v\n", err)
 	return code
 }
 

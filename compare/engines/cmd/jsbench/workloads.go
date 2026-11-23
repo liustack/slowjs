@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -23,7 +23,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/liustack/slowjs/compare/engines/engine"
+	"github.com/liustack/tifajs/compare/engines/engine"
 )
 
 func readFile(p string) string {

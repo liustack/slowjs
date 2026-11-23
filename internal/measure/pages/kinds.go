@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -89,8 +89,8 @@ func PageName(input string) string {
 	return strings.TrimSuffix(filepath.Base(input), ".json")
 }
 
-// Repo returns the root of the liustack/slowjs checkout: dir when it is not empty, else the
-// first folder from the working directory up whose go.mod is the module of slowjs.
+// Repo returns the root of the liustack/tifajs checkout: dir when it is not empty, else the
+// first folder from the working directory up whose go.mod is the module of tifajs.
 func Repo(dir string) (string, error) {
 	if dir != "" {
 		return filepath.Abs(dir)
@@ -101,12 +101,12 @@ func Repo(dir string) (string, error) {
 	}
 	for {
 		b, err := os.ReadFile(filepath.Join(d, "go.mod"))
-		if err == nil && bytes.HasPrefix(b, []byte("module github.com/liustack/slowjs\n")) {
+		if err == nil && bytes.HasPrefix(b, []byte("module github.com/liustack/tifajs\n")) {
 			return d, nil
 		}
 		up := filepath.Dir(d)
 		if up == d {
-			return "", fmt.Errorf("pages: no liustack/slowjs checkout above the working directory: pass -repo")
+			return "", fmt.Errorf("pages: no liustack/tifajs checkout above the working directory: pass -repo")
 		}
 		d = up
 	}

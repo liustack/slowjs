@@ -1,14 +1,14 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-// Package tifa gives a [slowjs.VM] what tifa (github.com/liustack/tifa)
+// Package tifa gives a [tifajs.VM] what tifa (github.com/liustack/tifa)
 // gives each VM of its pool before it runs a bundle: URL and
 // URLSearchParams, Intl and Temporal, and the functions named __tifa_* that
 // the bundles tifa builds ask for.
 //
-// slowjs is made for tifa, so tifa, the slowjs command and the program that
+// tifajs is made for tifa, so tifa, the tifajs command and the program that
 // measures tifa's pages (internal/measure/pages) all set a VM up with
 // [Register], and what a VM of each has is the same.
 //
@@ -18,15 +18,15 @@
 //     base64. The bundle's crypto.getRandomValues and crypto.randomUUID read
 //     them.
 //   - __tifa_murmur2__(s): the hash of @emotion/hash of the string s, by
-//     the engine ([slowjs.VM.NewMurmur2Function]), or undefined for anything
+//     the engine ([tifajs.VM.NewMurmur2Function]), or undefined for anything
 //     else, which emotion then hashes in javascript.
 //   - __tifa_escape, __tifa_copy_props, __tifa_start_tag and __tifa_end_tag:
 //     the functions of the engine that do the work of React's escape, its
-//     copy of props and the tags React DOM writes ([slowjs.VM.RegisterEscapeText],
-//     [slowjs.VM.RegisterCopyProps], [slowjs.VM.RegisterStartTag],
-//     [slowjs.VM.RegisterEndTag]).
+//     copy of props and the tags React DOM writes ([tifajs.VM.RegisterEscapeText],
+//     [tifajs.VM.RegisterCopyProps], [tifajs.VM.RegisterStartTag],
+//     [tifajs.VM.RegisterEndTag]).
 //   - __tifa_async_context__: an object with get and set, the async context
-//     of the VM ([slowjs.GetAsyncContext], [slowjs.SetAsyncContext]), which
+//     of the VM ([tifajs.GetAsyncContext], [tifajs.SetAsyncContext]), which
 //     the AsyncLocalStorage of tifa's host script keeps its stores in.
 //
 // The host script of a bundle takes __tifa_random_bytes__ and
@@ -41,24 +41,24 @@ package tifa
 import (
 	"fmt"
 
-	"github.com/liustack/slowjs"
-	"github.com/liustack/slowjs/intl"
-	"github.com/liustack/slowjs/temporal"
-	"github.com/liustack/slowjs/url"
+	"github.com/liustack/tifajs"
+	"github.com/liustack/tifajs/intl"
+	"github.com/liustack/tifajs/temporal"
+	"github.com/liustack/tifajs/url"
 )
 
 // hooks are the globals of Hooks with the function that defines each, in the
 // order Register defines them, which is tifa's.
 var hooks = [...]struct {
 	name     string
-	register func(*slowjs.VM) error
+	register func(*tifajs.VM) error
 }{
 	{"__tifa_random_bytes__", registerRandom},
 	{"__tifa_murmur2__", registerHash},
-	{"__tifa_escape", func(vm *slowjs.VM) error { return vm.RegisterEscapeText("__tifa_escape") }},
-	{"__tifa_copy_props", func(vm *slowjs.VM) error { return vm.RegisterCopyProps("__tifa_copy_props") }},
-	{"__tifa_start_tag", func(vm *slowjs.VM) error { return vm.RegisterStartTag("__tifa_start_tag") }},
-	{"__tifa_end_tag", func(vm *slowjs.VM) error { return vm.RegisterEndTag("__tifa_end_tag") }},
+	{"__tifa_escape", func(vm *tifajs.VM) error { return vm.RegisterEscapeText("__tifa_escape") }},
+	{"__tifa_copy_props", func(vm *tifajs.VM) error { return vm.RegisterCopyProps("__tifa_copy_props") }},
+	{"__tifa_start_tag", func(vm *tifajs.VM) error { return vm.RegisterStartTag("__tifa_start_tag") }},
+	{"__tifa_end_tag", func(vm *tifajs.VM) error { return vm.RegisterEndTag("__tifa_end_tag") }},
 	{"__tifa_async_context__", registerAsyncContext},
 }
 
@@ -81,7 +81,7 @@ func Hooks() []string {
 // Register runs once on a VM: a second call fails, as url.Register refuses a
 // VM that has URL. When a step fails, vm keeps what the steps before it
 // defined: close it.
-func Register(vm *slowjs.VM) error {
+func Register(vm *tifajs.VM) error {
 	if err := url.Register(vm); err != nil {
 		return err
 	}
@@ -103,7 +103,7 @@ func Register(vm *slowjs.VM) error {
 // Register defines it. It is for a VM that is to have only some of them,
 // such as a test of one, or a measurement that leaves the others out on
 // purpose.
-func RegisterHook(vm *slowjs.VM, name string) error {
+func RegisterHook(vm *tifajs.VM, name string) error {
 	for _, h := range hooks {
 		if h.name == name {
 			if err := h.register(vm); err != nil {

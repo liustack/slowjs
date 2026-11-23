@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-// Package slowjs is a JavaScript engine written for Go programs that render
+// Package tifajs is a JavaScript engine written for Go programs that render
 // pages on a server: pure Go, with no cgo and no shared library, so that it
 // builds and cross-compiles as any Go package does. It runs ES2023, modules,
 // async generators, Proxy and BigInt among it. The engine, which started
@@ -14,9 +14,9 @@
 //
 // The engine has no Intl of its own, and its toLocale* methods look at no
 // locale and no timeZone. The Register function of package
-// github.com/liustack/slowjs/intl adds every Intl constructor to a VM and
+// github.com/liustack/tifajs/intl adds every Intl constructor to a VM and
 // replaces toLocale* and localeCompare with ones that use them. The one of
-// package github.com/liustack/slowjs/temporal adds Temporal. Without a locale
+// package github.com/liustack/tifajs/temporal adds Temporal. Without a locale
 // they use en-US, and without a timeZone UTC. The time zone data is built in:
 // the zoneinfo of the host is never read.
 //
@@ -37,7 +37,7 @@
 //
 //   - QuickJS in C: https://bellard.org/quickjs
 //   - ES2023: https://tc39.es/ecma262/2023/
-package slowjs // import "github.com/liustack/slowjs"
+package tifajs // import "github.com/liustack/tifajs"
 
 import (
 	"encoding/json"
@@ -139,7 +139,7 @@ var UndefinedValue = Value{v: undefined}
 // ErrKilled matches the error of a call whose script did not stop in time
 // after the eval timeout or [VM.Interrupt] and was killed, with
 // [errors.Is]. Such a VM is good only for [VM.Close].
-var ErrKilled = errors.New("slowjs: the script did not stop in time and was killed")
+var ErrKilled = errors.New("tifajs: the script did not stop in time and was killed")
 
 // HostFunc is a Go function for [VM.RegisterHostFunc]: it gets the arguments
 // of the call as Go values, and returns the one value of the call, or an

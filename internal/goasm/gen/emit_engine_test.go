@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 package gen
 
@@ -16,11 +16,11 @@ import (
 
 // TestEmitLeafFrame: a leaf that saves a callee-saved register must be
 // emitted with a frame for that save, through either emit entry, or its
-// store would overwrite the return address. Needs LLVM 22.1.8 (SLOWJS_LLVM).
+// store would overwrite the return address. Needs LLVM 22.1.8 (TIFAJS_LLVM).
 func TestEmitLeafFrame(t *testing.T) {
-	llvm := os.Getenv("SLOWJS_LLVM")
+	llvm := os.Getenv("TIFAJS_LLVM")
 	if llvm == "" {
-		t.Skip("set SLOWJS_LLVM")
+		t.Skip("set TIFAJS_LLVM")
 	}
 	fn := FuncSpec{Name: "savingleaf", Sig: Sig{Params: []Type{I64}, Ret: I64}, Kind: Register}
 	SetCallees([]FuncSpec{fn})
@@ -75,8 +75,8 @@ func TestBuildExpr(t *testing.T) {
 	for _, c := range []struct{ tag, arch, want string }{
 		{"", "amd64", "amd64"},
 		{"", "arm64", "arm64"},
-		{"slowjs_cengine", "amd64", "slowjs_cengine && amd64"},
-		{"slowjs_cengine", "arm64", "slowjs_cengine && arm64"},
+		{"tifajs_cengine", "amd64", "tifajs_cengine && amd64"},
+		{"tifajs_cengine", "arm64", "tifajs_cengine && arm64"},
 	} {
 		if got := BuildExpr(c.tag, c.arch); got != c.want {
 			t.Errorf("BuildExpr(%q, %q) = %q, want %q", c.tag, c.arch, got, c.want)

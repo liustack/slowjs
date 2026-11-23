@@ -5,7 +5,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/liustack/slowjs/internal/gointl/internal/listdata"
+	"github.com/liustack/tifajs/internal/gointl/internal/listdata"
 )
 
 // Intl.ListFormat.

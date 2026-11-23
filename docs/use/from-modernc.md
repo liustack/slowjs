@@ -1,7 +1,7 @@
 ---
-summary: 'What breaks and what changes in behaviour when moving a Go program from modernc.org/quickjs v0.25.0 to github.com/liustack/slowjs'
+summary: 'What breaks and what changes in behaviour when moving a Go program from modernc.org/quickjs v0.25.0 to github.com/liustack/tifajs'
 read_when:
-  - Moving a Go program from modernc.org/quickjs to github.com/liustack/slowjs
+  - Moving a Go program from modernc.org/quickjs to github.com/liustack/tifajs
   - Checking which APIs or behaviours differ from modernc.org/quickjs v0.25.0
 audience: user
 order: 5
@@ -11,11 +11,11 @@ order: 5
 
 English · [简体中文](from-modernc.zh-CN.md)
 
-This page covers what a Go program that used `modernc.org/quickjs` v0.25.0 runs into when switching to `github.com/liustack/slowjs`.
+This page covers what a Go program that used `modernc.org/quickjs` v0.25.0 runs into when switching to `github.com/liustack/tifajs`.
 
 ## What to change in your code and go.mod
 
-- **Import paths and package name.** `modernc.org/quickjs` becomes `github.com/liustack/slowjs`, and the package name changes from `quickjs` to `slowjs`. Its `intl` and `fmt` packages move with it. The engine is inside the module, so `modernc.org/libquickjs` leaves your `go.mod`.
+- **Import paths and package name.** `modernc.org/quickjs` becomes `github.com/liustack/tifajs`, and the package name changes from `quickjs` to `tifajs`. Its `intl` and `fmt` packages move with it. The engine is inside the module, so `modernc.org/libquickjs` leaves your `go.mod`.
 - **Go version.** The module needs Go 1.26.6 or later, and stops a Go version it has not been checked with (see [upgrading.md](../internals/upgrading.md#moving-to-a-newer-go)), where `modernc.org/quickjs` v0.25.0 needs Go 1.26.
 - **Six platforms only.** The module builds for linux, darwin and windows, on amd64 and arm64, only. A build for any other target stops with an error that names the supported ones ([details](../internals/architecture.md#platforms)).
 - **No module loading, shell helpers or blocking.** `VM.SetModuleLoader`, `VM.SetDefaultModuleLoader` with `ModuleLoaderFunc` and `ModuleNormalizeFunc`, `VM.StdAddHelpers` (`console.log`, `print`, `performance.now`, `__loadScript`) and `VM.SetCanBlock` are gone. A module can import only a module the VM already has, such as itself by its name `<eval>`, and `Atomics.wait` always throws ([details](../internals/changes/go-api.md#no-module-loader-shell-helpers-or-setcanblock)).

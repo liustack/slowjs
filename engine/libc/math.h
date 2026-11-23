@@ -1,11 +1,11 @@
 /*
- * Copyright (c) 2026 The liustack/slowjs Authors.
+ * Copyright (c) 2026 The liustack/tifajs Authors.
  * SPDX-License-Identifier: MIT
  * Use of this source code is governed by the MIT license in LICENSE at the
  * root of this repository.
  */
-#ifndef SLOWJS_LIBC_MATH_H
-#define SLOWJS_LIBC_MATH_H
+#ifndef TIFAJS_LIBC_MATH_H
+#define TIFAJS_LIBC_MATH_H
 
 /* double only. FLT_EVAL_METHOD is 0, so double_t is double. The functions are
    musl's (see README.md), except sqrt, which is one instruction. */

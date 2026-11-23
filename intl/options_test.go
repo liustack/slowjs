@@ -1,16 +1,16 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package intl // import "github.com/liustack/slowjs/intl"
+package intl // import "github.com/liustack/tifajs/intl"
 
 import (
 	"fmt"
 	"strings"
 	"testing"
 
-	"github.com/liustack/slowjs"
+	"github.com/liustack/tifajs"
 )
 
 // A number option is checked against its range before it is floored, as
@@ -41,7 +41,7 @@ func TestNumberOptionRange(t *testing.T) {
 	} {
 		vm := newVM(t)
 		js := fmt.Sprintf(`new Intl.%s('en', {%s: %s}).resolvedOptions().%[2]s`, c.ctor, c.option, c.value)
-		v, err := vm.Eval(js, slowjs.EvalGlobal)
+		v, err := vm.Eval(js, tifajs.EvalGlobal)
 		got := fmt.Sprint(v)
 		if err != nil {
 			got, _, _ = strings.Cut(err.Error(), ":")

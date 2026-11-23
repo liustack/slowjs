@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -15,10 +15,11 @@ func TestSelfRowReadsOldResultsFiles(t *testing.T) {
 		engines []string
 		want    string
 	}{
-		{[]string{"liustack-slowjs", "moejs"}, "liustack-slowjs"},
+		{[]string{"liustack-tifajs", "moejs"}, "liustack-tifajs"},
 		{[]string{"liustack-quickjs", "moejs"}, "liustack-quickjs"},
+		{[]string{"liustack-slowjs", "moejs"}, "liustack-slowjs"},
 		{[]string{"slowjs", "moejs"}, "slowjs"},
-		{[]string{"moejs"}, "liustack-slowjs"},
+		{[]string{"moejs"}, "liustack-tifajs"},
 	} {
 		m := map[string][]json.RawMessage{}
 		for _, e := range c.engines {

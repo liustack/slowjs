@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	intl "github.com/liustack/slowjs/internal/gointl"
-	"github.com/liustack/slowjs/internal/gointl/internal/corpus"
+	intl "github.com/liustack/tifajs/internal/gointl"
+	"github.com/liustack/tifajs/internal/gointl/internal/corpus"
 )
 
 func TestCollatorMatchesICU(t *testing.T) {

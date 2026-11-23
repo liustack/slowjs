@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package intl // import "github.com/liustack/slowjs/intl"
+package intl // import "github.com/liustack/tifajs/intl"
 
 import (
 	"errors"
@@ -11,8 +11,8 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/liustack/slowjs"
-	"github.com/liustack/slowjs/internal/vmhook"
+	"github.com/liustack/tifajs"
+	"github.com/liustack/tifajs/internal/vmhook"
 )
 
 // A Builtin of Intl that does work in Go in proportion to a long input reads
@@ -36,7 +36,7 @@ type stopSpans struct {
 
 // measureStops evaluates src on vm with vmhook.Stop counted. The tests that
 // call it do not run in parallel, so no other call reads vmhook.Stop.
-func measureStops(t *testing.T, vm *slowjs.VM, src string) (stopSpans, error) {
+func measureStops(t *testing.T, vm *tifajs.VM, src string) (stopSpans, error) {
 	t.Helper()
 	var s stopSpans
 	var ms runtime.MemStats
@@ -55,14 +55,14 @@ func measureStops(t *testing.T, vm *slowjs.VM, src string) (stopSpans, error) {
 		return stop(vm)
 	}
 	defer func() { vmhook.Stop = stop }()
-	_, err := vm.Eval("(function () { "+src+"; })(); 0", slowjs.EvalGlobal)
+	_, err := vm.Eval("(function () { "+src+"; })(); 0", tifajs.EvalGlobal)
 	span()
 	return s, err
 }
 
 // isRangeError reports whether err is a RangeError a script can catch.
 func isRangeError(err error) bool {
-	var e *slowjs.Error
+	var e *tifajs.Error
 	return errors.As(err, &e) && !e.Uncatchable && e.Name == "RangeError"
 }
 
@@ -146,7 +146,7 @@ var holdWhole = map[string]bool{
 }
 
 // setUp makes the input of setup, of n units, in vm.
-func setUp(t *testing.T, vm *slowjs.VM, setup string, n int) {
+func setUp(t *testing.T, vm *tifajs.VM, setup string, n int) {
 	t.Helper()
 	eval(t, vm, "var N = "+strconv.Itoa(n)+"; "+setup+"; 0")
 }
@@ -201,7 +201,7 @@ func TestLongWorkRoom(t *testing.T) {
 
 // isOutOfMemory reports whether err ended the call as running out of memory.
 func isOutOfMemory(err error) bool {
-	var e *slowjs.Error
+	var e *tifajs.Error
 	return errors.As(err, &e) && e.Uncatchable && e.OutOfMemory
 }
 

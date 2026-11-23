@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-// Package qjspack is the layout of the go-intl data liustack/slowjs embeds: the files
+// Package qjspack is the layout of the go-intl data liustack/tifajs embeds: the files
 // of go-intl's data directory, grouped into chunks, each chunk stored as it is
 // or compressed with DEFLATE.
 //
@@ -21,7 +21,7 @@
 //	per chunk: its method (0 stored, 1 DEFLATE), its size once inflated,
 //	    where its data starts and ends in the pack
 //	the names, then the chunks' data
-package qjspack // import "github.com/liustack/slowjs/internal/gointl/internal/qjspack"
+package qjspack // import "github.com/liustack/tifajs/internal/gointl/internal/qjspack"
 
 import (
 	"bytes"

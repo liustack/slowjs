@@ -1,11 +1,11 @@
 /*
- * Copyright (c) 2026 The liustack/slowjs Authors.
+ * Copyright (c) 2026 The liustack/tifajs Authors.
  * SPDX-License-Identifier: MIT
  * Use of this source code is governed by the MIT license in LICENSE at the
  * root of this repository.
  */
-#ifndef SLOWJS_LIBC_STDATOMIC_H
-#define SLOWJS_LIBC_STDATOMIC_H
+#ifndef TIFAJS_LIBC_STDATOMIC_H
+#define TIFAJS_LIBC_STDATOMIC_H
 
 /* The operations Atomics.* uses, on the compiler's own C11 builtins. */
 #define atomic_load(p) __c11_atomic_load(p, __ATOMIC_SEQ_CST)

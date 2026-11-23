@@ -1,15 +1,15 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package intl // import "github.com/liustack/slowjs/intl"
+package intl // import "github.com/liustack/tifajs/intl"
 
 import (
 	"testing"
 
-	"github.com/liustack/slowjs/internal/intlhook"
-	"github.com/liustack/slowjs/internal/stopsweep"
+	"github.com/liustack/tifajs/internal/intlhook"
+	"github.com/liustack/tifajs/internal/stopsweep"
 )
 
 // manyVariants makes l, a list of N / 9615 tags of 9,615 units each, of ten

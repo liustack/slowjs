@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/liustack/slowjs"
+	"github.com/liustack/tifajs"
 )
 
 // finalizerBundle registers a cycle in a FinalizationRegistry at its top level and in each render,
@@ -48,7 +48,7 @@ func openFinalizer(t *testing.T, top string) (*Runner, error) {
 
 func finalized(t *testing.T, r *Runner) string {
 	t.Helper()
-	v, err := r.VM().Eval(`finalized.join()`, slowjs.EvalGlobal)
+	v, err := r.VM().Eval(`finalized.join()`, tifajs.EvalGlobal)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,16 +131,16 @@ func TestTopLevelJobsRunAfterTheLoadCollection(t *testing.T) {
 // What the order above rests on: a module without a top-level await, loaded as tifa loads its
 // bundle (Compile as a module, shared bytecode), leaves the jobs its top level queued in the queue.
 func TestModuleLeavesTopLevelJobsQueued(t *testing.T) {
-	vm, err := slowjs.NewVM()
+	vm, err := tifajs.NewVM()
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer vm.Close()
-	code, err := vm.Compile(`Promise.resolve().then(() => { globalThis.ran = true }); export {}`, slowjs.EvalModule)
+	code, err := vm.Compile(`Promise.resolve().then(() => { globalThis.ran = true }); export {}`, tifajs.EvalModule)
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := slowjs.NewSharedBytecode(code)
+	b, err := tifajs.NewSharedBytecode(code)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +148,7 @@ func TestModuleLeavesTopLevelJobsQueued(t *testing.T) {
 	if _, err := vm.EvalSharedBytecode(b); err != nil {
 		t.Fatal(err)
 	}
-	if ran, err := vm.Eval(`globalThis.ran === true`, slowjs.EvalGlobal); err != nil || ran != false {
+	if ran, err := vm.Eval(`globalThis.ran === true`, tifajs.EvalGlobal); err != nil || ran != false {
 		t.Fatalf("the job of the module ran during its load (%v, %v)", ran, err)
 	}
 	if n, err := vm.ExecutePendingJobs(); err != nil || n != 1 {

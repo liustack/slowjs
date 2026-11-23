@@ -1,15 +1,15 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package intl // import "github.com/liustack/slowjs/intl"
+package intl // import "github.com/liustack/tifajs/intl"
 
 import (
 	"slices"
 	"sync"
 
-	gointl "github.com/liustack/slowjs/internal/gointl"
+	gointl "github.com/liustack/tifajs/internal/gointl"
 )
 
 // unlistedCollations are the collations go-intl's list names that no

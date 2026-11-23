@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"testing"
 
-	intl "github.com/liustack/slowjs/internal/gointl"
+	intl "github.com/liustack/tifajs/internal/gointl"
 )
 
 // Numbers given exactly are written exactly, with every digit, and those too

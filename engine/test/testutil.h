@@ -1,11 +1,11 @@
 /*
- * Copyright (c) 2026 The liustack/slowjs Authors.
+ * Copyright (c) 2026 The liustack/tifajs Authors.
  * SPDX-License-Identifier: MIT
  * Use of this source code is governed by the MIT license in LICENSE at the
  * root of this repository.
  */
-#ifndef SLOWJS_TEST_TESTUTIL_H
-#define SLOWJS_TEST_TESTUTIL_H
+#ifndef TIFAJS_TEST_TESTUTIL_H
+#define TIFAJS_TEST_TESTUTIL_H
 
 /* What the unit programs that came from the Go tests share (unit-oom.c,
    unit-api.c): a runtime with a context, a way to give it a little memory

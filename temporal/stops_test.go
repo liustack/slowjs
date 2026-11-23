@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -9,9 +9,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/liustack/slowjs"
-	"github.com/liustack/slowjs/internal/stopsweep"
-	"github.com/liustack/slowjs/internal/vmhook"
+	"github.com/liustack/tifajs"
+	"github.com/liustack/tifajs/internal/stopsweep"
+	"github.com/liustack/tifajs/internal/vmhook"
 )
 
 // The arithmetic of Temporal in a calendar other than ISO 8601 goes a month
@@ -27,7 +27,7 @@ const turnsPerStop = 4096
 // countStops evaluates src on vm and returns how many times it read
 // vmhook.Stop. The tests that call it do not run in parallel, so no other
 // call reads vmhook.Stop.
-func countStops(t *testing.T, vm *slowjs.VM, src string) (int, error) {
+func countStops(t *testing.T, vm *tifajs.VM, src string) (int, error) {
 	t.Helper()
 	n := 0
 	stop := vmhook.Stop
@@ -36,12 +36,12 @@ func countStops(t *testing.T, vm *slowjs.VM, src string) (int, error) {
 		return stop(vm)
 	}
 	defer func() { vmhook.Stop = stop }()
-	_, err := vm.Eval("(function () { "+src+"; })(); 0", slowjs.EvalGlobal)
+	_, err := vm.Eval("(function () { "+src+"; })(); 0", tifajs.EvalGlobal)
 	return n, err
 }
 
 func isRangeError(err error) bool {
-	var e *slowjs.Error
+	var e *tifajs.Error
 	return errors.As(err, &e) && !e.Uncatchable && e.Name == "RangeError"
 }
 

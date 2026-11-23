@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -20,7 +20,7 @@ import (
 
 	"github.com/dop251/goja"
 	"github.com/fastschema/qjs"
-	"github.com/liustack/slowjs"
+	"github.com/liustack/tifajs"
 )
 
 //go:embed testdata/*.js
@@ -72,7 +72,7 @@ func BenchmarkLIUSTACK(b *testing.B) {
 	for _, name := range names {
 		b.Run(name, func(b *testing.B) {
 			js := script(b, name, b.N)
-			vm, err := slowjs.NewVM()
+			vm, err := tifajs.NewVM()
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -81,7 +81,7 @@ func BenchmarkLIUSTACK(b *testing.B) {
 
 			b.ReportAllocs()
 			b.ResetTimer()
-			if out, err := vm.Eval(js, slowjs.EvalGlobal); err != nil {
+			if out, err := vm.Eval(js, tifajs.EvalGlobal); err != nil {
 				b.Fatalf("%v (%v)", err, out)
 			}
 		})

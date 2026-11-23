@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -15,7 +15,7 @@ import (
 
 	"golang.org/x/sys/windows"
 
-	"github.com/liustack/slowjs/internal/faultstate"
+	"github.com/liustack/tifajs/internal/faultstate"
 )
 
 const (
@@ -25,7 +25,7 @@ const (
 	// before each fault, well past span and the frames of the panic.
 	room = 64 << 10
 	// probeEnv marks the process that runs the probe.
-	probeEnv = "SLOWJS_FAULTTEST_PROBE"
+	probeEnv = "TIFAJS_FAULTTEST_PROBE"
 )
 
 var sink byte

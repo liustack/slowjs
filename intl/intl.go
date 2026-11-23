@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-// Package intl gives a [slowjs.VM] the ECMA-402 Intl API, computed in Go.
+// Package intl gives a [tifajs.VM] the ECMA-402 Intl API, computed in Go.
 //
 // QuickJS comes without Intl. [Register] adds it: the constructors
 // Intl.DateTimeFormat, NumberFormat, PluralRules, Collator, Segmenter,
@@ -47,7 +47,7 @@
 // # Cost
 //
 // The data takes six packs, 9.35 MB of the binary in all. The build tags
-// slowjs_intl_nonames and slowjs_intl_nocjdict leave out the display names
+// tifajs_intl_nonames and tifajs_intl_nocjdict leave out the display names
 // and the Chinese and Japanese word dictionary of Segmenter.
 //
 // The formatters are shared by all the VMs of the process: a registry keeps
@@ -61,7 +61,7 @@
 // A program that imports this package carries data from Unicode CLDR, ICU
 // and Chromium, and has to ship intl/LICENSE-DATA and the notices of
 // internal/gointl with it. NOTICE.md says which covers what.
-package intl // import "github.com/liustack/slowjs/intl"
+package intl // import "github.com/liustack/tifajs/intl"
 
 import (
 	_ "embed"
@@ -70,9 +70,9 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/liustack/slowjs"
-	"github.com/liustack/slowjs/internal/intlhook"
-	"github.com/liustack/slowjs/internal/vmhook"
+	"github.com/liustack/tifajs"
+	"github.com/liustack/tifajs/internal/intlhook"
+	"github.com/liustack/tifajs/internal/vmhook"
 )
 
 // intl.js is the javascript half of Intl, installed on a VM when a page
@@ -116,7 +116,7 @@ func (s *script) bytecode() ([]byte, error) {
 
 	// A VM of its own: the one that wants the script may be short of
 	// memory, stack or time.
-	vm, err := slowjs.NewVM()
+	vm, err := tifajs.NewVM()
 	if err != nil {
 		return nil, err
 	}
@@ -125,8 +125,8 @@ func (s *script) bytecode() ([]byte, error) {
 
 	// Without source and debug information, its functions show
 	// [native code], as built-ins do, and each VM holds less.
-	vm.SetStrip(slowjs.StripDebug)
-	code, err := vm.Compile(*s.src, slowjs.EvalGlobal)
+	vm.SetStrip(tifajs.StripDebug)
+	code, err := vm.Compile(*s.src, tifajs.EvalGlobal)
 	if err != nil {
 		return nil, err
 	}
@@ -136,7 +136,7 @@ func (s *script) bytecode() ([]byte, error) {
 }
 
 // eval evaluates the script on vm.
-func (s *script) eval(vm *slowjs.VM) error {
+func (s *script) eval(vm *tifajs.VM) error {
 	code, err := s.bytecode()
 	if err != nil {
 		return err
@@ -168,11 +168,11 @@ func TimeZone(name string) Option {
 
 // marker is the key, as Symbol.for(marker), of the property stub.js puts
 // on the global object of a VM it registered.
-const marker = "github.com/liustack/slowjs/intl"
+const marker = "github.com/liustack/tifajs/intl"
 
 // registered reports whether vm has Intl from Register.
-func registered(vm *slowjs.VM) (bool, error) {
-	v, err := vm.Eval("globalThis[Symbol.for("+strconv.Quote(marker)+")] === true", slowjs.EvalGlobal)
+func registered(vm *tifajs.VM) (bool, error) {
+	v, err := vm.Eval("globalThis[Symbol.for("+strconv.Quote(marker)+")] === true", tifajs.EvalGlobal)
 	if err != nil {
 		return false, err
 	}
@@ -193,7 +193,7 @@ func registered(vm *slowjs.VM) (bool, error) {
 // Register only puts stand-ins in place. Intl is installed the first time
 // a page uses it or one of the methods. Nothing needs to be released:
 // vm.Close frees it all.
-func Register(vm *slowjs.VM, opts ...Option) error {
+func Register(vm *tifajs.VM, opts ...Option) error {
 	switch done, err := registered(vm); {
 	case err != nil:
 		return err
@@ -239,7 +239,7 @@ func Register(vm *slowjs.VM, opts ...Option) error {
 
 	defer state.Free()
 
-	if _, err := f.Call(slowjs.UndefinedValue, install, zone, state); err != nil {
+	if _, err := f.Call(tifajs.UndefinedValue, install, zone, state); err != nil {
 		return err
 	}
 
@@ -257,23 +257,23 @@ type request struct {
 	Options map[string]any `json:"options"`
 
 	// vm is the VM of the call, nil in some tests.
-	vm *slowjs.VM
+	vm *tifajs.VM
 }
 
 // installing holds the VMs intl.js is being installed on.
-var installing sync.Map // *slowjs.VM -> bool
+var installing sync.Map // *tifajs.VM -> bool
 
 // installBuiltin installs intl.js on the VM of its call, for stub.js, which
 // passes the built-ins it took, the default zone, whether an install of
 // this VM was cut short before, and the state the VM shares with Temporal.
 // It returns what intl.js returns, which stub.js puts in place of the
 // stand-ins.
-var installBuiltin = intlhook.NewBuiltin("install", 3, func(a slowjs.Args) (slowjs.Value, error) {
+var installBuiltin = intlhook.NewBuiltin("install", 3, func(a tifajs.Args) (tifajs.Value, error) {
 	vm := a.VM()
 	if _, busy := installing.LoadOrStore(vm, true); busy {
 		// intl.js calls no code of the page while it installs, so only a
 		// bug gets here.
-		return slowjs.Value{}, &slowjs.Error{Name: "Error", Message: "intl: Intl was used while it was being installed"}
+		return tifajs.Value{}, &tifajs.Error{Name: "Error", Message: "intl: Intl was used while it was being installed"}
 	}
 
 	defer installing.Delete(vm)
@@ -285,12 +285,12 @@ var installBuiltin = intlhook.NewBuiltin("install", 3, func(a slowjs.Args) (slow
 
 	code, err := shimScript.bytecode()
 	if err != nil {
-		return slowjs.Value{}, err
+		return tifajs.Value{}, err
 	}
 
 	g, err := vm.EvalBytecodeValue(code)
 	if err != nil {
-		return slowjs.Value{}, err
+		return tifajs.Value{}, err
 	}
 
 	defer g.Free()
@@ -301,20 +301,20 @@ var installBuiltin = intlhook.NewBuiltin("install", 3, func(a slowjs.Args) (slow
 		v, err := vm.NewBuiltinFunction(b)
 		if err != nil {
 			freeValues(args[4:])
-			return slowjs.Value{}, err
+			return tifajs.Value{}, err
 		}
 		args = append(args, v)
 	}
 
 	defer freeValues(args[4:])
 
-	return g.CallValue(slowjs.UndefinedValue, args...)
+	return g.CallValue(tifajs.UndefinedValue, args...)
 })
 
 // freeValues frees the Values in l.
 func freeValues(l []any) {
 	for _, v := range l {
-		if v, ok := v.(slowjs.Value); ok {
+		if v, ok := v.(tifajs.Value); ok {
 			v.Free()
 		}
 	}

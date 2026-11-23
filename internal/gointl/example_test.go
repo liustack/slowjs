@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	intl "github.com/liustack/slowjs/internal/gointl"
+	intl "github.com/liustack/tifajs/internal/gointl"
 )
 
 // The README's example. The no-break spaces are CLDR's, and %q shows them.

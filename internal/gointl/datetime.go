@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/liustack/slowjs/internal/gointl/internal/datedata"
-	"github.com/liustack/slowjs/internal/gointl/internal/numdata"
+	"github.com/liustack/tifajs/internal/gointl/internal/datedata"
+	"github.com/liustack/tifajs/internal/gointl/internal/numdata"
 )
 
 // Intl.DateTimeFormat.

@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -24,9 +24,9 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/liustack/slowjs/internal/faultstate"
-	"github.com/liustack/slowjs/internal/gohost"
-	"github.com/liustack/slowjs/internal/hostmem"
+	"github.com/liustack/tifajs/internal/faultstate"
+	"github.com/liustack/tifajs/internal/gohost"
+	"github.com/liustack/tifajs/internal/hostmem"
 )
 
 // The bottom of the shadow stack is the host's: past the header of gohost,
@@ -76,8 +76,8 @@ const (
 )
 
 // DefaultShapeCache is the number of shapes of plain objects a new VM keeps
-// after their last object is gone, as a VM of package slowjs does
-// (slowjs.DefaultShapeCache): an object that gets the same keys in the same
+// after their last object is gone, as a VM of package tifajs does
+// (tifajs.DefaultShapeCache): an object that gets the same keys in the same
 // order as one before it finds its shapes kept.
 const DefaultShapeCache = 2048
 
@@ -717,7 +717,7 @@ var leakedBlocks atomic.Uint64
 // process still had in use when Close freed them, which is 0 when nothing
 // leaked. A test reads it before and after the VMs it closes, and sees a
 // leak of the engine where it has no *VM of this package, as with a
-// *slowjs.VM.
+// *tifajs.VM.
 func Leaked() uint64 { return leakedBlocks.Load() }
 
 // addr and bytesAt reach the engine's memory, outside the Go heap (see

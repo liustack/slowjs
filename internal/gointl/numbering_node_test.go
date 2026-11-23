@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	intl "github.com/liustack/slowjs/internal/gointl"
+	intl "github.com/liustack/tifajs/internal/gointl"
 )
 
 // numberingGaps are cases these expectations hold go-intl to that it cannot

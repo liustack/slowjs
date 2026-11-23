@@ -4,7 +4,7 @@ audience: dev
 order: 10
 read_when:
   - Making a change to the engine for speed, or reviewing one
-  - Measuring a branch of liustack/slowjs on tifa's pages before a release
+  - Measuring a branch of liustack/tifajs on tifa's pages before a release
   - A speed result of a few percent, which may only be where the code landed
   - About to try an engine idea that may already have been tried
   - Planning the next round of work on render speed
@@ -14,9 +14,9 @@ read_when:
 
 # Performance
 
-liustack/slowjs is made for tifa, which renders React pages to HTML in the engine, so render speed is measured on the pages of tifa's example shop: one warm VM rendering the order list, an order and the stats of each of its two shops (`BenchmarkShop` in tifa's `test/ssr`). Every change for speed leaves the HTML the same byte for byte. The doc of each change in [changes](changes/README.md) has its full measurement, and tifa's [docs/performance.md](https://github.com/liustack/tifa/blob/main/docs/performance.md) has what the numbers mean for an app. How the engine compares with the other pure Go engines, on tifa's pages and on general workloads, is in [benchmarks.md](../use/benchmarks.md).
+liustack/tifajs is made for tifa, which renders React pages to HTML in the engine, so render speed is measured on the pages of tifa's example shop: one warm VM rendering the order list, an order and the stats of each of its two shops (`BenchmarkShop` in tifa's `test/ssr`). Every change for speed leaves the HTML the same byte for byte. The doc of each change in [changes](changes/README.md) has its full measurement, and tifa's [docs/performance.md](https://github.com/liustack/tifa/blob/main/docs/performance.md) has what the numbers mean for an app. How the engine compares with the other pure Go engines, on tifa's pages and on general workloads, is in [benchmarks.md](../use/benchmarks.md).
 
-The engine changes up to v0.26.15 alone made renders 1.63 to 1.66 times as fast as on the engine liustack/slowjs started from (modernc.org/quickjs v0.25.0 with libquickjs v0.13.1), and 2.07 times as fast with the rewrites of tifa's Vite plugin and PGO (measured on 2026-10-20).
+The engine changes up to v0.26.15 alone made renders 1.63 to 1.66 times as fast as on the engine liustack/tifajs started from (modernc.org/quickjs v0.25.0 with libquickjs v0.13.1), and 2.07 times as fast with the rewrites of tifa's Vite plugin and PGO (measured on 2026-10-20).
 
 ## How the numbers were measured
 
@@ -80,11 +80,11 @@ Releases from v0.29.0 run the C engine. Instructions are counted with callgrind 
 
 Judge every timing by the protocol of [measuring.md](measuring.md). This section is how to build and run tifa against a checkout.
 
-To measure a branch of liustack/slowjs before it is released, point tifa at the checkout with a `replace`, build the example app, and run the benchmarks of tifa's [docs/testing.md](https://github.com/liustack/tifa/blob/main/docs/testing.md#performance-comparisons):
+To measure a branch of liustack/tifajs before it is released, point tifa at the checkout with a `replace`, build the example app, and run the benchmarks of tifa's [docs/testing.md](https://github.com/liustack/tifa/blob/main/docs/testing.md#performance-comparisons):
 
 ```sh
 # in tifa
-go mod edit -replace github.com/liustack/slowjs=../slowjs
+go mod edit -replace github.com/liustack/tifajs=../tifajs
 (cd examples/shop && pnpm install --frozen-lockfile && go tool tifa build)
 TIFA_SSR_SHOP=1 go test -run '^$' -bench 'Shop/^render' -benchtime 2000x ./test/ssr
 TIFA_SSR_SHOP=1 go test -run ShopVMMemory -v ./test/ssr
@@ -144,7 +144,7 @@ A `front` that is not a multiple of 16 (8, 24, 40, 56) moves the body and the co
 
 Each item says what it would give and why it was dropped. Check here before trying one of them again. The numbers come from tifa's [docs/performance.md](https://github.com/liustack/tifa/blob/main/docs/performance.md#what-was-tried-and-not-done) and [docs/studies/engine-hotspots.md](https://github.com/liustack/tifa/blob/main/docs/studies/engine-hotspots.md), and from the docs of the changes.
 
-- **Dispatching opcodes through closures or a table of functions**, as some Go interpreters do: a rewrite of the interpreter, against the rule of liustack/slowjs to make only mechanical changes. Not tried.
+- **Dispatching opcodes through closures or a table of functions**, as some Go interpreters do: a rewrite of the interpreter, against the rule of liustack/tifajs to make only mechanical changes. Not tried.
 - **A check in JavaScript in front of one spread for the props of `createElement` and `cloneElement`**, measured on v0.29.1 before `RegisterCopyProps`: the plugin tested the config (the prototype, the symbols, `__proto__`, `__self` and `__source`, a getter behind `key`) and then copied it with the rest of a destructuring. The test took 310 to 380 ns a call, more than the loop takes for a config of none, one or two keys, so `createElement` took 1.57 times as long for no keys, 1.07 for one key and 1.13 to 1.40 for a `key` and one or two more. The shop took 0.99 of the time (1.6% to 2.5% fewer instructions) and no page passed the rule. It also could not rule out a proxy, a getter that deletes a later key and a setter added to `Object.prototype` after React loaded. The same checks in C cost less than the empty loop, and the function gives 2.1% to 4.1% fewer instructions.
 - **A fast path for object spread** (`JS_CopyDataProperties`): one spread took 240 ns rather than 415 in a micro benchmark on the Apple M4, but the shop did not change (0.997 to 1.005). It is done since together with the listing of keys, which it shares with `for in` and `Object.keys` (see [Own keys listed from the shape](changes/objects-and-shapes.md#own-keys-listed-from-the-shape)).
 - **Testing the uncatchable flag before calling `_js_uncatchable_pending`** at the entry of `JS_CallInternal`: the helper is too large to inline into the interpreter, so every JavaScript call pays a real call to it. Testing the runtime's flag inline first skips that call on the normal path, and keeps the full check, which is still needed because the flag stays set after the exception is taken. 0.06% fewer instructions on V8, 0.09% on the shop and 0.41% on MUI. Over six rounds on three code layouts, V8 took 0.9988 of the base score (0.9883 to 1.0254), the shop 0.9927 of the time (0.9859 to 1.0014) and MUI 0.9850 (0.9763 to 1.0265). The sign follows the layout: MUI took 1.027 and 1.012 of the time in the two rounds of one layout, and 0.976 to 0.988 in the four rounds of the other two. The gain cannot be told from layout noise.

@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/slowjs Authors.
+// Copyright (c) 2026 The liustack/tifajs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package intl // import "github.com/liustack/slowjs/intl"
+package intl // import "github.com/liustack/tifajs/intl"
 
 // TestGolden compares what Intl answers with what Chromium answered for the
 // same expressions, recorded in testdata/chromium. To record again: go test
@@ -25,7 +25,7 @@ import (
 	"testing"
 	"unicode"
 
-	"github.com/liustack/slowjs"
+	"github.com/liustack/tifajs"
 )
 
 var (
@@ -60,9 +60,9 @@ func jsList(s ...string) string {
 
 // goldenEval is expr as the recorder writes it down: its string, or ERR:
 // and the constructor of what it throws.
-func goldenEval(t *testing.T, vm *slowjs.VM, expr string) string {
+func goldenEval(t *testing.T, vm *tifajs.VM, expr string) string {
 	t.Helper()
-	v, err := vm.Eval("(() => {try {return String("+expr+")} catch (e) {return 'ERR:' + e.constructor.name}})()", slowjs.EvalGlobal)
+	v, err := vm.Eval("(() => {try {return String("+expr+")} catch (e) {return 'ERR:' + e.constructor.name}})()", tifajs.EvalGlobal)
 	if err != nil {
 		return "EVAL FAILED: " + err.Error()
 	}

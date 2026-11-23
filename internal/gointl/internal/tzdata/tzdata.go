@@ -10,7 +10,7 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"github.com/liustack/slowjs/internal/gointl/internal/blob"
+	"github.com/liustack/tifajs/internal/gointl/internal/blob"
 )
 
 // Version is the encoding's version.

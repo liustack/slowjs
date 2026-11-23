@@ -7,8 +7,8 @@ import (
 	"sort"
 	"testing"
 
-	intl "github.com/liustack/slowjs/internal/gointl"
-	"github.com/liustack/slowjs/internal/gointl/internal/corpus"
+	intl "github.com/liustack/tifajs/internal/gointl"
+	"github.com/liustack/tifajs/internal/gointl/internal/corpus"
 )
 
 // Every locale the corpus asks for has to parse, and has to parse to itself.
