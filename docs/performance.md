@@ -20,22 +20,22 @@ read_when:
 
 liustack/slowjs is made for tifa, which renders React pages to HTML in the engine, so render speed is measured on the pages of tifa's example shop: one warm VM rendering the order list, an order and the stats of each of its two shops (`BenchmarkShop` in tifa's `test/ssr`). Every change for speed leaves the HTML the same byte for byte. The doc of each change in [changes](changes/README.md) has its full measurement, and tifa's [docs/performance.md](https://github.com/liustack/tifa/blob/main/docs/performance.md) has what the numbers mean for an app. How the engine compares with the other pure Go engines, on tifa's pages and on general workloads, is in [benchmarks.md](benchmarks.md).
 
-The engine changes up to v0.26.15 alone made renders 1.63 to 1.66 times as fast as on the engine liustack/slowjs started from (modernc.org/quickjs v0.25.0 with libquickjs v0.13.1), and 2.07 times as fast with the rewrites of tifa's Vite plugin and PGO (measured on 2026-10-20). The numbers of the engine before the C engine (up to v0.28) are in [history.md](history.md).
+The engine changes up to v0.26.15 alone made renders 1.63 to 1.66 times as fast as on the engine liustack/slowjs started from (modernc.org/quickjs v0.25.0 with libquickjs v0.13.1), and 2.07 times as fast with the rewrites of tifa's Vite plugin and PGO (measured on 2026-10-20).
 
 ## How the numbers were measured
 
 Unless a row says otherwise:
 
 - Machine: a Google Cloud VM with 8 vCPUs of an AMD EPYC 7B13 (Zen 3), Linux, one core pinned with its hyperthread sibling idle. Some rows are on an Apple M4 (darwin/arm64), which is noisier.
-- tifa is built without PGO (profile-guided optimization). It stopped using it with the C engine, where the profile made no difference. "With PGO" appears only in [history.md](history.md).
+- tifa is built without PGO (profile-guided optimization). It stopped using it with the C engine, where the profile made no difference.
 
 ## What each release gained
 
-Releases from v0.29.0 run the C engine. Instructions are counted with callgrind on the pages of tifa's example apps, and every row has the same HTML as before. Times are ratios to the build before the change, on the pages named, by the rule of [measuring.md](measuring.md). A ratio inside the spread of the code positions is no change. The rows of releases up to v0.28 (the engine translated by ccgo) are in [history.md](history.md#what-each-release-gained-up-to-v028).
+Releases from v0.29.0 run the C engine. Instructions are counted with callgrind on the pages of tifa's example apps, and every row has the same HTML as before. Times are ratios to the build before the change, on the pages named, by the rule of [measuring.md](measuring.md). A ratio inside the spread of the code positions is no change.
 
 | Release | Change | Effect on a render |
 | --- | --- | --- |
-| v0.29.0 | The C engine replaces the engine translated by ccgo ([numbers](history.md#tifas-pages-on-the-c-engine-against-the-old-engine)) | The 11 pages of tifa's shop, MUI app and bench app render in 0.834 to 0.860 of the time of the old engine built with PGO, faster at every code position. The pause of the Go GC stays as short |
+| v0.29.0 | The C engine replaces the engine translated by ccgo | The 11 pages of tifa's shop, MUI app and bench app render in 0.834 to 0.860 of the time of the old engine built with PGO, faster at every code position. The pause of the Go GC stays as short |
 | v0.29.1 | [Ordinary objects take 48 bytes](#ordinary-objects-of-48-bytes) | Memory, not speed: the highest `MemorySize` of a long Markdown page is 3.8% lower, and the shop holds 1.8% less at the end of a render |
 | v0.29.1 | [Object literals made at their final shape](#object-literals-made-at-their-final-shape) | The shop's workbench pages 0.956 of the time, the MUI pages 0.969, the bench table page 0.942. React alone 0.991 |
 | v0.29.1 | [Calls set four locals at a time, for in holds a shape, hasOwnProperty.call in the interpreter](#calls-for-in-and-hasownpropertycall) | The bench table and spiral pages 0.958 and 0.967. With the for in and hasOwnProperty.call change, the shop 0.984, the MUI pages 0.981, React 0.988 (2.5% to 3.1% fewer instructions) |
@@ -146,7 +146,7 @@ A `front` that is not a multiple of 16 (8, 24, 40, 56) moves the body and the co
 
 ## The C engine
 
-The C engine of `internal/cengine` is the only engine since the switch. Its numbers come from the `jsrun` binary on the Google Cloud VM above, one core pinned with its hyperthread sibling idle, at the 8 code positions of [Code positions](#code-positions), and from callgrind. When the C engine replaced the ccgo engine in v0.29.0, every page of tifa rendered in 0.834 to 0.860 of the time, with the same HTML, and the pause of the Go GC was not longer than before ([history.md](history.md#acceptance-before-the-switch)).
+The C engine of `internal/cengine` is the only engine since the switch. Its numbers come from the `jsrun` binary on the Google Cloud VM above, one core pinned with its hyperthread sibling idle, at the 8 code positions of [Code positions](#code-positions), and from callgrind. When the C engine replaced the ccgo engine in v0.29.0, every page of tifa rendered in 0.834 to 0.860 of the time, with the same HTML, and the pause of the Go GC was not longer than before.
 
 ### The C engine's hot loops on fixed places
 
@@ -2326,7 +2326,7 @@ The 64 micro benchmarks run 0.11% fewer instructions (geometric mean). Time on t
 
 ### Stability under load
 
-Measured on the Google Cloud VM above (Go 1.27.2), with the 18 pages of tifa's example shop (its 6 workbench pages and 6 storefront pages in each language) rendered through tifa's pool, the C engine against the ccgo engine (`lib`, [history.md](history.md)), built from the same tree. The cores are pinned: `1,3` are two physical cores, `1,3,5,7` are those two with their hyperthreads. The pool keeps tifa's rules: any error retires the VM, a young GC runs after each render and a full one every 256.
+Measured on the Google Cloud VM above (Go 1.27.2), with the 18 pages of tifa's example shop (its 6 workbench pages and 6 storefront pages in each language) rendered through tifa's pool, the C engine against the ccgo engine, built from the same tree. The cores are pinned: `1,3` are two physical cores, `1,3,5,7` are those two with their hyperthreads. The pool keeps tifa's rules: any error retires the VM, a young GC runs after each render and a full one every 256.
 
 **Soak.** 35 minutes, 2 VMs, 2 callers that render in turn without a pause, memory read every minute (after a full GC for the VMs). The C engine made 106,194 renders and the engine of `lib/` 91,131, with 0 errors and no VM replaced in either.
 

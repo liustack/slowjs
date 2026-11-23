@@ -465,7 +465,7 @@ The constant pool and the jump tables a function keeps after its code are aligne
 
 A change elsewhere in the engine moves the body of the matcher by whole lines only. It still changes their speed somewhat, as other code and data move: see [performance.md](../performance.md#code-positions) for the numbers and for how the code positions of a measurement work with the fixed places.
 
-The register loop `JS_RegvmRun` dispatches with a computed goto, as upstream's interpreter did: each handler ends with `goto *rv_table[*pc++]`, and llc copies that short block into the end of every handler (`DispatchCopies` in `internal/goasm/gen/poll.go`). An earlier patch of the ccgo engine turned it off for native builds, and with it off alone the V8-v7 score fell to 0.91 (gcc 15.3) and 0.88 (clang 22.1.8) of unpatched C ([numbers](../history.md#native-c-patch-cost)). Keep it on.
+The register loop `JS_RegvmRun` dispatches with a computed goto, as upstream's interpreter did: each handler ends with `goto *rv_table[*pc++]`, and llc copies that short block into the end of every handler (`DispatchCopies` in `internal/goasm/gen/poll.go`). An earlier patch of the ccgo engine turned it off for native builds, and with it off alone the V8-v7 score fell to 0.91 (gcc 15.3) and 0.88 (clang 22.1.8) of unpatched C. Keep it on.
 
 ## How a call sets and frees its values
 

@@ -141,8 +141,7 @@ func main() {
 | [测试](docs/testing.md) | 准备提交，或者想核对引擎 |
 | [升级](docs/upgrading.md) | 要合入上游 QuickJS 的提交、新的语言数据或更新的 Go |
 | [发版](docs/releasing.md)、[提交](docs/commit.md) | 要发版或提交 |
-| [上游](docs/upstream.md) | 要从 modernc.org/quickjs 或 github.com/liustack/quickjs（v0.30.0 到 v0.30.7）换过来，或者想知道代码从哪来 |
-| [历史](docs/history.md) | 想看 v0.29 之前那个引擎（ccgo 把 QuickJS 转译成的 Go）的数字 |
+| [上游](docs/upstream.md) | 要从 modernc.org/quickjs 换过来，或者想知道代码从哪来 |
 
 ## 来自哪里
 

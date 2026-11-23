@@ -44,12 +44,6 @@ What a program that used modernc.org/quickjs v0.25.0 runs into:
 
 The [changelog](../CHANGELOG.md) has every change of each release.
 
-<a id="moving-from-githubcomliustackslowjs"></a>
-
-## Moving from github.com/liustack/quickjs
-
-v0.30.0 to v0.30.7 were published as `github.com/liustack/quickjs`, and from v0.31.0 the module is `github.com/liustack/slowjs` again, with the same API. A program that used `github.com/liustack/quickjs` changes only names: the import paths (`github.com/liustack/quickjs/intl` becomes `github.com/liustack/slowjs/intl`, and so on), the package name in the code (`quickjs.NewVM` becomes `slowjs.NewVM`), and the build tags (`quickjs_intl_nonames` and `quickjs_intl_nocjdict` become `slowjs_intl_nonames` and `slowjs_intl_nocjdict`, and `quickjs_anygo` becomes `slowjs_anygo`). A build that still passes an old tag loses its effect without an error. A host that looks for the `Symbol.for` key with which `intl`, `temporal` or `url` marks a VM uses the new path in it, and the errors of the root package start with `slowjs:`. The variables of the repository scripts start with `SLOWJS_` where they started with `QUICKJS_`. v0.28.0 to v0.29.11 had the same path and package name, so a program on one of them changes no name.
-
 ## Credits
 
 The engine is Fabrice Bellard's and Charlie Gordon's QuickJS. The Go API began as modernc.org/quickjs, by the quickjs-go authors Jan Mercl and Dan Kortschak, who also translated QuickJS to Go with ccgo as modernc.org/libquickjs. liustack/slowjs thanks them for the API it started from. None of their code remains in the repository. QuickJS's license is in [engine/LICENSE](../engine/LICENSE), also at the root as [LICENSE-QUICKJS](../LICENSE-QUICKJS).
