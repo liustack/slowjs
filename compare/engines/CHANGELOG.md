@@ -1,5 +1,11 @@
 # Changes to the engine comparison
 
+## 2026-11-24: the run of v0.32.0
+
+- go-quickjs moved from v0.38.0 to v0.43.0 (`go.mod`, `go.sum`) and Hermes V1 from 260318099.0.7 to 260318099.0.8 (`native/build.sh`, commit fd22091391c3, and the row label in `cmd/pages`). Node v26.13.1, moejs v0.1.1 and C QuickJS 2026-06-04 are still the newest. The bundles and inputs are the ones of the run of v0.31.3.
+- go-quickjs scores 2308 on the V8 suite now (was 1708) and is ahead of liustack-beastjs, so its page ratios are lower too. It stays JIT off. The engine of liustack-beastjs is the one of v0.31.12: the row is named `liustack-beastjs` after the rename, and the files of earlier runs keep their old names.
+- The run is on server C (GCP t2d-standard-4, same host type as the run of v0.31.3), built on server A. The first hold of liustack-beastjs-polyfill ran liustack-beastjs 1.5 times slower than every other hold, and was run again.
+
 ## 2026-11-23: rows named liustack-beastjs
 
 - The module is `github.com/liustack/beastjs`, so its rows are `liustack-beastjs` and `liustack-beastjs-polyfill`, in the reports, `TIFA_ONLY` and `-engines`. The results files of earlier runs keep their old row names, and `cmd/compare` still reads them.

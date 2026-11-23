@@ -48,7 +48,7 @@ var (
 	ownIntl = []string{"liustack-beastjs", "go-quickjs-interp", "moejs", "node-jitless"}
 	label   = map[string]string{
 		"quickjs-2026-06-04": "C QuickJS 2026-06-04 (reference)",
-		"hermes":             "Hermes V1 260318099.0.7, -O bytecode (reference)",
+		"hermes":             "Hermes V1 260318099.0.8, -O bytecode (reference)",
 		"node-jitless":       "Node v26.13.1 --jitless (reference)",
 	}
 	apps = []string{"bench", "mui", "shop"}

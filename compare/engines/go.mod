@@ -6,7 +6,7 @@ replace github.com/liustack/beastjs => ../../
 
 require (
 	github.com/MoeForge/moejs v0.1.1
-	github.com/go-quickjs/go-quickjs v0.38.0
+	github.com/go-quickjs/go-quickjs v0.43.0
 	github.com/liustack/beastjs v0.30.7
 )
 

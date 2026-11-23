@@ -33,27 +33,27 @@ tifa 几个应用的服务端代码渲染一次的 CPU 时间，跑在一个核�
 | 引擎 | 纯 Go | React bench 页面 | MUI 页面 | 商店页面 |
 | :-- | :-: | --: | --: | --: |
 | **liustack/beastjs** | 是 | **1.00** | **1.00** | **1.00** |
-| liustack/beastjs，用 polyfill | 是 | 1.01 | 1.64 | 1.65 |
-| moejs | 是 | 1.42 | 1.50 | 1.83 |
-| go-quickjs | 是 | 2.70 | 2.51 | 3.59 |
-| C QuickJS 2026-06-04 | 否，C | 1.96 | 3.59 | 2.47 |
-| Hermes V1 | 否，C++ | 1.04 | 1.84 | 1.78 |
-| Node 26 `--jitless` | 否，C++ | 0.97 | 1.10 | 0.89 |
+| liustack/beastjs，用 polyfill | 是 | 1.03 | 1.71 | 1.62 |
+| moejs | 是 | 1.52 | 1.52 | 1.99 |
+| go-quickjs | 是 | 2.31 | 2.12 | 3.11 |
+| C QuickJS 2026-06-04 | 否，C | 2.06 | 3.63 | 2.59 |
+| Hermes V1 | 否，C++ | 1.08 | 1.90 | 1.86 |
+| Node 26 `--jitless` | 否，C++ | 0.99 | 1.11 | 0.90 |
 
-在 v0.31.3 上量的，机器是 GCP t2d-standard-4（AMD EPYC 7B13），Go 1.27.4。对比只比解释器：go-quickjs 按它的默认设置跑，JIT 是关的，Hermes 跑 `hermesc -O` 的字节码，Node 加 `--jitless`。每个引擎都按它本来的样子跑，有自己的 `Intl` 就用自己的，没有的（C QuickJS 和 Hermes）用 FormatJS polyfill。第二行是不带内置 `Intl`、`URL`、`Temporal` 的 liustack/beastjs，和 C QuickJS、Hermes 用同样的 polyfill：它显示 MUI 和商店页面上的领先有多少来自解释器，多少来自用 Go 写的 `Intl`。bench 页面用不到 `Intl`，所以这一列每个引擎跑的是同样的 JavaScript。
+在 v0.32.0 上量的（引擎和 v0.33.0 相同，当时还是旧的模块路径），机器是 GCP t2d-standard-4（AMD EPYC 7B13），Go 1.27.4。对比只比解释器：go-quickjs 按它的默认设置跑，JIT 是关的，Hermes 跑 `hermesc -O` 的字节码，Node 加 `--jitless`。每个引擎都按它本来的样子跑，有自己的 `Intl` 就用自己的，没有的（C QuickJS 和 Hermes）用 FormatJS polyfill。第二行是不带内置 `Intl`、`URL`、`Temporal` 的 liustack/beastjs，和 C QuickJS、Hermes 用同样的 polyfill：它显示 MUI 和商店页面上的领先有多少来自解释器，多少来自用 Go 写的 `Intl`。bench 页面用不到 `Intl`，所以这一列每个引擎跑的是同样的 JavaScript。
 
-它不是每一项都最快：在 V8 测试套件上，Node 得分更高，Hermes 和它打平。
+它不是每一项都最快：在 V8 测试套件上，go-quickjs 和 Node 得分更高，Hermes 和它差不多。
 
 | 引擎 | 纯 Go | V8 套件得分 |
 | :-- | :-: | --: |
-| Node 26 `--jitless` | 否，C++ | 2286 |
-| **liustack/beastjs** | 是 | **2136** |
-| Hermes V1 | 否，C++ | 2124 |
-| moejs | 是 | 1870 |
-| go-quickjs | 是 | 1708 |
-| C QuickJS 2026-06-04 | 否，C | 1188 |
+| go-quickjs | 是 | 2308 |
+| Node 26 `--jitless` | 否，C++ | 2240 |
+| **liustack/beastjs** | 是 | **2160** |
+| Hermes V1 | 否，C++ | 2096 |
+| moejs | 是 | 1816 |
+| C QuickJS 2026-06-04 | 否，C | 1172 |
 
-得分是 C QuickJS 的 1.79 倍，是 go-quickjs 的 1.25 倍，是 moejs 的 1.15 倍，每一轮都领先。go-quickjs 在 RegExp 一项上领先，moejs 在 NavierStokes 一项上领先。
+得分是 C QuickJS 的 1.85 倍，是 moejs 的 1.20 倍，每一轮都领先它们。go-quickjs 的得分是它的 1.07 倍，在 RegExp、NavierStokes、Crypto 和 DeltaBlue 四项上领先。
 
 两张表的完整内容、每个引擎跑的是什么，以及怎么重跑，见 [docs/use/benchmarks.md](docs/use/benchmarks.md)。
 
