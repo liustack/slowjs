@@ -27,7 +27,7 @@ Every change must pass:
 go build ./...
 gofmt -l -s . | grep -v -e '^internal/cengine/engine_'   # prints nothing
 go vet ./...
-scripts/docs-list.sh --check           # every doc has a summary
+scripts/docs-list.sh --check           # summaries, and the Chinese of user docs
 go test -count=1 -p 1 .                # about a minute
 ```
 
@@ -434,7 +434,7 @@ The engine is generated with a profile of page renders ([generator.md](changes/g
 
 | Step | Tier | What it runs |
 | --- | --- | --- |
-| `build`, `gofmt`, `docs` | fast | `go build ./...`, `gofmt -l -s .` (generated files left out), `scripts/docs-list.sh --check` |
+| `build`, `gofmt`, `docs` | fast | `go build ./...`, `gofmt -l -s .` (generated files left out), `scripts/docs-list.sh --check` and `scripts/docs-list-test.sh` (the test of that check) |
 | `tracked` | fast | `scripts/check-tracked.sh`: fails on a tracked file over 1 MB or a binary file that its lists do not name, and on names never to be tracked (profiles, Python caches, environment and key files), so that build output or a secret never goes into a tag and the module's zip |
 | `goasm` | fast | the tests of `internal/goasm/...` with `SLOWJS_LLVM`, `SLOWJS_SHADOW_PASS` and `SLOWJS_LLD` set, so that they do not skip |
 | `cengine` | fast | `go test -tags testhooks ./internal/cengine` |
