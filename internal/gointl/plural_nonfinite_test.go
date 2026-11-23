@@ -6,7 +6,7 @@ import (
 	"math"
 	"testing"
 
-	intl "github.com/liustack/tifajs/internal/gointl"
+	intl "github.com/liustack/beastjs/internal/gointl"
 )
 
 // NaN and the infinities are "other" in every language and either type, as

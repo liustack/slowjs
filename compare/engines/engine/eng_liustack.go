@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -11,17 +11,17 @@ import (
 	"errors"
 	"time"
 
-	"github.com/liustack/tifajs"
+	"github.com/liustack/beastjs"
 )
 
 // liustackName, liustackNotes and registerGoPackages are the part that differs
-// between the two builds of the adapter: eng_liustack_own.go (liustack-tifajs,
+// between the two builds of the adapter: eng_liustack_own.go (liustack-beastjs,
 // with the Go packages next to the engine) and eng_liustack_bare.go
-// (liustack-tifajs-polyfill, the bare engine).
+// (liustack-beastjs-polyfill, the bare engine).
 func init() {
 	register(&Engine{
 		Name:           liustackName,
-		Module:         "github.com/liustack/tifajs",
+		Module:         "github.com/liustack/beastjs",
 		New:            newLiustack,
 		SharedPrograms: true,
 		CompileShared:  compileLiustack,
@@ -34,20 +34,20 @@ func init() {
 	})
 }
 
-type liustackVM struct{ vm *tifajs.VM }
+type liustackVM struct{ vm *beastjs.VM }
 
 // compileVM is the VM that compiles shared programs. Bytecode is
 // independent of the VM that made it.
-var compileVM *tifajs.VM
+var compileVM *beastjs.VM
 
 func compileLiustack(name, src string) (Program, error) {
 	if compileVM == nil {
 		var err error
-		if compileVM, err = tifajs.NewVM(); err != nil {
+		if compileVM, err = beastjs.NewVM(); err != nil {
 			return nil, err
 		}
 	}
-	b, err := compileVM.Compile(src, tifajs.EvalGlobal)
+	b, err := compileVM.Compile(src, beastjs.EvalGlobal)
 	if err != nil {
 		return nil, qjsErr(err, true)
 	}
@@ -55,7 +55,7 @@ func compileLiustack(name, src string) (Program, error) {
 }
 
 func newLiustack(o Options) (VM, error) {
-	vm, err := tifajs.NewVM()
+	vm, err := beastjs.NewVM()
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +71,7 @@ func newLiustack(o Options) (VM, error) {
 		vm.Close()
 		return nil, err
 	}
-	if _, err := vm.Eval(PrintShim, tifajs.EvalGlobal); err != nil {
+	if _, err := vm.Eval(PrintShim, beastjs.EvalGlobal); err != nil {
 		vm.Close()
 		return nil, err
 	}
@@ -90,12 +90,12 @@ func newLiustack(o Options) (VM, error) {
 			return nil, err
 		}
 	}
-	// liustack-tifajs loads no modules: an import of o.ModuleDir fails.
+	// liustack-beastjs loads no modules: an import of o.ModuleDir fails.
 	return &liustackVM{vm}, nil
 }
 
 func qjsErr(err error, compile bool) error {
-	var e *tifajs.Error
+	var e *beastjs.Error
 	if errors.As(err, &e) {
 		return &JSError{Name: e.Name, Message: e.Message, Compile: compile}
 	}
@@ -103,7 +103,7 @@ func qjsErr(err error, compile bool) error {
 }
 
 func (v *liustackVM) Eval(name, src string) (string, error) {
-	r, err := v.vm.Eval(src, tifajs.EvalGlobal)
+	r, err := v.vm.Eval(src, beastjs.EvalGlobal)
 	if err != nil {
 		return "", qjsErr(err, false)
 	}
@@ -111,7 +111,7 @@ func (v *liustackVM) Eval(name, src string) (string, error) {
 }
 
 func (v *liustackVM) Compile(name, src string) (Program, error) {
-	b, err := v.vm.Compile(src, tifajs.EvalGlobal)
+	b, err := v.vm.Compile(src, beastjs.EvalGlobal)
 	if err != nil {
 		return nil, qjsErr(err, true)
 	}
@@ -143,7 +143,7 @@ func (v *liustackVM) RunJobs() error {
 }
 
 func (v *liustackVM) EvalModule(name, src string) error {
-	_, err := v.vm.Eval(src, tifajs.EvalModule)
+	_, err := v.vm.Eval(src, beastjs.EvalModule)
 	if err != nil {
 		return qjsErr(err, false)
 	}

@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -56,16 +56,16 @@ const (
 func Decide(mask uint64, size uint32, err error) error {
 	const doc = "the engine does not run there (docs/internals/changes/c-engine.md, Room for a fault on windows)"
 	if err != nil {
-		return fmt.Errorf("tifajs: windows/arm64 did not say how large the state of the CPU at a fault is, and %s: %w", doc, err)
+		return fmt.Errorf("beastjs: windows/arm64 did not say how large the state of the CPU at a fault is, and %s: %w", doc, err)
 	}
 	if other := mask &^ SVE; other != 0 {
-		return fmt.Errorf("tifajs: windows/arm64 turns on the extended CPU state %#x, and %#x of it is not SVE (SME, or a state this engine does not know), whose size at a fault was never checked, so %s", mask, other, doc)
+		return fmt.Errorf("beastjs: windows/arm64 turns on the extended CPU state %#x, and %#x of it is not SVE (SME, or a state this engine does not know), whose size at a fault was never checked, so %s", mask, other, doc)
 	}
 	if size < contextSize {
-		return fmt.Errorf("tifajs: windows/arm64 gives %d bytes for the CONTEXT with the extended CPU state %#x, less than the %d of a CONTEXT without it, so %s", size, mask, contextSize, doc)
+		return fmt.Errorf("beastjs: windows/arm64 gives %d bytes for the CONTEXT with the extended CPU state %#x, less than the %d of a CONTEXT without it, so %s", size, mask, contextSize, doc)
 	}
 	if int(size)+Dispatch > StackSystem {
-		return fmt.Errorf("tifajs: windows/arm64 saves %d bytes of CPU state at a fault (extended state %#x), and with the %d of the rest of the dispatch that is more than the %d bytes Go keeps below a goroutine stack, so %s", size, mask, Dispatch, StackSystem, doc)
+		return fmt.Errorf("beastjs: windows/arm64 saves %d bytes of CPU state at a fault (extended state %#x), and with the %d of the rest of the dispatch that is more than the %d bytes Go keeps below a goroutine stack, so %s", size, mask, Dispatch, StackSystem, doc)
 	}
 	return nil
 }

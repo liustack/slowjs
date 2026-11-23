@@ -6,7 +6,7 @@ import (
 	"errors"
 	"testing"
 
-	intl "github.com/liustack/tifajs/internal/gointl"
+	intl "github.com/liustack/beastjs/internal/gointl"
 )
 
 // DateTimeFormat refuses what InitializeDateTimeFormat refuses, with

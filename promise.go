@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package tifajs // import "github.com/liustack/tifajs"
+package beastjs // import "github.com/liustack/beastjs"
 
 // Promises from Go: a promise with its resolve and reject, and handlers
 // attached to a promise.
@@ -39,18 +39,18 @@ func (pc *PromiseCapability) Dup() *PromiseCapability {
 // returns pc.Promise, which hands its reference to the call, and keeps
 // pc.Resolve and pc.Reject, which it frees once it has called one:
 //
-//	var waiting *tifajs.PromiseCapability
-//	m.RegisterFunc("later", func() tifajs.Value {
+//	var waiting *beastjs.PromiseCapability
+//	m.RegisterFunc("later", func() beastjs.Value {
 //		pc, err := m.NewPromiseCapability()
 //		if err != nil {
-//			return tifajs.UndefinedValue
+//			return beastjs.UndefinedValue
 //		}
 //		waiting = pc
 //		return pc.Promise // the call takes this reference
 //	}, false)
-//	m.Eval(`later().then(v => globalThis.got = v)`, tifajs.EvalGlobal)
+//	m.Eval(`later().then(v => globalThis.got = v)`, beastjs.EvalGlobal)
 //	// Later, on the goroutine that uses m:
-//	waiting.Resolve.Call(tifajs.UndefinedValue, "done")
+//	waiting.Resolve.Call(beastjs.UndefinedValue, "done")
 //	waiting.Resolve.Free()
 //	waiting.Reject.Free()
 //	m.ExecutePendingJobs()

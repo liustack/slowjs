@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package tifajs // import "github.com/liustack/tifajs"
+package beastjs // import "github.com/liustack/beastjs"
 
 // A script that runs on 50 ms past its deadline or an Interrupt, and has
 // polled 1000 times since, is killed: the call returns an interrupted error
@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/liustack/tifajs/internal/gohost"
+	"github.com/liustack/beastjs/internal/gohost"
 )
 
 // killedVM returns a VM a kill left good only for Close, with the error of

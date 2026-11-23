@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package intl // import "github.com/liustack/tifajs/intl"
+package intl // import "github.com/liustack/beastjs/intl"
 
 import (
 	"errors"
@@ -18,9 +18,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/liustack/tifajs"
-	"github.com/liustack/tifajs/internal/intlhook"
-	"github.com/liustack/tifajs/internal/vmhook"
+	"github.com/liustack/beastjs"
+	"github.com/liustack/beastjs/internal/intlhook"
+	"github.com/liustack/beastjs/internal/vmhook"
 )
 
 // The door of internal/intlhook is the only way a string of javascript comes
@@ -33,7 +33,7 @@ var doorNames = map[string]bool{
 	"NewString": true, "NewStringLatin1": true, "NewStringUTF16": true, "NewArray": true, "Any": true,
 }
 
-// argsNames returns the names that hold a tifajs.Args in f: the parameters,
+// argsNames returns the names that hold a beastjs.Args in f: the parameters,
 // fields and variables declared with that type.
 func argsNames(f *ast.File) map[string]bool {
 	names := map[string]bool{}
@@ -43,7 +43,7 @@ func argsNames(f *ast.File) map[string]bool {
 			return false
 		}
 		id, ok := s.X.(*ast.Ident)
-		return ok && id.Name == "tifajs" && s.Sel.Name == "Args"
+		return ok && id.Name == "beastjs" && s.Sel.Name == "Args"
 	}
 	ast.Inspect(f, func(n ast.Node) bool {
 		switch n := n.(type) {
@@ -145,13 +145,13 @@ func TestDoorLeaksSeen(t *testing.T) {
 	src := `package x
 
 import (
-	"github.com/liustack/tifajs"
-	"github.com/liustack/tifajs/internal/intlhook"
+	"github.com/liustack/beastjs"
+	"github.com/liustack/beastjs/internal/intlhook"
 )
 
-type args struct{ a tifajs.Args }
+type args struct{ a beastjs.Args }
 
-func f(a tifajs.Args, c *args, vm *tifajs.VM) {
+func f(a beastjs.Args, c *args, vm *beastjs.VM) {
 	a.String(0)
 	a.WTF8(0)
 	c.a.Latin1(0)
@@ -201,7 +201,7 @@ func TestShortArgumentRefused(t *testing.T) {
 			runtime.GC()
 			var before, after runtime.MemStats
 			runtime.ReadMemStats(&before)
-			got, err := vm.Eval(`(function () { try { `+js+`; return "made"; } catch (e) { return String(e); } })()`, tifajs.EvalGlobal)
+			got, err := vm.Eval(`(function () { try { `+js+`; return "made"; } catch (e) { return String(e); } })()`, beastjs.EvalGlobal)
 			runtime.ReadMemStats(&after)
 			if err != nil {
 				t.Fatal(err)
@@ -254,8 +254,8 @@ func TestShortArgumentNoRoom(t *testing.T) {
 	eval(t, vm, `new Intl.NumberFormat('en').format(1); var s = '1'.repeat(1000); 0`)
 	runtime.GC()
 	vm.SetMemoryLimit(vm.MemorySize() + 16<<10)
-	_, err := vm.Eval(`try { new Intl.NumberFormat('en').format(s) } catch (e) { 'caught ' + e }`, tifajs.EvalGlobal)
-	var e *tifajs.Error
+	_, err := vm.Eval(`try { new Intl.NumberFormat('en').format(s) } catch (e) { 'caught ' + e }`, beastjs.EvalGlobal)
+	var e *beastjs.Error
 	if !errors.As(err, &e) || !e.Uncatchable || !e.OutOfMemory {
 		t.Fatalf("got %v, want the uncatchable out of memory error", err)
 	}
@@ -316,8 +316,8 @@ func TestRoomCoversGo(t *testing.T) {
 			room := vmhook.Room
 			vmhook.Room = func(any) int64 { return took - 1 }
 			defer func() { vmhook.Room = room }()
-			_, err := vm.Eval(src, tifajs.EvalGlobal)
-			var e *tifajs.Error
+			_, err := vm.Eval(src, beastjs.EvalGlobal)
+			var e *beastjs.Error
 			if !errors.As(err, &e) || !e.OutOfMemory {
 				t.Errorf("Go took %d bytes, and with one less of room the call gave %v, want the out of memory error", took, err)
 			}
@@ -363,8 +363,8 @@ func TestListRoomCoversGo(t *testing.T) {
 			room := vmhook.Room
 			vmhook.Room = func(any) int64 { return took - 1 }
 			defer func() { vmhook.Room = room }()
-			_, err := vm.Eval(src, tifajs.EvalGlobal)
-			var e *tifajs.Error
+			_, err := vm.Eval(src, beastjs.EvalGlobal)
+			var e *beastjs.Error
 			if !errors.As(err, &e) || !e.OutOfMemory {
 				t.Errorf("Go took %d bytes, and with one less of room the call gave %v, want the out of memory error", took, err)
 			}
@@ -433,8 +433,8 @@ func TestCaseRoomCoversGo(t *testing.T) {
 			room := vmhook.Room
 			vmhook.Room = func(any) int64 { return took - 1 }
 			defer func() { vmhook.Room = room }()
-			_, err := vm.Eval(src, tifajs.EvalGlobal)
-			var e *tifajs.Error
+			_, err := vm.Eval(src, beastjs.EvalGlobal)
+			var e *beastjs.Error
 			if !errors.As(err, &e) || !e.OutOfMemory {
 				t.Errorf("Go took %d bytes, and with one less of room the call gave %v, want the out of memory error", took, err)
 			}

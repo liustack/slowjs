@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 package gen
 
@@ -74,11 +74,11 @@ func TestICallID(t *testing.T) {
 // reported for that function's indirect calls, the text must have the label
 // right before the call, and no symbol may sit anywhere else. Without the
 // pass option, llc with the plugin must stop. It needs LLVM 22.1.8
-// (TIFAJS_LLVM) and the built pass (TIFAJS_SHADOW_PASS).
+// (BEASTJS_LLVM) and the built pass (BEASTJS_SHADOW_PASS).
 func TestICallSymbols(t *testing.T) {
-	llvm, pass := os.Getenv("TIFAJS_LLVM"), os.Getenv("TIFAJS_SHADOW_PASS")
+	llvm, pass := os.Getenv("BEASTJS_LLVM"), os.Getenv("BEASTJS_SHADOW_PASS")
 	if llvm == "" || pass == "" {
-		t.Skip("set TIFAJS_LLVM and TIFAJS_SHADOW_PASS")
+		t.Skip("set BEASTJS_LLVM and BEASTJS_SHADOW_PASS")
 	}
 	if runtime.GOARCH != "amd64" {
 		t.Skip("decodes amd64 code")

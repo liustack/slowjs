@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -6,10 +6,10 @@
 package url
 
 import (
-	"github.com/liustack/tifajs"
-	"github.com/liustack/tifajs/internal/intlhook"
-	"github.com/liustack/tifajs/internal/vmhook"
-	"github.com/liustack/tifajs/internal/whatwgurl"
+	"github.com/liustack/beastjs"
+	"github.com/liustack/beastjs/internal/intlhook"
+	"github.com/liustack/beastjs/internal/vmhook"
+	"github.com/liustack/beastjs/internal/whatwgurl"
 )
 
 // The door is the only way a string of javascript comes into Go, and the only
@@ -79,7 +79,7 @@ const maxStrings = 9
 // strings of idx are the parts of one URL record, which sum to at most its
 // href and so to at most MaxUnits: admit checks it, as they come from
 // javascript, and refuses a call whose parts sum to more.
-func admit(a tifajs.Args, domains, parts int, idx ...int) (in [maxStrings]whatwgurl.Input, present [maxStrings]bool, v verdict) {
+func admit(a beastjs.Args, domains, parts int, idx ...int) (in [maxStrings]whatwgurl.Input, present [maxStrings]bool, v verdict) {
 	units, record := 0, 0
 	for k, i := range idx {
 		n, ok := a.StringLen(i)
@@ -140,7 +140,7 @@ func count(present [maxStrings]bool) int {
 
 // emit is the javascript string of s, which is at most MaxUnits long. Every
 // string a Builtin answers is made here.
-func emit(vm *tifajs.VM, s string) (tifajs.Value, error) {
+func emit(vm *beastjs.VM, s string) (beastjs.Value, error) {
 	if _, ok := whatwgurl.NewInput(s); !ok {
 		panic("url: a result longer than whatwgurl.MaxUnits")
 	}

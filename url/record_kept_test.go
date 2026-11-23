@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/liustack/tifajs"
+	"github.com/liustack/beastjs"
 )
 
 // countFromParts sets fromPartsHook for the test and returns the count of
@@ -71,7 +71,7 @@ func TestSetTakesTheLastRecord(t *testing.T) {
 func keptPerVM(t *testing.T, js string) int64 {
 	t.Helper()
 	const n = 100
-	vms := make([]*tifajs.VM, 0, n)
+	vms := make([]*beastjs.VM, 0, n)
 	defer func() {
 		for _, vm := range vms {
 			vm.Close()
@@ -79,7 +79,7 @@ func keptPerVM(t *testing.T, js string) int64 {
 	}()
 	before := heapAfterGC()
 	for range n {
-		vm, err := tifajs.NewVM()
+		vm, err := beastjs.NewVM()
 		if err != nil {
 			t.Fatal(err)
 		}

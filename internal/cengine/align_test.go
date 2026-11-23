@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -8,7 +8,7 @@ package cengine
 import (
 	"testing"
 
-	"github.com/liustack/tifajs/internal/gohost"
+	"github.com/liustack/beastjs/internal/gohost"
 )
 
 // TestAlignSP: AlignSP rounds a pointer up to the next multiple of 16 and

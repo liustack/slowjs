@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/liustack/tifajs/internal/gointl/internal/colldata"
+	"github.com/liustack/beastjs/internal/gointl/internal/colldata"
 )
 
 // Comparing strings the way a language sorts them.

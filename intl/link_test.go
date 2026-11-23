@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -26,7 +26,7 @@ func TestLinksOnlyReadData(t *testing.T) {
 		{"linkprobedtf", []string{"qjsCore", "qjsDates", "qjsZoneNames"}, []string{"qjsHostZones"}},
 	} {
 		linked := linkedSymbols(t, probe.dir)
-		const pkg = "github.com/liustack/tifajs/internal/gointl."
+		const pkg = "github.com/liustack/beastjs/internal/gointl."
 		for _, name := range probe.links {
 			if !linked[pkg+name] {
 				t.Errorf("%s does not link %s", probe.dir, name)

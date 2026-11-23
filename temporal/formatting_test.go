@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -12,13 +12,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/liustack/tifajs"
-	"github.com/liustack/tifajs/intl"
+	"github.com/liustack/beastjs"
+	"github.com/liustack/beastjs/intl"
 )
 
 // The focused corpora use the Intl recorder's error names. Error wording is
 // not part of the Intl bridge's contract.
-func checkFormattingCorpus(t *testing.T, name string, vm *tifajs.VM) {
+func checkFormattingCorpus(t *testing.T, name string, vm *beastjs.VM) {
 	t.Helper()
 	b, err := os.ReadFile("testdata/" + name + ".json")
 	if err != nil {
@@ -35,10 +35,10 @@ func checkFormattingCorpus(t *testing.T, name string, vm *tifajs.VM) {
 		t.Fatal("missing Chromium 156 corpus")
 	}
 	for _, c := range corpus.Cases {
-		got, err := vm.Eval(c[0], tifajs.EvalGlobal)
+		got, err := vm.Eval(c[0], beastjs.EvalGlobal)
 		value := ""
 		if err != nil {
-			e, ok := err.(*tifajs.Error)
+			e, ok := err.(*beastjs.Error)
 			if !ok {
 				t.Fatal(err)
 			}
@@ -56,7 +56,7 @@ func checkFormattingCorpus(t *testing.T, name string, vm *tifajs.VM) {
 func TestDurationLocaleString(t *testing.T) {
 	checkFormattingCorpus(t, "duration-locale", newVM(t))
 	t.Run("without Intl registration", func(t *testing.T) {
-		vm, err := tifajs.NewVM()
+		vm, err := beastjs.NewVM()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -76,7 +76,7 @@ func TestDateTimeFormatTemporal(t *testing.T) {
 func TestDateTimeFormatTemporalInstallOrder(t *testing.T) {
 	for _, temporalFirst := range []bool{false, true} {
 		for _, first := range []string{"new Intl.DateTimeFormat('en')", "Temporal.PlainDate.from('2024-01-05')"} {
-			vm, err := tifajs.NewVM()
+			vm, err := beastjs.NewVM()
 			if err != nil {
 				t.Fatal(err)
 			}

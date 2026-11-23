@@ -1,14 +1,14 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package intl // import "github.com/liustack/tifajs/intl"
+package intl // import "github.com/liustack/beastjs/intl"
 
 import (
 	"strings"
 
-	gointl "github.com/liustack/tifajs/internal/gointl"
+	gointl "github.com/liustack/beastjs/internal/gointl"
 )
 
 // displayNames is a resolved Intl.DisplayNames.
@@ -20,7 +20,7 @@ type displayNames struct {
 	LanguageDisplay string `json:"languageDisplay,omitempty"`
 
 	// d is nil in a build without the display names
-	// (tifajs_intl_nonames), where every code falls back.
+	// (beastjs_intl_nonames), where every code falls back.
 	d *gointl.DisplayNames
 	// long names a region code ICU has replaced, in any style, as ICU
 	// does: it looks the short name up by the code asked for, finds none,

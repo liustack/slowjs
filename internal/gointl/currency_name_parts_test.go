@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"testing"
 
-	intl "github.com/liustack/tifajs/internal/gointl"
+	intl "github.com/liustack/beastjs/internal/gointl"
 )
 
 // A currency written by its name is the pattern's text around the number,

@@ -1,13 +1,13 @@
 /*
- * Copyright (c) 2026 The liustack/tifajs Authors.
+ * Copyright (c) 2026 The liustack/beastjs Authors.
  * SPDX-License-Identifier: MIT
  * Use of this source code is governed by the MIT license in LICENSE at the
  * root of this repository.
  */
 /* What musl's src/include/features.h gives its own sources. The build puts
    it in front of every musl file with -include. */
-#ifndef TIFAJS_LIBC_FEATURES_H
-#define TIFAJS_LIBC_FEATURES_H
+#ifndef BEASTJS_LIBC_FEATURES_H
+#define BEASTJS_LIBC_FEATURES_H
 
 #define weak __attribute__((__weak__))
 #define hidden __attribute__((__visibility__("hidden")))
@@ -19,10 +19,10 @@
 #else
 /* The name is expanded before it is put in a string, so that a test can build
    the library with its functions renamed. */
-#define TIFAJS_STR_(x) #x
-#define TIFAJS_STR(x) TIFAJS_STR_(x)
+#define BEASTJS_STR_(x) #x
+#define BEASTJS_STR(x) BEASTJS_STR_(x)
 #define weak_alias(old, new) \
-	extern __typeof(old) new __attribute__((__weak__, __alias__(TIFAJS_STR(old))))
+	extern __typeof(old) new __attribute__((__weak__, __alias__(BEASTJS_STR(old))))
 #endif
 
 #endif

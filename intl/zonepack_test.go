@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -16,7 +16,7 @@ import (
 // A fresh process avoids time.LoadLocation's process-wide ZONEINFO cache.
 // The fake file is a valid TZif zone that claims Winnipeg is always UTC.
 func TestEmbeddedZonePack(t *testing.T) {
-	if os.Getenv("TIFAJS_ZONEPACK_CHILD") == "1" {
+	if os.Getenv("BEASTJS_ZONEPACK_CHILD") == "1" {
 		vm := newVM(t)
 		got := goldenEval(t, vm, `new Intl.DateTimeFormat('en',{timeZone:'America/Winnipeg',hour:'2-digit',hourCycle:'h23',minute:'2-digit'}).format(Date.UTC(2026,0,15,12))`)
 		if got != "06:00" {
@@ -37,7 +37,7 @@ func TestEmbeddedZonePack(t *testing.T) {
 		t.Fatal(err)
 	}
 	cmd := exec.Command(os.Args[0], "-test.run=^TestEmbeddedZonePack$")
-	cmd.Env = append(os.Environ(), "TIFAJS_ZONEPACK_CHILD=1", "ZONEINFO="+dir)
+	cmd.Env = append(os.Environ(), "BEASTJS_ZONEPACK_CHILD=1", "ZONEINFO="+dir)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}

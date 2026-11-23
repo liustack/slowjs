@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package intl // import "github.com/liustack/tifajs/intl"
+package intl // import "github.com/liustack/beastjs/intl"
 
 import (
 	"fmt"
@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/liustack/tifajs"
-	"github.com/liustack/tifajs/internal/intlhook"
+	"github.com/liustack/beastjs"
+	"github.com/liustack/beastjs/internal/intlhook"
 )
 
 // firstUse touches Intl for the first time and reports the outcome as a value,
@@ -35,12 +35,12 @@ var hostFuncsSeen = globalsSeen()
 
 // globalsSeen is hostFuncsSeen for a VM that also has the globals own.
 func globalsSeen(own ...string) string {
-	vm, err := tifajs.NewVM()
+	vm, err := beastjs.NewVM()
 	if err != nil {
 		panic(err)
 	}
 	defer vm.Close()
-	names, err := vm.Eval(`JSON.stringify(Object.getOwnPropertyNames(globalThis))`, tifajs.EvalGlobal)
+	names, err := vm.Eval(`JSON.stringify(Object.getOwnPropertyNames(globalThis))`, beastjs.EvalGlobal)
 	if err != nil {
 		panic(err)
 	}
@@ -67,7 +67,7 @@ var afterFailedInstall = [][2]string{
 func TestInstallFailsOnLowMemory(t *testing.T) {
 	// firstUseWith reports what the first use answers on a fresh VM limited to limit
 	// bytes, and how many installs it started.
-	firstUseWith := func(limit uintptr) (*tifajs.VM, string, int64) {
+	firstUseWith := func(limit uintptr) (*beastjs.VM, string, int64) {
 		vm := newVM(t)
 		// The engine creates some builtins, JSON among them, on first touch,
 		// and one it fails to create for want of memory stays undefined for
@@ -76,7 +76,7 @@ func TestInstallFailsOnLowMemory(t *testing.T) {
 		eval(t, vm, `JSON`)
 		vm.SetMemoryLimit(limit)
 		before := shimInstalls.Load()
-		v, err := vm.Eval(firstUse, tifajs.EvalGlobal)
+		v, err := vm.Eval(firstUse, beastjs.EvalGlobal)
 		got := fmt.Sprint(v)
 		if err != nil {
 			got = "error: " + err.Error()
@@ -242,7 +242,7 @@ func TestInstallKeepsInterrupt(t *testing.T) {
 		}
 	}()
 
-	_, err := vm.Eval(`interrupt(); (1234.5).toLocaleString('en-US'); for (;;) {}`, tifajs.EvalGlobal)
+	_, err := vm.Eval(`interrupt(); (1234.5).toLocaleString('en-US'); for (;;) {}`, beastjs.EvalGlobal)
 	if err == nil || lost.Load() {
 		t.Fatalf("got %v, lost the interrupt request: %v", err, lost.Load())
 	}
@@ -270,7 +270,7 @@ func TestInstallInterrupted(t *testing.T) {
 	// failure: only a test sees it, and the formatting is the same.
 	var formatArgs []string
 	format := bridge[1]
-	bridge[1] = intlhook.NewBuiltin("format", 3, func(a tifajs.Args) (tifajs.Value, error) {
+	bridge[1] = intlhook.NewBuiltin("format", 3, func(a beastjs.Args) (beastjs.Value, error) {
 		arg, err := a.Value(1).Any()
 		formatArgs = append(formatArgs, fmt.Sprintf("%T %v %v", arg, arg, err))
 		return numberFormatted(a, false)
@@ -278,7 +278,7 @@ func TestInstallInterrupted(t *testing.T) {
 	defer func() { bridge[1] = format }()
 
 	for k := 0; k <= period; k += step {
-		vm, err := tifajs.NewVM()
+		vm, err := beastjs.NewVM()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -297,22 +297,22 @@ func TestInstallInterrupted(t *testing.T) {
 		// Spend k checks' worth of the engine's countdown, so that the
 		// interrupt below lands k instructions later. The stand-in is kept
 		// under a symbol, which seen does not count.
-		if _, err := vm.Eval(fmt.Sprintf(`globalThis[Symbol.for('stand-in')] = Number.prototype.toLocaleString; for (let i = 0; i < %d; i++) {}`, k), tifajs.EvalGlobal); err != nil {
+		if _, err := vm.Eval(fmt.Sprintf(`globalThis[Symbol.for('stand-in')] = Number.prototype.toLocaleString; for (let i = 0; i < %d; i++) {}`, k), beastjs.EvalGlobal); err != nil {
 			t.Fatal(err)
 		}
 
 		i0, r0 := shimInstalls.Load(), interruptedInstalls.Load()
-		_, cut := vm.Eval(`interrupt(); (1234.5).toLocaleString('en-US')`, tifajs.EvalGlobal)
+		_, cut := vm.Eval(`interrupt(); (1234.5).toLocaleString('en-US')`, beastjs.EvalGlobal)
 		i1, r1 := shimInstalls.Load(), interruptedInstalls.Load()
 		formatArgs = formatArgs[:0]
-		v, err := vm.Eval(`[(globalThis[Symbol.for('result')] = (1234.5).toLocaleString('en-US')), new Intl.NumberFormat('de').format(1234.5), `+seen+`].join(' ')`, tifajs.EvalGlobal)
+		v, err := vm.Eval(`[(globalThis[Symbol.for('result')] = (1234.5).toLocaleString('en-US')), new Intl.NumberFormat('de').format(1234.5), `+seen+`].join(' ')`, beastjs.EvalGlobal)
 		if got := fmt.Sprint(v); err != nil || got != "1,234.5 1.234,5 0" {
 			// Whether the engine computes wrong or the install left the
 			// wrong state behind.
 			args := strings.Join(formatArgs, "; ")
 			i2, r2 := shimInstalls.Load(), interruptedInstalls.Load()
 			formatArgs = formatArgs[:0]
-			d, derr := vm.Eval(installDiagnostics, tifajs.EvalGlobal)
+			d, derr := vm.Eval(installDiagnostics, beastjs.EvalGlobal)
 			t.Fatalf("interrupted %d instructions later: got %q, %v\n"+
 				"first use: %v, installs begun %d, after a cut-short one %d\n"+
 				"second use: installs begun %d, after a cut-short one %d, format got: %s\n"+

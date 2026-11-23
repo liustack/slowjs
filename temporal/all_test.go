@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package temporal // import "github.com/liustack/tifajs/temporal"
+package temporal // import "github.com/liustack/beastjs/temporal"
 
 import (
 	"fmt"
@@ -11,13 +11,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/liustack/tifajs"
-	"github.com/liustack/tifajs/intl"
+	"github.com/liustack/beastjs"
+	"github.com/liustack/beastjs/intl"
 )
 
-func newVM(tb testing.TB, opts ...Option) *tifajs.VM {
+func newVM(tb testing.TB, opts ...Option) *beastjs.VM {
 	tb.Helper()
-	vm, err := tifajs.NewVM()
+	vm, err := beastjs.NewVM()
 	if err != nil {
 		tb.Fatal(err)
 	}
@@ -32,9 +32,9 @@ func newVM(tb testing.TB, opts ...Option) *tifajs.VM {
 	return vm
 }
 
-func eval(tb testing.TB, vm *tifajs.VM, src string) any {
+func eval(tb testing.TB, vm *beastjs.VM, src string) any {
 	tb.Helper()
-	v, err := vm.Eval(src, tifajs.EvalGlobal)
+	v, err := vm.Eval(src, beastjs.EvalGlobal)
 	if err != nil {
 		tb.Fatalf("%s: %v", src, err)
 	}
@@ -43,11 +43,11 @@ func eval(tb testing.TB, vm *tifajs.VM, src string) any {
 
 // evalTests runs src/want pairs, each in the same VM. A want starting with
 // "!" is the error src throws, "!RangeError" say, or its start.
-func evalTests(t *testing.T, vm *tifajs.VM, tests [][2]string) {
+func evalTests(t *testing.T, vm *beastjs.VM, tests [][2]string) {
 	t.Helper()
 	for _, test := range tests {
 		src, want := test[0], test[1]
-		got, err := vm.Eval(src, tifajs.EvalGlobal)
+		got, err := vm.Eval(src, beastjs.EvalGlobal)
 		switch {
 		case strings.HasPrefix(want, "!"):
 			if err == nil {
@@ -189,7 +189,7 @@ func TestClockDroppedOnClose(t *testing.T) {
 	}
 	before := count()
 	for range 20 {
-		vm, err := tifajs.NewVM()
+		vm, err := beastjs.NewVM()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -215,7 +215,7 @@ func TestClockPanics(t *testing.T) {
 				t.Errorf("recovered %v", r)
 			}
 		}()
-		v, err := vm.Eval(`Temporal.Now.instant().toString()`, tifajs.EvalGlobal)
+		v, err := vm.Eval(`Temporal.Now.instant().toString()`, beastjs.EvalGlobal)
 		t.Errorf("no panic: %v %v", v, err)
 	}()
 	evalTests(t, vm, [][2]string{{`Temporal.PlainDate.from('2024-01-05').add({days: 1}).toString()`, "2024-01-06"}})
@@ -343,7 +343,7 @@ func TestLocaleListFunction(t *testing.T) {
 // DefaultTimeZone, while Date's local time stays UTC, and an Instant's
 // toLocaleString formats in Intl's zone, as a Date's does.
 func TestDefaultZone(t *testing.T) {
-	vm, err := tifajs.NewVM()
+	vm, err := beastjs.NewVM()
 	if err != nil {
 		t.Fatal(err)
 	}

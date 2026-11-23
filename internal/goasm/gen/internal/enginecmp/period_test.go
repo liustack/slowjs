@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 package enginecmp
 
@@ -7,13 +7,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/liustack/tifajs"
+	"github.com/liustack/beastjs"
 )
 
 // TestLoopPeriod times one iteration of the JS loop used by TestGCStopsJSLoop,
 // so the time between two polls (10000 back edges) can be read off.
 func TestLoopPeriod(t *testing.T) {
-	m, err := tifajs.NewVM()
+	m, err := beastjs.NewVM()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -22,7 +22,7 @@ func TestLoopPeriod(t *testing.T) {
 	best := time.Duration(1 << 62)
 	for r := 0; r < 5; r++ {
 		t0 := time.Now()
-		if _, err := m.Eval(fmt.Sprintf(`{ let acc = 0; for (let i = 0; i < %d; i++) { acc += i * i } }`, n), tifajs.EvalGlobal); err != nil {
+		if _, err := m.Eval(fmt.Sprintf(`{ let acc = 0; for (let i = 0; i < %d; i++) { acc += i * i } }`, n), beastjs.EvalGlobal); err != nil {
 			t.Fatal(err)
 		}
 		if d := time.Since(t0); d < best {

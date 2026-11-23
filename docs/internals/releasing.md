@@ -1,12 +1,12 @@
 ---
-summary: 'How a release is made: patch versions only, a lightweight tag on the merge commit of main, asking before tagging and pushing, what to update before, the release job that builds the tifajs command and attaches it to the GitHub release of the tag, running the comparison with other Go engines again before the tag so that the release ships its own numbers, and upgrading tifa after it'
+summary: 'How a release is made: patch versions only, a lightweight tag on the merge commit of main, asking before tagging and pushing, what to update before, the release job that builds the beastjs command and attaches it to the GitHub release of the tag, running the comparison with other Go engines again before the tag so that the release ships its own numbers, and upgrading tifa after it'
 audience: dev
 order: 5
 read_when:
   - A branch was merged into main and is ready to ship
   - Choosing the version of the next release
   - About to create or push a tag
-  - The release job failed, or a GitHub release lacks the binaries of tifajs
+  - The release job failed, or a GitHub release lacks the binaries of beastjs
   - A release is out and tifa should use it
   - Running the comparison with other JavaScript engines for Go again
 ---
@@ -16,8 +16,8 @@ read_when:
 ## Versions
 
 - Releases are patch versions: v0.30.0, v0.30.1, and so on. A fix or a speedup, even a large one, is the next patch version. A release that removes or changes a public API is the next minor version, as v0.27.0 was for the module loaders it removed. Do not move to a new minor version for anything else: that is for the owner of the repository to decide.
-- A version of the module is a tag, and users get it with `go get github.com/liustack/tifajs@<version>`. From v0.31.0, pushing the tag also makes a GitHub release of it, which carries only the prebuilt binaries of the `tifajs` command ([command.md](../use/command.md)): see [The release job](#the-release-job).
-- The versions up to v0.27.3 and from v0.30.0 to v0.30.7 declare `github.com/liustack/quickjs`, v0.28.0 to v0.29.11 and v0.31.0 to v0.31.12 declare `github.com/liustack/slowjs`, and v0.32.0 on declares `github.com/liustack/tifajs`. The Go module proxy keeps serving the old ones under their old paths.
+- A version of the module is a tag, and users get it with `go get github.com/liustack/beastjs@<version>`. From v0.31.0, pushing the tag also makes a GitHub release of it, which carries only the prebuilt binaries of the `beastjs` command ([command.md](../use/command.md)): see [The release job](#the-release-job).
+- The versions up to v0.27.3 and from v0.30.0 to v0.30.7 declare `github.com/liustack/quickjs`, v0.28.0 to v0.29.11 and v0.31.0 to v0.31.12 declare `github.com/liustack/slowjs`, v0.32.0 declares `github.com/liustack/tifajs`, and v0.33.0 on declares `github.com/liustack/beastjs`. The Go module proxy keeps serving the old ones under their old paths.
 
 ## Before the release
 
@@ -95,32 +95,32 @@ Ask the owner before you create a tag and again before you push one. A pushed ta
    git push origin <version>
    ```
 
-3. Check that the proxy has it: `GOPROXY=https://proxy.golang.org go list -m github.com/liustack/tifajs@<version>`.
+3. Check that the proxy has it: `GOPROXY=https://proxy.golang.org go list -m github.com/liustack/beastjs@<version>`.
 4. Check that the release job made the GitHub release of the tag (`gh run list --workflow release.yml`, then the release page): six archives and `checksums.txt`.
 
 ### The release job
 
-`.github/workflows/release.yml` runs when a tag `v*` is pushed. The GitHub release it makes is there only for the binaries of `tifajs`: the module is still the tag, and Go users never need the release.
+`.github/workflows/release.yml` runs when a tag `v*` is pushed. The GitHub release it makes is there only for the binaries of `beastjs`: the module is still the tag, and Go users never need the release.
 
-1. **build** (linux/amd64): `scripts/tifajs-release.sh <tag> dist` builds `cmd/tifajs` for the six targets with `CGO_ENABLED=0`, `-trimpath`, `-ldflags "-s -w"` and the tag stamped in as the version, with the Go of the `go` line of `go.mod`, as CI tests with. It packs each binary with its license texts and writes `checksums.txt` (SHA-256).
-2. **test**, on each of the six systems as CI runs them (darwin/amd64 under Rosetta, windows/arm64 on `windows-11-arm`): it checks the archive against `checksums.txt`, unpacks it, and runs the tests of `cmd/tifajs` against that binary (`TIFAJS_BIN`, see [command.md](../use/command.md#tests)), the V8 suite among them, with the tag as the version it must report.
+1. **build** (linux/amd64): `scripts/beastjs-release.sh <tag> dist` builds `cmd/beastjs` for the six targets with `CGO_ENABLED=0`, `-trimpath`, `-ldflags "-s -w"` and the tag stamped in as the version, with the Go of the `go` line of `go.mod`, as CI tests with. It packs each binary with its license texts and writes `checksums.txt` (SHA-256).
+2. **test**, on each of the six systems as CI runs them (darwin/amd64 under Rosetta, windows/arm64 on `windows-11-arm`): it checks the archive against `checksums.txt`, unpacks it, and runs the tests of `cmd/beastjs` against that binary (`BEASTJS_BIN`, see [command.md](../use/command.md#tests)), the V8 suite among them, with the tag as the version it must report.
 3. **release**, only after all six pass and only for a pushed tag: it makes the GitHub release of the tag, titled with the tag, with the archives and `checksums.txt`, and notes that link to [command.md](../use/command.md) and the changelog. It is the only job with `contents: write`. Run again for a tag whose release exists, it replaces the files.
 
 What a release holds:
 
 | File | What it is |
 | --- | --- |
-| `tifajs-linux-amd64.tar.gz` | linux/amd64 |
-| `tifajs-linux-arm64.tar.gz` | linux/arm64 |
-| `tifajs-darwin-amd64.tar.gz` | darwin/amd64 |
-| `tifajs-darwin-arm64.tar.gz` | darwin/arm64 |
-| `tifajs-windows-amd64.zip` | windows/amd64 |
-| `tifajs-windows-arm64.zip` | windows/arm64 |
+| `beastjs-linux-amd64.tar.gz` | linux/amd64 |
+| `beastjs-linux-arm64.tar.gz` | linux/arm64 |
+| `beastjs-darwin-amd64.tar.gz` | darwin/amd64 |
+| `beastjs-darwin-arm64.tar.gz` | darwin/arm64 |
+| `beastjs-windows-amd64.zip` | windows/amd64 |
+| `beastjs-windows-arm64.zip` | windows/arm64 |
 | `checksums.txt` | The SHA-256 of each archive, as `sha256sum` writes it |
 
-The names carry the target as Go names it, and no version, so that `releases/latest/download/<name>` always points to the newest. Each archive holds one folder of the same name, with the binary (`tifajs`, or `tifajs.exe`), `NOTICE.md` and the texts [NOTICE.md](../../NOTICE.md#what-a-program-that-ships-a-binary-must-include) says a binary must carry, at their paths in this repository: `LICENSE`, `LICENSE-QUICKJS`, `LICENSE-TLSF`, `engine/libc/COPYRIGHT`, those of `intl` and `temporal` (`intl/LICENSE-DATA`, `internal/gointl/LICENSE` and the four notices of `internal/gointl/qjsdata/`), of `url` (`internal/whatwgurl/LICENSE-WHATWG-URL` and `LICENSE-GO`) and of `fmt` (`fmt/LICENSE-GO`), and under `third_party/` the license of Go and of golang.org/x/sys. The script stops when the binary links a module other than golang.org/x/sys, which would ship without its license.
+The names carry the target as Go names it, and no version, so that `releases/latest/download/<name>` always points to the newest. Each archive holds one folder of the same name, with the binary (`beastjs`, or `beastjs.exe`), `NOTICE.md` and the texts [NOTICE.md](../../NOTICE.md#what-a-program-that-ships-a-binary-must-include) says a binary must carry, at their paths in this repository: `LICENSE`, `LICENSE-QUICKJS`, `LICENSE-TLSF`, `engine/libc/COPYRIGHT`, those of `intl` and `temporal` (`intl/LICENSE-DATA`, `internal/gointl/LICENSE` and the four notices of `internal/gointl/qjsdata/`), of `url` (`internal/whatwgurl/LICENSE-WHATWG-URL` and `LICENSE-GO`) and of `fmt` (`fmt/LICENSE-GO`), and under `third_party/` the license of Go and of golang.org/x/sys. The script stops when the binary links a module other than golang.org/x/sys, which would ship without its license.
 
-Before the branch of a release is merged, run the job by hand on it (`gh workflow run release.yml --ref <branch>`): it builds and tests the binaries, with `dev-<commit>` as the version, and makes no release. The same build runs locally with `scripts/tifajs-release.sh <version> <dir>`.
+Before the branch of a release is merged, run the job by hand on it (`gh workflow run release.yml --ref <branch>`): it builds and tests the binaries, with `dev-<commit>` as the version, and makes no release. The same build runs locally with `scripts/beastjs-release.sh <version> <dir>`.
 
 When the job fails after the tag is pushed, the module is out all the same: the tag stays. A failure of the machine is fixed by running the failed jobs again. A failure that needs a change of the code ships its fix in the next patch version, whose release then has the binaries.
 
@@ -128,8 +128,8 @@ When the job fails after the tag is pushed, the module is out all the same: the 
 
 ### Upgrade tifa
 
-liustack/tifajs exists for tifa, so every release goes into tifa next:
+liustack/beastjs exists for tifa, so every release goes into tifa next:
 
-1. In tifa, `go get github.com/liustack/tifajs@<version>` and `go mod tidy`.
+1. In tifa, `go get github.com/liustack/beastjs@<version>` and `go mod tidy`.
 2. Put the numbers each change was measured with before it merged into tifa's docs/performance.md and its changelogs. Do not measure the release again as a whole: each change was already measured against main. Measure on tifa's pages ([Measuring in tifa](performance.md#measuring-in-tifa)) only when the owner asks, or when two changes of the release may affect each other.
 3. Run tifa's checks. The SSR soak tests (`TIFA_SSR_SOAK=1`) also cover running out of memory and VM reuse.

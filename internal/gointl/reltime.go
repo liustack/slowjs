@@ -5,7 +5,7 @@ import (
 	"math"
 	"strings"
 
-	"github.com/liustack/tifajs/internal/gointl/internal/reltimedata"
+	"github.com/liustack/beastjs/internal/gointl/internal/reltimedata"
 )
 
 // Intl.RelativeTimeFormat.

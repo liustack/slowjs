@@ -5,7 +5,7 @@ package date
 import (
 	"testing"
 
-	intl "github.com/liustack/tifajs/internal/gointl"
+	intl "github.com/liustack/beastjs/internal/gointl"
 )
 
 func elAaiun(t *testing.T) *Environment {

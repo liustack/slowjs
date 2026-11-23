@@ -1,11 +1,11 @@
-# Contributing to liustack/tifajs
+# Contributing to liustack/beastjs
 
-First, the policy: **liustack/tifajs does not accept pull requests.** One maintainer reviews and owns every line of the engine, the generator and the Go API, and keeping that loop tight is what keeps it dependable.
+First, the policy: **liustack/beastjs does not accept pull requests.** One maintainer reviews and owns every line of the engine, the generator and the Go API, and keeping that loop tight is what keeps it dependable.
 
 Two contributions that help:
 
-- **[Open an issue](https://github.com/liustack/tifajs/issues/new/choose).** A script that gives the wrong answer, a render that is slow, a limit that did not hold, an error that reads wrong, a doc that is unclear. Issues are read and decide what gets built next. The templates say what to include. English or Chinese is fine.
-- **Fork it.** The files liustack/tifajs created are under the MIT license, and the code from other projects keeps its own license ([NOTICE.md](NOTICE.md)). Your copy is yours to change and publish.
+- **[Open an issue](https://github.com/liustack/beastjs/issues/new/choose).** A script that gives the wrong answer, a render that is slow, a limit that did not hold, an error that reads wrong, a doc that is unclear. Issues are read and decide what gets built next. The templates say what to include. English or Chinese is fine.
+- **Fork it.** The files liustack/beastjs created are under the MIT license, and the code from other projects keeps its own license ([NOTICE.md](NOTICE.md)). Your copy is yours to change and publish.
 
 A security problem goes in a private report, not an issue: see [SECURITY.md](SECURITY.md).
 
@@ -13,7 +13,7 @@ Everything below is for people working on a fork.
 
 ## Scope
 
-liustack/tifajs is a JavaScript engine for Go programs, kept for [tifa](https://github.com/liustack/tifa), which renders React pages to HTML inside the Go process. It stays:
+liustack/beastjs is a JavaScript engine for Go programs, kept for [tifa](https://github.com/liustack/tifa), which renders React pages to HTML inside the Go process. It stays:
 
 - pure Go, built with `CGO_ENABLED=0`, with no C compiler and no shared library for the user of the module
 - an engine, not Node: no `require`, `fs`, `process` or event loop of its own. A host gives a script what it needs through the Go API

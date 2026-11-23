@@ -6,7 +6,7 @@ import (
 	"errors"
 	"testing"
 
-	intl "github.com/liustack/tifajs/internal/gointl"
+	intl "github.com/liustack/beastjs/internal/gointl"
 )
 
 // A date and time that is an instant outside Temporal's range is a

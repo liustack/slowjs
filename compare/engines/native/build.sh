@@ -1,11 +1,11 @@
 #!/bin/sh
-# Copyright (c) 2026 The liustack/tifajs Authors.
+# Copyright (c) 2026 The liustack/beastjs Authors.
 # SPDX-License-Identifier: MIT
 # Use of this source code is governed by the MIT license in LICENSE at the
 # root of this repository.
 # build.sh <dir>: downloads and builds the native reference engines into
 # <dir>, each with its own build as shipped: Bellard's QuickJS 2026-06-04
-# (the release liustack/tifajs is built from) and master at e585640ffa with `make qjs` (gcc -O2, no
+# (the release liustack/beastjs is built from) and master at e585640ffa with `make qjs` (gcc -O2, no
 # LTO, and no -DNDEBUG so asserts run), QuickJS-NG v0.18.0 with `make` (CMake Release), and Node v26.13.1
 # (linux-x64 binary), and Hermes V1 release 260318099.0.7 built Release with clang. CMake 3.31.6 is fetched for QuickJS-NG and Hermes.
 set -e

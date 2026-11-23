@@ -5,7 +5,7 @@
 // Package idna is the part of golang.org/x/net/idna v0.62.0 (IDNA2008 with
 // the compatibility processing of UTS #46) that the URL standard needs: one
 // profile, "domain to ASCII", which has Unicode 17's tables and the
-// algorithm of UTS #46 revision 35. It was changed for liustack/tifajs:
+// algorithm of UTS #46 revision 35. It was changed for liustack/beastjs:
 // the other profiles, the options and ToUnicode are gone, normalization is
 // that of internal/gointl, the bidi checks are those of ../bidi, and the
 // Punycode encoder is one written here (encode.go), whose work is not the
@@ -20,8 +20,8 @@ import (
 	"sync"
 	"unicode/utf8"
 
-	gointl "github.com/liustack/tifajs/internal/gointl"
-	"github.com/liustack/tifajs/internal/whatwgurl/bidi"
+	gointl "github.com/liustack/beastjs/internal/gointl"
+	"github.com/liustack/beastjs/internal/whatwgurl/bidi"
 )
 
 var (

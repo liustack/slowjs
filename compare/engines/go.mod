@@ -1,13 +1,13 @@
-module github.com/liustack/tifajs/compare/engines
+module github.com/liustack/beastjs/compare/engines
 
 go 1.27.0
 
-replace github.com/liustack/tifajs => ../../
+replace github.com/liustack/beastjs => ../../
 
 require (
 	github.com/MoeForge/moejs v0.1.1
 	github.com/go-quickjs/go-quickjs v0.38.0
-	github.com/liustack/tifajs v0.30.7
+	github.com/liustack/beastjs v0.30.7
 )
 
 require (

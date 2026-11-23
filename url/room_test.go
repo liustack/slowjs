@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -14,9 +14,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/liustack/tifajs"
-	"github.com/liustack/tifajs/internal/whatwgurl"
-	"github.com/liustack/tifajs/internal/whatwgurl/idna"
+	"github.com/liustack/beastjs"
+	"github.com/liustack/beastjs/internal/whatwgurl"
+	"github.com/liustack/beastjs/internal/whatwgurl/idna"
 )
 
 // The room a Builtin checks before it reads its strings, roomPerUnit bytes for
@@ -28,19 +28,19 @@ import (
 func quiet(js string) string { return "(function () { " + js + "; })(); 1" }
 
 func isInterrupted(err error) bool {
-	var e *tifajs.Error
+	var e *beastjs.Error
 	return errors.As(err, &e) && e.Uncatchable && e.Interrupted
 }
 
 func isOOM(err error) bool {
-	var e *tifajs.Error
+	var e *beastjs.Error
 	return errors.As(err, &e) && e.Uncatchable && e.OutOfMemory
 }
 
 // catchable reports whether err is an error a script can catch, which a call
 // may end with when it is given what is not a URL or a field too long.
 func catchable(err error) bool {
-	var e *tifajs.Error
+	var e *beastjs.Error
 	return errors.As(err, &e) && !e.Uncatchable
 }
 
@@ -153,7 +153,7 @@ const setup = `
 	"ok"`
 
 // shapeVM is a VM with the shape name set up, T of n units.
-func shapeVM(t testing.TB, name string, n int) *tifajs.VM {
+func shapeVM(t testing.TB, name string, n int) *beastjs.VM {
 	vm := newVM(t)
 	sh := shapes[name]
 	evalString(t, vm, strings.NewReplacer("SHAPE", sh[0], "IN", sh[1], "SIZE", strconv.Itoa(n)).Replace(setup))
@@ -162,7 +162,7 @@ func shapeVM(t testing.TB, name string, n int) *tifajs.VM {
 
 // measureCalls runs js on vm and returns, for each call of a Builtin, what Go
 // allocated in it and the room admit checked for it.
-func measureCalls(t testing.TB, vm *tifajs.VM, js string) (grown, room []int64, err error) {
+func measureCalls(t testing.TB, vm *beastjs.VM, js string) (grown, room []int64, err error) {
 	var before runtime.MemStats
 	need := int64(-1)
 	callHook = func(enter bool) {
@@ -178,14 +178,14 @@ func measureCalls(t testing.TB, vm *tifajs.VM, js string) (grown, room []int64, 
 	}
 	admitHook = func(n int64) { need = n }
 	defer func() { callHook, admitHook = nil, nil }()
-	_, err = vm.Eval(quiet(js), tifajs.EvalGlobal)
+	_, err = vm.Eval(quiet(js), beastjs.EvalGlobal)
 	return
 }
 
 // wantRoomCovers fails t when a call of a Builtin that js makes allocates more
 // in Go than the room it checked. It returns the largest share of the room a
 // call used.
-func wantRoomCovers(t testing.TB, vm *tifajs.VM, js string) (share float64) {
+func wantRoomCovers(t testing.TB, vm *beastjs.VM, js string) (share float64) {
 	t.Helper()
 	grown, room, err := measureCalls(t, vm, js)
 	if err != nil && !catchable(err) {
@@ -289,7 +289,7 @@ func TestFirstNormalizationCounted(t *testing.T) {
 }
 
 // setGlobal sets the global name of vm to s.
-func setGlobal(t testing.TB, vm *tifajs.VM, name, s string) {
+func setGlobal(t testing.TB, vm *beastjs.VM, name, s string) {
 	t.Helper()
 	g := vm.GlobalObject()
 	defer g.Free()

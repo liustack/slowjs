@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/liustack/tifajs"
+	"github.com/liustack/beastjs"
 )
 
 func TestPluralRulesRoundingRegistry(t *testing.T) {
@@ -17,7 +17,7 @@ func TestPluralRulesRoundingRegistry(t *testing.T) {
 		for _, order := range [][2]int{{0, 2}, {2, 0}} {
 			t.Run(fmt.Sprintf("separateVMs=%t/first=%d", separate, order[0]), func(t *testing.T) {
 				first := newVM(t)
-				vms := []*tifajs.VM{first, first}
+				vms := []*beastjs.VM{first, first}
 				if separate {
 					vms[1] = newVM(t)
 				}

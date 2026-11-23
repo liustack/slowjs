@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package intl // import "github.com/liustack/tifajs/intl"
+package intl // import "github.com/liustack/beastjs/intl"
 
 import (
 	"encoding/json"
@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/liustack/tifajs"
+	"github.com/liustack/beastjs"
 )
 
 // TestTamper runs pages that replace or change built-ins, Array.prototype.push,
@@ -36,7 +36,7 @@ func TestTamper(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	plain, err := tifajs.NewVM()
+	plain, err := beastjs.NewVM()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +55,7 @@ func TestTamper(t *testing.T) {
 	for _, s := range scripts {
 		name, src := s[0], s[1]
 		t.Run(name, func(t *testing.T) {
-			got, err := newVM(t).Eval(src, tifajs.EvalGlobal)
+			got, err := newVM(t).Eval(src, beastjs.EvalGlobal)
 			if err != nil {
 				t.Fatal(err)
 			}

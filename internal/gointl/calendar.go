@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/liustack/tifajs/internal/gointl/internal/eastasian"
+	"github.com/liustack/beastjs/internal/gointl/internal/eastasian"
 )
 
 // The calendars a date may be reckoned in.

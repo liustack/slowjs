@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -8,12 +8,12 @@
 package main
 
 import (
-	"github.com/liustack/tifajs"
-	"github.com/liustack/tifajs/temporal"
+	"github.com/liustack/beastjs"
+	"github.com/liustack/beastjs/temporal"
 )
 
 func main() {
-	vm, err := tifajs.NewVM()
+	vm, err := beastjs.NewVM()
 	if err != nil {
 		panic(err)
 	}
@@ -21,7 +21,7 @@ func main() {
 	if err := temporal.Register(vm); err != nil {
 		panic(err)
 	}
-	if _, err := vm.Eval(`Temporal.Now.zonedDateTimeISO("Europe/Paris").toString()`, tifajs.EvalGlobal); err != nil {
+	if _, err := vm.Eval(`Temporal.Now.zonedDateTimeISO("Europe/Paris").toString()`, beastjs.EvalGlobal); err != nil {
 		panic(err)
 	}
 }

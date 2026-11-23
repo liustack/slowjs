@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	intl "github.com/liustack/tifajs/internal/gointl"
+	intl "github.com/liustack/beastjs/internal/gointl"
 )
 
 // Each divergence's flag chooses Node's side of it alone, and every flag has

@@ -1,18 +1,18 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package temporal // import "github.com/liustack/tifajs/temporal"
+package temporal // import "github.com/liustack/beastjs/temporal"
 
 import (
 	"encoding/json"
 	"errors"
 	"time"
 
-	"github.com/liustack/tifajs"
-	"github.com/liustack/tifajs/internal/gointl/temporal"
-	"github.com/liustack/tifajs/internal/intlhook"
+	"github.com/liustack/beastjs"
+	"github.com/liustack/beastjs/internal/gointl/temporal"
+	"github.com/liustack/beastjs/internal/intlhook"
 )
 
 // maxInstantSec is how far from the epoch an Instant can be, in seconds:
@@ -35,7 +35,7 @@ const maxInstantSec = 8_640_000_000_000
 // An op is an operation of the bridge.
 type op struct {
 	name string
-	fn   func(c *args) (tifajs.Value, error)
+	fn   func(c *args) (beastjs.Value, error)
 }
 
 // opNames is the json of the names of ops, in order, which temporal.js
@@ -52,26 +52,26 @@ var opNames = func() string {
 	return string(b)
 }()
 
-var bridge = intlhook.NewBuiltin("temporal", 0, func(a tifajs.Args) (tifajs.Value, error) {
+var bridge = intlhook.NewBuiltin("temporal", 0, func(a beastjs.Args) (beastjs.Value, error) {
 	n, _ := a.Number(0)
 	i := int(n)
 	if float64(i) != n || i < 0 || i >= len(ops) {
-		return tifajs.Value{}, errors.New("temporal: internal error: no such operation")
+		return beastjs.Value{}, errors.New("temporal: internal error: no such operation")
 	}
 	v, err := ops[i].fn(&args{a: a, door: intlhook.Open(a), i: 1})
 	if err != nil {
-		return tifajs.Value{}, jsErr(err)
+		return beastjs.Value{}, jsErr(err)
 	}
 	return v, nil
 })
 
 func ret(c *args) *results { return newResults(c.a.VM()) }
 
-func str(c *args, s string) (tifajs.Value, error) { return intlhook.Emit(c.a.VM(), s) }
+func str(c *args, s string) (beastjs.Value, error) { return intlhook.Emit(c.a.VM(), s) }
 
-func num(c *args, f float64) (tifajs.Value, error) { return ret(c).num(f).single() }
+func num(c *args, f float64) (beastjs.Value, error) { return ret(c).num(f).single() }
 
-func boolean(c *args, b bool) (tifajs.Value, error) {
+func boolean(c *args, b bool) (beastjs.Value, error) {
 	if b {
 		return c.a.VM().NewInt(1), nil
 	}
@@ -79,17 +79,17 @@ func boolean(c *args, b bool) (tifajs.Value, error) {
 }
 
 // single is the one value collected.
-func (r *results) single() (tifajs.Value, error) { return r.vals[0], r.err }
+func (r *results) single() (beastjs.Value, error) { return r.vals[0], r.err }
 
 // deferred returns err as temporal.js throws it later, or nil where err is
 // nil.
-func deferred(c *args, err error) (tifajs.Value, bool, error) {
+func deferred(c *args, err error) (beastjs.Value, bool, error) {
 	if err == nil {
-		return tifajs.Value{}, false, nil
+		return beastjs.Value{}, false, nil
 	}
-	var qe *tifajs.Error
+	var qe *beastjs.Error
 	if !errors.As(jsErr(err), &qe) {
-		return tifajs.Value{}, true, err
+		return beastjs.Value{}, true, err
 	}
 	v, err := ret(c).str(qe.Name).str(qe.Message).array()
 	return v, true, err
@@ -234,116 +234,116 @@ func calendarOf(id string) (*temporal.Calendar, error) {
 
 var coreOps = []op{
 	// ---- Calendars, zones and offsets.
-	{"calCanon", func(c *args) (tifajs.Value, error) {
+	{"calCanon", func(c *args) (beastjs.Value, error) {
 		s := c.str()
 		id, ok := temporal.CalendarID(lowerASCII(s))
 		if !ok {
-			return tifajs.Value{}, rangeErr("Temporal error: Unknown calendar type " + s + ".")
+			return beastjs.Value{}, rangeErr("Temporal error: Unknown calendar type " + s + ".")
 		}
 		cal, err := calendarOf(id)
 		if err != nil {
-			return tifajs.Value{}, err
+			return beastjs.Value{}, err
 		}
 		return str(c, cal.ID())
 	}},
-	{"calParse", func(c *args) (tifajs.Value, error) {
+	{"calParse", func(c *args) (beastjs.Value, error) {
 		id, ok := temporal.ParseCalendarString([]byte(c.str()))
 		if !ok {
-			return tifajs.Value{}, rangeErr("Temporal error: Invalid calendar string")
+			return beastjs.Value{}, rangeErr("Temporal error: Invalid calendar string")
 		}
 		cal, err := calendarOf(id)
 		if err != nil {
-			return tifajs.Value{}, err
+			return beastjs.Value{}, err
 		}
 		return str(c, cal.ID())
 	}},
-	{"calEras", func(c *args) (tifajs.Value, error) {
+	{"calEras", func(c *args) (beastjs.Value, error) {
 		cal, err := c.calendar()
 		if err != nil {
-			return tifajs.Value{}, err
+			return beastjs.Value{}, err
 		}
 		return boolean(c, cal.HasEras())
 	}},
-	{"tzParse", func(c *args) (tifajs.Value, error) {
+	{"tzParse", func(c *args) (beastjs.Value, error) {
 		d, err := data()
 		if err != nil {
-			return tifajs.Value{}, err
+			return beastjs.Value{}, err
 		}
 		tz, err := d.Zones.TimeZoneFromString([]byte(c.str()))
 		if err != nil {
-			return tifajs.Value{}, err
+			return beastjs.Value{}, err
 		}
 		id := tz.Identifier()
 		zones.LoadOrStore(id, tz)
 		return str(c, id)
 	}},
-	{"tzIdent", func(c *args) (tifajs.Value, error) {
+	{"tzIdent", func(c *args) (beastjs.Value, error) {
 		d, err := data()
 		if err != nil {
-			return tifajs.Value{}, err
+			return beastjs.Value{}, err
 		}
 		tz, err := d.Zones.TimeZoneFromIdentifier([]byte(c.str()))
 		if err != nil {
-			return tifajs.Value{}, err
+			return beastjs.Value{}, err
 		}
 		id := tz.Identifier()
 		zones.LoadOrStore(id, tz)
 		return str(c, id)
 	}},
-	{"tzEquals", func(c *args) (tifajs.Value, error) {
+	{"tzEquals", func(c *args) (beastjs.Value, error) {
 		a, err := c.timeZone()
 		if err != nil {
-			return tifajs.Value{}, err
+			return beastjs.Value{}, err
 		}
 		b, err := c.timeZone()
 		if err != nil {
-			return tifajs.Value{}, err
+			return beastjs.Value{}, err
 		}
 		return boolean(c, a.Equals(b))
 	}},
-	{"offsetCheck", func(c *args) (tifajs.Value, error) {
+	{"offsetCheck", func(c *args) (beastjs.Value, error) {
 		ns, err := temporal.ParseOffset([]byte(c.str()))
 		if err != nil {
-			return tifajs.Value{}, err
+			return beastjs.Value{}, err
 		}
 		return num(c, float64(ns))
 	}},
-	{"now", func(c *args) (tifajs.Value, error) {
+	{"now", func(c *args) (beastjs.Value, error) {
 		// Seconds and nanoseconds, not UnixNano, which holds only the years
 		// 1678 to 2262. An Instant is at most 8.64e12 s from the epoch.
 		t := clockNow(c.a.VM())
 		sec, nsec := t.Unix(), int64(t.Nanosecond())
 		if sec < -maxInstantSec || sec > maxInstantSec || sec == maxInstantSec && nsec > 0 {
-			return tifajs.Value{}, rangeErr("Temporal.Now: the clock reads " + t.UTC().Format(time.RFC3339Nano) + ", outside the range of Temporal.Instant")
+			return beastjs.Value{}, rangeErr("Temporal.Now: the clock reads " + t.UTC().Format(time.RFC3339Nano) + ", outside the range of Temporal.Instant")
 		}
 		ms := sec*1000 + nsec/1_000_000
 		return ret(c).num(float64(ms)).num(float64(nsec % 1_000_000)).array()
 	}},
 
 	// ---- PlainDate.
-	{"pdNew", func(c *args) (tifajs.Value, error) {
+	{"pdNew", func(c *args) (beastjs.Value, error) {
 		y, m, d := c.num(), c.num(), c.num()
 		cal, err := c.calendar()
 		if err != nil {
-			return tifajs.Value{}, err
+			return beastjs.Value{}, err
 		}
 		if !validISODate(y, m, d) {
-			return tifajs.Value{}, rangeErr("Temporal error: Invalid ISO date.")
+			return beastjs.Value{}, rangeErr("Temporal error: Invalid ISO date.")
 		}
 		pd, err := temporal.NewPlainDate(int(y), int(m), int(d), cal, temporal.Reject)
 		if err != nil {
-			return tifajs.Value{}, err
+			return beastjs.Value{}, err
 		}
 		return ret(c).date(pd).array()
 	}},
-	{"pdParse", func(c *args) (tifajs.Value, error) {
+	{"pdParse", func(c *args) (beastjs.Value, error) {
 		p, err := temporal.ParseDate(c.bytes())
 		if err != nil {
-			return tifajs.Value{}, err
+			return beastjs.Value{}, err
 		}
 		cal, err := calendarOf(p.Calendar())
 		if err != nil {
-			return tifajs.Value{}, err
+			return beastjs.Value{}, err
 		}
 		d, err := temporal.PlainDateFromParsed(p, cal)
 		if v, ok, err := deferred(c, err); ok {

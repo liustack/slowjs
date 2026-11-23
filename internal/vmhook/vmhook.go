@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -7,14 +7,14 @@
 // written in Go (intl, temporal, fmt and url) hold the work those functions do in
 // Go to the limits of the VM: its eval timeout, Interrupt and its memory
 // limit, which the engine's polls and allocator see only for the work done
-// in the engine. Package tifajs sets the functions at initialization. They
-// take the *tifajs.VM as an any, as this package cannot import package
-// tifajs, which imports it.
+// in the engine. Package beastjs sets the functions at initialization. They
+// take the *beastjs.VM as an any, as this package cannot import package
+// beastjs, which imports it.
 //
 // Each is for a Go function that javascript called, while it runs on the
 // goroutine of the call, and panics anywhere else, but LocaleArgs, which
 // sets the VM up.
-package vmhook // import "github.com/liustack/tifajs/internal/vmhook"
+package vmhook // import "github.com/liustack/beastjs/internal/vmhook"
 
 import "unsafe"
 
@@ -40,7 +40,7 @@ var (
 	// with it whatever the Go function returns.
 	OutOfMemory func(vm any)
 
-	// Chars returns the characters of argument i of args, a tifajs.Args, when
+	// Chars returns the characters of argument i of args, a beastjs.Args, when
 	// it is a string, as the engine holds them: in latin1, one byte each, when
 	// all are below U+0100, or in utf16 otherwise, lone surrogates as they are.
 	// Nothing is copied: they must not be changed, and are valid until release
@@ -50,7 +50,7 @@ var (
 	// that is not a string.
 	Chars func(args any, i int) (latin1 []byte, utf16 []uint16, release func(), ok bool)
 
-	// LongWTF8 is Args.WTF8 for argument i of args, a tifajs.Args, a long
+	// LongWTF8 is Args.WTF8 for argument i of args, a beastjs.Args, a long
 	// string the Go function uses only until it calls give: a long one is
 	// in memory mapped for the call (hostmem.Take), and nothing may keep the
 	// string, or a part of it, after give. It is not a string Go can keep,

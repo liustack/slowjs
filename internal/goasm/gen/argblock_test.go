@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 package gen
 
@@ -16,11 +16,11 @@ import (
 // shadow frame is one 64-byte block. It then runs the result natively to
 // confirm the shared block carries the right values, including a call whose
 // argument is itself a packed call (nested). It needs LLVM 22.1.8
-// (TIFAJS_LLVM) and the built pass (TIFAJS_SHADOW_PASS) on linux/amd64.
+// (BEASTJS_LLVM) and the built pass (BEASTJS_SHADOW_PASS) on linux/amd64.
 func TestArgBlockShared(t *testing.T) {
-	llvm, pass := os.Getenv("TIFAJS_LLVM"), os.Getenv("TIFAJS_SHADOW_PASS")
+	llvm, pass := os.Getenv("BEASTJS_LLVM"), os.Getenv("BEASTJS_SHADOW_PASS")
 	if llvm == "" || pass == "" {
-		t.Skip("set TIFAJS_LLVM and TIFAJS_SHADOW_PASS")
+		t.Skip("set BEASTJS_LLVM and BEASTJS_SHADOW_PASS")
 	}
 	work := t.TempDir()
 	ir, shadow, obj := filepath.Join(work, "a.ll"), filepath.Join(work, "a.shadow.ll"), filepath.Join(work, "a.o")

@@ -1,11 +1,11 @@
 /*
- * Copyright (c) 2026 The liustack/tifajs Authors.
+ * Copyright (c) 2026 The liustack/beastjs Authors.
  * SPDX-License-Identifier: MIT
  * Use of this source code is governed by the MIT license in LICENSE at the
  * root of this repository.
  */
-#ifndef TIFAJS_LIBC_STRING_H
-#define TIFAJS_LIBC_STRING_H
+#ifndef BEASTJS_LIBC_STRING_H
+#define BEASTJS_LIBC_STRING_H
 
 #include <stddef.h>
 

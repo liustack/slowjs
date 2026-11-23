@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -8,9 +8,9 @@ package intlhook
 import (
 	"unsafe"
 
-	"github.com/liustack/tifajs"
-	"github.com/liustack/tifajs/internal/hostmem"
-	"github.com/liustack/tifajs/internal/vmhook"
+	"github.com/liustack/beastjs"
+	"github.com/liustack/beastjs/internal/hostmem"
+	"github.com/liustack/beastjs/internal/vmhook"
 )
 
 // The Builtins of the Intl and Temporal shims are made with NewBuiltin and
@@ -39,20 +39,20 @@ import (
 // string could not be read, and Check when the call is to end.
 type stopped struct{}
 
-// NewBuiltin is tifajs.NewBuiltin, for a function fn that reads its string
+// NewBuiltin is beastjs.NewBuiltin, for a function fn that reads its string
 // arguments with String and WTF8: when one fails, the Builtin returns at
 // once, and the call ends with the pending error.
-func NewBuiltin(name string, length int, fn func(tifajs.Args) (tifajs.Value, error)) *tifajs.Builtin {
-	return tifajs.NewBuiltin(name, length, func(a tifajs.Args) (v tifajs.Value, err error) {
+func NewBuiltin(name string, length int, fn func(beastjs.Args) (beastjs.Value, error)) *beastjs.Builtin {
+	return beastjs.NewBuiltin(name, length, func(a beastjs.Args) (v beastjs.Value, err error) {
 		defer func() {
 			switch p := recover(); p.(type) {
 			case nil:
 			case stopped:
 				// The error is pending (see Args.String).
-				v, err = tifajs.UndefinedValue, nil
+				v, err = beastjs.UndefinedValue, nil
 			case tooLong:
 				// The door refused an argument longer than its cap.
-				v, err = tifajs.Value{}, p.(tooLong).error()
+				v, err = beastjs.Value{}, p.(tooLong).error()
 			default:
 				panic(p)
 			}
@@ -66,7 +66,7 @@ func NewBuiltin(name string, length int, fn func(tifajs.Args) (tifajs.Value, err
 // else a block outside Go's heap, the one the VM keeps or one mapped from
 // the OS. The Builtin stops when the call is to stop or the OS refuses the
 // memory.
-func Take[T hostmem.Elem](vm *tifajs.VM, n int) (s []T, give func()) {
+func Take[T hostmem.Elem](vm *beastjs.VM, n int) (s []T, give func()) {
 	if !hostmem.Mapped[T](n) {
 		return make([]T, n), func() {}
 	}
@@ -79,7 +79,7 @@ func Take[T hostmem.Elem](vm *tifajs.VM, n int) (s []T, give func()) {
 }
 
 // String is a.String(i), for a function given to NewBuiltin.
-func String(a tifajs.Args, i int) (string, bool) {
+func String(a beastjs.Args, i int) (string, bool) {
 	s, ok := a.String(i)
 	if !ok && failed(a, i) {
 		panic(stopped{})
@@ -88,7 +88,7 @@ func String(a tifajs.Args, i int) (string, bool) {
 }
 
 // WTF8 is a.WTF8(i), for a function given to NewBuiltin.
-func WTF8(a tifajs.Args, i int) (string, bool) {
+func WTF8(a beastjs.Args, i int) (string, bool) {
 	s, ok := a.WTF8(i)
 	if !ok && failed(a, i) {
 		panic(stopped{})
@@ -99,7 +99,7 @@ func WTF8(a tifajs.Args, i int) (string, bool) {
 // failed reports whether argument i of a, which Args.String or Args.WTF8 did
 // not read, is a string they failed to read: it is none of the other values
 // the shims pass, and the error that ends the call is pending.
-func failed(a tifajs.Args, i int) bool {
+func failed(a beastjs.Args, i int) bool {
 	if i >= a.Len() || a.Value(i).IsUndefined() {
 		return false
 	}
@@ -114,7 +114,7 @@ func failed(a tifajs.Args, i int) bool {
 
 // Check stops the Builtin, as a failed read does, when vmhook.Stop says that
 // the call is to end, for a function given to NewBuiltin.
-func Check(vm *tifajs.VM) {
+func Check(vm *beastjs.VM) {
 	if vmhook.Stop(vm) {
 		panic(stopped{})
 	}
@@ -122,7 +122,7 @@ func Check(vm *tifajs.VM) {
 
 // OutOfMemory stops the Builtin with the out of memory error, for work in
 // Go the OS refused memory to, for a function given to NewBuiltin.
-func OutOfMemory(vm *tifajs.VM) {
+func OutOfMemory(vm *beastjs.VM) {
 	vmhook.OutOfMemory(vm)
 	panic(stopped{})
 }
@@ -130,7 +130,7 @@ func OutOfMemory(vm *tifajs.VM) {
 // Room stops the Builtin with the out of memory error when the VM has no
 // room for n bytes more under its memory limit, for work in Go that holds
 // n bytes for a while, for a function given to NewBuiltin.
-func Room(vm *tifajs.VM, n int64) {
+func Room(vm *beastjs.VM, n int64) {
 	if room := vmhook.Room(vm); room >= 0 && n > room {
 		vmhook.OutOfMemory(vm)
 		panic(stopped{})

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2026 The liustack/tifajs Authors.
+ * Copyright (c) 2026 The liustack/beastjs Authors.
  * SPDX-License-Identifier: MIT
  * Use of this source code is governed by the MIT license in LICENSE at the
  * root of this repository.
@@ -8,8 +8,8 @@
    so that the formatter counts the arguments it takes. The test can then tell
    a format that is refused before any argument is read from one that reads
    arguments and refuses after. */
-#ifndef TIFAJS_TEST_COUNTING_STDARG_H
-#define TIFAJS_TEST_COUNTING_STDARG_H
+#ifndef BEASTJS_TEST_COUNTING_STDARG_H
+#define BEASTJS_TEST_COUNTING_STDARG_H
 
 #include_next <stdarg.h>
 

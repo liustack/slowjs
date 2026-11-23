@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"testing"
 
-	intl "github.com/liustack/tifajs/internal/gointl"
+	intl "github.com/liustack/beastjs/internal/gointl"
 )
 
 // Every option value prints as JavaScript spells it: the option's string in

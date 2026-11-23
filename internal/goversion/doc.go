@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -8,6 +8,6 @@
 // function and handles a fault, which the Go 1 promise does not cover, so a
 // newer Go builds it without checking it (see docs/internals/upgrading.md).
 // internal/cengine imports it: the go command builds it first, and its error
-// is the only one the build reports. Build with -tags tifajs_anygo to build
+// is the only one the build reports. Build with -tags beastjs_anygo to build
 // anyway.
 package goversion

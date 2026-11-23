@@ -1,8 +1,8 @@
 # Changes to the engine comparison
 
-## 2026-11-23: rows named liustack-tifajs
+## 2026-11-23: rows named liustack-beastjs
 
-- The module is `github.com/liustack/tifajs`, so its rows are `liustack-tifajs` and `liustack-tifajs-polyfill`, in the reports, `TIFA_ONLY` and `-engines`. The results files of earlier runs keep their old row names, and `cmd/compare` still reads them.
+- The module is `github.com/liustack/beastjs`, so its rows are `liustack-beastjs` and `liustack-beastjs-polyfill`, in the reports, `TIFA_ONLY` and `-engines`. The results files of earlier runs keep their old row names, and `cmd/compare` still reads them.
 
 ## 2026-11-16: the run of v0.31.3
 

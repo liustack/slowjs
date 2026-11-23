@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -8,16 +8,16 @@ package intlhook
 import (
 	"testing"
 
-	"github.com/liustack/tifajs"
+	"github.com/liustack/beastjs"
 )
 
 func TestStateLifetime(t *testing.T) {
 	for range 3 {
-		vm, err := tifajs.NewVM()
+		vm, err := beastjs.NewVM()
 		if err != nil {
 			t.Fatal(err)
 		}
-		keys, err := vm.Eval("JSON.stringify(Reflect.ownKeys(globalThis).map(String))", tifajs.EvalGlobal)
+		keys, err := vm.Eval("JSON.stringify(Reflect.ownKeys(globalThis).map(String))", beastjs.EvalGlobal)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -26,11 +26,11 @@ func TestStateLifetime(t *testing.T) {
 			t.Fatal(err)
 		}
 		state.Free()
-		after, err := vm.Eval("JSON.stringify(Reflect.ownKeys(globalThis).map(String))", tifajs.EvalGlobal)
+		after, err := vm.Eval("JSON.stringify(Reflect.ownKeys(globalThis).map(String))", beastjs.EvalGlobal)
 		if err != nil || after != keys {
 			t.Fatalf("private state exposed: %v %v", after, err)
 		}
-		if _, err := vm.Eval("globalThis.globalThis = null", tifajs.EvalGlobal); err != nil {
+		if _, err := vm.Eval("globalThis.globalThis = null", beastjs.EvalGlobal); err != nil {
 			t.Fatal(err)
 		}
 		vm.RunGC()
@@ -38,11 +38,11 @@ func TestStateLifetime(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		get, err := vm.EvalValue("s => s.temporal === undefined && s.locale === undefined", tifajs.EvalGlobal)
+		get, err := vm.EvalValue("s => s.temporal === undefined && s.locale === undefined", beastjs.EvalGlobal)
 		if err != nil {
 			t.Fatal(err)
 		}
-		got, err := get.Call(tifajs.UndefinedValue, state)
+		got, err := get.Call(beastjs.UndefinedValue, state)
 		get.Free()
 		state.Free()
 		if err != nil || got != true {

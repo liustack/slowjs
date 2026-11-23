@@ -26,7 +26,7 @@ func TestNoFusedArithmetic(t *testing.T) {
 	if testing.Short() {
 		t.Skip("compiles the module for arm64")
 	}
-	cmd := exec.Command("go", "build", "-gcflags=github.com/liustack/tifajs/internal/gointl/...=-S", "./...")
+	cmd := exec.Command("go", "build", "-gcflags=github.com/liustack/beastjs/internal/gointl/...=-S", "./...")
 	cmd.Env = append(os.Environ(), "GOOS=darwin", "GOARCH=arm64", "CGO_ENABLED=0")
 	out, err := cmd.CombinedOutput()
 	if err != nil {

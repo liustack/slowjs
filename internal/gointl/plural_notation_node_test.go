@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	intl "github.com/liustack/tifajs/internal/gointl"
+	intl "github.com/liustack/beastjs/internal/gointl"
 )
 
 // TestPluralNotationMatchesNode holds Select to Node in every notation, where

@@ -1,11 +1,11 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
 //go:build testhooks && ((((linux && !android) || (darwin && !ios)) && (amd64 || arm64)) || (windows && (amd64 || arm64)))
 
-package tifajs // import "github.com/liustack/tifajs"
+package beastjs // import "github.com/liustack/beastjs"
 
 // What a program of this module that tests a VM from outside the package,
 // such as the render stress (internal/stress), asks of its host. They exist

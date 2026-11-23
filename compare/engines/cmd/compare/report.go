@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -259,7 +259,7 @@ func renderMarkdown(res *Results) string {
 	p("# JavaScript engines: run %s\n\n", res.Name)
 	m := res.Machine
 	p("- Started %s, finished %s\n", res.Started, res.Finished)
-	p("- liustack/tifajs and this comparison at `%s` (%s)\n", res.Source.Describe, res.Source.Commit)
+	p("- liustack/beastjs and this comparison at `%s` (%s)\n", res.Source.Describe, res.Source.Commit)
 	if len(res.Drivers) > 0 {
 		p("- Driver (`cmd/compare`) at %s, the engine binaries are from the commit above\n", strings.Join(res.Drivers, ", "))
 	}
@@ -394,7 +394,7 @@ func renderSpeed(b *strings.Builder, res *Results, names []string) {
 
 	if _, ok := res.Timed["cold"]; ok {
 		var n notes
-		p("\n### Cold start and memory\n\nCold start: a new VM, then the React bundle (117 KB) loaded into it. \"From program\" runs a program compiled once beforehand, for engines whose compiled programs work on any VM. Memory: what the process grows by per VM, with 100 VMs alive, each with the bundle loaded and one page rendered. RSS counts memory outside the Go heap too (liustack-tifajs and modernc-quickjs keep the memory of a VM there), and can be lower than the Go heap growth when the heap reuses pages it already had.\n\n")
+		p("\n### Cold start and memory\n\nCold start: a new VM, then the React bundle (117 KB) loaded into it. \"From program\" runs a program compiled once beforehand, for engines whose compiled programs work on any VM. Memory: what the process grows by per VM, with 100 VMs alive, each with the bundle loaded and one page rendered. RSS counts memory outside the Go heap too (liustack-beastjs and modernc-quickjs keep the memory of a VM there), and can be lower than the Go heap growth when the heap reuses pages it already had.\n\n")
 		p("| Engine | New VM | New VM + load source | New VM + load program | First render | RSS per VM (MiB) | Go heap per VM (MiB) |\n|---|---|---|---|---|---|---|\n")
 		for _, e := range names {
 			raws := res.Timed["cold"][e]
@@ -433,8 +433,8 @@ func renderSpeed(b *strings.Builder, res *Results, names []string) {
 	}
 
 	if _, ok := res.Timed["upstream"]; ok {
-		p("\n### QuickJS micro benchmarks (`compare/testdata`)\n\nTime per iteration against liustack-tifajs, geometric mean over the tests both engines run (below 1 is faster than liustack-tifajs).\n\n")
-		p("| Engine | Tests run | Geomean time vs liustack-tifajs | Faster than liustack-tifajs on |\n|---|---|---|---|\n")
+		p("\n### QuickJS micro benchmarks (`compare/testdata`)\n\nTime per iteration against liustack-beastjs, geometric mean over the tests both engines run (below 1 is faster than liustack-beastjs).\n\n")
+		p("| Engine | Tests run | Geomean time vs liustack-beastjs | Faster than liustack-beastjs on |\n|---|---|---|---|\n")
 		base := upstreamMedians(res.Timed["upstream"][selfRow(res.Timed["upstream"])])
 		for _, e := range names {
 			mine := upstreamMedians(res.Timed["upstream"][e])
@@ -523,18 +523,18 @@ func v8Bench(name string) func(json.RawMessage) (float64, string) {
 	}
 }
 
-// selfRow is the name of the row of liustack/tifajs in a results file. Files
+// selfRow is the name of the row of liustack/beastjs in a results file. Files
 // made while the module was github.com/liustack/slowjs name it liustack-slowjs,
 // files made while it was github.com/liustack/quickjs (v0.30.0 to v0.30.7) name
 // it liustack-quickjs, and files made from 2026-10-24 to 2026-10-29, while the
 // module was github.com/liustack/slowjs the first time, name it slowjs.
 func selfRow(byEngine map[string][]json.RawMessage) string {
-	for _, name := range []string{"liustack-tifajs", "liustack-slowjs", "liustack-quickjs", "slowjs"} {
+	for _, name := range []string{"liustack-beastjs", "liustack-slowjs", "liustack-quickjs", "slowjs"} {
 		if _, ok := byEngine[name]; ok {
 			return name
 		}
 	}
-	return "liustack-tifajs"
+	return "liustack-beastjs"
 }
 
 func upstreamMedians(raws []json.RawMessage) map[string]float64 {

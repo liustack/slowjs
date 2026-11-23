@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package intl // import "github.com/liustack/tifajs/intl"
+package intl // import "github.com/liustack/beastjs/intl"
 
 import (
 	"errors"
@@ -11,9 +11,9 @@ import (
 	"testing"
 	"unicode/utf16"
 
-	"github.com/liustack/tifajs"
-	"github.com/liustack/tifajs/internal/intlhook"
-	"github.com/liustack/tifajs/internal/vmhook"
+	"github.com/liustack/beastjs"
+	"github.com/liustack/beastjs/internal/intlhook"
+	"github.com/liustack/beastjs/internal/vmhook"
 )
 
 // A numeric string of a few characters can ask for a written form of a
@@ -38,9 +38,9 @@ func TestWrittenDigitsRefused(t *testing.T) {
 			runtime.GC()
 			var before, after runtime.MemStats
 			runtime.ReadMemStats(&before)
-			_, err := vm.Eval(`f.`+c.call, tifajs.EvalGlobal)
+			_, err := vm.Eval(`f.`+c.call, beastjs.EvalGlobal)
 			runtime.ReadMemStats(&after)
-			var e *tifajs.Error
+			var e *beastjs.Error
 			if !errors.As(err, &e) || e.Uncatchable || e.Name != "RangeError" || e.Message != intlhook.KindDigits.Message() {
 				t.Fatalf("got %v, want the RangeError %q", err, intlhook.KindDigits.Message())
 			}
@@ -72,7 +72,7 @@ func TestWrittenDigitsUnderCap(t *testing.T) {
 			t.Errorf("%s = %v, want %d", c.js, got, c.want)
 		}
 	}
-	if _, err := vm.Eval(`2n ** 1048575n`, tifajs.EvalGlobal); err == nil {
+	if _, err := vm.Eval(`2n ** 1048575n`, beastjs.EvalGlobal); err == nil {
 		t.Errorf("2n ** 1048575n is a BigInt: a longer one may be refused")
 	}
 }
@@ -113,8 +113,8 @@ func TestDigitsRoomCoversGo(t *testing.T) {
 			room := vmhook.Room
 			vmhook.Room = func(any) int64 { return took - 1 }
 			defer func() { vmhook.Room = room }()
-			_, err := vm.Eval(src, tifajs.EvalGlobal)
-			var e *tifajs.Error
+			_, err := vm.Eval(src, beastjs.EvalGlobal)
+			var e *beastjs.Error
 			if !errors.As(err, &e) || !e.OutOfMemory {
 				t.Errorf("Go took %d bytes, and with one less of room the call gave %v, want the out of memory error", took, err)
 			}
@@ -169,7 +169,7 @@ func TestValueDrivenOutputBounded(t *testing.T) {
 		{`new Date(-8.64e15).toLocaleString('en', {fractionalSecondDigits: 3, era: 'long', timeZone: 'America/Argentina/ComodRivadavia', timeZoneName: 'longGeneric', weekday: 'long', month: 'long', year: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric', dayPeriod: 'long'})`, dateLength},
 		{`new Intl.DateTimeFormat('hi-u-nu-adlm-ca-ethiopic', {dateStyle: 'full', timeStyle: 'full', timeZone: '-23:59'}).format(8.64e15)`, dateLength},
 	} {
-		got, err := vm.Eval(c.js, tifajs.EvalGlobal)
+		got, err := vm.Eval(c.js, beastjs.EvalGlobal)
 		if err != nil {
 			t.Errorf("%s: %v", c.js, err)
 			continue

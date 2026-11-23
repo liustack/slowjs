@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package tifajs // import "github.com/liustack/tifajs"
+package beastjs // import "github.com/liustack/beastjs"
 
 // The errors of calls into javascript: reading an exception into an *Error,
 // the exceptions no script can catch, and the panic of a Go function that
@@ -17,8 +17,8 @@ import (
 // Error is a javascript exception that ended a call, read into Go. Get it from
 // the error of a call with errors.As:
 //
-//	if _, err := m.Eval(js, tifajs.EvalGlobal); err != nil {
-//		var e *tifajs.Error
+//	if _, err := m.Eval(js, beastjs.EvalGlobal); err != nil {
+//		var e *beastjs.Error
 //		if errors.As(err, &e) && e.Interrupted {
 //			// the eval timeout or Interrupt stopped the script
 //		}
@@ -94,10 +94,10 @@ func ErrorFromValue(v Value) *Error {
 var (
 	// errForeignValue is the error of a method given a Value of another VM,
 	// which it neither uses nor frees.
-	errForeignValue = errors.New("tifajs: a Value of another VM")
+	errForeignValue = errors.New("beastjs: a Value of another VM")
 	// errKilledVM is the error of a method on a VM a kill left good only for
 	// Close.
-	errKilledVM = fmt.Errorf("tifajs: the VM is good only for Close: %w", ErrKilled)
+	errKilledVM = fmt.Errorf("beastjs: the VM is good only for Close: %w", ErrKilled)
 )
 
 // foreign reports whether v belongs to a VM other than m. A Value of no VM,

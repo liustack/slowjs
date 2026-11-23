@@ -1,15 +1,15 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package temporal // import "github.com/liustack/tifajs/temporal"
+package temporal // import "github.com/liustack/beastjs/temporal"
 
 import (
 	"strings"
 	"testing"
 
-	"github.com/liustack/tifajs"
+	"github.com/liustack/beastjs"
 )
 
 // probes are what TestTamper asks Temporal, each an expression whose value
@@ -106,7 +106,7 @@ func TestTamper(t *testing.T) {
 				if after {
 					eval(t, vm, `Temporal.PlainDate.from('2024-01-05').toString(); new Date(0).toTemporalInstant(); Temporal.PlainDate.from('2024-01-05').toLocaleString()`)
 				}
-				if _, err := vm.Eval(src+";undefined", tifajs.EvalGlobal); err != nil {
+				if _, err := vm.Eval(src+";undefined", beastjs.EvalGlobal); err != nil {
 					t.Fatal(err)
 				}
 				// The probes compare errors by constructor, which a page

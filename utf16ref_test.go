@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package tifajs
+package beastjs
 
 import (
 	"encoding/binary"
@@ -25,7 +25,7 @@ func utf16StringRef(u []uint16, wtf8 bool) string {
 // unit, as utf16String converts it, and returns how many bytes it wrote.
 func utf16WriteRef(out []byte, u []uint16, wtf8 bool) int {
 	if len(out) < 3*len(u) {
-		panic("tifajs: no room for the UTF-8 of the units")
+		panic("beastjs: no room for the UTF-8 of the units")
 	}
 	d := unsafe.Pointer(unsafe.SliceData(out))
 	j := uintptr(0)

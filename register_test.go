@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package tifajs // import "github.com/liustack/tifajs"
+package beastjs // import "github.com/liustack/beastjs"
 
 import (
 	"bytes"
@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-const registerChild = "TIFAJS_TEST_REGISTER_CHILD"
+const registerChild = "BEASTJS_TEST_REGISTER_CHILD"
 
 // TestRegisterExistingName registers Go functions under names the global
 // object already has. Registering used to abort the process there, so the

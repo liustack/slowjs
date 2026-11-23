@@ -1,11 +1,11 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
 //go:build testhooks
 
-package tifajs // import "github.com/liustack/tifajs"
+package beastjs // import "github.com/liustack/beastjs"
 
 // What the system refusing memory in the middle of a render does on the C
 // engine: hostmem.SetFault makes the calls to the OS fail. The one VM whose
@@ -21,8 +21,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/liustack/tifajs/internal/gohost"
-	"github.com/liustack/tifajs/internal/hostmem"
+	"github.com/liustack/beastjs/internal/gohost"
+	"github.com/liustack/beastjs/internal/hostmem"
 )
 
 // growScript holds a few MiB in many strings and objects, which the engine

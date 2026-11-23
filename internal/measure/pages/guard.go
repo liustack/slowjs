@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -12,8 +12,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/liustack/tifajs"
-	"github.com/liustack/tifajs/tifa"
+	"github.com/liustack/beastjs"
+	"github.com/liustack/beastjs/tifa"
 )
 
 // notHooks are the names __tifa_* a bundle may hold that tifa.Register does not define. ok says
@@ -71,17 +71,17 @@ const kindsOf = `(names) => names.map((n) => {
 
 // Have returns what vm has under each of names (see kindsOf). It compiles one small function in
 // vm, which the collection after the bundle loads frees.
-func Have(vm *tifajs.VM, names []string) (map[string]string, error) {
+func Have(vm *beastjs.VM, names []string) (map[string]string, error) {
 	have := map[string]string{}
 	if len(names) == 0 {
 		return have, nil
 	}
-	f, err := vm.EvalValue(kindsOf, tifajs.EvalGlobal)
+	f, err := vm.EvalValue(kindsOf, beastjs.EvalGlobal)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Free()
-	r, err := f.Call(tifajs.UndefinedValue, names)
+	r, err := f.Call(beastjs.UndefinedValue, names)
 	if err != nil {
 		return nil, err
 	}

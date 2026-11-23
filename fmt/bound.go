@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package fmt // import "github.com/liustack/tifajs/fmt"
+package fmt // import "github.com/liustack/beastjs/fmt"
 
 import (
 	"math"
@@ -11,7 +11,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/liustack/tifajs"
+	"github.com/liustack/beastjs"
 )
 
 // Go's fmt makes the whole output of a call before it returns it or writes
@@ -232,7 +232,7 @@ func sizePrint(a []any) int64 {
 
 // sizeArg is a bound on the bytes verb makes of arg, with the flags sharp
 // and space, the width wid and the precision prec, for the arguments the VM
-// gives a Go function (see tifajs.VM.Eval): a string, or an object as its
+// gives a Go function (see beastjs.VM.Eval): a string, or an object as its
 // json, comes out at most five times as long as it is, a number in at most
 // a thousand bytes or so, padded to wid, and to prec where the precision
 // can make it longer (precGrows). A verb that does not fit arg writes it
@@ -255,11 +255,11 @@ func sizeArg(arg any, verb rune, sharp, space bool, wid, prec int) int64 {
 	}
 	switch verb {
 	case 'T':
-		// The longest name is that of tifajs.Unsupported.
+		// The longest name is that of beastjs.Unsupported.
 		return w + 64
 	case 'p':
 		switch arg.(type) {
-		case *tifajs.Object, *big.Int:
+		case *beastjs.Object, *big.Int:
 			// 0x and 16 digits.
 			return w + 64
 		}
@@ -267,7 +267,7 @@ func sizeArg(arg any, verb rune, sharp, space bool, wid, prec int) int64 {
 	switch arg := arg.(type) {
 	case string:
 		return w + sizeString(len(arg), verb, sharp, space)
-	case *tifajs.Object:
+	case *beastjs.Object:
 		return w + sizeString(len(arg.String()), verb, sharp, space)
 	case *big.Int:
 		if verb == 'w' {
@@ -281,7 +281,7 @@ func sizeArg(arg any, verb rune, sharp, space bool, wid, prec int) int64 {
 		// that does not pad it at most 767 significant digits, those of
 		// the smallest.
 		return w + 1024
-	case int, bool, nil, tifajs.Undefined, tifajs.Unsupported:
+	case int, bool, nil, beastjs.Undefined, beastjs.Unsupported:
 		// %b of an int is 64 digits, and %#v of the structs their name.
 		return w + 128
 	}
@@ -319,7 +319,7 @@ func precGrows(arg any, verb rune, sharp bool) bool {
 		return false
 	case 'p':
 		switch arg.(type) {
-		case *tifajs.Object, *big.Int:
+		case *beastjs.Object, *big.Int:
 			return true
 		}
 	}

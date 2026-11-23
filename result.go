@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package tifajs // import "github.com/liustack/tifajs"
+package beastjs // import "github.com/liustack/beastjs"
 
 import (
 	"errors"
@@ -18,7 +18,7 @@ import (
 
 // errCycle is the error of a result of a Go function that contains itself,
 // which no conversion could finish. encoding/json refuses such a value too.
-var errCycle = errors.New("tifajs: a result that contains itself")
+var errCycle = errors.New("beastjs: a result that contains itself")
 
 // The results of a Go function, of RegisterFunc or RegisterHostFunc, hand
 // the call the references they hold, whether they convert or not:
@@ -419,7 +419,7 @@ func (w *refWalk) content(v reflect.Value, kind reflect.Kind, inline bool) int32
 		}
 		return w.genericMap(v)
 	}
-	panic(fmt.Sprintf("tifajs: internal error: the walk of a result met %v", v.Type()))
+	panic(fmt.Sprintf("beastjs: internal error: the walk of a result met %v", v.Type()))
 }
 
 // mapKey is how a key of a map of type t becomes the name of a property, or

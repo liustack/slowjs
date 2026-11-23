@@ -6,8 +6,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/liustack/tifajs/internal/gointl/internal/blob"
-	"github.com/liustack/tifajs/internal/gointl/internal/layout"
+	"github.com/liustack/beastjs/internal/gointl/internal/blob"
+	"github.com/liustack/beastjs/internal/gointl/internal/layout"
 )
 
 // Canonicalization: the form ECMA-402's CanonicalizeUnicodeLocaleId gives an

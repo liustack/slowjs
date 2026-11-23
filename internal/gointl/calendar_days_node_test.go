@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/liustack/tifajs/internal/gointl"
+	"github.com/liustack/beastjs/internal/gointl"
 )
 
 // calendarDayGaps are the calendars testdata/calendar_days_node.txt.gz holds

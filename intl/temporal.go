@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package intl // import "github.com/liustack/tifajs/intl"
+package intl // import "github.com/liustack/beastjs/intl"
 
 import (
 	"encoding/json"
@@ -15,9 +15,9 @@ import (
 	"time"
 	"weak"
 
-	"github.com/liustack/tifajs"
-	gointl "github.com/liustack/tifajs/internal/gointl"
-	"github.com/liustack/tifajs/internal/intlhook"
+	"github.com/liustack/beastjs"
+	gointl "github.com/liustack/beastjs/internal/gointl"
+	"github.com/liustack/beastjs/internal/intlhook"
 )
 
 // The toLocaleString of the Temporal types, for package temporal: ECMA-402's
@@ -59,18 +59,18 @@ func init() {
 }
 
 // vmZones are the default zones of the VMs Register was given one for.
-var vmZones sync.Map // weak.Pointer[tifajs.VM] -> string
+var vmZones sync.Map // weak.Pointer[beastjs.VM] -> string
 
-func rememberZone(vm *tifajs.VM, name string) {
+func rememberZone(vm *beastjs.VM, name string) {
 	if name == "UTC" {
 		return
 	}
 	key := weak.Make(vm)
 	vmZones.Store(key, name)
-	runtime.AddCleanup(vm, func(k weak.Pointer[tifajs.VM]) { vmZones.Delete(k) }, key)
+	runtime.AddCleanup(vm, func(k weak.Pointer[beastjs.VM]) { vmZones.Delete(k) }, key)
 }
 
-func defaultZoneOf(vm *tifajs.VM) string {
+func defaultZoneOf(vm *beastjs.VM) string {
 	if z, ok := vmZones.Load(weak.Make(vm)); ok {
 		return z.(string)
 	}
@@ -205,12 +205,12 @@ const (
 	tfOptions = tfLocales + 2
 )
 
-var temporalFormatBuiltin = intlhook.NewBuiltin("toLocaleString", 0, func(a tifajs.Args) (tifajs.Value, error) {
+var temporalFormatBuiltin = intlhook.NewBuiltin("toLocaleString", 0, func(a beastjs.Args) (beastjs.Value, error) {
 	door := intlhook.Open(a)
 	kindName, _ := door.Short(tfKind, intlhook.KindOption)
 	k := temporalKinds[kindName]
 	if k == nil {
-		return tifajs.Value{}, &tifajs.Error{Name: "Error", Message: "intl: internal error: no Temporal kind " + kindName}
+		return beastjs.Value{}, &beastjs.Error{Name: "Error", Message: "intl: internal error: no Temporal kind " + kindName}
 	}
 	cal, _ := door.Short(tfCalendar, intlhook.KindTemporal)
 	ms, _ := a.Number(tfTime)
@@ -241,7 +241,7 @@ var temporalFormatBuiltin = intlhook.NewBuiltin("toLocaleString", 0, func(a tifa
 			} else if ok {
 				key = append(key, 'f')
 			} else {
-				return tifajs.Value{}, &tifajs.Error{Name: "Error", Message: "intl: internal error: an argument of toLocaleString has the wrong type"}
+				return beastjs.Value{}, &beastjs.Error{Name: "Error", Message: "intl: internal error: an argument of toLocaleString has the wrong type"}
 			}
 		default:
 			key = append(key, 'u')
@@ -261,7 +261,7 @@ var temporalFormatBuiltin = intlhook.NewBuiltin("toLocaleString", 0, func(a tifa
 		} else if s, ok := door.Locales(tfLocales + 1); ok {
 			l, ok := splitLocales(a.VM(), s)
 			if !ok {
-				return tifajs.Value{}, &tifajs.Error{Name: "Error", Message: "intl: internal error: a malformed locale list"}
+				return beastjs.Value{}, &beastjs.Error{Name: "Error", Message: "intl: internal error: a malformed locale list"}
 			}
 			req.Locales = l
 		}
@@ -295,11 +295,11 @@ var temporalFormatBuiltin = intlhook.NewBuiltin("toLocaleString", 0, func(a tifa
 	}
 
 	if err := tf.checkCalendar(cal); err != nil {
-		return tifajs.Value{}, jsErr(err)
+		return beastjs.Value{}, jsErr(err)
 	}
 	t, err := tf.instant(ms)
 	if err != nil {
-		return tifajs.Value{}, jsErr(err)
+		return beastjs.Value{}, jsErr(err)
 	}
 	if k.name == "ZonedDateTime" {
 		offset, _ := a.Number(tfOffset)

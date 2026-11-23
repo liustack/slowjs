@@ -1,8 +1,12 @@
 # Changelog
 
-What changed in `github.com/liustack/tifajs` (its name from v0.32.0, `github.com/liustack/slowjs` from v0.28.0 to v0.29.11 and from v0.31.0 to v0.31.12, `github.com/liustack/quickjs` up to v0.27.3 and from v0.30.0 to v0.30.7) that programs using it can see. Each release is tagged on `main`: a patch version, or the next minor version when it removes or changes a public API. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). [Fork changes](docs/internals/changes/README.md) has the details of each change, and [Performance](docs/internals/performance.md) how each speedup was measured. Times are for a server render of a page of tifa's example shop, on linux/amd64 (AMD EPYC) unless an entry says otherwise. Entries before v0.32.0 say the name the module had then: `github.com/liustack/slowjs` or `github.com/liustack/quickjs`.
+What changed in `github.com/liustack/beastjs` (its name from v0.33.0, `github.com/liustack/tifajs` at v0.32.0, `github.com/liustack/slowjs` from v0.28.0 to v0.29.11 and from v0.31.0 to v0.31.12, `github.com/liustack/quickjs` up to v0.27.3 and from v0.30.0 to v0.30.7) that programs using it can see. Each release is tagged on `main`: a patch version, or the next minor version when it removes or changes a public API. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). [Fork changes](docs/internals/changes/README.md) has the details of each change, and [Performance](docs/internals/performance.md) how each speedup was measured. Times are for a server render of a page of tifa's example shop, on linux/amd64 (AMD EPYC) unless an entry says otherwise. Entries before v0.32.0 say the name the module had then: `github.com/liustack/slowjs` or `github.com/liustack/quickjs`.
 
 ## [Unreleased]
+
+### Changed
+
+- **Breaking:** the module is `github.com/liustack/beastjs`, its root package and command are `beastjs`, and the build tags and repository script variables start with `beastjs_` and `BEASTJS_`. A program changes its import paths, writes `beastjs.` for `tifajs.` or `slowjs.`, and reads errors of the root package that start with `beastjs:`.
 
 ## [v0.32.0] - 2026-11-23
 
@@ -923,8 +927,8 @@ The first release of the fork, from modernc.org/quickjs v0.25.0 and libquickjs v
 - A VM that runs out of memory inside `JSON.parse`, or anything else that converts a string with non-ASCII characters to UTF-8, no longer leaks that string.
 - `VM.Call` and `VM.CallValue` report the exception thrown while evaluating the function expression instead of `cannot call a non-function`.
 
-[Unreleased]: https://github.com/liustack/tifajs/compare/v0.32.0...main
-[v0.32.0]: https://github.com/liustack/tifajs/compare/v0.31.12...v0.32.0
+[Unreleased]: https://github.com/liustack/beastjs/compare/v0.32.0...main
+[v0.32.0]: https://github.com/liustack/beastjs/compare/v0.31.12...v0.32.0
 [v0.31.12]: https://github.com/liustack/slowjs/compare/v0.31.11...v0.31.12
 [v0.31.11]: https://github.com/liustack/slowjs/compare/v0.31.10...v0.31.11
 [v0.31.10]: https://github.com/liustack/slowjs/compare/v0.31.9...v0.31.10

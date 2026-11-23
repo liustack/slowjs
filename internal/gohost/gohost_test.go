@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -16,8 +16,8 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/liustack/tifajs/internal/faulttest"
-	"github.com/liustack/tifajs/internal/hostmem"
+	"github.com/liustack/beastjs/internal/faulttest"
+	"github.com/liustack/beastjs/internal/hostmem"
 )
 
 // small is the stack of the VMs of most tests: the code under test does not

@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -9,8 +9,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/liustack/tifajs/internal/gointl/internal/datedata"
-	"github.com/liustack/tifajs/internal/gointl/internal/numdata"
+	"github.com/liustack/beastjs/internal/gointl/internal/datedata"
+	"github.com/liustack/beastjs/internal/gointl/internal/numdata"
 )
 
 // CacheSource shares decoded number and date data and pattern generators.

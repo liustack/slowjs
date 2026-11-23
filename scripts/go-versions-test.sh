@@ -1,5 +1,5 @@
 #!/bin/sh
-# Copyright (c) 2026 The liustack/tifajs Authors.
+# Copyright (c) 2026 The liustack/beastjs Authors.
 # SPDX-License-Identifier: MIT
 # Use of this source code is governed by the MIT license in LICENSE at the
 # root of this repository.
@@ -18,7 +18,7 @@ trap 'rm -rf "$d"' EXIT
 mkdir "$d/bin"
 
 low=$(sed -n 's/^go \(1\.[0-9]*\.[0-9]*\)$/\1/p' "$root/go.mod")
-stop=$(sed -n 's/^\/\/go:build go1\.\([0-9]*\) && !tifajs_anygo$/\1/p' "$root/internal/goversion/newer.go")
+stop=$(sed -n 's/^\/\/go:build go1\.\([0-9]*\) && !beastjs_anygo$/\1/p' "$root/internal/goversion/newer.go")
 minor=${low#1.}
 minor=${minor%%.*}
 patch=${low##*.}

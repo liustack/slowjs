@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -7,7 +7,7 @@ package main
 
 import "testing"
 
-// liustack-tifajs-polyfill is built with the other binaries, but the V8 suite
+// liustack-beastjs-polyfill is built with the other binaries, but the V8 suite
 // does not run it unless -engines names it.
 func TestPagesOnlyVariant(t *testing.T) {
 	has := func(vs []variant, name string) bool {
@@ -18,11 +18,11 @@ func TestPagesOnlyVariant(t *testing.T) {
 		}
 		return false
 	}
-	const bare = "liustack-tifajs-polyfill"
+	const bare = "liustack-beastjs-polyfill"
 	oldEngines, oldBuildOnly := *flagEngines, *flagBuildOnl
 	defer func() { *flagEngines, *flagBuildOnl = oldEngines, oldBuildOnly }()
 	*flagEngines, *flagBuildOnl = "", false
-	if has(selected(), bare) || !has(selected(), "liustack-tifajs") {
+	if has(selected(), bare) || !has(selected(), "liustack-beastjs") {
 		t.Errorf("default run selects %+v", selected())
 	}
 	*flagBuildOnl = true

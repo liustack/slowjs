@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package tifajs // import "github.com/liustack/tifajs"
+package beastjs // import "github.com/liustack/beastjs"
 
 import "testing"
 
@@ -64,7 +64,7 @@ func TestExecutePendingJobsCap(t *testing.T) {
 		t.Fatal(err)
 	}
 	n, err := m.ExecutePendingJobs()
-	if n != maxPendingJobs || err == nil || err.Error() != "tifajs: aborted draining after 1048576 pending jobs" {
+	if n != maxPendingJobs || err == nil || err.Error() != "beastjs: aborted draining after 1048576 pending jobs" {
 		t.Fatalf("got %d, %v", n, err)
 	}
 }

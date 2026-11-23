@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package fmt // import "github.com/liustack/tifajs/fmt"
+package fmt // import "github.com/liustack/beastjs/fmt"
 
 import (
 	"errors"
@@ -16,12 +16,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/liustack/tifajs"
+	"github.com/liustack/beastjs"
 )
 
-func newVM(t *testing.T) *tifajs.VM {
+func newVM(t *testing.T) *beastjs.VM {
 	t.Helper()
-	vm, err := tifajs.NewVM()
+	vm, err := beastjs.NewVM()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,9 +57,9 @@ func TestOutputLimit(t *testing.T) {
 			runtime.GC()
 			var before, after runtime.MemStats
 			runtime.ReadMemStats(&before)
-			_, err := vm.Eval(`var r = "ok"; try { `+js+` } catch (e) { r = "caught " + e } r`, tifajs.EvalGlobal)
+			_, err := vm.Eval(`var r = "ok"; try { `+js+` } catch (e) { r = "caught " + e } r`, beastjs.EvalGlobal)
 			runtime.ReadMemStats(&after)
-			var e *tifajs.Error
+			var e *beastjs.Error
 			if !errors.As(err, &e) || !e.Uncatchable || !e.OutOfMemory {
 				t.Fatalf("got %v, want the uncatchable out of memory error", err)
 			}
@@ -68,7 +68,7 @@ func TestOutputLimit(t *testing.T) {
 			}
 		})
 	}
-	if got, err := vm.Eval(`fmt.sprintf("%d %d %5.2f|%-4s|", 42, "x".repeat(1 << 20).length, Math.PI, "ab")`, tifajs.EvalGlobal); err != nil || got != "42 1048576  3.14|ab  |" {
+	if got, err := vm.Eval(`fmt.sprintf("%d %d %5.2f|%-4s|", 42, "x".repeat(1 << 20).length, Math.PI, "ab")`, beastjs.EvalGlobal); err != nil || got != "42 1048576  3.14|ab  |" {
 		t.Fatalf("got %q, %v", got, err)
 	}
 }
@@ -104,7 +104,7 @@ func TestSizeAtLeastOutput(t *testing.T) {
 // every type the VM gives a Go function.
 func cases(t *testing.T) (formats []string, tuples [][]any) {
 	vm := newVM(t)
-	obj, err := vm.Eval(`({a: "\x01\u00ff\ud800", b: [1, 2.5, null]})`, tifajs.EvalGlobal)
+	obj, err := vm.Eval(`({a: "\x01\u00ff\ud800", b: [1, 2.5, null]})`, beastjs.EvalGlobal)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +114,7 @@ func cases(t *testing.T) (formats []string, tuples [][]any) {
 		strings.Repeat("\u00e9\u20ac\U0010ffff\xe2\x82a\xf0\x90\ufeff\t\x80\x80\x80\x80\x80", 3), obj, big1, big.NewInt(0),
 		new(big.Int).Lsh(big.NewInt(1), 1000), new(big.Int).Neg(new(big.Int).Lsh(big.NewInt(3), 2000)),
 		0.0, -1e308, 5e-324, math.NaN(), math.Inf(-1), 3.25, 0, -2147483648, 2147483647, 1114112, 7,
-		true, nil, tifajs.Undefined{}, tifajs.Unsupported{},
+		true, nil, beastjs.Undefined{}, beastjs.Unsupported{},
 	}
 	verbs := "vsqxXdbocUeEfFgGtpTw%é"
 	for _, f := range []string{"%", "%#", "% ", "%+", "%-", "%0", "%# ", "%+#", "%-# 0"} {
@@ -145,7 +145,7 @@ func TestUnclosedIndexes(t *testing.T) {
 	vm.SetMemoryLimit(2 << 30)
 	vm.SetEvalTimeout(10 * time.Second)
 	start := time.Now()
-	got, err := vm.Eval(`fmt.sprintf("%[x".repeat(1000000))`, tifajs.EvalGlobal)
+	got, err := vm.Eval(`fmt.sprintf("%[x".repeat(1000000))`, beastjs.EvalGlobal)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,12 +160,12 @@ func TestUnclosedIndexes(t *testing.T) {
 // with the out of memory error before Go makes that format.
 func TestUnclosedIndexesRoom(t *testing.T) {
 	vm := newVM(t)
-	if _, err := vm.Eval(`var f = "%[x".repeat(1 << 20); 1`, tifajs.EvalGlobal); err != nil {
+	if _, err := vm.Eval(`var f = "%[x".repeat(1 << 20); 1`, beastjs.EvalGlobal); err != nil {
 		t.Fatal(err)
 	}
 	vm.SetMemoryLimit(vm.MemorySize() + 1<<20)
-	_, err := vm.Eval(`var r = "ok"; try { fmt.sprintf(f) } catch (e) { r = "caught " + e } r`, tifajs.EvalGlobal)
-	var e *tifajs.Error
+	_, err := vm.Eval(`var r = "ok"; try { fmt.sprintf(f) } catch (e) { r = "caught " + e } r`, beastjs.EvalGlobal)
+	var e *beastjs.Error
 	if !errors.As(err, &e) || !e.Uncatchable || !e.OutOfMemory {
 		t.Fatalf("got %v, want the uncatchable out of memory error", err)
 	}
@@ -443,26 +443,26 @@ func TestShortFormats(t *testing.T) {
 // write is in it.
 func TestTypeAndPointer(t *testing.T) {
 	vm := newVM(t)
-	if _, err := vm.Eval(`var s = "x".repeat(1 << 20), o = {a: s}, b = 1n << 1048000n; 1`, tifajs.EvalGlobal); err != nil {
+	if _, err := vm.Eval(`var s = "x".repeat(1 << 20), o = {a: s}, b = 1n << 1048000n; 1`, beastjs.EvalGlobal); err != nil {
 		t.Fatal(err)
 	}
 	vm.SetMemoryLimit(vm.MemorySize() + 2<<20)
 	for _, c := range []struct{ js, want string }{
 		{`fmt.sprintf("%T", s)`, "string"},
 		{`fmt.sprintf("%12T|%-12.3T|", s, b)`, "      string|*bi         |"},
-		{`fmt.sprintf("%T %T", o, b)`, "*tifajs.Object *big.Int"},
+		{`fmt.sprintf("%T %T", o, b)`, "*beastjs.Object *big.Int"},
 		{`fmt.sprintf("%p", o).slice(0, 2)`, "0x"},
 		{`fmt.sprintf("%#p", b).length < 20`, "true"},
 		{`fmt.sprintf("%.1000000T", 0)`, "int"},
 		{`fmt.sprintf("%.*T|%-*.*T|", 1000000, s, 6, 1000000, b)`, "string|*big.Int|"},
 	} {
-		got, err := vm.Eval(c.js, tifajs.EvalGlobal)
+		got, err := vm.Eval(c.js, beastjs.EvalGlobal)
 		if err != nil || fmt.Sprint(got) != c.want {
 			t.Errorf("%s: got %v, %v, want %q", c.js, got, err, c.want)
 		}
 	}
 	s := strings.Repeat("x", 1<<20)
-	obj, err := vm.Eval(`({a: 1})`, tifajs.EvalGlobal)
+	obj, err := vm.Eval(`({a: 1})`, beastjs.EvalGlobal)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -471,7 +471,7 @@ func TestTypeAndPointer(t *testing.T) {
 		format string
 		a      any
 	}{
-		{"%T", s}, {"%T", b}, {"%-20T", nil}, {"%T", tifajs.Undefined{}}, {"%p", b}, {"%#20.30p", b}, {"%p", obj}, {"%.1000000T", 1}, {"%20.1000000T", s},
+		{"%T", s}, {"%T", b}, {"%-20T", nil}, {"%T", beastjs.Undefined{}}, {"%p", b}, {"%#20.30p", b}, {"%p", obj}, {"%.1000000T", 1}, {"%20.1000000T", s},
 	} {
 		bound, _, _ := sizePrintf(c.format, []any{c.a}, -1)
 		if out := fmt.Sprintf(c.format, c.a); int64(len(out)) > bound || bound > 256 {
@@ -490,14 +490,14 @@ func TestTypeAndPointer(t *testing.T) {
 // limit, the short outputs are made, and the long ones end the call.
 func TestPrecision(t *testing.T) {
 	vm := newVM(t)
-	obj, err := vm.Eval(`({a: "b"})`, tifajs.EvalGlobal)
+	obj, err := vm.Eval(`({a: "b"})`, beastjs.EvalGlobal)
 	if err != nil {
 		t.Fatal(err)
 	}
 	args := []any{
 		"ab", obj, big.NewInt(5), new(big.Int).Lsh(big.NewInt(1), 200), 1.5, 0.1, 5e-324,
-		-math.MaxFloat64, math.NaN(), math.Inf(1), math.Inf(-1), 7, -7, true, nil, tifajs.Undefined{},
-		tifajs.Unsupported{},
+		-math.MaxFloat64, math.NaN(), math.Inf(1), math.Inf(-1), 7, -7, true, nil, beastjs.Undefined{},
+		beastjs.Unsupported{},
 	}
 	const short = 4 << 10
 	for _, verbs := range []string{"ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"} {
@@ -517,7 +517,7 @@ func TestPrecision(t *testing.T) {
 			}
 		}
 	}
-	if _, err := vm.Eval(`var b = 5n, o = {a: "b"}; 1`, tifajs.EvalGlobal); err != nil {
+	if _, err := vm.Eval(`var b = 5n, o = {a: "b"}; 1`, beastjs.EvalGlobal); err != nil {
 		t.Fatal(err)
 	}
 	vm.SetMemoryLimit(vm.MemorySize() + 2<<20)
@@ -533,7 +533,7 @@ func TestPrecision(t *testing.T) {
 		{`fmt.sprintf("%.1000000c|%.1000000t", b, null)`, "%!c(big.Int=5)|%!t(<nil>)"},
 		{`fmt.sprintf("%.1000000v|%.1000000d", undefined, undefined)`, "undefined|{}"},
 	} {
-		got, err := vm.Eval(c.js, tifajs.EvalGlobal)
+		got, err := vm.Eval(c.js, beastjs.EvalGlobal)
 		if err != nil || fmt.Sprint(got) != c.want {
 			t.Errorf("%s: got %v, %v, want %q", c.js, got, err, c.want)
 		}
@@ -549,8 +549,8 @@ func TestPrecision(t *testing.T) {
 		`fmt.sprintf("%.1000000s", b)`,
 		`fmt.sprintf("%.1000000p", o)`,
 	} {
-		_, err := vm.Eval(`var r = "ok"; try { `+js+` } catch (e) { r = "caught " + e } r`, tifajs.EvalGlobal)
-		var e *tifajs.Error
+		_, err := vm.Eval(`var r = "ok"; try { `+js+` } catch (e) { r = "caught " + e } r`, beastjs.EvalGlobal)
+		var e *beastjs.Error
 		if !errors.As(err, &e) || !e.Uncatchable || !e.OutOfMemory {
 			t.Errorf("%s: got %v, want the uncatchable out of memory error", js, err)
 		}

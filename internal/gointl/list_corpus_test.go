@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	intl "github.com/liustack/tifajs/internal/gointl"
-	"github.com/liustack/tifajs/internal/gointl/internal/corpus"
+	intl "github.com/liustack/beastjs/internal/gointl"
+	"github.com/liustack/beastjs/internal/gointl/internal/corpus"
 )
 
 func TestListFormatMatchesICU(t *testing.T) {

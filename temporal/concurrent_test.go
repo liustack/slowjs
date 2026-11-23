@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package temporal // import "github.com/liustack/tifajs/temporal"
+package temporal // import "github.com/liustack/beastjs/temporal"
 
 import (
 	"fmt"
@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/liustack/tifajs"
+	"github.com/liustack/beastjs"
 )
 
 // TestConcurrentVMs uses Temporal on several VMs at once, each with a clock
@@ -29,7 +29,7 @@ func TestConcurrentVMs(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			vm, err := tifajs.NewVM()
+			vm, err := beastjs.NewVM()
 			if err != nil {
 				t.Error(err)
 				return
@@ -45,13 +45,13 @@ func TestConcurrentVMs(t *testing.T) {
 
 			<-start
 			for range 3 {
-				v, err := vm.Eval(probe, tifajs.EvalGlobal)
+				v, err := vm.Eval(probe, beastjs.EvalGlobal)
 				if err != nil {
 					t.Error(err)
 					return
 				}
 				got[w] = fmt.Sprint(v)
-				v, err = vm.Eval(`Temporal.Now.instant().toString() + ' ' + Temporal.Now.zonedDateTimeISO('Pacific/Chatham').offset`, tifajs.EvalGlobal)
+				v, err = vm.Eval(`Temporal.Now.instant().toString() + ' ' + Temporal.Now.zonedDateTimeISO('Pacific/Chatham').offset`, beastjs.EvalGlobal)
 				if err != nil {
 					t.Error(err)
 					return

@@ -1,44 +1,44 @@
 ---
-summary: 'The tifajs command: what it is for (run a script on the engine, show a problem, try a release without Go), how to get it, what a script has (Intl, Temporal, URL, fmt, print, console, scriptArgs), the exit codes, the timeout and memory limit with their defaults and why, what it leaves out on purpose (timers, modules, REPL, files, network, a report of unhandled rejections), its size and its tests'
+summary: 'The beastjs command: what it is for (run a script on the engine, show a problem, try a release without Go), how to get it, what a script has (Intl, Temporal, URL, fmt, print, console, scriptArgs), the exit codes, the timeout and memory limit with their defaults and why, what it leaves out on purpose (timers, modules, REPL, files, network, a report of unhandled rejections), its size and its tests'
 audience: user
 order: 3
 read_when:
   - Running a JavaScript file in this engine without writing Go, or showing a problem of the engine with a script
-  - Changing cmd/tifajs, its flags or its release archives
-  - Asked why tifajs has no timers, modules, REPL or Node APIs
+  - Changing cmd/beastjs, its flags or its release archives
+  - Asked why beastjs has no timers, modules, REPL or Node APIs
 ---
 
-# The tifajs command
+# The beastjs command
 
 English · [简体中文](command.zh-CN.md)
 
-`tifajs` runs a JavaScript file in this engine, in a VM set up as tifa sets it up, with no Go program to write. It is for three things:
+`beastjs` runs a JavaScript file in this engine, in a VM set up as tifa sets it up, with no Go program to write. It is for three things:
 
-- **Show a problem.** A script and what `tifajs` printed for it is the whole report: the engine is the one we ship, set up as we use it.
+- **Show a problem.** A script and what `beastjs` printed for it is the whole report: the engine is the one we ship, set up as we use it.
 - **Run a script on the engine**, to see what it gives, how long it takes or how much memory it needs.
 - **Try a release without Go.** From v0.31.0, the GitHub release of each version has it prebuilt for linux and darwin, on amd64 and arm64, and for windows/amd64, and from v0.31.12 for windows/arm64 too.
 
-The code is `cmd/tifajs`.
+The code is `cmd/beastjs`.
 
 ## Get it
 
-Download the archive of your system from the [latest release](https://github.com/liustack/tifajs/releases/latest), check it against `checksums.txt` and unpack it. The archives are named after the target as Go names it: `tifajs-linux-amd64.tar.gz`, `tifajs-linux-arm64.tar.gz`, `tifajs-darwin-amd64.tar.gz` (macOS, Intel), `tifajs-darwin-arm64.tar.gz` (macOS, Apple silicon), `tifajs-windows-amd64.zip` and `tifajs-windows-arm64.zip`.
+Download the archive of your system from the [latest release](https://github.com/liustack/beastjs/releases/latest), check it against `checksums.txt` and unpack it. The archives are named after the target as Go names it: `beastjs-linux-amd64.tar.gz`, `beastjs-linux-arm64.tar.gz`, `beastjs-darwin-amd64.tar.gz` (macOS, Intel), `beastjs-darwin-arm64.tar.gz` (macOS, Apple silicon), `beastjs-windows-amd64.zip` and `beastjs-windows-arm64.zip`.
 
 ```sh
-curl -LO https://github.com/liustack/tifajs/releases/latest/download/tifajs-linux-amd64.tar.gz
-curl -LO https://github.com/liustack/tifajs/releases/latest/download/checksums.txt
+curl -LO https://github.com/liustack/beastjs/releases/latest/download/beastjs-linux-amd64.tar.gz
+curl -LO https://github.com/liustack/beastjs/releases/latest/download/checksums.txt
 sha256sum -c --ignore-missing checksums.txt
-tar -xzf tifajs-linux-amd64.tar.gz
-./tifajs-linux-amd64/tifajs --version
+tar -xzf beastjs-linux-amd64.tar.gz
+./beastjs-linux-amd64/beastjs --version
 ```
 
-Each archive holds one folder with the binary and the license texts it must carry ([NOTICE.md](../../NOTICE.md#what-a-program-that-ships-a-binary-must-include)). The binary is static, built with `CGO_ENABLED=0`: the linux ones run on glibc and musl systems alike. macOS keeps a binary a browser downloaded from running, as it is not signed by a developer: `curl` sets no such mark, and `xattr -d com.apple.quarantine tifajs` removes it.
+Each archive holds one folder with the binary and the license texts it must carry ([NOTICE.md](../../NOTICE.md#what-a-program-that-ships-a-binary-must-include)). The binary is static, built with `CGO_ENABLED=0`: the linux ones run on glibc and musl systems alike. macOS keeps a binary a browser downloaded from running, as it is not signed by a developer: `curl` sets no such mark, and `xattr -d com.apple.quarantine beastjs` removes it.
 
 ## Run a file
 
 ```sh
-tifajs [flags] file.js [args...]
-tifajs [flags] -e code [args...]
+beastjs [flags] file.js [args...]
+beastjs [flags] -e code [args...]
 ```
 
 | Flag | What it does |
@@ -46,7 +46,7 @@ tifajs [flags] -e code [args...]
 | `-e code` | Run `code` instead of a file |
 | `--timeout d` | End the run after `d`, such as `30s` or `2m`. `0` never ends it. Default `1m` |
 | `--memory-limit n` | End the run when the VM takes more than `n` bytes. `K`, `M` and `G` (or `KiB`, `MiB`, `GiB`) are 1024, 1024² and 1024³. `0` is no limit. Default `1GiB` |
-| `--version` | Print `tifajs <version> <go release> <os>/<arch>` on one line and exit, such as `tifajs v0.31.0 go1.27.2 linux/amd64` |
+| `--version` | Print `beastjs <version> <go release> <os>/<arch>` on one line and exit, such as `beastjs v0.31.0 go1.27.2 linux/amd64` |
 | `-h`, `--help` | Print the flags and exit |
 
 The file runs as a global script (not a module) in a new VM, then the promise jobs it queued run, so `then` callbacks and async functions finish.
@@ -76,8 +76,8 @@ An uncaught exception prints its text and its stack to stderr, at most 50 frames
 ## Show a problem
 
 1. Cut the script down as far as it still shows the problem.
-2. Run it: `tifajs repro.js; echo $?`.
-3. Report the script, the command, everything it printed, the exit code and the line of `tifajs --version` (the bug report template asks for them).
+2. Run it: `beastjs repro.js; echo $?`.
+3. Report the script, the command, everything it printed, the exit code and the line of `beastjs --version` (the bug report template asks for them).
 
 With the default limits, a reproduction that hangs ends after a minute with exit code 3, and one that allocates without end ends at 1 GiB with exit code 4, so a run never has to be killed by hand.
 
@@ -113,7 +113,7 @@ The command runs what the engine runs in tifa and in a Go program, and nothing a
 
 Size of the binary, built as the release builds it (`-trimpath -ldflags "-s -w"`, Go 1.27.2), in MiB:
 
-| Target | tifajs |
+| Target | beastjs |
 | --- | --: |
 | linux/amd64 | 19.6 |
 | linux/arm64 | 18.5 |
@@ -126,6 +126,6 @@ Most of it is the locale data of `intl`. The archives are 8.3 to 8.9 MiB.
 
 ## Tests
 
-`go test ./cmd/tifajs` builds the command with a version stamped in and runs it on small scripts: what `print` and `console` write and in what order, a long string with a surrogate pair across two pieces, `scriptArgs`, an uncaught exception with its stack, a syntax error, promise jobs, `Intl`, `Temporal`, `URL` and `fmt`, the depth of calls, the timeout ending an endless loop that catches (and a run whose jobs pass it), the memory limit ending a loop that allocates, the defaults, `--version`, `-h` and the wrong command lines. `TestV8Suite`, which `-short` skips, runs a long script that uses much of the engine through the command with no timeout, and checks what it prints against a VM of the Go API.
+`go test ./cmd/beastjs` builds the command with a version stamped in and runs it on small scripts: what `print` and `console` write and in what order, a long string with a surrogate pair across two pieces, `scriptArgs`, an uncaught exception with its stack, a syntax error, promise jobs, `Intl`, `Temporal`, `URL` and `fmt`, the depth of calls, the timeout ending an endless loop that catches (and a run whose jobs pass it), the memory limit ending a loop that allocates, the defaults, `--version`, `-h` and the wrong command lines. `TestV8Suite`, which `-short` skips, runs a long script that uses much of the engine through the command with no timeout, and checks what it prints against a VM of the Go API.
 
-With `TIFAJS_BIN` and `TIFAJS_VERSION` set, the tests run that binary instead of building one, and expect that version. The release job runs them so against each binary it built, on its own system ([releasing.md](../internals/releasing.md#the-release-job)).
+With `BEASTJS_BIN` and `BEASTJS_VERSION` set, the tests run that binary instead of building one, and expect that version. The release job runs them so against each binary it built, on its own system ([releasing.md](../internals/releasing.md#the-release-job)).

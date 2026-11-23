@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	intl "github.com/liustack/tifajs/internal/gointl"
+	intl "github.com/liustack/beastjs/internal/gointl"
 )
 
 // TestPluralRangeMatchesNode holds SelectRange to what Node's selectRange

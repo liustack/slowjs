@@ -1,18 +1,18 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package tifajs_test
+package beastjs_test
 
 import (
 	"fmt"
 
-	"github.com/liustack/tifajs"
+	"github.com/liustack/beastjs"
 )
 
 // pipe is a VM with a send and a receive over two Go channels.
-func pipe(out chan<- string, in <-chan string) *tifajs.VM {
+func pipe(out chan<- string, in <-chan string) *beastjs.VM {
 	m := newVM()
 	if err := m.RegisterFunc("send", func(s string) { out <- s }, false); err != nil {
 		panic(err)
@@ -32,14 +32,14 @@ func Example_ping() {
 	go func() {
 		server := pipe(toClient, toServer)
 		defer server.Close()
-		if _, err := server.Eval(`send(receive() + ' reply')`, tifajs.EvalGlobal); err != nil {
+		if _, err := server.Eval(`send(receive() + ' reply')`, beastjs.EvalGlobal); err != nil {
 			panic(err)
 		}
 	}()
 
 	client := pipe(toServer, toClient)
 	defer client.Close()
-	fmt.Println(client.Eval(`send('ping'); receive();`, tifajs.EvalGlobal))
+	fmt.Println(client.Eval(`send('ping'); receive();`, beastjs.EvalGlobal))
 	// Output:
 	// ping reply <nil>
 }

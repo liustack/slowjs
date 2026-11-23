@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -152,5 +152,5 @@
 
 	// How the host recognizes a VM it has registered, without installing
 	// anything: keyed by the import path, invisible to enumeration and JSON.
-	defineProperty(g, Symbol.for('github.com/liustack/tifajs/intl'), {__proto__: null, value: true});
+	defineProperty(g, Symbol.for('github.com/liustack/beastjs/intl'), {__proto__: null, value: true});
 })

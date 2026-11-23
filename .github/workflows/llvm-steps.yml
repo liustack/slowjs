@@ -74,7 +74,7 @@ jobs:
       - name: Cache the data of go-intl
         uses: actions/cache@v6
         with:
-          path: ~/.cache/tifajs-gointl
+          path: ~/.cache/beastjs-gointl
           key: gointl-${{ hashFiles('internal/gointl/UPSTREAM', 'internal/gointl/qjstz') }}
       - name: Tests of every language
         run: make gointl

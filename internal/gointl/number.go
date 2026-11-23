@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/liustack/tifajs/internal/gointl/internal/numdata"
-	"github.com/liustack/tifajs/internal/gointl/internal/unitdata"
+	"github.com/liustack/beastjs/internal/gointl/internal/numdata"
+	"github.com/liustack/beastjs/internal/gointl/internal/unitdata"
 )
 
 // Intl.NumberFormat.

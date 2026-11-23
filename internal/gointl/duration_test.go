@@ -6,7 +6,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/liustack/tifajs/internal/gointl"
+	"github.com/liustack/beastjs/internal/gointl"
 )
 
 // Valid is ECMA-402's IsValidDuration: whole numbers of one sign, the

@@ -5,8 +5,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/liustack/tifajs/internal/gointl/internal/namedata"
-	"github.com/liustack/tifajs/internal/gointl/internal/numdata"
+	"github.com/liustack/beastjs/internal/gointl/internal/namedata"
+	"github.com/liustack/beastjs/internal/gointl/internal/numdata"
 )
 
 // Intl.DisplayNames.

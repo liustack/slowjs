@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -22,7 +22,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/liustack/tifajs/internal/measure/hwm"
+	"github.com/liustack/beastjs/internal/measure/hwm"
 )
 
 // Record is one process, written as a line of JSON. A block is the processes

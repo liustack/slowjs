@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -31,8 +31,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/liustack/tifajs"
-	"github.com/liustack/tifajs/internal/cengine/cmd/scenarios"
+	"github.com/liustack/beastjs"
+	"github.com/liustack/beastjs/internal/cengine/cmd/scenarios"
 )
 
 func main() {
@@ -74,13 +74,13 @@ func main() {
 		var times []float64
 		killed := 0
 		for trial := range *n {
-			m, err := tifajs.NewVM()
+			m, err := beastjs.NewVM()
 			if err != nil {
 				fail(err)
 			}
 			done := make(chan error, 1)
 			go func() {
-				_, err := m.Eval(sc.JS, tifajs.EvalGlobal)
+				_, err := m.Eval(sc.JS, beastjs.EvalGlobal)
 				done <- err
 			}()
 			time.Sleep(*warm + time.Duration(rand.Int64N(int64(*spread)+1)))
@@ -110,7 +110,7 @@ func main() {
 			if err2 == nil {
 				fail(fmt.Errorf("%s: the script ended without an error", sc.Name))
 			}
-			if errors.Is(err2, tifajs.ErrKilled) {
+			if errors.Is(err2, beastjs.ErrKilled) {
 				killed++
 			}
 			if err := m.Close(); err != nil {

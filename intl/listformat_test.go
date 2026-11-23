@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package intl // import "github.com/liustack/tifajs/intl"
+package intl // import "github.com/liustack/beastjs/intl"
 
 import (
 	"encoding/json"
@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/liustack/tifajs"
-	gointl "github.com/liustack/tifajs/internal/gointl"
+	"github.com/liustack/beastjs"
+	gointl "github.com/liustack/beastjs/internal/gointl"
 )
 
 // listItem is an item of a list, as a javascript literal and as the WTF-8
@@ -169,7 +169,7 @@ func TestListFormatTakesNoGo(t *testing.T) {
 			var before, after runtime.MemStats
 			runtime.GC()
 			runtime.ReadMemStats(&before)
-			if _, err := vm.Eval(c.call, tifajs.EvalGlobal); err != nil {
+			if _, err := vm.Eval(c.call, beastjs.EvalGlobal); err != nil {
 				t.Fatal(err)
 			}
 			runtime.ReadMemStats(&after)

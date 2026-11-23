@@ -1,5 +1,5 @@
 #!/bin/sh
-# Copyright (c) 2026 The liustack/tifajs Authors.
+# Copyright (c) 2026 The liustack/beastjs Authors.
 # SPDX-License-Identifier: MIT
 # Use of this source code is governed by the MIT license in LICENSE at the
 # root of this repository.
@@ -23,7 +23,7 @@
 #   LLD          linker of the generator tests (default: ld.lld or ld, first found)
 #   CHECK_LIST   1: print the steps and stop
 #   CHECK_TAGS   build tags added to every go command of the checks, such as
-#                tifajs_anygo to run them with a Go newer than internal/goversion
+#                beastjs_anygo to run them with a Go newer than internal/goversion
 #                lets build (GOFLAGS alone does not reach a command that gives
 #                its own -tags)
 set -u
@@ -100,7 +100,7 @@ step build fast - "$gc build ./..."
 step gofmt fast - "out=\$(git ls-files '*.go' | grep -v '^internal/cengine/engine_' | xargs gofmt -l -s); [ -z \"\$out\" ] || { echo \"\$out\"; exit 1; }"
 step docs fast - "scripts/docs-list.sh --check && scripts/docs-list-test.sh"
 step tracked fast - "scripts/check-tracked.sh"
-step goasm fast tests "scripts/gen-engine.sh pass && env CGO_ENABLED=0 TIFAJS_LLVM=$llvm TIFAJS_SHADOW_PASS=$root/.build/shadow.so TIFAJS_LLD=$lld go test -count=1 -v -p 2 -timeout 60m ./internal/goasm/..."
+step goasm fast tests "scripts/gen-engine.sh pass && env CGO_ENABLED=0 BEASTJS_LLVM=$llvm BEASTJS_SHADOW_PASS=$root/.build/shadow.so BEASTJS_LLD=$lld go test -count=1 -v -p 2 -timeout 60m ./internal/goasm/..."
 step cengine fast tests "$gc test -count=1 -v -tags testhooks$xtags ./internal/cengine"
 step host-plain fast - "engine/test/build.sh plain"
 step compare-plain fast last "engine/test/compare.sh plain && engine/test/render-test.sh plain"

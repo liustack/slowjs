@@ -1,7 +1,7 @@
 package intl
 
 import (
-	"github.com/liustack/tifajs/internal/gointl/internal/colldata"
+	"github.com/liustack/beastjs/internal/gointl/internal/colldata"
 )
 
 // Collation elements, and comparing strings by them.
