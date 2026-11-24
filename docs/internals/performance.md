@@ -75,6 +75,7 @@ Releases from v0.29.0 run the C engine. Instructions are counted with callgrind 
 | v0.31.10 | A fix: an `await` whose PromiseResolve throws throws at the `await`. The throw injection reaches 120 of its 123 places | Against v0.31.9, counted: within 0.03% of the instructions a render on every kind of page and on the V8 suite, with the same HTML |
 | v0.31.11 | Fixes: the Go code of `intl` keeps the eval timeout, `Interrupt` and the memory limit on long inputs of case mapping, locale tags, `Intl.Segmenter`, `Intl.ListFormat` and `Intl.Collator` | Against v0.31.10, counted: 0.04% to 0.24% more instructions a render, with the same HTML, and the engine unchanged. tifa's extreme i18n page, timed on an Apple M4, renders 1.95% faster |
 | v0.31.12 | windows/arm64, a sixth target, with the arm64 code of linux and darwin as it is, and builds for android and ios stopped | No change of speed: the generated engine of every target is the same as v0.31.11's, byte for byte, and the check of `NewVM` runs on windows/arm64 only |
+| v0.32.0, v0.33.0 | The module renamed, to `github.com/liustack/tifajs` and then to `github.com/liustack/beastjs` | No change of speed: the engine is v0.31.12's, byte for byte. tifa v0.4.2 runs on v0.33.0 with its full suite and e2e passing |
 
 ## Measuring in tifa
 
