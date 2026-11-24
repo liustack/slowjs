@@ -1,0 +1,11 @@
+<!-- Copyright (c) 2026 The liustack/beastjs Authors.
+     SPDX-License-Identifier: MIT
+     Use of this source code is governed by the MIT license in LICENSE at the
+     root of this repository. -->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="32" height="32" viewBox="0 0 32 32" role="img"><title>beastjs bison</title><desc></desc>
+<path fill="#e8c99b" d="M1 2Q4 8 11 9L10 15Q0 15 1 2ZM31 2Q28 8 21 9L22 15Q32 15 31 2Z"/>
+<path fill="#00add8" d="M5 12Q6 7 16 7T27 12V17Q27 25 20 28L16 31L12 28Q5 25 5 17Z"/>
+<path fill="#0a7286" d="M5 12Q4 6 10 6Q12 1 17 4Q23 0 26 7Q30 11 26 14Q23 16 20 13Q17 19 12 14Q6 17 5 12Z"/>
+<g fill="#12303a"><circle cx="10.5" cy="17.8" r="1.6"/><circle cx="21.5" cy="17.8" r="1.6"/></g>
+<ellipse fill="#f2d3a5" cx="16" cy="24" rx="7" ry="4"/>
+</svg>
