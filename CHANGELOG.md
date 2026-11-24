@@ -4,6 +4,8 @@ What changed in `github.com/liustack/beastjs` (its name from v0.33.0, `github.co
 
 ## [Unreleased]
 
+## [v0.33.0] - 2026-11-24
+
 ### Changed
 
 - **Breaking:** the module is `github.com/liustack/beastjs`, its root package and command are `beastjs`, and the build tags and repository script variables start with `beastjs_` and `BEASTJS_`. A program changes its import paths, writes `beastjs.` for `tifajs.` or `slowjs.`, and reads errors of the root package that start with `beastjs:`.
@@ -927,7 +929,8 @@ The first release of the fork, from modernc.org/quickjs v0.25.0 and libquickjs v
 - A VM that runs out of memory inside `JSON.parse`, or anything else that converts a string with non-ASCII characters to UTF-8, no longer leaks that string.
 - `VM.Call` and `VM.CallValue` report the exception thrown while evaluating the function expression instead of `cannot call a non-function`.
 
-[Unreleased]: https://github.com/liustack/beastjs/compare/v0.32.0...main
+[Unreleased]: https://github.com/liustack/beastjs/compare/v0.33.0...main
+[v0.33.0]: https://github.com/liustack/beastjs/compare/v0.32.0...v0.33.0
 [v0.32.0]: https://github.com/liustack/beastjs/compare/v0.31.12...v0.32.0
 [v0.31.12]: https://github.com/liustack/slowjs/compare/v0.31.11...v0.31.12
 [v0.31.11]: https://github.com/liustack/slowjs/compare/v0.31.10...v0.31.11
