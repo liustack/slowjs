@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package intl // import "github.com/liustack/tifajs/intl"
+package intl // import "github.com/liustack/beastjs/intl"
 
 import (
 	"errors"
@@ -12,8 +12,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	gointl "github.com/liustack/tifajs/internal/gointl"
-	"github.com/liustack/tifajs/internal/gointl/temporal"
+	gointl "github.com/liustack/beastjs/internal/gointl"
+	"github.com/liustack/beastjs/internal/gointl/temporal"
 )
 
 // durationFormat is a resolved Intl.DurationFormat. Its json form is the

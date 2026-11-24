@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"testing"
 
-	intl "github.com/liustack/tifajs/internal/gointl"
+	intl "github.com/liustack/beastjs/internal/gointl"
 )
 
 // A percentage in compact notation is written as the unit percent, by the

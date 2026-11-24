@@ -1,4 +1,4 @@
-<h1 align="center"><img src="assets/brand/tifajs-banner.png" alt="liustack/tifajs"></h1>
+<h1 align="center">beastjs</h1>
 
 <p align="center"><b>The fastest pure Go JavaScript engine for rendering React.</b></p>
 
@@ -12,8 +12,8 @@
 
 <p align="center">
   <a href="https://x.com/liustack"><img src="https://img.shields.io/badge/follow-%40liustack-black?style=flat-square&logo=x&logoColor=white" alt="Follow @liustack on X"></a>
-  <a href="https://pkg.go.dev/github.com/liustack/tifajs"><img src="https://img.shields.io/badge/go.dev-reference-007d9c?style=flat-square&logo=go&logoColor=white" alt="Go reference"></a>
-  <a href="go.mod"><img src="https://img.shields.io/github/go-mod/go-version/liustack/tifajs?style=flat-square" alt="Go version"></a>
+  <a href="https://pkg.go.dev/github.com/liustack/beastjs"><img src="https://img.shields.io/badge/go.dev-reference-007d9c?style=flat-square&logo=go&logoColor=white" alt="Go reference"></a>
+  <a href="go.mod"><img src="https://img.shields.io/github/go-mod/go-version/liustack/beastjs?style=flat-square" alt="Go version"></a>
   <img src="https://img.shields.io/badge/CGO-off-success?style=flat-square" alt="CGO off">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="License"></a>
   <img src="https://img.shields.io/badge/Not%20backed%20by-Y%20Combinator-FF6600?style=flat-square&logo=ycombinator&logoColor=white" alt="Not backed by Y Combinator">
@@ -28,42 +28,42 @@ It is an engine, not Node: there is no `require`, `fs` or `process`. Code from n
 
 ## How fast
 
-CPU time of one render of the server bundles of tifa's apps, on one core, as a multiple of liustack/tifajs (lower is faster):
+CPU time of one render of the server bundles of tifa's apps, on one core, as a multiple of liustack/beastjs (lower is faster):
 
 | Engine | Pure Go | React bench pages | MUI pages | Shop pages |
 | :-- | :-: | --: | --: | --: |
-| **liustack/tifajs** | yes | **1.00** | **1.00** | **1.00** |
-| liustack/tifajs, on polyfills | yes | 1.01 | 1.64 | 1.65 |
-| moejs | yes | 1.42 | 1.50 | 1.83 |
-| go-quickjs | yes | 2.70 | 2.51 | 3.59 |
-| C QuickJS 2026-06-04 | no, C | 1.96 | 3.59 | 2.47 |
-| Hermes V1 | no, C++ | 1.04 | 1.84 | 1.78 |
-| Node 26 `--jitless` | no, C++ | 0.97 | 1.10 | 0.89 |
+| **liustack/beastjs** | yes | **1.00** | **1.00** | **1.00** |
+| liustack/beastjs, on polyfills | yes | 1.03 | 1.71 | 1.62 |
+| moejs | yes | 1.52 | 1.52 | 1.99 |
+| go-quickjs | yes | 2.31 | 2.12 | 3.11 |
+| C QuickJS 2026-06-04 | no, C | 2.06 | 3.63 | 2.59 |
+| Hermes V1 | no, C++ | 1.08 | 1.90 | 1.86 |
+| Node 26 `--jitless` | no, C++ | 0.99 | 1.11 | 0.90 |
 
-Measured on v0.31.3 on a GCP t2d-standard-4 (AMD EPYC 7B13), Go 1.27.4. The comparison is among interpreters: go-quickjs runs with its JIT off, as it comes, Hermes runs `hermesc -O` bytecode and Node runs with `--jitless`. Every engine runs as it comes, on its own `Intl` where it has one and on the FormatJS polyfill where it has none (C QuickJS and Hermes). The second row is liustack/tifajs without its built-in `Intl`, `URL` and `Temporal`, on the same polyfills as C QuickJS and Hermes: it shows how much of the lead on the MUI and shop pages comes from the interpreter and how much from `Intl` written in Go. The bench pages need no `Intl`, so that column is the same JavaScript on every engine.
+Measured on v0.32.0 (the engine of v0.33.0, under the module path of then) on a GCP t2d-standard-4 (AMD EPYC 7B13), Go 1.27.4. The comparison is among interpreters: go-quickjs runs with its JIT off, as it comes, Hermes runs `hermesc -O` bytecode and Node runs with `--jitless`. Every engine runs as it comes, on its own `Intl` where it has one and on the FormatJS polyfill where it has none (C QuickJS and Hermes). The second row is liustack/beastjs without its built-in `Intl`, `URL` and `Temporal`, on the same polyfills as C QuickJS and Hermes: it shows how much of the lead on the MUI and shop pages comes from the interpreter and how much from `Intl` written in Go. The bench pages need no `Intl`, so that column is the same JavaScript on every engine.
 
-It is not the fastest on everything: on the V8 benchmark suite Node scores higher and Hermes scores the same.
+It is not the fastest on everything: on the V8 benchmark suite go-quickjs and Node score higher, and Hermes about the same.
 
 | Engine | Pure Go | V8 suite score |
 | :-- | :-: | --: |
-| Node 26 `--jitless` | no, C++ | 2286 |
-| **liustack/tifajs** | yes | **2136** |
-| Hermes V1 | no, C++ | 2124 |
-| moejs | yes | 1870 |
-| go-quickjs | yes | 1708 |
-| C QuickJS 2026-06-04 | no, C | 1188 |
+| go-quickjs | yes | 2308 |
+| Node 26 `--jitless` | no, C++ | 2240 |
+| **liustack/beastjs** | yes | **2160** |
+| Hermes V1 | no, C++ | 2096 |
+| moejs | yes | 1816 |
+| C QuickJS 2026-06-04 | no, C | 1172 |
 
-It scores 1.79 times C QuickJS, 1.25 times go-quickjs and 1.15 times moejs, and is ahead of each of them in every round. go-quickjs leads on the RegExp benchmark, moejs on NavierStokes.
+It scores 1.85 times C QuickJS and 1.20 times moejs, and is ahead of each of them in every round. go-quickjs scores 1.07 times as much as it does, and leads on the RegExp, NavierStokes, Crypto and DeltaBlue benchmarks.
 
 [docs/use/benchmarks.md](docs/use/benchmarks.md) has both tables in full, what each engine was given to run, and how to run it all again.
 
 ## Install
 
 ```sh
-go get github.com/liustack/tifajs
+go get github.com/liustack/beastjs
 ```
 
-Go 1.26.6 or later, up to Go 1.27. No cgo and no C compiler: it builds with `CGO_ENABLED=0` and cross-compiles like any Go code. The Go assembly of the engine was checked against every patch release from Go 1.26.6 to 1.27.4, and a new patch release is checked every week. It leans on how Go starts a function and handles a fault, so a newer Go stops the build until liustack/tifajs has been checked with it and moves its limit in a patch release. `-tags tifajs_anygo` builds anyway (see [Moving to a newer Go](docs/internals/upgrading.md#moving-to-a-newer-go)).
+Go 1.26.6 or later, up to Go 1.27. No cgo and no C compiler: it builds with `CGO_ENABLED=0` and cross-compiles like any Go code. The Go assembly of the engine was checked against every patch release from Go 1.26.6 to 1.27.4, and a new patch release is checked every week. It leans on how Go starts a function and handles a fault, so a newer Go stops the build until liustack/beastjs has been checked with it and moves its limit in a patch release. `-tags beastjs_anygo` builds anyway (see [Moving to a newer Go](docs/internals/upgrading.md#moving-to-a-newer-go)).
 
 ## Platforms
 
@@ -79,12 +79,12 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/liustack/tifajs"
-	"github.com/liustack/tifajs/intl"
+	"github.com/liustack/beastjs"
+	"github.com/liustack/beastjs/intl"
 )
 
 func main() {
-	vm, err := tifajs.NewVM()
+	vm, err := beastjs.NewVM()
 	if err != nil {
 		panic(err)
 	}
@@ -98,11 +98,11 @@ func main() {
 		panic(err)
 	}
 
-	v, err := vm.Eval(`new Date(0).toLocaleString('zh-CN', {timeZone: 'Asia/Shanghai'})`, tifajs.EvalGlobal)
+	v, err := vm.Eval(`new Date(0).toLocaleString('zh-CN', {timeZone: 'Asia/Shanghai'})`, beastjs.EvalGlobal)
 	fmt.Println(v, err) // 1970/1/1 08:00:00 <nil>
 
-	_, err = vm.Eval(`try { for (;;) {} } catch (e) { 'caught' }`, tifajs.EvalGlobal)
-	var e *tifajs.Error
+	_, err = vm.Eval(`try { for (;;) {} } catch (e) { 'caught' }`, beastjs.EvalGlobal)
+	var e *beastjs.Error
 	if errors.As(err, &e) && e.Interrupted {
 		fmt.Println("timed out, and no catch saw it")
 	}
@@ -111,7 +111,7 @@ func main() {
 
 A VM is not safe for several goroutines at once: give each goroutine its own, or keep a pool. Intl and Temporal use embedded tz 2026e, so they need no host zoneinfo.
 
-Beyond `Eval` and `Call`, the API has Go functions that JavaScript calls as built-ins, control of the GC and the memory of a VM, a clock per VM, `Temporal`, and parts of React's server renderer written in C. [docs/use/api.md](docs/use/api.md) lists them, and [pkg.go.dev](https://pkg.go.dev/github.com/liustack/tifajs) documents each.
+Beyond `Eval` and `Call`, the API has Go functions that JavaScript calls as built-ins, control of the GC and the memory of a VM, a clock per VM, `Temporal`, and parts of React's server renderer written in C. [docs/use/api.md](docs/use/api.md) lists them, and [pkg.go.dev](https://pkg.go.dev/github.com/liustack/beastjs) documents each.
 
 ## What changes for you
 
@@ -148,27 +148,27 @@ Beyond `Eval` and `Call`, the API has Go functions that JavaScript calls as buil
 
 The engine is [QuickJS](https://bellard.org/quickjs) by Fabrice Bellard and Charlie Gordon, the release of 2026-06-04. [docs/internals/upstream.md](docs/internals/upstream.md) has the exact version, how new QuickJS commits are taken in, and what to expect when you move from modernc.org/quickjs.
 
-Thanks to Fabrice Bellard and Charlie Gordon for QuickJS, and to Jan Mercl, Dan Kortschak and the other authors of [modernc.org/quickjs](https://gitlab.com/cznic/quickjs) and [modernc.org/libquickjs](https://gitlab.com/cznic/libquickjs). Their work showed that QuickJS can run inside a pure Go program, and it inspired liustack/tifajs.
+Thanks to Fabrice Bellard and Charlie Gordon for QuickJS, and to Jan Mercl, Dan Kortschak and the other authors of [modernc.org/quickjs](https://gitlab.com/cznic/quickjs) and [modernc.org/libquickjs](https://gitlab.com/cznic/libquickjs). Their work showed that QuickJS can run inside a pure Go program, and it inspired liustack/beastjs.
 
 ## Community
 
-Issues are welcome any time: [open one](https://github.com/liustack/tifajs/issues/new/choose). Tell us what you run in it, where it is slow, and what should come next. Follow the liustack WeChat official account, and come find me on X: **[@liustack](https://x.com/liustack)**. What changes in liustack/tifajs and tifa is shared on WeChat and X.
+Issues are welcome any time: [open one](https://github.com/liustack/beastjs/issues/new/choose). Tell us what you run in it, where it is slow, and what should come next. Follow the liustack WeChat official account, and come find me on X: **[@liustack](https://x.com/liustack)**. What changes in liustack/beastjs and tifa is shared on WeChat and X.
 
 The **liustack** WeChat official account: AI startup opportunities, indie-dev insights, and hands-on AI tooling, delivered as they happen. Scan the QR code in WeChat, or search for "liustack":
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/liustack/tifajs/main/assets/wechat-qrcode.png" width="420" alt="liustack WeChat official account" />
+  <img src="https://raw.githubusercontent.com/liustack/beastjs/main/assets/wechat-qrcode.png" width="420" alt="liustack WeChat official account" />
 </p>
 
 ## Contributing
 
-liustack/tifajs does not accept pull requests. One maintainer reviews and owns every line, on purpose, so the engine stays dependable. Two ways that help:
+liustack/beastjs does not accept pull requests. One maintainer reviews and owns every line, on purpose, so the engine stays dependable. Two ways that help:
 
-- **[Open an issue](https://github.com/liustack/tifajs/issues/new/choose).** A wrong answer, a slow render, a limit that did not hold, an unclear doc. Issues are read and decide what gets built next.
+- **[Open an issue](https://github.com/liustack/beastjs/issues/new/choose).** A wrong answer, a slow render, a limit that did not hold, an unclear doc. Issues are read and decide what gets built next.
 - **Fork it.** Your copy is yours to change and publish.
 
 A security problem goes in a private report, as [SECURITY.md](SECURITY.md) says. [CONTRIBUTING.md](CONTRIBUTING.md) has the rest.
 
 ## License
 
-liustack/tifajs is under the [MIT license](LICENSE). Code that came from other projects keeps its own license: the C of QuickJS, the TLSF allocator, musl's libc functions, the Go side and the locale data of `Intl` and `Temporal` from go-intl, ICU and Chromium, the URL parser from nlnwa/whatwg-url and a few files of Go. The gopher of the banner is drawn after the Go gopher by Renée French (CC BY 4.0). [NOTICE.md](NOTICE.md) says which license covers which path, and which notices a program that ships this module has to carry.
+liustack/beastjs is under the [MIT license](LICENSE). Code that came from other projects keeps its own license: the C of QuickJS, the TLSF allocator, musl's libc functions, the Go side and the locale data of `Intl` and `Temporal` from go-intl, ICU and Chromium, the URL parser from nlnwa/whatwg-url and a few files of Go. [NOTICE.md](NOTICE.md) says which license covers which path, and which notices a program that ships this module has to carry.

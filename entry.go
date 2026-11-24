@@ -1,18 +1,18 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
 //go:build (((linux && !android) || (darwin && !ios)) && (amd64 || arm64)) || (windows && (amd64 || arm64))
 
-package tifajs // import "github.com/liustack/tifajs"
+package beastjs // import "github.com/liustack/beastjs"
 
 // Entering and leaving the C engine: the timeout and Interrupt, which the
 // host's polls carry out (gohost), and the VM a panic through the engine's
 // frames leaves broken.
 
 import (
-	"github.com/liustack/tifajs/internal/gohost"
+	"github.com/liustack/beastjs/internal/gohost"
 )
 
 // interrupter is how Interrupt reaches the host of the VM, which stays in Go
@@ -62,7 +62,7 @@ func (m *VM) enter() error {
 		panic(brokenPanic)
 	}
 	if m.entered == 0 && m.sp != m.start {
-		panic("tifajs: the shadow stack of a VM that runs nothing is not empty")
+		panic("beastjs: the shadow stack of a VM that runs nothing is not empty")
 	}
 	m.h.EnterScript(m.timeout)
 	m.entered++
@@ -141,7 +141,7 @@ func (m *VM) outer(f func()) {
 		panic(brokenPanic)
 	}
 	if m.sp != m.start {
-		panic("tifajs: the shadow stack of a VM that runs nothing is not empty")
+		panic("beastjs: the shadow stack of a VM that runs nothing is not empty")
 	}
 	m.h.Enter()
 	m.entered++
@@ -161,8 +161,8 @@ const (
 	// framesLeftPanic is what a call from javascript panics with when the
 	// Go function it called returned after a panic went up through the
 	// engine below it: the frames of the engine it left are gone.
-	framesLeftPanic = "tifajs: a Go function recovered a panic that went up through the engine"
+	framesLeftPanic = "beastjs: a Go function recovered a panic that went up through the engine"
 	// brokenPanic is what a call into javascript panics with after a Go
 	// panic went up through the engine.
-	brokenPanic = "tifajs: a Go panic went up through the engine of this VM, which is good only for Close"
+	brokenPanic = "beastjs: a Go panic went up through the engine of this VM, which is good only for Close"
 )

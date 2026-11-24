@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package intl // import "github.com/liustack/tifajs/intl"
+package intl // import "github.com/liustack/beastjs/intl"
 
 import (
 	"unsafe"
@@ -11,9 +11,9 @@ import (
 	"maps"
 	"sync"
 
-	"github.com/liustack/tifajs"
-	gointl "github.com/liustack/tifajs/internal/gointl"
-	"github.com/liustack/tifajs/internal/intlhook"
+	"github.com/liustack/beastjs"
+	gointl "github.com/liustack/beastjs/internal/gointl"
+	"github.com/liustack/beastjs/internal/intlhook"
 )
 
 // The constructors built on go-intl (internal/gointl) resolve their locales
@@ -61,7 +61,7 @@ func goMatcher(s gointl.Service) (*gointl.LocaleMatcher, error) {
 // RangeError. It is for a Builtin of vm, which a long list stops at the
 // eval timeout or Interrupt (see tagTurns). units are the lengths of the tags
 // the locales come from, for the pieces of the work on them (see pieceEnd).
-func goLocales(vm *tifajs.VM, tags []string) (r []gointl.Locale, units []int, err error) {
+func goLocales(vm *beastjs.VM, tags []string) (r []gointl.Locale, units []int, err error) {
 	c, err := goCanonicalizer()
 	if err != nil {
 		return nil, nil, err
@@ -104,7 +104,7 @@ func pieceEnd(units []int, i int) int {
 // goResolve is ResolveLocale for s as far as the locale: the first of tags
 // s is available in, with its Unicode extension, or else en-US. Both
 // matchers match alike, in V8 as in go-intl.
-func goResolve(vm *tifajs.VM, s gointl.Service, tags []string) (gointl.Locale, error) {
+func goResolve(vm *beastjs.VM, s gointl.Service, tags []string) (gointl.Locale, error) {
 	l, units, err := goLocales(vm, tags)
 	if err != nil {
 		return gointl.Locale{}, err
@@ -132,7 +132,7 @@ func goResolve(vm *tifajs.VM, s gointl.Service, tags []string) (gointl.Locale, e
 
 // goSupported is SupportedLocales for s: those of tags s is available in, in
 // canonical form.
-func goSupported(vm *tifajs.VM, s gointl.Service, tags []string) ([]string, error) {
+func goSupported(vm *beastjs.VM, s gointl.Service, tags []string) ([]string, error) {
 	l, units, err := goLocales(vm, tags)
 	if err != nil {
 		return nil, err
@@ -301,7 +301,7 @@ const checkEvery = 256
 
 // checkTurn calls intlhook.Check on turn i of such a loop, once every
 // checkEvery turns.
-func checkTurn(vm *tifajs.VM, i int) {
+func checkTurn(vm *beastjs.VM, i int) {
 	if i%checkEvery == checkEvery-1 {
 		intlhook.Check(vm)
 	}
@@ -314,7 +314,7 @@ func checkTurn(vm *tifajs.VM, i int) {
 // held the eval timeout 60 ms on an Apple M4, and four tags of many variants
 // 44 ms.
 type tagTurns struct {
-	vm           *tifajs.VM
+	vm           *beastjs.VM
 	turns, units int
 }
 
@@ -332,7 +332,7 @@ func (t *tagTurns) turn(n int) {
 // limitsOf are the checks of a call on vm, for the work of gointl that is
 // one piece no Builtin can cut (gointl.Limits), and the blocks of the work
 // of one call, which it gives back before it returns.
-func limitsOf(vm *tifajs.VM) *gointl.Limits {
+func limitsOf(vm *beastjs.VM) *gointl.Limits {
 	return &gointl.Limits{
 		Check:  func() { intlhook.Check(vm) },
 		Room:   func(n int64) { intlhook.Room(vm, n) },
@@ -348,7 +348,7 @@ func limitsOf(vm *tifajs.VM) *gointl.Limits {
 //
 // The work takes its long arrays from the OS (gointl's qjs_blocks.go), which
 // the caller gives back with Done once the work is over.
-func callLimits(vm *tifajs.VM) *gointl.Limits {
+func callLimits(vm *beastjs.VM) *gointl.Limits {
 	var held int64
 	return &gointl.Limits{
 		Check: func() { intlhook.Check(vm) },
@@ -362,7 +362,7 @@ func callLimits(vm *tifajs.VM) *gointl.Limits {
 }
 
 // takeBlock takes the blocks of gointl.Limits from vm (intlhook.Take).
-func takeBlock(vm *tifajs.VM) func(size int) (unsafe.Pointer, func()) {
+func takeBlock(vm *beastjs.VM) func(size int) (unsafe.Pointer, func()) {
 	return func(size int) (unsafe.Pointer, func()) {
 		b, give := intlhook.Take[byte](vm, size)
 		return unsafe.Pointer(unsafe.SliceData(b)), give

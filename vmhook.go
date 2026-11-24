@@ -1,15 +1,15 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package tifajs // import "github.com/liustack/tifajs"
+package beastjs // import "github.com/liustack/beastjs"
 
 import (
 	"unsafe"
 
-	"github.com/liustack/tifajs/internal/hostmem"
-	"github.com/liustack/tifajs/internal/vmhook"
+	"github.com/liustack/beastjs/internal/hostmem"
+	"github.com/liustack/beastjs/internal/vmhook"
 )
 
 // The functions of internal/vmhook, with which the Go functions of packages
@@ -29,7 +29,7 @@ func init() {
 func hookVM(vm any) *VM {
 	m := vm.(*VM)
 	if m.host == 0 {
-		panic("tifajs: a function of internal/vmhook outside a Go function called from javascript")
+		panic("beastjs: a function of internal/vmhook outside a Go function called from javascript")
 	}
 	return m
 }

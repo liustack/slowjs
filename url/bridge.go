@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -9,9 +9,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/liustack/tifajs"
-	"github.com/liustack/tifajs/internal/intlhook"
-	"github.com/liustack/tifajs/internal/whatwgurl"
+	"github.com/liustack/beastjs"
+	"github.com/liustack/beastjs/internal/intlhook"
+	"github.com/liustack/beastjs/internal/whatwgurl"
 )
 
 // The Builtins url.js is called with. A URL is javascript's, in the VM, under
@@ -100,7 +100,7 @@ func (b *keptBase) parse(in whatwgurl.Input) (*whatwgurl.URL, error) {
 // parseArgs parses argument 0 against argument 1, a base or undefined. ok is
 // false when the input is not a URL, a string is longer than MaxUnits, the URL
 // would be, or the call is to end.
-func parseArgs(a tifajs.Args, kept *keptBase) (*whatwgurl.URL, bool) {
+func parseArgs(a beastjs.Args, kept *keptBase) (*whatwgurl.URL, bool) {
 	in, present, v := admit(a, 2, 0, 0, 1)
 	if v != admitted || !present[0] {
 		return nil, false
@@ -147,11 +147,11 @@ type vmState struct {
 // closes (Register gives it to OnClose). The Builtins are the package's, made
 // once, as a process may have only 32768 of them, so a VM's state is found
 // by the VM that calls.
-var states sync.Map // *tifajs.VM -> *vmState
+var states sync.Map // *beastjs.VM -> *vmState
 
 // stateOf returns the state of vm. Only url.js calls the Builtins, and only
 // in a VM that Register set up, which has one.
-func stateOf(vm *tifajs.VM) *vmState {
+func stateOf(vm *beastjs.VM) *vmState {
 	st, ok := states.Load(vm)
 	if !ok {
 		panic("url: a Builtin of package url called in a VM that Register did not set up")
@@ -168,7 +168,7 @@ var fromPartsHook func()
 // origin, and last the bits of the record the getters do not show, which with
 // the parts make the record again (record). It keeps the record in st.last,
 // when its href is at most maxKeptBytes, and nothing there otherwise.
-func parts(vm *tifajs.VM, u *whatwgurl.URL, st *vmState) (tifajs.Value, error) {
+func parts(vm *beastjs.VM, u *whatwgurl.URL, st *vmState) (beastjs.Value, error) {
 	p, href := u.Parts()
 	st.last = keptRecord{}
 	if len(href) <= maxKeptBytes {
@@ -206,7 +206,7 @@ func parts(vm *tifajs.VM, u *whatwgurl.URL, st *vmState) (tifajs.Value, error) {
 	}
 	// Each string is made once: a URL has several empty parts, and its host is
 	// its hostname when it has no port. first[i] is where strs[i] is first.
-	var vals [len(strs) + 1]tifajs.Value
+	var vals [len(strs) + 1]beastjs.Value
 	var first [len(strs)]int
 	free := func(n int) {
 		for i := range n {
@@ -230,7 +230,7 @@ func parts(vm *tifajs.VM, u *whatwgurl.URL, st *vmState) (tifajs.Value, error) {
 		v, err := emit(vm, s)
 		if err != nil {
 			free(i)
-			return tifajs.Value{}, err
+			return beastjs.Value{}, err
 		}
 		vals[i] = v
 	}
@@ -241,17 +241,17 @@ func parts(vm *tifajs.VM, u *whatwgurl.URL, st *vmState) (tifajs.Value, error) {
 }
 
 // parseBuiltin is parse(input, base): the parts of the URL, or undefined.
-var parseBuiltin = newBuiltin("parse", 2, func(a tifajs.Args) (tifajs.Value, error) {
+var parseBuiltin = newBuiltin("parse", 2, func(a beastjs.Args) (beastjs.Value, error) {
 	st := stateOf(a.VM())
 	u, ok := parseArgs(a, &st.base)
 	if !ok {
-		return tifajs.UndefinedValue, nil
+		return beastjs.UndefinedValue, nil
 	}
 	return parts(a.VM(), u, st)
 })
 
 // canParseBuiltin is canParse(input, base): 1 or 0.
-var canParseBuiltin = newBuiltin("canParse", 2, func(a tifajs.Args) (tifajs.Value, error) {
+var canParseBuiltin = newBuiltin("canParse", 2, func(a beastjs.Args) (beastjs.Value, error) {
 	if _, ok := parseArgs(a, &stateOf(a.VM()).base); ok {
 		return a.VM().NewInt(1), nil
 	}
@@ -261,7 +261,7 @@ var canParseBuiltin = newBuiltin("canParse", 2, func(a tifajs.Args) (tifajs.Valu
 // errNotParts is the error of set for arguments that url.js does not hand it:
 // a part that is not a setter's, or a record that is not a URL's. A script
 // cannot reach set (see docs/internals/changes/url.md), so only a fault of url.js could.
-var errNotParts = &tifajs.Error{Name: "TypeError", Message: "URL: the record of the URL is not that of a URL"}
+var errNotParts = &beastjs.Error{Name: "TypeError", Message: "URL: the record of the URL is not that of a URL"}
 
 // setBuiltin is set(part, value, flags, protocol, username, password,
 // hostname, port, pathname, search, hash): the setter of a part on the URL
@@ -273,18 +273,18 @@ var errNotParts = &tifajs.Error{Name: "TypeError", Message: "URL: the record of 
 var setBuiltin = newBuiltin("set", 11, set)
 
 // set is the work of setBuiltin.
-func set(a tifajs.Args) (tifajs.Value, error) {
+func set(a beastjs.Args) (beastjs.Value, error) {
 	vm := a.VM()
 	st := stateOf(vm)
 	pn, ok := a.Number(0)
 	part := int(pn)
 	if !ok || float64(part) != pn || part < setProtocol || part > setHash {
-		return tifajs.Value{}, errNotParts
+		return beastjs.Value{}, errNotParts
 	}
 	fn, ok := a.Number(2)
 	f := int(fn)
 	if !ok || float64(f) != fn || f&^(hasHost|opaque|hasQuery|hasFragment) != 0 {
-		return tifajs.Value{}, errNotParts
+		return beastjs.Value{}, errNotParts
 	}
 	// FromParts parses the hostname of the record again, which IDNA may take
 	// when it holds a percent-encoded code point, and a setter of the host
@@ -298,13 +298,13 @@ func set(a tifajs.Args) (tifajs.Value, error) {
 	case v == tooLong:
 		return vm.NewInt(0), nil
 	case v == notParts:
-		return tifajs.Value{}, errNotParts
+		return beastjs.Value{}, errNotParts
 	case v != admitted:
-		return tifajs.UndefinedValue, nil
+		return beastjs.UndefinedValue, nil
 	}
 	for _, ok := range present[:9] {
 		if !ok {
-			return tifajs.Value{}, errNotParts
+			return beastjs.Value{}, errNotParts
 		}
 	}
 	p := whatwgurl.Parts{
@@ -321,7 +321,7 @@ func set(a tifajs.Args) (tifajs.Value, error) {
 		}
 		var err error
 		if u, err = whatwgurl.FromParts(p); err != nil {
-			return tifajs.Value{}, errNotParts
+			return beastjs.Value{}, errNotParts
 		}
 	}
 	var err error
@@ -353,41 +353,41 @@ func set(a tifajs.Args) (tifajs.Value, error) {
 
 // errTooLong is the error of a name or a value of a query string, or of its
 // encoding, that is longer than MaxUnits.
-var errTooLong = &tifajs.Error{Name: "RangeError", Message: "URLSearchParams: a name or a value, or its encoding, is longer than 65536 UTF-16 code units"}
+var errTooLong = &beastjs.Error{Name: "RangeError", Message: "URLSearchParams: a name or a value, or its encoding, is longer than 65536 UTF-16 code units"}
 
 // formDecodeBuiltin is formDecode(field): a name or a value of a query string
 // as the application/x-www-form-urlencoded parser makes it. url.js splits the
 // string at & and = and calls it for a field that has a + or a %.
-var formDecodeBuiltin = newBuiltin("formDecode", 1, func(a tifajs.Args) (tifajs.Value, error) {
+var formDecodeBuiltin = newBuiltin("formDecode", 1, func(a beastjs.Args) (beastjs.Value, error) {
 	in, present, v := admit(a, 0, 0, 0)
 	switch {
 	case v == tooLong:
-		return tifajs.Value{}, errTooLong
+		return beastjs.Value{}, errTooLong
 	case v != admitted || !present[0]:
-		return tifajs.UndefinedValue, nil
+		return beastjs.UndefinedValue, nil
 	}
 	return emit(a.VM(), whatwgurl.FormDecode(in[0]))
 })
 
 // formEncodeBuiltin is formEncode(field): a name or a value as the
 // application/x-www-form-urlencoded serializer writes it.
-var formEncodeBuiltin = newBuiltin("formEncode", 1, func(a tifajs.Args) (tifajs.Value, error) {
+var formEncodeBuiltin = newBuiltin("formEncode", 1, func(a beastjs.Args) (beastjs.Value, error) {
 	in, present, v := admit(a, 0, 0, 0)
 	switch {
 	case v == tooLong:
-		return tifajs.Value{}, errTooLong
+		return beastjs.Value{}, errTooLong
 	case v != admitted || !present[0]:
-		return tifajs.UndefinedValue, nil
+		return beastjs.UndefinedValue, nil
 	}
 	out, err := whatwgurl.FormEncode(in[0])
 	if err != nil {
-		return tifajs.Value{}, errTooLong
+		return beastjs.Value{}, errTooLong
 	}
 	return emit(a.VM(), out)
 })
 
 // bridge is the list of Builtins url.js is a function of, in its order.
-var bridge = []*tifajs.Builtin{parseBuiltin, setBuiltin, formDecodeBuiltin, formEncodeBuiltin, canParseBuiltin}
+var bridge = []*beastjs.Builtin{parseBuiltin, setBuiltin, formDecodeBuiltin, formEncodeBuiltin, canParseBuiltin}
 
 // callHook, when a test sets it, is called as each Builtin of this package
 // starts (enter true) and as it ends.
@@ -399,8 +399,8 @@ var callHook func(enter bool)
 // a Builtin taking a few milliseconds would make many such calls between two
 // polls: the look ends the script at the call after the one in which the eval
 // timeout or Interrupt came.
-func newBuiltin(name string, length int, fn func(tifajs.Args) (tifajs.Value, error)) *tifajs.Builtin {
-	return intlhook.NewBuiltin(name, length, func(a tifajs.Args) (tifajs.Value, error) {
+func newBuiltin(name string, length int, fn func(beastjs.Args) (beastjs.Value, error)) *beastjs.Builtin {
+	return intlhook.NewBuiltin(name, length, func(a beastjs.Args) (beastjs.Value, error) {
 		intlhook.Check(a.VM())
 		if h := callHook; h != nil {
 			h(true)

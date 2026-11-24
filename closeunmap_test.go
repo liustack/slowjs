@@ -1,11 +1,11 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
 //go:build testhooks
 
-package tifajs // import "github.com/liustack/tifajs"
+package beastjs // import "github.com/liustack/beastjs"
 
 // Close of a VM on the C engine when the OS refuses to unmap: hostmem.SetFault
 // makes the calls fail.
@@ -14,8 +14,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/liustack/tifajs/internal/gohost"
-	"github.com/liustack/tifajs/internal/hostmem"
+	"github.com/liustack/beastjs/internal/gohost"
+	"github.com/liustack/beastjs/internal/hostmem"
 )
 
 // When the OS refuses to unmap the memory of the VM, Close returns the error,

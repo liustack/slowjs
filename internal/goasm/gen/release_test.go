@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -16,12 +16,12 @@ import (
 // function) stops the run with nothing written, while the same input as a
 // survey (-keep-going) still gives its package with a stub. -keep-going with
 // -release, and GEN_KEEP_NARROW with it, are refused before any work is done.
-// It needs LLVM 22.1.8 (TIFAJS_LLVM), the built pass (TIFAJS_SHADOW_PASS) and
+// It needs LLVM 22.1.8 (BEASTJS_LLVM), the built pass (BEASTJS_SHADOW_PASS) and
 // the go tool.
 func TestReleaseBuild(t *testing.T) {
-	llvm, pass := os.Getenv("TIFAJS_LLVM"), os.Getenv("TIFAJS_SHADOW_PASS")
+	llvm, pass := os.Getenv("BEASTJS_LLVM"), os.Getenv("BEASTJS_SHADOW_PASS")
 	if llvm == "" || pass == "" {
-		t.Skip("set TIFAJS_LLVM and TIFAJS_SHADOW_PASS")
+		t.Skip("set BEASTJS_LLVM and BEASTJS_SHADOW_PASS")
 	}
 	work := t.TempDir()
 	at := func(n string) string { return filepath.Join(work, n) }

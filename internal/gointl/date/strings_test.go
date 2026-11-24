@@ -8,7 +8,7 @@ import (
 	"math/rand"
 	"testing"
 
-	intl "github.com/liustack/tifajs/internal/gointl"
+	intl "github.com/liustack/beastjs/internal/gointl"
 )
 
 // The strings as they were written with printf, before they were appended

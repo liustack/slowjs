@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package tifajs // import "github.com/liustack/tifajs"
+package beastjs // import "github.com/liustack/beastjs"
 
 import (
 	"encoding/binary"
@@ -14,7 +14,7 @@ import (
 	"unicode/utf8"
 	"unsafe"
 
-	"github.com/liustack/tifajs/internal/hostmem"
+	"github.com/liustack/beastjs/internal/hostmem"
 )
 
 // argString returns the Go string of v, a lone surrogate as U+FFFD, or as
@@ -569,7 +569,7 @@ func utf16Steps(m *VM, u []uint16, wtf8 bool, mk outFunc) (string, bool) {
 		lo = hi
 	}
 	if j != n {
-		panic("tifajs: the UTF-8 of the units is not the length counted")
+		panic("beastjs: the UTF-8 of the units is not the length counted")
 	}
 	return unsafe.String(unsafe.SliceData(out), n), true
 }
@@ -616,7 +616,7 @@ var utf16Scratch = sync.Pool{New: func() any { return new([]byte) }}
 // unit, as utf16String converts it, and returns how many bytes it wrote.
 func utf16Write(out []byte, u []uint16, wtf8 bool) int {
 	if len(out) < 3*len(u) {
-		panic("tifajs: no room for the UTF-8 of the units")
+		panic("beastjs: no room for the UTF-8 of the units")
 	}
 	d := unsafe.Pointer(unsafe.SliceData(out))
 	j := uintptr(0)
@@ -1143,5 +1143,5 @@ func (m *VM) NewStringUTF16(u []uint16) (Value, error) {
 }
 
 func errStringTooLong(n int) error {
-	return fmt.Errorf("tifajs: a string of %d characters is longer than javascript allows (%d)", n, stringLenMax)
+	return fmt.Errorf("beastjs: a string of %d characters is longer than javascript allows (%d)", n, stringLenMax)
 }

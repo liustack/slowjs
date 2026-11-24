@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package intl // import "github.com/liustack/tifajs/intl"
+package intl // import "github.com/liustack/beastjs/intl"
 
 import (
 	"sync"
@@ -11,11 +11,11 @@ import (
 	"unicode/utf8"
 	"unsafe"
 
-	"github.com/liustack/tifajs"
-	gointl "github.com/liustack/tifajs/internal/gointl"
-	"github.com/liustack/tifajs/internal/hostmem"
-	"github.com/liustack/tifajs/internal/intlhook"
-	"github.com/liustack/tifajs/internal/vmhook"
+	"github.com/liustack/beastjs"
+	gointl "github.com/liustack/beastjs/internal/gointl"
+	"github.com/liustack/beastjs/internal/hostmem"
+	"github.com/liustack/beastjs/internal/intlhook"
+	"github.com/liustack/beastjs/internal/vmhook"
 )
 
 // toLocaleUpperCase and toLocaleLowerCase map case as ICU does for the
@@ -77,7 +77,7 @@ func isSurrogate(c rune) bool { return c >= 0xd800 && c <= 0xdfff }
 // each allocation that grows with the text, and ends the call with the out
 // of memory error when the VM has no room for it (TestCaseRoomCoversGo).
 type walk struct {
-	vm    *tifajs.VM
+	vm    *beastjs.VM
 	steps int
 	held  int64
 	// gives gives back the arrays of code points of the call (runes).
@@ -93,7 +93,7 @@ type walk struct {
 const unknownRoom = -2
 
 // newWalk is the walk of a call on vm.
-func newWalk(vm *tifajs.VM) *walk { return &walk{vm: vm, room: unknownRoom} }
+func newWalk(vm *beastjs.VM) *walk { return &walk{vm: vm, room: unknownRoom} }
 
 // read tells w that the string was read, which may have joined it in the
 // VM and taken some of the room: the room is asked again.

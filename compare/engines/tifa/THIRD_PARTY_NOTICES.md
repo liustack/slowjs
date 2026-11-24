@@ -1,4 +1,4 @@
-<!-- Copyright (c) 2026 The liustack/tifajs Authors. -->
+<!-- Copyright (c) 2026 The liustack/beastjs Authors. -->
 <!-- SPDX-License-Identifier: MIT -->
 <!-- The generator and inventory are MIT under LICENSE at the repository root. -->
 <!-- The copied third-party notices below retain their own terms. -->

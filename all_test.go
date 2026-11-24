@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package tifajs // import "github.com/liustack/tifajs"
+package beastjs // import "github.com/liustack/beastjs"
 
 import (
 	"encoding/hex"
@@ -403,8 +403,8 @@ func TestRegisterFuncArgs(t *testing.T) {
 		{`g3()`, "not enough arguments in call to g3"},
 		{`g3(1, 'a', 2)`, "too many arguments in call to g3"},
 		{`g3(3.5, 'a')`, "calling g3: cannot assign float64 to int"},
-		{`g3(1, undefined)`, "calling g3: cannot assign tifajs.Undefined to string"},
-		{`g3(1, {})`, "calling g3: cannot assign *tifajs.Object to string"},
+		{`g3(1, undefined)`, "calling g3: cannot assign beastjs.Undefined to string"},
+		{`g3(1, {})`, "calling g3: cannot assign *beastjs.Object to string"},
 	} {
 		_, err := m.Eval(c.src, EvalGlobal)
 		wantError(t, err, "TypeError", c.want)

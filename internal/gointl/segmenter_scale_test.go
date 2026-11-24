@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	intl "github.com/liustack/tifajs/internal/gointl"
+	intl "github.com/liustack/beastjs/internal/gointl"
 )
 
 // TestSegmentingScales pins that breaking a long run of Thai or Japanese into

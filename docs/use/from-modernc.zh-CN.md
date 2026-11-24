@@ -1,22 +1,22 @@
 ---
-summary: '把 Go 程序从 modernc.org/quickjs v0.25.0 迁到 github.com/liustack/tifajs 时，哪些地方要改、哪些行为会变'
+summary: '把 Go 程序从 modernc.org/quickjs v0.25.0 迁到 github.com/liustack/beastjs 时，哪些地方要改、哪些行为会变'
 read_when:
-  - 把 Go 程序从 modernc.org/quickjs 迁到 github.com/liustack/tifajs
+  - 把 Go 程序从 modernc.org/quickjs 迁到 github.com/liustack/beastjs
   - 核对哪些 API 或行为和 modernc.org/quickjs v0.25.0 不同
 audience: user
 order: 5
-translatedFrom: 70d68e304506
+translatedFrom: d4b8f0e70a44
 ---
 
 # 从 modernc.org/quickjs 迁移
 
 [English](from-modernc.md) · 简体中文
 
-这一页说明原来用 `modernc.org/quickjs` v0.25.0 的 Go 程序，改用 `github.com/liustack/tifajs` 时会遇到什么。
+这一页说明原来用 `modernc.org/quickjs` v0.25.0 的 Go 程序，改用 `github.com/liustack/beastjs` 时会遇到什么。
 
 ## 代码和 go.mod 里要改的地方
 
-- **导入路径和包名。** `modernc.org/quickjs` 改成 `github.com/liustack/tifajs`，包名从 `quickjs` 改成 `tifajs`。它下面的 `intl` 和 `fmt` 包一起跟着改。引擎就在本模块里，所以 `modernc.org/libquickjs` 从你的 `go.mod` 里去掉。
+- **导入路径和包名。** `modernc.org/quickjs` 改成 `github.com/liustack/beastjs`，包名从 `quickjs` 改成 `beastjs`。它下面的 `intl` 和 `fmt` 包一起跟着改。引擎就在本模块里，所以 `modernc.org/libquickjs` 从你的 `go.mod` 里去掉。
 - **Go 版本。** 本模块需要 Go 1.26.6 或更新的版本，没有核对过的 Go 版本会停在编译阶段（见 [upgrading.md](../internals/upgrading.md#moving-to-a-newer-go)），而 `modernc.org/quickjs` v0.25.0 需要 Go 1.26。
 - **只支持六个平台。** 本模块只为 linux、darwin 和 windows 上的 amd64 与 arm64 构建。为其他目标平台构建会报错停下，并在错误里列出支持的平台（[详情](../internals/architecture.md#platforms)）。
 - **没有模块加载、shell 辅助函数和阻塞。** `VM.SetModuleLoader`、`VM.SetDefaultModuleLoader` 以及 `ModuleLoaderFunc` 和 `ModuleNormalizeFunc`、`VM.StdAddHelpers`（`console.log`、`print`、`performance.now`、`__loadScript`）还有 `VM.SetCanBlock` 都去掉了。模块只能导入 VM 里已经有的模块，比如用名字 `<eval>` 导入自己，`Atomics.wait` 总是抛错（[详情](../internals/changes/go-api.md#no-module-loader-shell-helpers-or-setcanblock)）。

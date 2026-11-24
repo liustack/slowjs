@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/liustack/tifajs/internal/gointl/internal/rbnfdata"
+	"github.com/liustack/beastjs/internal/gointl/internal/rbnfdata"
 )
 
 // Rule-based numbering: the algorithmic numbering systems date patterns may

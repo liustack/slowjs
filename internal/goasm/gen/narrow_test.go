@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -31,12 +31,12 @@ import (
 // the generator once took them (GEN_KEEP_NARROW): preserve_none passes them
 // in other registers than the lowering moves. That build's probe must show
 // the fault: right when called plainly, wrong once morestack ran. It needs LLVM 22.1.8
-// (TIFAJS_LLVM), the pass (TIFAJS_SHADOW_PASS) and ld.lld (TIFAJS_LLD), on
+// (BEASTJS_LLVM), the pass (BEASTJS_SHADOW_PASS) and ld.lld (BEASTJS_LLD), on
 // linux/amd64.
 func TestNarrowArgs(t *testing.T) {
-	llvm, pass, lld := os.Getenv("TIFAJS_LLVM"), os.Getenv("TIFAJS_SHADOW_PASS"), os.Getenv("TIFAJS_LLD")
+	llvm, pass, lld := os.Getenv("BEASTJS_LLVM"), os.Getenv("BEASTJS_SHADOW_PASS"), os.Getenv("BEASTJS_LLD")
 	if llvm == "" || pass == "" || lld == "" {
-		t.Skip("set TIFAJS_LLVM, TIFAJS_SHADOW_PASS and TIFAJS_LLD")
+		t.Skip("set BEASTJS_LLVM, BEASTJS_SHADOW_PASS and BEASTJS_LLD")
 	}
 	if runtime.GOOS != "linux" || runtime.GOARCH != "amd64" {
 		t.Skip("runs linux/amd64 code")
@@ -175,11 +175,11 @@ func TestNarrowArgs(t *testing.T) {
 // (GEN_KEEP_NARROW) shows the mistake the widening removes: preserve_none
 // leaves the narrow ones to the C rules, which start at W0, and the lowering
 // refuses each function whose entry llc reads from other registers than it
-// loads. It needs LLVM 22.1.8 (TIFAJS_LLVM) and the pass (TIFAJS_SHADOW_PASS).
+// loads. It needs LLVM 22.1.8 (BEASTJS_LLVM) and the pass (BEASTJS_SHADOW_PASS).
 func TestNarrowArgsARM64(t *testing.T) {
-	llvm, pass := os.Getenv("TIFAJS_LLVM"), os.Getenv("TIFAJS_SHADOW_PASS")
+	llvm, pass := os.Getenv("BEASTJS_LLVM"), os.Getenv("BEASTJS_SHADOW_PASS")
 	if llvm == "" || pass == "" {
-		t.Skip("set TIFAJS_LLVM and TIFAJS_SHADOW_PASS")
+		t.Skip("set BEASTJS_LLVM and BEASTJS_SHADOW_PASS")
 	}
 	work := t.TempDir()
 	drv := filepath.Join(work, "engine")

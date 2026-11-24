@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/liustack/tifajs/internal/gointl"
+	"github.com/liustack/beastjs/internal/gointl"
 )
 
 // TestSupportedValuesMatchNode compares every list Intl.supportedValuesOf

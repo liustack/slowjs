@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	intl "github.com/liustack/tifajs/internal/gointl"
-	"github.com/liustack/tifajs/internal/gointl/temporal"
+	intl "github.com/liustack/beastjs/internal/gointl"
+	"github.com/liustack/beastjs/internal/gointl/temporal"
 )
 
 // TestEastAsianDaysMatchTemporal holds the standard's Chinese calendar and

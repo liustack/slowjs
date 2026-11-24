@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -17,13 +17,13 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/liustack/tifajs/internal/measure"
+	"github.com/liustack/beastjs/internal/measure"
 )
 
 // BuildOptions say which binaries to build.
 type BuildOptions struct {
 	Side      string     // label of the side, such as "base" or "new"
-	Tree      string     // the liustack/tifajs checkout, with the engine generated into internal/cengine
+	Tree      string     // the liustack/beastjs checkout, with the engine generated into internal/cengine
 	App       string     // build in this module instead (tifa), with a go.work that uses Tree
 	Pkg       string     // the package to build, relative to App (or Tree)
 	Test      bool       // build the test binary of Pkg (go test -c)

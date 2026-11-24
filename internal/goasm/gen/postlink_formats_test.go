@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -30,13 +30,13 @@ import (
 // binary one fault at a time, and the check must refuse each: a byte of a
 // generated function, a pointer of engine_rodata, and the fixup of that
 // pointer, without which the loader would leave it at the address of the
-// file. It needs LLVM 22.1.8 (TIFAJS_LLVM), the built pass
-// (TIFAJS_SHADOW_PASS) and the go tool, and runs on any host: the binaries
+// file. It needs LLVM 22.1.8 (BEASTJS_LLVM), the built pass
+// (BEASTJS_SHADOW_PASS) and the go tool, and runs on any host: the binaries
 // are cross-built.
 func TestPostLinkFormats(t *testing.T) {
-	llvm, pass := os.Getenv("TIFAJS_LLVM"), os.Getenv("TIFAJS_SHADOW_PASS")
+	llvm, pass := os.Getenv("BEASTJS_LLVM"), os.Getenv("BEASTJS_SHADOW_PASS")
 	if llvm == "" || pass == "" {
-		t.Skip("set TIFAJS_LLVM and TIFAJS_SHADOW_PASS")
+		t.Skip("set BEASTJS_LLVM and BEASTJS_SHADOW_PASS")
 	}
 	work := t.TempDir()
 	drv := filepath.Join(work, "engine")

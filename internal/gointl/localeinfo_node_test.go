@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/liustack/tifajs/internal/gointl"
+	"github.com/liustack/beastjs/internal/gointl"
 )
 
 // TestLocaleInfoMatchesNode replays testdata/localeinfo_node.js: what

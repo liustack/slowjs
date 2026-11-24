@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -8,22 +8,22 @@ package intlhook
 import (
 	"sync"
 
-	"github.com/liustack/tifajs"
+	"github.com/liustack/beastjs"
 )
 
 // states contains borrowed handles. A private field on the VM's global
 // object roots each state until Close. It cannot be enumerated, read or
 // deleted by a page, even when the page replaces globalThis. No Go-owned
 // reference survives Close, and OnClose only removes the borrowed handle.
-var states sync.Map // *tifajs.VM -> tifajs.Value
+var states sync.Map // *beastjs.VM -> beastjs.Value
 
 // State returns an owned reference to the private object shared by the two
 // shims. Both Register functions call it before page code runs. Keeping the
 // callbacks in JS lets the engine trace their closures and release them
 // with the context, without Go roots that would keep the context alive.
-func State(vm *tifajs.VM) (tifajs.Value, error) {
+func State(vm *beastjs.VM) (beastjs.Value, error) {
 	if v, ok := states.Load(vm); ok {
-		return v.(tifajs.Value).Dup(), nil
+		return v.(beastjs.Value).Dup(), nil
 	}
 	v, err := vm.EvalValue(`(() => {
         const state = {__proto__: null, temporal: undefined, locale: undefined};
@@ -31,9 +31,9 @@ func State(vm *tifajs.VM) (tifajs.Value, error) {
         class Root extends Base { #state = state; }
         new Root(globalThis);
         return state;
-    })()`, tifajs.EvalGlobal)
+    })()`, beastjs.EvalGlobal)
 	if err != nil {
-		return tifajs.Value{}, err
+		return beastjs.Value{}, err
 	}
 	states.Store(vm, v)
 	vm.OnClose(func() { states.Delete(vm) })

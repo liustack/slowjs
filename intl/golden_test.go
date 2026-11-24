@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package intl // import "github.com/liustack/tifajs/intl"
+package intl // import "github.com/liustack/beastjs/intl"
 
 // TestGolden compares what Intl answers with what Chromium answered for the
 // same expressions, recorded in testdata/chromium. To record again: go test
@@ -25,7 +25,7 @@ import (
 	"testing"
 	"unicode"
 
-	"github.com/liustack/tifajs"
+	"github.com/liustack/beastjs"
 )
 
 var (
@@ -60,9 +60,9 @@ func jsList(s ...string) string {
 
 // goldenEval is expr as the recorder writes it down: its string, or ERR:
 // and the constructor of what it throws.
-func goldenEval(t *testing.T, vm *tifajs.VM, expr string) string {
+func goldenEval(t *testing.T, vm *beastjs.VM, expr string) string {
 	t.Helper()
-	v, err := vm.Eval("(() => {try {return String("+expr+")} catch (e) {return 'ERR:' + e.constructor.name}})()", tifajs.EvalGlobal)
+	v, err := vm.Eval("(() => {try {return String("+expr+")} catch (e) {return 'ERR:' + e.constructor.name}})()", beastjs.EvalGlobal)
 	if err != nil {
 		return "EVAL FAILED: " + err.Error()
 	}

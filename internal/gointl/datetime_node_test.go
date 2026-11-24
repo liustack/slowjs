@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	intl "github.com/liustack/tifajs/internal/gointl"
+	intl "github.com/liustack/beastjs/internal/gointl"
 )
 
 // dateTimeGaps are cases the expectations hold go-intl to that it does not

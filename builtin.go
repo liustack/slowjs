@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package tifajs // import "github.com/liustack/tifajs"
+package beastjs // import "github.com/liustack/beastjs"
 
 import (
 	"errors"
@@ -14,7 +14,7 @@ import (
 	"sync/atomic"
 	"unsafe"
 
-	"github.com/liustack/tifajs/internal/idtable"
+	"github.com/liustack/beastjs/internal/idtable"
 )
 
 // A Builtin is a Go function that javascript calls as a built-in function:
@@ -77,11 +77,11 @@ var builtins struct {
 func NewBuiltin(name string, length int, fn func(Args) (Value, error)) *Builtin {
 	switch {
 	case strings.IndexByte(name, 0) >= 0:
-		panic(fmt.Sprintf("tifajs: the name of a Builtin cannot contain a NUL byte: %q", name))
+		panic(fmt.Sprintf("beastjs: the name of a Builtin cannot contain a NUL byte: %q", name))
 	case length < 0 || length > math.MaxUint8:
-		panic(fmt.Sprintf("tifajs: the length of Builtin %s is %d, not in 0 to 255", name, length))
+		panic(fmt.Sprintf("beastjs: the length of Builtin %s is %d, not in 0 to 255", name, length))
 	case fn == nil:
-		panic(fmt.Sprintf("tifajs: Builtin %s has no function", name))
+		panic(fmt.Sprintf("beastjs: Builtin %s has no function", name))
 	}
 
 	builtins.mu.Lock()
@@ -92,7 +92,7 @@ func NewBuiltin(name string, length int, fn func(Args) (Value, error)) *Builtin 
 		list = *p
 	}
 	if len(list) > math.MaxInt16 {
-		panic("tifajs: too many Builtins")
+		panic("beastjs: too many Builtins")
 	}
 
 	b := &Builtin{name: validUTF8(name), length: int32(length), fn: fn, magic: int32(len(list))}

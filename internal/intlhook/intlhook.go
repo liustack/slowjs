@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -6,9 +6,9 @@
 // Package intlhook connects the Intl and Temporal shims. Package intl sets
 // the date and duration formatting built-ins at initialization. State shares
 // their private slot readers in each VM.
-package intlhook // import "github.com/liustack/tifajs/internal/intlhook"
+package intlhook // import "github.com/liustack/beastjs/internal/intlhook"
 
-import "github.com/liustack/tifajs"
+import "github.com/liustack/beastjs"
 
 var (
 	// Format formats a Temporal value. Its arguments are the kind of the
@@ -20,11 +20,11 @@ var (
 	// the order Options lists them. A zoned value is shown at the offset
 	// given, which is Temporal's, whatever offset package intl's zone data
 	// has for the zone then.
-	Format *tifajs.Builtin
+	Format *beastjs.Builtin
 
 	// DefaultZone returns a VM's default time zone, the one intl.TimeZone
 	// gave its Register, "UTC" without one.
-	DefaultZone func(*tifajs.VM) string
+	DefaultZone func(*beastjs.VM) string
 
 	// Options is the json of the options Intl.DateTimeFormat reads, in
 	// order: {"names": [...], "kinds": "..."}, a kind being a byte of
@@ -33,5 +33,5 @@ var (
 
 	// Duration uses the same registry and formatter as Intl.DurationFormat.
 	DurationOptions                 string
-	DurationResolve, DurationFormat *tifajs.Builtin
+	DurationResolve, DurationFormat *beastjs.Builtin
 )

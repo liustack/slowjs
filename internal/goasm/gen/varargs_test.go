@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 package gen
 
@@ -14,12 +14,12 @@ import (
 
 // TestVarargsOverAlignedRejected: a variadic function reading a 16-aligned
 // aggregate cannot be held in the 8-byte-slot block and must be rejected,
-// not miscompiled. Needs LLVM 22.1.8 (TIFAJS_LLVM) and the pass
-// (TIFAJS_SHADOW_PASS).
+// not miscompiled. Needs LLVM 22.1.8 (BEASTJS_LLVM) and the pass
+// (BEASTJS_SHADOW_PASS).
 func TestVarargsOverAlignedRejected(t *testing.T) {
-	llvm, pass := os.Getenv("TIFAJS_LLVM"), os.Getenv("TIFAJS_SHADOW_PASS")
+	llvm, pass := os.Getenv("BEASTJS_LLVM"), os.Getenv("BEASTJS_SHADOW_PASS")
 	if llvm == "" || pass == "" {
-		t.Skip("set TIFAJS_LLVM and TIFAJS_SHADOW_PASS")
+		t.Skip("set BEASTJS_LLVM and BEASTJS_SHADOW_PASS")
 	}
 	work := t.TempDir()
 	ir := filepath.Join(work, "o.ll")
@@ -43,11 +43,11 @@ func TestVarargsOverAlignedRejected(t *testing.T) {
 // helper the variadic function passes its va_list to, not in the variadic
 // function itself. The pass must follow the va_list into the helper and
 // reject it, otherwise a caller gets a block the helper reads wrong. Needs
-// LLVM 22.1.8 (TIFAJS_LLVM) and the pass (TIFAJS_SHADOW_PASS).
+// LLVM 22.1.8 (BEASTJS_LLVM) and the pass (BEASTJS_SHADOW_PASS).
 func TestVarargsOverAlignedHelperRejected(t *testing.T) {
-	llvm, pass := os.Getenv("TIFAJS_LLVM"), os.Getenv("TIFAJS_SHADOW_PASS")
+	llvm, pass := os.Getenv("BEASTJS_LLVM"), os.Getenv("BEASTJS_SHADOW_PASS")
 	if llvm == "" || pass == "" {
-		t.Skip("set TIFAJS_LLVM and TIFAJS_SHADOW_PASS")
+		t.Skip("set BEASTJS_LLVM and BEASTJS_SHADOW_PASS")
 	}
 	work := t.TempDir()
 	ir := filepath.Join(work, "h.ll")
@@ -72,11 +72,11 @@ func TestVarargsOverAlignedHelperRejected(t *testing.T) {
 // or external call, a store to memory, a va_copy into a global) must reject
 // the function that sends it, since the pass cannot prove the reads there
 // keep to the block's slots. A va_copy read by a scalar helper stays. Needs
-// LLVM 22.1.8 (TIFAJS_LLVM) and the pass (TIFAJS_SHADOW_PASS).
+// LLVM 22.1.8 (BEASTJS_LLVM) and the pass (BEASTJS_SHADOW_PASS).
 func TestVarargsEscapesRejected(t *testing.T) {
-	llvm, pass := os.Getenv("TIFAJS_LLVM"), os.Getenv("TIFAJS_SHADOW_PASS")
+	llvm, pass := os.Getenv("BEASTJS_LLVM"), os.Getenv("BEASTJS_SHADOW_PASS")
 	if llvm == "" || pass == "" {
-		t.Skip("set TIFAJS_LLVM and TIFAJS_SHADOW_PASS")
+		t.Skip("set BEASTJS_LLVM and BEASTJS_SHADOW_PASS")
 	}
 	work := t.TempDir()
 	ir := filepath.Join(work, "e.ll")
@@ -123,12 +123,12 @@ func TestVarargsEscapesRejected(t *testing.T) {
 // selects and a loop: every write that may wrap back into the register save
 // area is refused, the ones va_arg makes are kept. A module of any other
 // target is refused whole. Needs LLVM
-// 22.1.8 (TIFAJS_LLVM) and the pass (TIFAJS_SHADOW_PASS).
+// 22.1.8 (BEASTJS_LLVM) and the pass (BEASTJS_SHADOW_PASS).
 func TestVarargsRules(t *testing.T) {
 	const offsetWrite = "cannot prove keeps va_arg off the register save area"
-	llvm, pass := os.Getenv("TIFAJS_LLVM"), os.Getenv("TIFAJS_SHADOW_PASS")
+	llvm, pass := os.Getenv("BEASTJS_LLVM"), os.Getenv("BEASTJS_SHADOW_PASS")
 	if llvm == "" || pass == "" {
-		t.Skip("set TIFAJS_LLVM and TIFAJS_SHADOW_PASS")
+		t.Skip("set BEASTJS_LLVM and BEASTJS_SHADOW_PASS")
 	}
 	work := t.TempDir()
 	run := func(name string, args ...string) (string, error) {
@@ -285,13 +285,13 @@ func TestVarargsRules(t *testing.T) {
 // turns diff.c into Go assembly (cmd/engine, body and pn) and a Go program
 // runs it, with a host callback in Go that grows and so moves the goroutine
 // stack between reads: it must print the same again. It needs LLVM 22.1.8
-// (TIFAJS_LLVM), the pass (TIFAJS_SHADOW_PASS) and ld.lld (TIFAJS_LLD).
+// (BEASTJS_LLVM), the pass (BEASTJS_SHADOW_PASS) and ld.lld (BEASTJS_LLD).
 // x86_64 runs on a linux/amd64 host, aarch64 on a linux/arm64 host or under
-// the user-mode emulator TIFAJS_QEMU_AARCH64.
+// the user-mode emulator BEASTJS_QEMU_AARCH64.
 func TestVarargsNative(t *testing.T) {
-	llvm, pass, lld := os.Getenv("TIFAJS_LLVM"), os.Getenv("TIFAJS_SHADOW_PASS"), os.Getenv("TIFAJS_LLD")
+	llvm, pass, lld := os.Getenv("BEASTJS_LLVM"), os.Getenv("BEASTJS_SHADOW_PASS"), os.Getenv("BEASTJS_LLD")
 	if llvm == "" || pass == "" || lld == "" {
-		t.Skip("set TIFAJS_LLVM, TIFAJS_SHADOW_PASS and TIFAJS_LLD")
+		t.Skip("set BEASTJS_LLVM, BEASTJS_SHADOW_PASS and BEASTJS_LLD")
 	}
 	src := filepath.Join("testdata", "varargs")
 	free := []string{"-ffreestanding", "-nostdinc", "-fno-builtin", "-fno-stack-protector", "-fno-asynchronous-unwind-tables"}
@@ -301,7 +301,7 @@ func TestVarargsNative(t *testing.T) {
 		cflags             []string
 	}{
 		{"x86_64", "amd64", "", append(append([]string{}, EngineCFlags...), free...)},
-		{"aarch64", "arm64", os.Getenv("TIFAJS_QEMU_AARCH64"), ARM64CFlags},
+		{"aarch64", "arm64", os.Getenv("BEASTJS_QEMU_AARCH64"), ARM64CFlags},
 	} {
 		t.Run(tc.arch, func(t *testing.T) {
 			var runner []string

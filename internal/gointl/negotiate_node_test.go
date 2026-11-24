@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/liustack/tifajs/internal/gointl"
+	"github.com/liustack/beastjs/internal/gointl"
 )
 
 // TestAvailableLocalesMatchNode replays testdata/available_node.js: for every

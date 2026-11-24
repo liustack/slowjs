@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -8,7 +8,7 @@
 package blob
 
 // Walking reports whether the pool parts read are recorded, which only the
-// gointl_walk build tag does, for the pack tool of liustack/tifajs.
+// gointl_walk build tag does, for the pack tool of liustack/beastjs.
 const Walking = false
 
 func walked(Shared, int) {}

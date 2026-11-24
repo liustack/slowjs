@@ -1,11 +1,11 @@
 /*
- * Copyright (c) 2026 The liustack/tifajs Authors.
+ * Copyright (c) 2026 The liustack/beastjs Authors.
  * SPDX-License-Identifier: MIT
  * Use of this source code is governed by the MIT license in LICENSE at the
  * root of this repository.
  */
-#ifndef TIFAJS_LIBC_STDATOMIC_H
-#define TIFAJS_LIBC_STDATOMIC_H
+#ifndef BEASTJS_LIBC_STDATOMIC_H
+#define BEASTJS_LIBC_STDATOMIC_H
 
 /* The operations Atomics.* uses, on the compiler's own C11 builtins. */
 #define atomic_load(p) __c11_atomic_load(p, __ATOMIC_SEQ_CST)

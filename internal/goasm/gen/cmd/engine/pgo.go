@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -13,7 +13,7 @@ import (
 	"strings"
 	"sync"
 
-	gen "github.com/liustack/tifajs/internal/goasm/gen"
+	gen "github.com/liustack/beastjs/internal/goasm/gen"
 )
 
 // src is one C file of the engine and the group it belongs to.

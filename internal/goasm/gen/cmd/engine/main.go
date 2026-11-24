@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 //
 // Whole-engine driver: compile every C file of engine/ and engine/libc
@@ -24,7 +24,7 @@ import (
 	"sync"
 	"time"
 
-	gen "github.com/liustack/tifajs/internal/goasm/gen"
+	gen "github.com/liustack/beastjs/internal/goasm/gen"
 )
 
 var (

@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package fmt // import "github.com/liustack/tifajs/fmt"
+package fmt // import "github.com/liustack/beastjs/fmt"
 
 import (
 	"fmt"
@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/liustack/tifajs"
+	"github.com/liustack/beastjs"
 )
 
 // small sets longArg, longBits and piece so that every string, every
@@ -70,12 +70,12 @@ func TestPrintfAsGo(t *testing.T) {
 // integer, with the string, an object of it and a big int made of both,
 // written a part at a time, in pieces of 5 bytes.
 func FuzzPrintfAsGo(f *testing.F) {
-	vm, err := tifajs.NewVM()
+	vm, err := beastjs.NewVM()
 	if err != nil {
 		f.Fatal(err)
 	}
 	defer vm.Close()
-	if _, err := vm.Eval(`function obj(s) { return {s} }`, tifajs.EvalGlobal); err != nil {
+	if _, err := vm.Eval(`function obj(s) { return {s} }`, beastjs.EvalGlobal); err != nil {
 		f.Fatal(err)
 	}
 	for _, seed := range []string{"%v", "%#q", "%+q", "% #x", "%-12.3s", "%*d", "%[2]v %[1]q", "%.[3]*v", "%#v", "%d", "%#w", "%5[", "%x %X %q"} {
@@ -104,7 +104,7 @@ func FuzzPrintfAsGo(f *testing.F) {
 
 // sprintOf is the output of sprint, or of sprintln when ln is true, copied
 // out of the memory they make it in, which it gives back.
-func sprintOf(vm *tifajs.VM, n int64, a []any, ln bool) (string, bool) {
+func sprintOf(vm *beastjs.VM, n int64, a []any, ln bool) (string, bool) {
 	f := sprint
 	if ln {
 		f = sprintln

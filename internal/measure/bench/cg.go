@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -16,7 +16,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/liustack/tifajs/internal/measure"
+	"github.com/liustack/beastjs/internal/measure"
 )
 
 var cgLine = regexp.MustCompile(`^\s*([\d,]+) \(\s*[\d.]+%\)\s+(.*)$`)
@@ -78,7 +78,7 @@ func Diff(renders float64, small, big Listing) PerRender {
 }
 
 func shortName(s string) string {
-	for _, p := range []string{"github.com/liustack/tifajs/internal/", "github.com/liustack/tifajs.", "github.com/liustack/tifa/internal/"} {
+	for _, p := range []string{"github.com/liustack/beastjs/internal/", "github.com/liustack/beastjs.", "github.com/liustack/tifa/internal/"} {
 		s = strings.TrimPrefix(s, p)
 	}
 	return s

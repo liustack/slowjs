@@ -216,7 +216,7 @@ jobs:
       - name: go vet with every build tag, in every module
         run: scripts/vet-tags.sh
       - name: Test, packages other than the root, without -short
-        run: go test -count=1 -p 2 -timeout 120m $(go list ./... | grep -v '/tifajs$')
+        run: go test -count=1 -p 2 -timeout 120m $(go list ./... | grep -v '/beastjs$')
       - name: Test, the two modules of compare
         run: |
           (cd compare && GOTOOLCHAIN=auto go test -count=1 ./...)

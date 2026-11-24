@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -17,9 +17,9 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/liustack/tifajs"
-	"github.com/liustack/tifajs/internal/cengine"
-	"github.com/liustack/tifajs/internal/whatwgurl"
+	"github.com/liustack/beastjs"
+	"github.com/liustack/beastjs/internal/cengine"
+	"github.com/liustack/beastjs/internal/whatwgurl"
 )
 
 // fuzzVMScript runs URL and URLSearchParams on I, against the base B when it
@@ -71,7 +71,7 @@ const (
 
 // FuzzVM runs fuzzVMScript in a VM with Register, an eval timeout and a
 // memory limit that limit picks, and holds it to the contract of a call (see
-// fuzz_test.go of package tifajs): no panic, no error but the exception of
+// fuzz_test.go of package beastjs): no panic, no error but the exception of
 // the script or an uncatchable end, no call past the timeout, and nothing
 // left in the engine after Close. Where the input is valid UTF-8 the href is
 // the one internal/whatwgurl parses.
@@ -111,7 +111,7 @@ func FuzzVM(f *testing.F) {
 			return
 		}
 		leaked := cengine.Leaked()
-		vm, err := tifajs.NewVM()
+		vm, err := beastjs.NewVM()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -123,7 +123,7 @@ func FuzzVM(f *testing.F) {
 		vm.SetMemoryLimit([...]uintptr{32 << 20, 4 << 20, 1 << 20}[limit%3])
 		for _, g := range [][2]string{{"I", input}, {"B", base}, {"V", value}, {"K", string(rune('0' + setter%10))}} {
 			if err := setGlobalErr(vm, g[0], g[1]); err != nil {
-				var e *tifajs.Error
+				var e *beastjs.Error
 				vm.Close()
 				if errors.As(err, &e) && e.OutOfMemory {
 					return
@@ -136,7 +136,7 @@ func FuzzVM(f *testing.F) {
 			debug.SetTraceback("all")
 			panic(fmt.Sprintf("fuzz: the URL script has not returned after %v", fuzzVMWatchdog))
 		})
-		got, err := vm.Eval(fuzzVMScript, tifajs.EvalGlobal)
+		got, err := vm.Eval(fuzzVMScript, beastjs.EvalGlobal)
 		dog.Stop()
 		if took := time.Since(start); took > fuzzVMTimeout+fuzzVMSlack {
 			t.Fatalf("the URL script took %v with an eval timeout of %v (%v)", took, fuzzVMTimeout, err)
@@ -150,7 +150,7 @@ func FuzzVM(f *testing.F) {
 		if n := keptStates(); n != 0 {
 			t.Fatalf("the package keeps the state of %d VMs after Close", n)
 		}
-		var e *tifajs.Error
+		var e *beastjs.Error
 		switch {
 		case err == nil:
 		case !errors.As(err, &e):
@@ -206,7 +206,7 @@ func fuzzingVM() bool {
 }
 
 // setGlobalErr sets the global name of vm to s.
-func setGlobalErr(vm *tifajs.VM, name, s string) error {
+func setGlobalErr(vm *beastjs.VM, name, s string) error {
 	g := vm.GlobalObject()
 	defer g.Free()
 	a, err := vm.NewAtom(name)

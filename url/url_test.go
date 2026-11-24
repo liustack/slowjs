@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -9,12 +9,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/liustack/tifajs"
+	"github.com/liustack/beastjs"
 )
 
-func evalString(t testing.TB, vm *tifajs.VM, src string) string {
+func evalString(t testing.TB, vm *beastjs.VM, src string) string {
 	t.Helper()
-	v, err := vm.Eval(src, tifajs.EvalGlobal)
+	v, err := vm.Eval(src, beastjs.EvalGlobal)
 	if err != nil {
 		t.Fatalf("%s: %v", src, err)
 	}

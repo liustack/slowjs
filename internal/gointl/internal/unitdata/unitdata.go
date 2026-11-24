@@ -8,7 +8,7 @@
 package unitdata
 
 import (
-	"github.com/liustack/tifajs/internal/gointl/internal/blob"
+	"github.com/liustack/beastjs/internal/gointl/internal/blob"
 )
 
 // Version is the encoding's version.

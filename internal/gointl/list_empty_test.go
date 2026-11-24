@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"testing"
 
-	intl "github.com/liustack/tifajs/internal/gointl"
+	intl "github.com/liustack/beastjs/internal/gointl"
 )
 
 // An empty item: ECMA-402's CreatePartsFromList writes it as an element,

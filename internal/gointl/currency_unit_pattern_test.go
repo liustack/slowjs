@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"testing"
 
-	intl "github.com/liustack/tifajs/internal/gointl"
+	intl "github.com/liustack/beastjs/internal/gointl"
 )
 
 // A currency's name is joined to the amount by the pattern ICU's curr tree

@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package tifajs // import "github.com/liustack/tifajs"
+package beastjs // import "github.com/liustack/beastjs"
 
 import (
 	"os"
@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-const gcStopChild = "TIFAJS_TEST_GCSTOP_CHILD"
+const gcStopChild = "BEASTJS_TEST_GCSTOP_CHILD"
 
 // gcLoopPolls is how many polls the loop must make before a GC, and again
 // after it, to count as running.

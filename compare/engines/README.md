@@ -1,24 +1,24 @@
-<!-- Copyright (c) 2026 The liustack/tifajs Authors. -->
+<!-- Copyright (c) 2026 The liustack/beastjs Authors. -->
 <!-- SPDX-License-Identifier: MIT -->
 
 # compare/engines
 
-The comparison of liustack/tifajs with other JavaScript engines for Go and with three native engines. A Go module of its own, so the other engines never enter the `go.mod` of the root. The results and what they say are in [docs/use/benchmarks.md](../../docs/use/benchmarks.md).
+The comparison of liustack/beastjs with other JavaScript engines for Go and with three native engines. A Go module of its own, so the other engines never enter the `go.mod` of the root. The results and what they say are in [docs/use/benchmarks.md](../../docs/use/benchmarks.md).
 
 ## What is compared
 
 Two tables:
 
-1. **Rendering.** CPU time of a render of tifa's pages: the bench app (2 pages), the MUI app (3) and the shop (20), as a ratio to liustack/tifajs.
+1. **Rendering.** CPU time of a render of tifa's pages: the bench app (2 pages), the MUI app (3) and the shop (20), as a ratio to liustack/beastjs.
 2. **The V8 suite.** The score of each engine, and of each of its 8 benchmarks.
 
 The comparison never runs test262 on other engines.
 
 The V8 suite has a row for Node `--jitless` as well. `native/node-v8.cjs` takes the steps of `qjs-v8.js` and of `jsbench v8`: the same nine files of `internal/arewefastyet/v8-v7` run as global scripts in one context, then `BenchmarkSuite.RunSuites`, so the number of runs, the time rule (`base.js` times with `new Date()`) and the score are the same for every engine, and it prints the same JSON. What cannot be the same: Node runs V8's interpreter in a process with a garbage collector and helper threads of V8's own, which the other engines do not have. It is held to one core like the others.
 
-The page table shows liustack/tifajs twice, because the Go engines differ in what is built in. **liustack-tifajs** runs as it ships: its own Intl, Temporal, URL and URLSearchParams, from the Go packages `intl/`, `temporal/` and `url/`. **liustack-tifajs-polyfill** is the same engine with none of those packages linked or registered, and with the polyfills an engine without the features gets (FormatJS for Intl, core-js for URL, URLSearchParams, structuredClone and the iterator helpers). On pages that format dates and numbers, Hermes and C QuickJS run FormatJS in JavaScript while liustack-tifajs runs Intl written in Go, so the first row mixes the speed of the interpreter with the Intl being built in. The second row has the interpreter alone. Ratios stay a multiple of liustack-tifajs, the first row. The second row is for the pages only: `cmd/compare` builds its binary but leaves it out of the V8 suite, where it would be the same engine twice, unless `-engines liustack-tifajs-polyfill` names it.
+The page table shows liustack/beastjs twice, because the Go engines differ in what is built in. **liustack-beastjs** runs as it ships: its own Intl, Temporal, URL and URLSearchParams, from the Go packages `intl/`, `temporal/` and `url/`. **liustack-beastjs-polyfill** is the same engine with none of those packages linked or registered, and with the polyfills an engine without the features gets (FormatJS for Intl, core-js for URL, URLSearchParams, structuredClone and the iterator helpers). On pages that format dates and numbers, Hermes and C QuickJS run FormatJS in JavaScript while liustack-beastjs runs Intl written in Go, so the first row mixes the speed of the interpreter with the Intl being built in. The second row has the interpreter alone. Ratios stay a multiple of liustack-beastjs, the first row. The second row is for the pages only: `cmd/compare` builds its binary but leaves it out of the V8 suite, where it would be the same engine twice, unless `-engines liustack-beastjs-polyfill` names it.
 
-The rule of the engine set: **the comparison is among interpreters.** An engine with a JIT runs with it off, or is left out. The Go engines are liustack/tifajs (two rows, see above)
+The rule of the engine set: **the comparison is among interpreters.** An engine with a JIT runs with it off, or is left out. The Go engines are liustack/beastjs (two rows, see above)
 , go-quickjs (its JIT is off by default) and moejs. The native references are C QuickJS 2026-06-04, Hermes V1 (the release, which has no x86-64 JIT, as it ships: bytecode compiled with `hermesc -O`) and Node with `--jitless`.
 
 Each engine runs the way a person would use it. It has its own Intl and URL where it has them, and a standard polyfill where it has none: FormatJS for Intl, core-js for URL, URLSearchParams, structuredClone and the iterator helpers. A polyfill is loaded only into an engine that lacks the feature (`tifa/run.sh` has the list). The comparison's bundles run without tifa's Go functions (`__tifa_escape`, `__tifa_start_tag`, `__tifa_end_tag`, `__tifa_copy_props`, `__tifa_murmur2__`, `__tifa_random_bytes__`), tifa's GC rules and pool settings, and shared bytecode: no engine registers them, ours included, so every engine runs React's own code.
@@ -29,7 +29,7 @@ Each engine runs the way a person would use it. It has its own Intl and URL wher
 | --- | --- |
 | `cmd/compare` | The driver: builds one `jsbench` per engine and runs the V8 suite (`-phases v8`, the default) |
 | `cmd/jsbench` | The program linked with one engine: `v8`, `tifa-ssr` and the older workloads |
-| `engine/` | One adapter per engine, behind build tags (`eng_<name>`). liustack-tifajs and liustack-tifajs-polyfill share `eng_liustack.go` and differ in `eng_liustack_own.go` and `eng_liustack_bare.go` |
+| `engine/` | One adapter per engine, behind build tags (`eng_<name>`). liustack-beastjs and liustack-beastjs-polyfill share `eng_liustack.go` and differ in `eng_liustack_own.go` and `eng_liustack_bare.go` |
 | `tifa/` | The three server bundles (`bundles/`), the 25 page inputs (`in/`), the polyfills (`polyfill/`, `prelude/`), `run.sh` and `pagerun.sh` |
 | `native/` | `build.sh` (C QuickJS, Hermes, Node), the drivers of the native engines (`ssr-driver.js`, `node-ssr.cjs`, `node-v8.cjs`, `hermes-ssr.js`, `hermes-run.sh`, `qjs-v8.js`, `hermes-v8.js`) |
 | `cmd/pages` | The page tables and the archive of a run of `tifa/run.sh` |
@@ -54,7 +54,7 @@ The tifa pages, one engine per call, each call on its own core held by `~/bin/qu
 ```sh
 run=<date>-<version>-<host>
 page_dir=$HOME/pages-$run
-for e in liustack-tifajs liustack-tifajs-polyfill go-quickjs-interp quickjs-2026-06-04 node-jitless hermes moejs; do
+for e in liustack-beastjs liustack-beastjs-polyfill go-quickjs-interp quickjs-2026-06-04 node-jitless hermes moejs; do
   TIFA_ONLY=$e TIFA_CPU=0 TIFA_SIBLING=3 tifa/run.sh $page_dir bin $HOME/jsnative
 done
 go run ./cmd/pages $page_dir --output results/$run-pages

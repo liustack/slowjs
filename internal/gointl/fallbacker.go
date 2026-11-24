@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/liustack/tifajs/internal/gointl/internal/blob"
-	"github.com/liustack/tifajs/internal/gointl/internal/layout"
+	"github.com/liustack/beastjs/internal/gointl/internal/blob"
+	"github.com/liustack/beastjs/internal/gointl/internal/layout"
 )
 
 // The fallback chain, once CLDR has a say in it.

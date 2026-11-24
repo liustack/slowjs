@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/liustack/tifajs"
+	"github.com/liustack/beastjs"
 )
 
 // Options say what to load and how.
@@ -28,16 +28,16 @@ type Options struct {
 	NoPool   bool // no collection between renders, only those the engine starts itself
 	Log      io.Writer
 	// BeforeBundle, when not nil, runs after the preludes and the guard, right before the bundle.
-	BeforeBundle func(*tifajs.VM) error
+	BeforeBundle func(*beastjs.VM) error
 }
 
 // Runner is a VM with the bundle loaded, which renders pages.
 type Runner struct {
 	o        Options
-	vm       *tifajs.VM
-	bytecode *tifajs.SharedBytecode
+	vm       *beastjs.VM
+	bytecode *beastjs.SharedBytecode
 	// the functions a render of the tifa mode calls, taken once as tifa's Load takes them
-	global, reset, start, read tifajs.Value
+	global, reset, start, read beastjs.Value
 	pool                       pool
 }
 
@@ -79,7 +79,7 @@ func Open(o Options) (_ *Runner, err error) {
 			return nil, err
 		}
 		fmt.Fprintf(o.Log, "pages: prelude %s sha256 %s\n", p, sum(code))
-		if _, err := r.vm.Eval(string(code), tifajs.EvalGlobal); err != nil {
+		if _, err := r.vm.Eval(string(code), beastjs.EvalGlobal); err != nil {
 			return nil, fmt.Errorf("%s: %w", p, err)
 		}
 	}
@@ -107,7 +107,7 @@ func Open(o Options) (_ *Runner, err error) {
 	if r.bytecode != nil {
 		_, err = r.vm.EvalSharedBytecode(r.bytecode)
 	} else {
-		_, err = r.vm.Eval(string(src), tifajs.EvalGlobal)
+		_, err = r.vm.Eval(string(src), beastjs.EvalGlobal)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", o.Bundle, err)
@@ -154,8 +154,8 @@ func sum(b []byte) string {
 }
 
 // compile is Compile of tifa's renderer.go, for the script form of a bundle.
-func compile(src string, limit uintptr, timeout time.Duration) (*tifajs.SharedBytecode, error) {
-	vm, err := tifajs.NewVM()
+func compile(src string, limit uintptr, timeout time.Duration) (*beastjs.SharedBytecode, error) {
+	vm, err := beastjs.NewVM()
 	if err != nil {
 		return nil, err
 	}
@@ -166,11 +166,11 @@ func compile(src string, limit uintptr, timeout time.Duration) (*tifajs.SharedBy
 	if err := vm.SetEvalTimeout(timeout); err != nil {
 		return nil, err
 	}
-	code, err := vm.Compile(src, tifajs.EvalGlobal)
+	code, err := vm.Compile(src, beastjs.EvalGlobal)
 	if err != nil {
 		return nil, err
 	}
-	return tifajs.NewSharedBytecode(code)
+	return beastjs.NewSharedBytecode(code)
 }
 
 // jobs runs the promise jobs until none is left.
@@ -202,10 +202,10 @@ func (r *Runner) take() error {
 		start = "globalThis.render"
 	}
 	for _, t := range []struct {
-		v   *tifajs.Value
+		v   *beastjs.Value
 		src string
 	}{{&r.global, "globalThis"}, {&r.reset, resetResult}, {&r.start, start}, {&r.read, readResult}} {
-		v, err := r.vm.EvalValue(t.src, tifajs.EvalGlobal)
+		v, err := r.vm.EvalValue(t.src, beastjs.EvalGlobal)
 		if err != nil {
 			return err
 		}
@@ -215,7 +215,7 @@ func (r *Runner) take() error {
 }
 
 // VM is the VM of r.
-func (r *Runner) VM() *tifajs.VM { return r.vm }
+func (r *Runner) VM() *beastjs.VM { return r.vm }
 
 // Render renders one page and returns its HTML and the time the render took, which does not
 // count the collections of After. input is the JSON of the page, unused for React's page.
@@ -264,10 +264,10 @@ func (r *Runner) renderVM(input string) (string, error) {
 		return s, nil
 	}
 	steps := []func() (any, error){
-		func() (any, error) { return r.reset.Call(tifajs.UndefinedValue) },
+		func() (any, error) { return r.reset.Call(beastjs.UndefinedValue) },
 		func() (any, error) { return r.start.Call(r.global, input) },
 		func() (any, error) { return r.vm.ExecutePendingJobs() },
-		func() (any, error) { return r.read.Call(tifajs.UndefinedValue) },
+		func() (any, error) { return r.read.Call(beastjs.UndefinedValue) },
 	}
 	var value any
 	for _, step := range steps {
@@ -350,7 +350,7 @@ func (r *Runner) After() error {
 func (r *Runner) Close() error {
 	var err error
 	if r.vm != nil {
-		for _, v := range []*tifajs.Value{&r.global, &r.reset, &r.start, &r.read} {
+		for _, v := range []*beastjs.Value{&r.global, &r.reset, &r.start, &r.read} {
 			v.Free()
 		}
 		err = r.vm.Close()
@@ -367,7 +367,7 @@ func (r *Runner) Close() error {
 // whether the jobs a collection queued run right after it, as tifa's do and the stand-in mode's
 // do not.
 type pool struct {
-	vm                            *tifajs.VM
+	vm                            *beastjs.VM
 	memory, live, need, threshold uintptr
 	timeout                       time.Duration
 	young                         int

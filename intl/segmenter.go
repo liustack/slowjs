@@ -1,17 +1,17 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package intl // import "github.com/liustack/tifajs/intl"
+package intl // import "github.com/liustack/beastjs/intl"
 
 import (
 	"errors"
 	"sync"
 
-	"github.com/liustack/tifajs"
-	gointl "github.com/liustack/tifajs/internal/gointl"
-	"github.com/liustack/tifajs/internal/intlhook"
+	"github.com/liustack/beastjs"
+	gointl "github.com/liustack/beastjs/internal/gointl"
+	"github.com/liustack/beastjs/internal/intlhook"
 )
 
 // segmenter is a resolved Intl.Segmenter.
@@ -96,9 +96,9 @@ type vmCursors struct {
 }
 
 // cursors holds the cursors of each VM until it is closed.
-var cursors sync.Map // *tifajs.VM -> *vmCursors
+var cursors sync.Map // *beastjs.VM -> *vmCursors
 
-func cursorsOf(vm *tifajs.VM) *vmCursors {
+func cursorsOf(vm *beastjs.VM) *vmCursors {
 	if c, ok := cursors.Load(vm); ok {
 		return c.(*vmCursors)
 	}
@@ -157,7 +157,7 @@ func (v *vmCursors) add(c *cursor) {
 // each next segment ends, in UTF-16 code units, as twice the offset, plus one
 // for a segment that is word-like. The breaks are all
 // there once the last one is the length of the text.
-var segBreaks = intlhook.NewBuiltin("breaks", 4, func(a tifajs.Args) (tifajs.Value, error) {
+var segBreaks = intlhook.NewBuiltin("breaks", 4, func(a beastjs.Args) (beastjs.Value, error) {
 	vm := a.VM()
 	id, _ := a.Number(2)
 	have, _ := a.Number(3)
@@ -175,7 +175,7 @@ var segBreaks = intlhook.NewBuiltin("breaks", 4, func(a tifajs.Args) (tifajs.Val
 	if c == nil || c.n != int(have) {
 		s, ok, err := formatterOf[*segmenter](a)
 		if !ok {
-			return tifajs.UndefinedValue, err
+			return beastjs.UndefinedValue, err
 		}
 
 		door := intlhook.Open(a)
@@ -193,7 +193,7 @@ var segBreaks = intlhook.NewBuiltin("breaks", 4, func(a tifajs.Args) (tifajs.Val
 			_, ok := c.it.Next()
 			inNext = false
 			if !ok {
-				return tifajs.Value{}, errors.New("intl: internal error: a Segments object has more breaks than its text")
+				return beastjs.Value{}, errors.New("intl: internal error: a Segments object has more breaks than its text")
 			}
 			c.n++
 		}

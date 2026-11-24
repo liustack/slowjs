@@ -1,17 +1,17 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package fmt // import "github.com/liustack/tifajs/fmt"
+package fmt // import "github.com/liustack/beastjs/fmt"
 
 import (
 	"io"
 	"strings"
 	"testing"
 
-	"github.com/liustack/tifajs"
-	"github.com/liustack/tifajs/internal/stopsweep"
+	"github.com/liustack/beastjs"
+	"github.com/liustack/beastjs/internal/stopsweep"
 )
 
 // swept are long calls of fmt, each with an output or an argument of n units
@@ -65,7 +65,7 @@ func TestLongCallsStopAtEveryTimeout(t *testing.T) {
 			if testing.Short() && !c.short {
 				t.Skip("not under -short")
 			}
-			vm, err := tifajs.NewVM()
+			vm, err := beastjs.NewVM()
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -79,7 +79,7 @@ func TestLongCallsStopAtEveryTimeout(t *testing.T) {
 			if strings.Contains(c.call, "arr") {
 				setup += "; " + arrSetup
 			}
-			if _, err := vm.Eval(setup, tifajs.EvalGlobal); err != nil {
+			if _, err := vm.Eval(setup, beastjs.EvalGlobal); err != nil {
 				t.Fatal(err)
 			}
 			stopsweep.Sweep(t, vm, c.call, c.n, 1<<16)

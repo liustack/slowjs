@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 package gen
 
@@ -122,9 +122,9 @@ type ckCase struct {
 }
 
 func TestCheckCases(t *testing.T) {
-	llvm := os.Getenv("TIFAJS_LLVM")
+	llvm := os.Getenv("BEASTJS_LLVM")
 	if llvm == "" {
-		t.Skip("set TIFAJS_LLVM")
+		t.Skip("set BEASTJS_LLVM")
 	}
 	// The helpers below edit fixed text: a miss is a mistake of the case,
 	// reported by a panic.

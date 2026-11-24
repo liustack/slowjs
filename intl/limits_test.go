@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package intl // import "github.com/liustack/tifajs/intl"
+package intl // import "github.com/liustack/beastjs/intl"
 
 import (
 	"errors"
@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/liustack/tifajs"
-	gointl "github.com/liustack/tifajs/internal/gointl"
-	"github.com/liustack/tifajs/internal/intlhook"
+	"github.com/liustack/beastjs"
+	gointl "github.com/liustack/beastjs/internal/gointl"
+	"github.com/liustack/beastjs/internal/intlhook"
 )
 
 // The work Intl does in Go for a script stays inside the limits of its VM:
@@ -25,7 +25,7 @@ import (
 // evalGuarded evaluates src on vm in a goroutine, and returns its result, its
 // error, what it panicked with and how long it took. A call that has not
 // returned by deadline fails the test.
-func evalGuarded(t *testing.T, vm *tifajs.VM, src string, deadline time.Duration) (res any, err error, pan any, elapsed time.Duration) {
+func evalGuarded(t *testing.T, vm *beastjs.VM, src string, deadline time.Duration) (res any, err error, pan any, elapsed time.Duration) {
 	t.Helper()
 	type out struct {
 		res any
@@ -40,7 +40,7 @@ func evalGuarded(t *testing.T, vm *tifajs.VM, src string, deadline time.Duration
 			o.pan = recover()
 			ch <- o
 		}()
-		o.res, o.err = vm.Eval(src, tifajs.EvalGlobal)
+		o.res, o.err = vm.Eval(src, beastjs.EvalGlobal)
 	}()
 	select {
 	case o := <-ch:
@@ -55,7 +55,7 @@ func evalGuarded(t *testing.T, vm *tifajs.VM, src string, deadline time.Duration
 // or as an interrupt when interrupted is set.
 func wantUncatchable(t *testing.T, err error, interrupted bool) {
 	t.Helper()
-	var e *tifajs.Error
+	var e *beastjs.Error
 	if !errors.As(err, &e) || !e.Uncatchable || e.Interrupted != interrupted || e.OutOfMemory == interrupted {
 		t.Fatalf("got %v (%#v), want the uncatchable error of %s", err, e, map[bool]string{false: "running out of memory", true: "an interrupt"}[interrupted])
 	}
@@ -108,23 +108,23 @@ func TestLongListTimeout(t *testing.T) {
 	}
 	for name, c := range map[string]struct {
 		js string
-		fn func(*tifajs.VM) (tifajs.Value, error)
+		fn func(*beastjs.VM) (beastjs.Value, error)
 	}{
 		"getCanonicalLocales": {js: `bridge.getCanonicalLocales(undefined, bridge._list)`},
 		"supportedLocalesOf":  {js: `bridge.supportedLocalesOf("NumberFormat", undefined, bridge._list)`},
-		"resolve": {fn: func(vm *tifajs.VM) (tifajs.Value, error) {
+		"resolve": {fn: func(vm *beastjs.VM) (beastjs.Value, error) {
 			_, err := goResolve(vm, gointl.ServiceNumberFormat, tags)
-			return tifajs.UndefinedValue, err
+			return beastjs.UndefinedValue, err
 		}},
-		"supported": {fn: func(vm *tifajs.VM) (tifajs.Value, error) {
+		"supported": {fn: func(vm *beastjs.VM) (beastjs.Value, error) {
 			_, err := goSupported(vm, gointl.ServiceNumberFormat, tags)
-			return tifajs.UndefinedValue, err
+			return beastjs.UndefinedValue, err
 		}},
-		"stringArray": {fn: func(vm *tifajs.VM) (tifajs.Value, error) { return intlhook.EmitStrings(vm, tags) }},
+		"stringArray": {fn: func(vm *beastjs.VM) (beastjs.Value, error) { return intlhook.EmitStrings(vm, tags) }},
 	} {
 		t.Run(name, func(t *testing.T) {
 			vm := newVM(t)
-			fns := map[string]*tifajs.Builtin{"work": intlhook.NewBuiltin("work", 0, func(a tifajs.Args) (tifajs.Value, error) {
+			fns := map[string]*beastjs.Builtin{"work": intlhook.NewBuiltin("work", 0, func(a beastjs.Args) (beastjs.Value, error) {
 				return c.fn(a.VM())
 			})}
 			for _, b := range bridge {
@@ -139,7 +139,7 @@ func TestLongListTimeout(t *testing.T) {
 				fns[n.(string)] = b
 				f.Free()
 			}
-			set, err := vm.EvalValue(`(name, f) => { (globalThis.bridge ??= {})[name] = f }`, tifajs.EvalGlobal)
+			set, err := vm.EvalValue(`(name, f) => { (globalThis.bridge ??= {})[name] = f }`, beastjs.EvalGlobal)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -149,13 +149,13 @@ func TestLongListTimeout(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				_, err = set.Call(tifajs.UndefinedValue, n, f)
+				_, err = set.Call(beastjs.UndefinedValue, n, f)
 				f.Free()
 				if err != nil {
 					t.Fatal(err)
 				}
 			}
-			if _, err := set.Call(tifajs.UndefinedValue, "_list", list.String()); err != nil {
+			if _, err := set.Call(beastjs.UndefinedValue, "_list", list.String()); err != nil {
 				t.Fatal(err)
 			}
 			js := c.js
@@ -208,16 +208,16 @@ func TestLongListFirstCheck(t *testing.T) {
 		return tags
 	}
 	short, long := tagsOf(8<<10), tagsOf(1<<20)
-	for name, fn := range map[string]func(vm *tifajs.VM, tags []string) error{
-		"getCanonicalLocales": func(vm *tifajs.VM, tags []string) error {
+	for name, fn := range map[string]func(vm *beastjs.VM, tags []string) error{
+		"getCanonicalLocales": func(vm *beastjs.VM, tags []string) error {
 			_, err := canonicalLocaleList(vm, tags)
 			return err
 		},
-		"resolve": func(vm *tifajs.VM, tags []string) error {
+		"resolve": func(vm *beastjs.VM, tags []string) error {
 			_, err := goResolve(vm, gointl.ServiceNumberFormat, tags)
 			return err
 		},
-		"supported": func(vm *tifajs.VM, tags []string) error {
+		"supported": func(vm *beastjs.VM, tags []string) error {
 			_, err := goSupported(vm, gointl.ServiceNumberFormat, tags)
 			return err
 		},
@@ -225,9 +225,9 @@ func TestLongListFirstCheck(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			vm := newVM(t)
 			var tags []string
-			b := intlhook.NewBuiltin("work", 0, func(a tifajs.Args) (tifajs.Value, error) {
+			b := intlhook.NewBuiltin("work", 0, func(a beastjs.Args) (beastjs.Value, error) {
 				a.VM().Interrupt()
-				return tifajs.UndefinedValue, fn(a.VM(), tags)
+				return beastjs.UndefinedValue, fn(a.VM(), tags)
 			})
 			f, err := vm.NewBuiltinFunction(b)
 			if err != nil {

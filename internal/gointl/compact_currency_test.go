@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"testing"
 
-	intl "github.com/liustack/tifajs/internal/gointl"
+	intl "github.com/liustack/beastjs/internal/gointl"
 )
 
 // A compact currency is written with CLDR's currency compact patterns, each

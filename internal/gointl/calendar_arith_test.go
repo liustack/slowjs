@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	intl "github.com/liustack/tifajs/internal/gointl"
+	intl "github.com/liustack/beastjs/internal/gointl"
 )
 
 // The arithmetic calendars across their era boundaries, where the sweep's

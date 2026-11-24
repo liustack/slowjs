@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	intl "github.com/liustack/tifajs/internal/gointl"
+	intl "github.com/liustack/beastjs/internal/gointl"
 )
 
 // TestSegmenterMatchesNode replays testdata/segmenter_node.js: sentences in

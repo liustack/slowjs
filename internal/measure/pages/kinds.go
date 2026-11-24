@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -89,8 +89,8 @@ func PageName(input string) string {
 	return strings.TrimSuffix(filepath.Base(input), ".json")
 }
 
-// Repo returns the root of the liustack/tifajs checkout: dir when it is not empty, else the
-// first folder from the working directory up whose go.mod is the module of tifajs.
+// Repo returns the root of the liustack/beastjs checkout: dir when it is not empty, else the
+// first folder from the working directory up whose go.mod is the module of beastjs.
 func Repo(dir string) (string, error) {
 	if dir != "" {
 		return filepath.Abs(dir)
@@ -101,12 +101,12 @@ func Repo(dir string) (string, error) {
 	}
 	for {
 		b, err := os.ReadFile(filepath.Join(d, "go.mod"))
-		if err == nil && bytes.HasPrefix(b, []byte("module github.com/liustack/tifajs\n")) {
+		if err == nil && bytes.HasPrefix(b, []byte("module github.com/liustack/beastjs\n")) {
 			return d, nil
 		}
 		up := filepath.Dir(d)
 		if up == d {
-			return "", fmt.Errorf("pages: no liustack/tifajs checkout above the working directory: pass -repo")
+			return "", fmt.Errorf("pages: no liustack/beastjs checkout above the working directory: pass -repo")
 		}
 		d = up
 	}

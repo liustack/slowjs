@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package intl // import "github.com/liustack/tifajs/intl"
+package intl // import "github.com/liustack/beastjs/intl"
 
 import (
 	"fmt"
@@ -11,7 +11,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/liustack/tifajs"
+	"github.com/liustack/beastjs"
 )
 
 // goIntlUses are objects of the constructors built on go-intl, made once and
@@ -89,7 +89,7 @@ func TestRegistryGoIntlConcurrent(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			vm, err := tifajs.NewVM()
+			vm, err := beastjs.NewVM()
 			if err != nil {
 				t.Error(err)
 				return
@@ -102,7 +102,7 @@ func TestRegistryGoIntlConcurrent(t *testing.T) {
 				return
 			}
 
-			if _, err := vm.Eval(goIntlHold(), tifajs.EvalGlobal); err != nil {
+			if _, err := vm.Eval(goIntlHold(), beastjs.EvalGlobal); err != nil {
 				t.Error(err)
 				return
 			}
@@ -112,7 +112,7 @@ func TestRegistryGoIntlConcurrent(t *testing.T) {
 					new Intl.NumberFormat('en', {minimumIntegerDigits: 1 + k %% 21, maximumFractionDigits: %d});
 				}
 				%s`, (g*20+i)%101, goIntlCheck())
-				if v, err := vm.Eval(src, tifajs.EvalGlobal); err != nil || v != "" {
+				if v, err := vm.Eval(src, beastjs.EvalGlobal); err != nil || v != "" {
 					t.Errorf("goroutine %d: %v %v", g, v, err)
 					return
 				}

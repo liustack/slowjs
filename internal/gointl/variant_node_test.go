@@ -15,7 +15,7 @@ import (
 	"time"
 	"unicode/utf16"
 
-	intl "github.com/liustack/tifajs/internal/gointl"
+	intl "github.com/liustack/beastjs/internal/gointl"
 )
 
 // TestVariantMatchesNode replays testdata/variant_node.js: every service

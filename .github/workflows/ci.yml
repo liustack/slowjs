@@ -92,7 +92,7 @@ jobs:
         run: CHECK_ONLY="gofmt docs tracked" scripts/check.sh fast
 
       - name: Test, packages other than the root
-        run: go test -count=1 -short -p 2 -timeout 60m $(go list ./... | grep -v '/tifajs$')
+        run: go test -count=1 -short -p 2 -timeout 60m $(go list ./... | grep -v '/beastjs$')
       - name: Test, internal packages with the test hooks
         run: go test -count=1 -timeout 60m -tags testhooks ./internal/cengine ./internal/gohost ./internal/hostmem ./internal/idtable
       - name: Test, the program that renders tifa's pages (a module of its own)

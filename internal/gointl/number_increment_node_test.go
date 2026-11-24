@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	intl "github.com/liustack/tifajs/internal/gointl"
+	intl "github.com/liustack/beastjs/internal/gointl"
 )
 
 // TestRoundingIncrementMatchesNode holds rounding to an increment to Node,

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/liustack/tifajs/internal/gointl"
+	"github.com/liustack/beastjs/internal/gointl"
 )
 
 var durationUnitNames = [intl.DurationUnits]string{"years", "months", "weeks", "days", "hours",

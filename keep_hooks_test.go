@@ -1,17 +1,17 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
 //go:build testhooks
 
-package tifajs
+package beastjs
 
 import (
 	"testing"
 
-	"github.com/liustack/tifajs/internal/gohost"
-	"github.com/liustack/tifajs/internal/hostmem"
+	"github.com/liustack/beastjs/internal/gohost"
+	"github.com/liustack/beastjs/internal/hostmem"
 )
 
 // keptVM is a VM with no memory limit that keeps a block of size bytes, at

@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -9,7 +9,7 @@ import "testing"
 
 // TestLeakedCounts: Leaked grows by the blocks a runtime still had in use
 // when Close freed it, and a VM that freed all moves it by nothing, so a test
-// of a package that only sees *tifajs.VM finds a leak of the engine.
+// of a package that only sees *beastjs.VM finds a leak of the engine.
 func TestLeakedCounts(t *testing.T) {
 	before := Leaked()
 	clean := newVM(t, Options{})

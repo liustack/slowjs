@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/liustack/tifajs/internal/gointl/internal/zonedata"
+	"github.com/liustack/beastjs/internal/gointl/internal/zonedata"
 )
 
 // What a locale calls a time zone.

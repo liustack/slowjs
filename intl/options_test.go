@@ -1,16 +1,16 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package intl // import "github.com/liustack/tifajs/intl"
+package intl // import "github.com/liustack/beastjs/intl"
 
 import (
 	"fmt"
 	"strings"
 	"testing"
 
-	"github.com/liustack/tifajs"
+	"github.com/liustack/beastjs"
 )
 
 // A number option is checked against its range before it is floored, as
@@ -41,7 +41,7 @@ func TestNumberOptionRange(t *testing.T) {
 	} {
 		vm := newVM(t)
 		js := fmt.Sprintf(`new Intl.%s('en', {%s: %s}).resolvedOptions().%[2]s`, c.ctor, c.option, c.value)
-		v, err := vm.Eval(js, tifajs.EvalGlobal)
+		v, err := vm.Eval(js, beastjs.EvalGlobal)
 		got := fmt.Sprint(v)
 		if err != nil {
 			got, _, _ = strings.Cut(err.Error(), ":")

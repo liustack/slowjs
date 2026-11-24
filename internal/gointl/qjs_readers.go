@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -13,7 +13,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/liustack/tifajs/internal/gointl/internal/qjspack"
+	"github.com/liustack/beastjs/internal/gointl/internal/qjspack"
 )
 
 // The packs only some loaders read. Each is referenced from one function,

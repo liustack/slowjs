@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package intl // import "github.com/liustack/tifajs/intl"
+package intl // import "github.com/liustack/beastjs/intl"
 
 import (
 	"fmt"
@@ -13,7 +13,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/liustack/tifajs"
+	"github.com/liustack/beastjs"
 )
 
 // The expected values in this file are Node 24.13's.
@@ -97,7 +97,7 @@ func TestRegistryConcurrent(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			vm, err := tifajs.NewVM()
+			vm, err := beastjs.NewVM()
 			if err != nil {
 				t.Error(err)
 				return
@@ -126,7 +126,7 @@ func TestRegistryConcurrent(t *testing.T) {
 				}
 				return bad.join(' ');
 			})()`, g)
-			v, err := vm.Eval(src, tifajs.EvalGlobal)
+			v, err := vm.Eval(src, beastjs.EvalGlobal)
 			if err != nil || v != "" {
 				t.Errorf("goroutine %d: %v %v", g, v, err)
 			}
@@ -303,7 +303,7 @@ func TestRegistryEviction(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			vm, err := tifajs.NewVM()
+			vm, err := beastjs.NewVM()
 			if err != nil {
 				t.Error(err)
 				return
@@ -316,7 +316,7 @@ func TestRegistryEviction(t *testing.T) {
 				return
 			}
 
-			if _, err := vm.Eval(fmt.Sprintf(`var g = %d, k = 0`, g), tifajs.EvalGlobal); err != nil {
+			if _, err := vm.Eval(fmt.Sprintf(`var g = %d, k = 0`, g), beastjs.EvalGlobal); err != nil {
 				t.Error(err)
 				return
 			}
@@ -324,7 +324,7 @@ func TestRegistryEviction(t *testing.T) {
 			for !stop.Load() {
 				if _, err := vm.Eval(`for (let i = 0; i < 50; i++, k++) {
 					new Intl.NumberFormat('en', {minimumIntegerDigits: 1 + k % 21, maximumFractionDigits: g * 25 + (k - k % 21) / 21 % 25});
-				}`, tifajs.EvalGlobal); err != nil {
+				}`, beastjs.EvalGlobal); err != nil {
 					t.Error(err)
 					return
 				}

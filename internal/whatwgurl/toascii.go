@@ -1,11 +1,11 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
 package whatwgurl
 
-import "github.com/liustack/tifajs/internal/whatwgurl/idna"
+import "github.com/liustack/beastjs/internal/whatwgurl/idna"
 
 // toASCII runs UTS #46 ToASCII as domain to ASCII asks for it, for a domain
 // of at most MaxDomainUnits once mapped and normalized.

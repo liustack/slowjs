@@ -3,7 +3,7 @@ package intl
 import (
 	"strings"
 
-	"github.com/liustack/tifajs/internal/gointl/internal/numdata"
+	"github.com/liustack/beastjs/internal/gointl/internal/numdata"
 )
 
 // Compact notation: 1234 as "1.2K", or "1.2 thousand".

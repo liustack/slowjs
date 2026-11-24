@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -59,12 +59,12 @@ import (
 //     stack check to the NOSPLIT list (MarkNoSplit), and nosplit_fault below
 //     holds the list itself and faults in a leaf without a stack check.
 //
-// It needs LLVM 22.1.8 (TIFAJS_LLVM), the pass (TIFAJS_SHADOW_PASS) and ld.lld
-// (TIFAJS_LLD), on linux/amd64.
+// It needs LLVM 22.1.8 (BEASTJS_LLVM), the pass (BEASTJS_SHADOW_PASS) and ld.lld
+// (BEASTJS_LLD), on linux/amd64.
 func TestSampleRuns(t *testing.T) {
-	llvm, pass, lld := os.Getenv("TIFAJS_LLVM"), os.Getenv("TIFAJS_SHADOW_PASS"), os.Getenv("TIFAJS_LLD")
+	llvm, pass, lld := os.Getenv("BEASTJS_LLVM"), os.Getenv("BEASTJS_SHADOW_PASS"), os.Getenv("BEASTJS_LLD")
 	if llvm == "" || pass == "" || lld == "" {
-		t.Skip("set TIFAJS_LLVM, TIFAJS_SHADOW_PASS and TIFAJS_LLD")
+		t.Skip("set BEASTJS_LLVM, BEASTJS_SHADOW_PASS and BEASTJS_LLD")
 	}
 	if runtime.GOOS != "linux" || runtime.GOARCH != "amd64" {
 		t.Skip("runs linux/amd64 code")

@@ -1,14 +1,14 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
 package datedata
 
-import "github.com/liustack/tifajs/internal/gointl/internal/blob"
+import "github.com/liustack/beastjs/internal/gointl/internal/blob"
 
 // Walk reads all of a locale's data, the calendars Decode leaves in the pool
-// included, so that the pack tool of liustack/tifajs learns which parts of the pool the
+// included, so that the pack tool of liustack/beastjs learns which parts of the pool the
 // locale reaches.
 func Walk(data []byte, pool blob.Shared) error {
 	l, err := Decode(data, pool)

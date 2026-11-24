@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -17,12 +17,12 @@ import (
 // before it does any work (a build that read 0 as on would be the mistake the
 // switch exists to show). A negative build over a fixture writes a package
 // that does not compile without the tag goasmnegative, and the next build
-// into the same folder removes the mark. It needs LLVM 22.1.8 (TIFAJS_LLVM),
-// the built pass (TIFAJS_SHADOW_PASS) and the go tool.
+// into the same folder removes the mark. It needs LLVM 22.1.8 (BEASTJS_LLVM),
+// the built pass (BEASTJS_SHADOW_PASS) and the go tool.
 func TestNegativeBuild(t *testing.T) {
-	llvm, pass := os.Getenv("TIFAJS_LLVM"), os.Getenv("TIFAJS_SHADOW_PASS")
+	llvm, pass := os.Getenv("BEASTJS_LLVM"), os.Getenv("BEASTJS_SHADOW_PASS")
 	if llvm == "" || pass == "" {
-		t.Skip("set TIFAJS_LLVM and TIFAJS_SHADOW_PASS")
+		t.Skip("set BEASTJS_LLVM and BEASTJS_SHADOW_PASS")
 	}
 	work := t.TempDir()
 	run := driverRunner(t, work, llvm, pass)

@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -24,7 +24,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/liustack/tifajs/internal/rvgen"
+	"github.com/liustack/beastjs/internal/rvgen"
 )
 
 func main() {

@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -30,8 +30,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/liustack/tifajs"
-	"github.com/liustack/tifajs/internal/cengine/cmd/scenarios"
+	"github.com/liustack/beastjs"
+	"github.com/liustack/beastjs/internal/cengine/cmd/scenarios"
 )
 
 type histo struct {
@@ -101,11 +101,11 @@ func main() {
 }
 
 func run(label, name, js string, n int, secs float64, gap time.Duration) error {
-	vms := make([]*tifajs.VM, n)
+	vms := make([]*beastjs.VM, n)
 	results := make([]error, n)
 	var wg sync.WaitGroup
 	for i := range vms {
-		m, err := tifajs.NewVM()
+		m, err := beastjs.NewVM()
 		if err != nil {
 			return err
 		}
@@ -113,7 +113,7 @@ func run(label, name, js string, n int, secs float64, gap time.Duration) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, results[i] = m.Eval(js, tifajs.EvalGlobal)
+			_, results[i] = m.Eval(js, beastjs.EvalGlobal)
 		}()
 	}
 	// Let the scripts get to their long operation.

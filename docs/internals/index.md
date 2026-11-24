@@ -1,15 +1,15 @@
 ---
-title: Working on tifajs
+title: Working on beastjs
 audience: dev
 order: 2
 ---
 
-# Working on tifajs
+# Working on beastjs
 
 For people who change the engine, its Go API or its tools.
 
 - [Architecture](architecture.md): the layers from the Go API down to the C engine, what each folder holds, the core types and their rules, and the platforms.
-- [Changes](changes/README.md): every change tifajs makes to the QuickJS C tree and to the Go API, by area, with its release and why it is safe.
+- [Changes](changes/README.md): every change beastjs makes to the QuickJS C tree and to the Go API, by area, with its release and why it is safe.
 - [Testing](testing.md): the checks to run before a commit, test262, the sanitizers, fuzzing, the render stress and what CI runs.
 - [Commit rules](commit.md): the message format, atomic commits and changes to the generated engine.
 - [Releasing](releasing.md): versions, tags, the release job and what follows a release.

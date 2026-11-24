@@ -6,7 +6,7 @@ import (
 	"slices"
 	"testing"
 
-	intl "github.com/liustack/tifajs/internal/gointl"
+	intl "github.com/liustack/beastjs/internal/gointl"
 )
 
 // heapSource answers with the same writable copy of the embedded data each

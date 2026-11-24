@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -12,14 +12,14 @@ import (
 	"slices"
 	"strings"
 
-	intl "github.com/liustack/tifajs/internal/gointl"
-	"github.com/liustack/tifajs/internal/gointl/internal/blob"
-	"github.com/liustack/tifajs/internal/gointl/internal/datedata"
-	"github.com/liustack/tifajs/internal/gointl/internal/layout"
-	"github.com/liustack/tifajs/internal/gointl/internal/namedata"
-	"github.com/liustack/tifajs/internal/gointl/internal/numdata"
-	"github.com/liustack/tifajs/internal/gointl/internal/rbnfdata"
-	"github.com/liustack/tifajs/internal/gointl/internal/zonedata"
+	intl "github.com/liustack/beastjs/internal/gointl"
+	"github.com/liustack/beastjs/internal/gointl/internal/blob"
+	"github.com/liustack/beastjs/internal/gointl/internal/datedata"
+	"github.com/liustack/beastjs/internal/gointl/internal/layout"
+	"github.com/liustack/beastjs/internal/gointl/internal/namedata"
+	"github.com/liustack/beastjs/internal/gointl/internal/numdata"
+	"github.com/liustack/beastjs/internal/gointl/internal/rbnfdata"
+	"github.com/liustack/beastjs/internal/gointl/internal/zonedata"
 )
 
 // chromiumResources selects resources from the same go-intl models the runtime

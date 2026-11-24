@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/liustack/tifajs/internal/gointl"
+	"github.com/liustack/beastjs/internal/gointl"
 )
 
 // TestCanonicalizeMatchesNode replays testdata/canonical_node.js: every alias

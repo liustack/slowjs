@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package tifajs // import "github.com/liustack/tifajs"
+package beastjs // import "github.com/liustack/beastjs"
 
 import (
 	"errors"
@@ -41,7 +41,7 @@ type SharedBytecode struct {
 }
 
 // errSharedClosed is the error of loading a SharedBytecode after its Close.
-var errSharedClosed = errors.New("tifajs: the shared bytecode is closed")
+var errSharedClosed = errors.New("beastjs: the shared bytecode is closed")
 
 // NewSharedBytecode copies bytecode, which [VM.Compile] returned, once, for
 // VMs to load with [VM.EvalSharedBytecode]. As with [VM.EvalBytecode], the

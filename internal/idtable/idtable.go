@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -7,7 +7,7 @@
 // the host on every callback, and finds a thing by its id with two atomic
 // reads and no lock: callbacks of VMs on many goroutines do not wait for each
 // other, and do not write to memory they share.
-package idtable // import "github.com/liustack/tifajs/internal/idtable"
+package idtable // import "github.com/liustack/beastjs/internal/idtable"
 
 import (
 	"fmt"

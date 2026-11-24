@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package tifajs // import "github.com/liustack/tifajs"
+package beastjs // import "github.com/liustack/beastjs"
 
 import (
 	"fmt"
@@ -90,7 +90,7 @@ func (t *textCut) take(m *VM, n int) bool {
 // UnhandledRejections called from javascript that a read of the rejections
 // runs.
 func errReadingRejections(name string) error {
-	return fmt.Errorf("tifajs: %s: called while UnhandledRejections reads the rejections", name)
+	return fmt.Errorf("beastjs: %s: called while UnhandledRejections reads the rejections", name)
 }
 
 func (m *VM) TrackRejections(max int) (err error) {
@@ -98,7 +98,7 @@ func (m *VM) TrackRejections(max int) (err error) {
 		return errReadingRejections("TrackRejections")
 	}
 	if max < 0 || max > MaxTrackedRejections {
-		return fmt.Errorf("tifajs: TrackRejections(%d): max is from 0 to %d", max, MaxTrackedRejections)
+		return fmt.Errorf("beastjs: TrackRejections(%d): max is from 0 to %d", max, MaxTrackedRejections)
 	}
 	if err = m.enter(); err != nil {
 		return err

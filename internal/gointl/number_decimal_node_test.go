@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	intl "github.com/liustack/tifajs/internal/gointl"
+	intl "github.com/liustack/beastjs/internal/gointl"
 )
 
 // TestNumberDecimalMatchesNode holds FormatDecimal to what Node writes for

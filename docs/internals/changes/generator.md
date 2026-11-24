@@ -135,7 +135,7 @@ Known and open in this release. Each is a follow-up.
 
 - `engine/pgo/train.sh` trains the profile. It builds the host as the generator compiles the engine, so the hash of each function in the profile matches the one the generator sees. It stops when `engine/pgo/loops.js` runs less than 95% of the paths the pages leave cold and the micro benchmarks run, or when a part of the loops no longer reaches its function (`engine/pgo/cover.awk`).
 - `TestInlineRemarks`, `TestStripCGProfile`, `TestProfileNames`, `TestUnprofiledFunctions`, `TestStaleWarnings` and `TestMisexpectLines` (`internal/goasm/gen/pgo_test.go`) check the notes of the first pass, the module flag, the names in the profile, which functions have none and the warnings.
-- `TestPassPollsProfile` (`internal/goasm/gen/poll_test.go`, needs `TIFAJS_LLVM` and `TIFAJS_SHADOW_PASS`) checks that the poll pass chooses the place of a counter as it does without a profile, also when a weight of the profile has the numbers of the pass's own rare branches.
+- `TestPassPollsProfile` (`internal/goasm/gen/poll_test.go`, needs `BEASTJS_LLVM` and `BEASTJS_SHADOW_PASS`) checks that the poll pass chooses the place of a counter as it does without a profile, also when a weight of the profile has the numbers of the pass's own rare branches.
 - `TestLowerARM64EngineLRTuplePaths` (`internal/goasm/gen`) checks the extended proof on arm64.
 - `scripts/check-gen-test.sh` checks that `scripts/check-gen.sh` always shows the profile lines. It runs in the `scripts` step of `scripts/check.sh`.
 - `go run ./cmd/notices` in `compare/engines` makes the notices of the packages in the bundles of the training (`TestGeneratePages`).

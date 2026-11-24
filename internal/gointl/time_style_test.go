@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	intl "github.com/liustack/tifajs/internal/gointl"
+	intl "github.com/liustack/beastjs/internal/gointl"
 )
 
 // A time style is made afresh by the pattern generator, from "jmmss" and its

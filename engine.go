@@ -1,11 +1,11 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
 //go:build (((linux && !android) || (darwin && !ios)) && (amd64 || arm64)) || (windows && (amd64 || arm64))
 
-package tifajs // import "github.com/liustack/tifajs"
+package beastjs // import "github.com/liustack/beastjs"
 
 // The C engine of internal/cengine, as the rest of the package sees it: the
 // engine's generated functions, with the names the rest of the package uses. A
@@ -22,8 +22,8 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/liustack/tifajs/internal/cengine"
-	"github.com/liustack/tifajs/internal/gohost"
+	"github.com/liustack/beastjs/internal/cengine"
+	"github.com/liustack/beastjs/internal/gohost"
 )
 
 // jsValue is a JSValue of the engine: its union and its tag, a word each.
@@ -1172,7 +1172,7 @@ const maxValues = math.MaxInt32
 // a test.
 func valuesFit(have, n, max int) error {
 	if n > max-have {
-		return fmt.Errorf("tifajs: %d values, the engine takes at most %d", n, max)
+		return fmt.Errorf("beastjs: %d values, the engine takes at most %d", n, max)
 	}
 	return nil
 }
@@ -1351,7 +1351,7 @@ func (m *VM) newStringChars(n int, wide bool) (r jsValue, p uintptr) {
 		return r, p
 	}
 	if n < 0 || n > stringLenMax {
-		panic("tifajs: newStringChars of a length the engine cannot hold")
+		panic("beastjs: newStringChars of a length the engine cannot hold")
 	}
 	w := uintptr(0)
 	if wide {
@@ -1439,7 +1439,7 @@ func (m *VM) jsThrowError(kind int, msg string) (r jsValue) {
 		return r
 	}
 	if kind < 0 || kind >= len(errorKinds) {
-		panic(fmt.Sprintf("tifajs: an error of kind %d", kind))
+		panic(fmt.Sprintf("beastjs: an error of kind %d", kind))
 	}
 	msg = validUTF8(msg)
 	if len(msg) > maxErrorMessage {

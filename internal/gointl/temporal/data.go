@@ -3,7 +3,7 @@ package temporal
 import (
 	"fmt"
 
-	intl "github.com/liustack/tifajs/internal/gointl"
+	intl "github.com/liustack/beastjs/internal/gointl"
 )
 
 // Data is what Temporal reckons with, read once from a source: every

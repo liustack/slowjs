@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -22,11 +22,11 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/liustack/tifajs"
-	"github.com/liustack/tifajs/intl"
-	"github.com/liustack/tifajs/temporal"
-	"github.com/liustack/tifajs/tifa"
-	"github.com/liustack/tifajs/url"
+	"github.com/liustack/beastjs"
+	"github.com/liustack/beastjs/intl"
+	"github.com/liustack/beastjs/temporal"
+	"github.com/liustack/beastjs/tifa"
+	"github.com/liustack/beastjs/url"
 )
 
 // Mode is how a VM is set up.
@@ -121,8 +121,8 @@ func (s Setup) Describe(limit uintptr, timeout time.Duration) string {
 
 // NewVM makes a VM of the setup, ready for its preludes and its bundle: limit is the memory
 // limit (0 for none), timeout the eval timeout of the tifa mode.
-func (s Setup) NewVM(limit uintptr, timeout time.Duration) (vm *tifajs.VM, err error) {
-	vm, err = tifajs.NewVM()
+func (s Setup) NewVM(limit uintptr, timeout time.Duration) (vm *beastjs.VM, err error) {
+	vm, err = beastjs.NewVM()
 	if err != nil {
 		return nil, err
 	}

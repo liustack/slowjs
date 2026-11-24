@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/liustack/tifajs/internal/gointl"
+	"github.com/liustack/beastjs/internal/gointl"
 )
 
 // A locale ICU opens another bundle for is written from that bundle, per

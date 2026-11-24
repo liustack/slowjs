@@ -5,7 +5,7 @@ package intl_test
 import (
 	"testing"
 
-	intl "github.com/liustack/tifajs/internal/gointl"
+	intl "github.com/liustack/beastjs/internal/gointl"
 )
 
 // A unit's or currency's name takes the plural of the number as written:

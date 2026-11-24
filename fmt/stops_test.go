@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package fmt // import "github.com/liustack/tifajs/fmt"
+package fmt // import "github.com/liustack/beastjs/fmt"
 
 import (
 	"errors"
@@ -12,8 +12,8 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/liustack/tifajs"
-	"github.com/liustack/tifajs/internal/vmhook"
+	"github.com/liustack/beastjs"
+	"github.com/liustack/beastjs/internal/vmhook"
 )
 
 // The output of fmt, which a script can make long, is made and written a
@@ -28,7 +28,7 @@ const bytesPerStop = 1 << 16
 // countStops evaluates src on vm and returns how many times it read
 // vmhook.Stop. The tests that call it do not run in parallel, so no other
 // call reads vmhook.Stop.
-func countStops(t *testing.T, vm *tifajs.VM, src string) (int, error) {
+func countStops(t *testing.T, vm *beastjs.VM, src string) (int, error) {
 	t.Helper()
 	n := 0
 	stop := vmhook.Stop
@@ -37,14 +37,14 @@ func countStops(t *testing.T, vm *tifajs.VM, src string) (int, error) {
 		return stop(vm)
 	}
 	defer func() { vmhook.Stop = stop }()
-	_, err := vm.Eval("(function () { "+src+"; })(); 0", tifajs.EvalGlobal)
+	_, err := vm.Eval("(function () { "+src+"; })(); 0", beastjs.EvalGlobal)
 	return n, err
 }
 
 // refused reports whether err is a RangeError a script can catch or the end
 // of the call for want of memory.
 func refused(err error) bool {
-	var e *tifajs.Error
+	var e *beastjs.Error
 	return errors.As(err, &e) && (!e.Uncatchable && e.Name == "RangeError" || e.Uncatchable && e.OutOfMemory)
 }
 
@@ -57,7 +57,7 @@ func TestSprintfNoLimitStops(t *testing.T) {
 	const n = 256 << 10
 	const out = 16 * 4 * n
 	vm := newVM(t)
-	if _, err := vm.Eval(`var s = '\x01'.repeat(262144); 0`, tifajs.EvalGlobal); err != nil {
+	if _, err := vm.Eval(`var s = '\x01'.repeat(262144); 0`, beastjs.EvalGlobal); err != nil {
 		t.Fatal(err)
 	}
 	stops, err := countStops(t, vm, `fmt.sprintf('%[1]q'.repeat(16), s)`)
@@ -106,7 +106,7 @@ func TestPrintlnWritesInPieces(t *testing.T) {
 
 // interrupter is a writer that interrupts its VM at its write number at.
 type interrupter struct {
-	vm     *tifajs.VM
+	vm     *beastjs.VM
 	at     int
 	writes int
 	n      int
@@ -125,7 +125,7 @@ func (w *interrupter) Write(p []byte) (int, error) {
 // os.Stdout, 64 KiB at a time, and end the call at the interrupt that came
 // during a write, before the next one.
 func TestWriterInterrupted(t *testing.T) {
-	vm, err := tifajs.NewVM()
+	vm, err := beastjs.NewVM()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,8 +138,8 @@ func TestWriterInterrupted(t *testing.T) {
 	}
 	for _, js := range []string{`fmt.println('x'.repeat(4194304))`, `fmt.printf('%s', 'x'.repeat(4194304))`} {
 		w.writes, w.n = 0, 0
-		_, err := vm.Eval(js, tifajs.EvalGlobal)
-		var e *tifajs.Error
+		_, err := vm.Eval(js, beastjs.EvalGlobal)
+		var e *beastjs.Error
 		if !errors.As(err, &e) || !e.Interrupted {
 			t.Errorf("%s: got %v, want the interrupt", js, err)
 		}
@@ -148,7 +148,7 @@ func TestWriterInterrupted(t *testing.T) {
 		}
 	}
 	w.writes, w.n = 0, 0
-	if v, err := vm.Eval(`fmt.printf('%d|', 42)`, tifajs.EvalGlobal); err != nil || w.n != 3 {
+	if v, err := vm.Eval(`fmt.printf('%d|', 42)`, beastjs.EvalGlobal); err != nil || w.n != 3 {
 		t.Errorf("printf after the interrupt: %v, %v, %d bytes", v, err, w.n)
 	}
 }
@@ -173,7 +173,7 @@ func TestLongVerbsStop(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", c.format, err)
 		}
-		if got, err := vm.Eval("got", tifajs.EvalGlobal); err != nil || got != c.want {
+		if got, err := vm.Eval("got", beastjs.EvalGlobal); err != nil || got != c.want {
 			t.Errorf("sprintf(%s) is %v, %v, want %q", c.format, got, err, c.want)
 		}
 		if stops < 2*n/bytesPerStop {

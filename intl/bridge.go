@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package intl // import "github.com/liustack/tifajs/intl"
+package intl // import "github.com/liustack/beastjs/intl"
 
 import (
 	"encoding/json"
@@ -15,9 +15,9 @@ import (
 	"unicode/utf8"
 	"unsafe"
 
-	"github.com/liustack/tifajs"
-	gointl "github.com/liustack/tifajs/internal/gointl"
-	"github.com/liustack/tifajs/internal/intlhook"
+	"github.com/liustack/beastjs"
+	gointl "github.com/liustack/beastjs/internal/gointl"
+	"github.com/liustack/beastjs/internal/intlhook"
 )
 
 // The bridge between intl.js and the formatters.
@@ -312,7 +312,7 @@ var optionLists = func() string {
 
 // key appends the request key of the arguments a, which tells two requests
 // apart exactly when the arguments differ.
-func (c *ctor) key(b []byte, a tifajs.Args, door *intlhook.Door) ([]byte, error) {
+func (c *ctor) key(b []byte, a beastjs.Args, door *intlhook.Door) ([]byte, error) {
 	b = append(b, c.tag)
 	n := len(c.fixed) + 2 + len(c.options)
 	for i := range n {
@@ -350,7 +350,7 @@ func (c *ctor) key(b []byte, a tifajs.Args, door *intlhook.Door) ([]byte, error)
 }
 
 // request returns the request the arguments a make.
-func (c *ctor) request(a tifajs.Args, door *intlhook.Door) (request, error) {
+func (c *ctor) request(a beastjs.Args, door *intlhook.Door) (request, error) {
 	req := request{Options: map[string]any{}, vm: a.VM()}
 	for i, name := range c.fixed {
 		s, _ := door.Short(i, intlhook.KindOption)
@@ -402,7 +402,7 @@ func (c *ctor) request(a tifajs.Args, door *intlhook.Door) (request, error) {
 // canonicalLocaleList is Intl.getCanonicalLocales of tags: each canonical tag
 // once, in the order of its first time. It is for a Builtin of vm, which a
 // long list stops at the eval timeout or Interrupt (see tagTurns).
-func canonicalLocaleList(vm *tifajs.VM, tags []string) ([]string, error) {
+func canonicalLocaleList(vm *beastjs.VM, tags []string) ([]string, error) {
 	// seen grows with the tags gone through, as in goLocales.
 	r := []string{}
 	seen := map[string]bool{}
@@ -422,7 +422,7 @@ func canonicalLocaleList(vm *tifajs.VM, tags []string) ([]string, error) {
 	return r, nil
 }
 
-func splitLocales(vm *tifajs.VM, s string) ([]string, bool) {
+func splitLocales(vm *beastjs.VM, s string) ([]string, bool) {
 	r := []string{}
 	t := tagTurns{vm: vm}
 	for s != "" {
@@ -472,29 +472,29 @@ func splitLocales(vm *tifajs.VM, s string) ([]string, bool) {
 
 // resolveBuiltin returns the Builtin resolving the arguments of a new c into
 // the id of its formatter.
-func resolveBuiltin(c *ctor) *tifajs.Builtin {
-	return intlhook.NewBuiltin(c.name, 0, func(a tifajs.Args) (tifajs.Value, error) {
+func resolveBuiltin(c *ctor) *beastjs.Builtin {
+	return intlhook.NewBuiltin(c.name, 0, func(a beastjs.Args) (beastjs.Value, error) {
 		door := intlhook.Open(a)
 		var buf [256]byte
 		key, err := c.key(buf[:0], a, &door)
 		if err != nil {
-			return tifajs.Value{}, err
+			return beastjs.Value{}, err
 		}
 
 		e := formatters.lookup(key)
 		if e == nil {
 			req, err := c.request(a, &door)
 			if err != nil {
-				return tifajs.Value{}, err
+				return beastjs.Value{}, err
 			}
 
 			f, err := c.resolve(req)
 			if err != nil {
-				return tifajs.Value{}, jsErr(err)
+				return beastjs.Value{}, jsErr(err)
 			}
 
 			if e, err = formatters.add(key, f); err != nil {
-				return tifajs.Value{}, jsErr(err)
+				return beastjs.Value{}, jsErr(err)
 			}
 		}
 		// Ids go past 2^31, which an int of 32 bits does not hold.
@@ -505,7 +505,7 @@ func resolveBuiltin(c *ctor) *tifajs.Builtin {
 // formatterOf returns the formatter whose id is argument 0 of a, and false
 // when the registry has dropped it: javascript then resolves it again and
 // repeats the call.
-func formatterOf[T formatter](a tifajs.Args) (f T, ok bool, err error) {
+func formatterOf[T formatter](a beastjs.Args) (f T, ok bool, err error) {
 	id, _ := a.Number(0)
 	e := formatters.entry(id)
 	if e == nil {
@@ -520,7 +520,7 @@ func formatterOf[T formatter](a tifajs.Args) (f T, ok bool, err error) {
 }
 
 // numberArg returns argument i of a, a number or a numeric string.
-func numberArg(a tifajs.Args, door *intlhook.Door, i int) any {
+func numberArg(a beastjs.Args, door *intlhook.Door, i int) any {
 	if f, ok := a.Number(i); ok {
 		// An integer goes on as one, as the engine tags most of them, which
 		// is faster to format and exact.
@@ -539,69 +539,69 @@ func numberArg(a tifajs.Args, door *intlhook.Door, i int) any {
 }
 
 // The Builtins intl.js is made with, in the order of its parameters.
-var bridge = []*tifajs.Builtin{
+var bridge = []*beastjs.Builtin{
 	resolveBuiltin(numberFormatCtor),
-	intlhook.NewBuiltin("format", 3, func(a tifajs.Args) (tifajs.Value, error) {
+	intlhook.NewBuiltin("format", 3, func(a beastjs.Args) (beastjs.Value, error) {
 		return numberFormatted(a, false)
 	}),
-	intlhook.NewBuiltin("formatToParts", 3, func(a tifajs.Args) (tifajs.Value, error) {
+	intlhook.NewBuiltin("formatToParts", 3, func(a beastjs.Args) (beastjs.Value, error) {
 		return numberFormatted(a, true)
 	}),
-	intlhook.NewBuiltin("formatRange", 5, func(a tifajs.Args) (tifajs.Value, error) {
+	intlhook.NewBuiltin("formatRange", 5, func(a beastjs.Args) (beastjs.Value, error) {
 		return numberRangeFormatted(a, false)
 	}),
-	intlhook.NewBuiltin("formatRangeToParts", 5, func(a tifajs.Args) (tifajs.Value, error) {
+	intlhook.NewBuiltin("formatRangeToParts", 5, func(a beastjs.Args) (beastjs.Value, error) {
 		return numberRangeFormatted(a, true)
 	}),
 	resolveBuiltin(dateTimeFormatCtor),
-	intlhook.NewBuiltin("format", 2, func(a tifajs.Args) (tifajs.Value, error) {
+	intlhook.NewBuiltin("format", 2, func(a beastjs.Args) (beastjs.Value, error) {
 		return dateFormatted(a, false)
 	}),
-	intlhook.NewBuiltin("formatToParts", 2, func(a tifajs.Args) (tifajs.Value, error) {
+	intlhook.NewBuiltin("formatToParts", 2, func(a beastjs.Args) (beastjs.Value, error) {
 		return dateFormatted(a, true)
 	}),
 	resolveBuiltin(pluralRulesCtor),
-	intlhook.NewBuiltin("select", 2, func(a tifajs.Args) (tifajs.Value, error) {
+	intlhook.NewBuiltin("select", 2, func(a beastjs.Args) (beastjs.Value, error) {
 		door := intlhook.Open(a)
 		p, ok, err := formatterOf[*pluralFormat](a)
 		if !ok {
-			return tifajs.UndefinedValue, err
+			return beastjs.UndefinedValue, err
 		}
 
 		return intlhook.Emit(a.VM(), p.selectNumber(numberArg(a, &door, 1)))
 	}),
-	intlhook.NewBuiltin("selectRange", 3, func(a tifajs.Args) (tifajs.Value, error) {
+	intlhook.NewBuiltin("selectRange", 3, func(a beastjs.Args) (beastjs.Value, error) {
 		door := intlhook.Open(a)
 		p, ok, err := formatterOf[*pluralFormat](a)
 		if !ok {
-			return tifajs.UndefinedValue, err
+			return beastjs.UndefinedValue, err
 		}
 
 		return intlhook.Emit(a.VM(), p.selectRange(numberArg(a, &door, 1), numberArg(a, &door, 2)))
 	}),
-	intlhook.NewBuiltin("resolvedOptions", 1, func(a tifajs.Args) (tifajs.Value, error) {
+	intlhook.NewBuiltin("resolvedOptions", 1, func(a beastjs.Args) (beastjs.Value, error) {
 		id, _ := a.Number(0)
 		e := formatters.entry(id)
 		if e == nil {
-			return tifajs.UndefinedValue, nil
+			return beastjs.UndefinedValue, nil
 		}
 
 		return intlhook.Emit(a.VM(), e.options)
 	}),
-	intlhook.NewBuiltin("getCanonicalLocales", 2, func(a tifajs.Args) (tifajs.Value, error) {
+	intlhook.NewBuiltin("getCanonicalLocales", 2, func(a beastjs.Args) (beastjs.Value, error) {
 		door := intlhook.Open(a)
 		tags, err := localesArg(a, &door, 0)
 		if err != nil {
-			return tifajs.Value{}, err
+			return beastjs.Value{}, err
 		}
 
 		r, err := canonicalLocaleList(a.VM(), tags)
 		if err != nil {
-			return tifajs.Value{}, jsErr(err)
+			return beastjs.Value{}, jsErr(err)
 		}
 		return intlhook.EmitStrings(a.VM(), r)
 	}),
-	intlhook.NewBuiltin("supportedLocalesOf", 3, func(a tifajs.Args) (tifajs.Value, error) {
+	intlhook.NewBuiltin("supportedLocalesOf", 3, func(a beastjs.Args) (beastjs.Value, error) {
 		door := intlhook.Open(a)
 		name, _ := door.Short(0, intlhook.KindOption)
 		var c *ctor
@@ -611,27 +611,27 @@ var bridge = []*tifajs.Builtin{
 			}
 		}
 		if c == nil {
-			return tifajs.Value{}, errors.New("intl: internal error: no constructor " + name)
+			return beastjs.Value{}, errors.New("intl: internal error: no constructor " + name)
 		}
 
 		tags, err := localesArg(a, &door, 1)
 		if err != nil {
-			return tifajs.Value{}, err
+			return beastjs.Value{}, err
 		}
 
 		r, err := goSupported(a.VM(), c.goSvc, tags)
 		if err != nil {
-			return tifajs.Value{}, jsErr(err)
+			return beastjs.Value{}, jsErr(err)
 		}
 
 		return intlhook.EmitStrings(a.VM(), r)
 	}),
 	resolveBuiltin(collatorCtor),
-	intlhook.NewBuiltin("compare", 3, func(a tifajs.Args) (tifajs.Value, error) {
+	intlhook.NewBuiltin("compare", 3, func(a beastjs.Args) (beastjs.Value, error) {
 		door := intlhook.Open(a)
 		c, ok, err := formatterOf[*collator](a)
 		if !ok {
-			return tifajs.UndefinedValue, err
+			return beastjs.UndefinedValue, err
 		}
 
 		// go-intl weighs a lone surrogate by its code point, as ICU does, so
@@ -659,34 +659,34 @@ var bridge = []*tifajs.Builtin{
 	// rtfFormat and rtfParts take the value, a number, and the unit, a
 	// string. The parts are their type, value and unit in turn, the unit
 	// empty for the text around the number.
-	intlhook.NewBuiltin("rtfFormat", 3, func(a tifajs.Args) (tifajs.Value, error) {
+	intlhook.NewBuiltin("rtfFormat", 3, func(a beastjs.Args) (beastjs.Value, error) {
 		door := intlhook.Open(a)
 		f, ok, err := formatterOf[*relativeTimeFormat](a)
 		if !ok {
-			return tifajs.UndefinedValue, err
+			return beastjs.UndefinedValue, err
 		}
 
 		v, _ := a.Number(1)
 		u, _ := door.Short(2, intlhook.KindOption)
 		unit, err := f.unit(v, u)
 		if err != nil {
-			return tifajs.Value{}, jsErr(err)
+			return beastjs.Value{}, jsErr(err)
 		}
 
 		return intlhook.Emit(a.VM(), f.f.Format(v, unit))
 	}),
-	intlhook.NewBuiltin("rtfParts", 3, func(a tifajs.Args) (tifajs.Value, error) {
+	intlhook.NewBuiltin("rtfParts", 3, func(a beastjs.Args) (beastjs.Value, error) {
 		door := intlhook.Open(a)
 		f, ok, err := formatterOf[*relativeTimeFormat](a)
 		if !ok {
-			return tifajs.UndefinedValue, err
+			return beastjs.UndefinedValue, err
 		}
 
 		v, _ := a.Number(1)
 		u, _ := door.Short(2, intlhook.KindOption)
 		unit, err := f.unit(v, u)
 		if err != nil {
-			return tifajs.Value{}, jsErr(err)
+			return beastjs.Value{}, jsErr(err)
 		}
 
 		parts := f.f.FormatToParts(v, unit)
@@ -704,18 +704,18 @@ var bridge = []*tifajs.Builtin{
 	// intl.js writes the list from them, so that Go holds nothing for each
 	// item: a list of the items and of the parts of 8 Mi items took 1.8 GiB
 	// of Go, made and grown whole with no check.
-	intlhook.NewBuiltin("lfLiterals", 3, func(a tifajs.Args) (tifajs.Value, error) {
+	intlhook.NewBuiltin("lfLiterals", 3, func(a beastjs.Args) (beastjs.Value, error) {
 		door := intlhook.Open(a)
 		f, ok, err := formatterOf[*listFormat](a)
 		if !ok {
-			return tifajs.UndefinedValue, err
+			return beastjs.UndefinedValue, err
 		}
 
 		n, _ := a.Number(1)
 		head, _ := door.ShortWTF8(2, intlhook.KindOption)
 		lits, contextual, ok := f.f.Literals(int(n), head)
 		if !ok {
-			return tifajs.Value{}, errors.New("intl: internal error: a list pattern with {1} before {0}")
+			return beastjs.Value{}, errors.New("intl: internal error: a list pattern with {1} before {0}")
 		}
 
 		return intlhook.EmitStringsAs(a.VM(), append([]string{""}, lits...), func(i int, _ string) (int, bool) {
@@ -730,18 +730,18 @@ var bridge = []*tifajs.Builtin{
 	}),
 	resolveBuiltin(displayNamesCtor),
 	// dnOf answers the name, or the number 0 for none.
-	intlhook.NewBuiltin("dnOf", 2, func(a tifajs.Args) (tifajs.Value, error) {
+	intlhook.NewBuiltin("dnOf", 2, func(a beastjs.Args) (beastjs.Value, error) {
 		door := intlhook.Open(a)
 		d, ok, err := formatterOf[*displayNames](a)
 		if !ok {
-			return tifajs.UndefinedValue, err
+			return beastjs.UndefinedValue, err
 		}
 
 		code, _ := door.Short(1, intlhook.KindOption)
 		name, ok, err := d.of(code)
 		switch {
 		case err != nil:
-			return tifajs.Value{}, jsErr(err)
+			return beastjs.Value{}, jsErr(err)
 		case !ok:
 			return a.VM().NewInt(0), nil
 		}
@@ -752,23 +752,23 @@ var bridge = []*tifajs.Builtin{
 	// string, and true for fields. The parts are their type, value and
 	// unit in turn, the unit empty for the list's own text.
 	durationFormatBuiltin,
-	intlhook.NewBuiltin("dfParts", 3, func(a tifajs.Args) (tifajs.Value, error) {
+	intlhook.NewBuiltin("dfParts", 3, func(a beastjs.Args) (beastjs.Value, error) {
 		door := intlhook.Open(a)
 		f, ok, err := formatterOf[*durationFormat](a)
 		if !ok {
-			return tifajs.UndefinedValue, err
+			return beastjs.UndefinedValue, err
 		}
 
 		s, _ := door.ShortWTF8(1, intlhook.KindTemporal)
 		fields, _ := a.Bool(2)
 		d, err := durationOf(s, fields)
 		if err != nil {
-			return tifajs.Value{}, jsErr(err)
+			return beastjs.Value{}, jsErr(err)
 		}
 
 		parts, err := f.f.FormatToParts(d)
 		if err != nil {
-			return tifajs.Value{}, jsErr(rangeError("%s", err))
+			return beastjs.Value{}, jsErr(rangeError("%s", err))
 		}
 
 		l := make([]string, 0, 3*len(parts))
@@ -778,36 +778,36 @@ var bridge = []*tifajs.Builtin{
 		return intlhook.EmitStrings(a.VM(), l)
 	}),
 	// supportedValuesOf answers a new array of the list of the key.
-	intlhook.NewBuiltin("supportedValuesOf", 1, func(a tifajs.Args) (tifajs.Value, error) {
+	intlhook.NewBuiltin("supportedValuesOf", 1, func(a beastjs.Args) (beastjs.Value, error) {
 		door := intlhook.Open(a)
 		key, _ := door.Short(0, intlhook.KindOption)
 		values, err := supportedValues()
 		if err != nil {
-			return tifajs.Value{}, err
+			return beastjs.Value{}, err
 		}
 
 		l, ok := values[key]
 		if !ok {
-			return tifajs.Value{}, jsErr(rangeError("Invalid key : %s", key))
+			return beastjs.Value{}, jsErr(rangeError("Invalid key : %s", key))
 		}
 
 		return intlhook.EmitStrings(a.VM(), l)
 	}),
 	// localeCheck throws the RangeError of Intl.Locale for its tag or one of
 	// the options checkLocale checks.
-	intlhook.NewBuiltin("localeCheck", 2, func(a tifajs.Args) (tifajs.Value, error) {
+	intlhook.NewBuiltin("localeCheck", 2, func(a beastjs.Args) (beastjs.Value, error) {
 		door := intlhook.Open(a)
 		kind, _ := door.Short(0, intlhook.KindOption)
 		s, _ := door.Short(1, localeCheckKind(kind))
 		if err := checkLocale(kind, s); err != nil {
-			return tifajs.Value{}, jsErr(err)
+			return beastjs.Value{}, jsErr(err)
 		}
 
-		return tifajs.UndefinedValue, nil
+		return beastjs.UndefinedValue, nil
 	}),
 	// localeNew takes the tag and the options of Intl.Locale, each a string
 	// or undefined, and answers the json of the new Locale's slots.
-	intlhook.NewBuiltin("localeNew", 1+locOptions, func(a tifajs.Args) (tifajs.Value, error) {
+	intlhook.NewBuiltin("localeNew", 1+locOptions, func(a beastjs.Args) (beastjs.Value, error) {
 		door := intlhook.Open(a)
 		tag, _ := door.Short(0, intlhook.KindTag)
 		var opts [locOptions]*string
@@ -818,12 +818,12 @@ var bridge = []*tifajs.Builtin{
 		}
 		r, err := newLocale(tag, &opts)
 		if err != nil {
-			return tifajs.Value{}, jsErr(err)
+			return beastjs.Value{}, jsErr(err)
 		}
 
 		s, err := localeJSON(r)
 		if err != nil {
-			return tifajs.Value{}, err
+			return beastjs.Value{}, err
 		}
 
 		return intlhook.Emit(a.VM(), s)
@@ -831,7 +831,7 @@ var bridge = []*tifajs.Builtin{
 	// localeInfo answers what the method of Intl.Locale named by its second
 	// argument answers for the tag of a Locale, its first: maximize and
 	// minimize the tag of the Locale to make.
-	intlhook.NewBuiltin("localeInfo", 2, func(a tifajs.Args) (tifajs.Value, error) {
+	intlhook.NewBuiltin("localeInfo", 2, func(a beastjs.Args) (beastjs.Value, error) {
 		door := intlhook.Open(a)
 		tag, _ := door.Short(0, intlhook.KindTag)
 		what, _ := door.Short(1, intlhook.KindOption)
@@ -839,12 +839,12 @@ var bridge = []*tifajs.Builtin{
 	}),
 	// caseLanguage answers the language whose case rules toLocaleUpperCase
 	// and toLocaleLowerCase follow for a tag, or "" for the default ones.
-	intlhook.NewBuiltin("caseLanguage", 1, func(a tifajs.Args) (tifajs.Value, error) {
+	intlhook.NewBuiltin("caseLanguage", 1, func(a beastjs.Args) (beastjs.Value, error) {
 		door := intlhook.Open(a)
 		tag, _ := door.Short(0, intlhook.KindTag)
 		lang, err := caseLanguage(tag)
 		if err != nil {
-			return tifajs.Value{}, jsErr(err)
+			return beastjs.Value{}, jsErr(err)
 		}
 
 		return intlhook.Emit(a.VM(), lang)
@@ -853,7 +853,7 @@ var bridge = []*tifajs.Builtin{
 	// map to upper case, and answers what the language's rules make of the
 	// string, for the engine to map the rest, lone surrogates as they are:
 	// undefined where they change nothing.
-	intlhook.NewBuiltin("casePremap", 3, func(a tifajs.Args) (tifajs.Value, error) {
+	intlhook.NewBuiltin("casePremap", 3, func(a beastjs.Args) (beastjs.Value, error) {
 		door := intlhook.Open(a)
 		lang, _ := door.Short(1, intlhook.KindOption)
 		upper, _ := a.Bool(2)
@@ -869,23 +869,23 @@ var bridge = []*tifajs.Builtin{
 		text, wide, ok, err := premapCase(w, s, units, lang, upper)
 		switch {
 		case err != nil:
-			return tifajs.Value{}, err
+			return beastjs.Value{}, err
 		case !ok:
-			return tifajs.UndefinedValue, nil
+			return beastjs.UndefinedValue, nil
 		case wide != nil:
 			return intlhook.EmitUTF16(a.VM(), wide)
 		}
 		return intlhook.Emit(a.VM(), text)
 	}),
 	resolveBuiltin(temporalDateFormatCtor),
-	intlhook.NewBuiltin("temporalFormat", 3, func(a tifajs.Args) (tifajs.Value, error) { return temporalDateFormatted(a, false, false) }),
-	intlhook.NewBuiltin("temporalParts", 3, func(a tifajs.Args) (tifajs.Value, error) { return temporalDateFormatted(a, true, false) }),
-	intlhook.NewBuiltin("temporalRange", 5, func(a tifajs.Args) (tifajs.Value, error) { return temporalDateFormatted(a, false, true) }),
-	intlhook.NewBuiltin("temporalRangeParts", 5, func(a tifajs.Args) (tifajs.Value, error) { return temporalDateFormatted(a, true, true) }),
+	intlhook.NewBuiltin("temporalFormat", 3, func(a beastjs.Args) (beastjs.Value, error) { return temporalDateFormatted(a, false, false) }),
+	intlhook.NewBuiltin("temporalParts", 3, func(a beastjs.Args) (beastjs.Value, error) { return temporalDateFormatted(a, true, false) }),
+	intlhook.NewBuiltin("temporalRange", 5, func(a beastjs.Args) (beastjs.Value, error) { return temporalDateFormatted(a, false, true) }),
+	intlhook.NewBuiltin("temporalRangeParts", 5, func(a beastjs.Args) (beastjs.Value, error) { return temporalDateFormatted(a, true, true) }),
 }
 
 // localesArg returns the locales arguments i and i+1 of a.
-func localesArg(a tifajs.Args, door *intlhook.Door, i int) ([]string, error) {
+func localesArg(a beastjs.Args, door *intlhook.Door, i int) ([]string, error) {
 	if s, ok := door.Short(i, intlhook.KindTag); ok {
 		return []string{s}, nil
 	}
@@ -903,11 +903,11 @@ func localesArg(a tifajs.Args, door *intlhook.Door, i int) ([]string, error) {
 	return l, nil
 }
 
-func numberFormatted(a tifajs.Args, wantParts bool) (tifajs.Value, error) {
+func numberFormatted(a beastjs.Args, wantParts bool) (beastjs.Value, error) {
 	door := intlhook.Open(a)
 	f, ok, err := formatterOf[*numberFormat](a)
 	if !ok {
-		return tifajs.UndefinedValue, err
+		return beastjs.UndefinedValue, err
 	}
 
 	v := numberArg(a, &door, 1)
@@ -927,21 +927,21 @@ func numberFormatted(a tifajs.Args, wantParts bool) (tifajs.Value, error) {
 // NumberFormat: arguments 1 and 3 are the ends, each a number or a numeric
 // string, and arguments 2 and 4 say whether the string is the digits of a
 // BigInt. The parts are their type, value and source in turn.
-func numberRangeFormatted(a tifajs.Args, wantParts bool) (tifajs.Value, error) {
+func numberRangeFormatted(a beastjs.Args, wantParts bool) (beastjs.Value, error) {
 	door := intlhook.Open(a)
 	f, ok, err := formatterOf[*numberFormat](a)
 	if !ok {
-		return tifajs.UndefinedValue, err
+		return beastjs.UndefinedValue, err
 	}
 
 	start, end := f.rangeEnd(a, &door, 1), f.rangeEnd(a, &door, 3)
 	// PartitionNumberRangePattern refuses NaN once both ends are converted.
 	if start.IsNaN() || end.IsNaN() {
-		return tifajs.Value{}, jsErr(rangeError("Invalid number range: an end is NaN"))
+		return beastjs.Value{}, jsErr(rangeError("Invalid number range: an end is NaN"))
 	}
 	parts, err := f.f.FormatDecimalRangeToParts(start, end)
 	if err != nil {
-		return tifajs.Value{}, jsErr(err)
+		return beastjs.Value{}, jsErr(err)
 	}
 	if !wantParts {
 		var text strings.Builder
@@ -957,23 +957,23 @@ func numberRangeFormatted(a tifajs.Args, wantParts bool) (tifajs.Value, error) {
 	return intlhook.EmitStrings(a.VM(), list)
 }
 
-func dateFormatted(a tifajs.Args, wantParts bool) (tifajs.Value, error) {
+func dateFormatted(a beastjs.Args, wantParts bool) (beastjs.Value, error) {
 	f, ok, err := formatterOf[*dateTimeFormat](a)
 	if !ok {
-		return tifajs.UndefinedValue, err
+		return beastjs.UndefinedValue, err
 	}
 
 	ms, _ := a.Number(1)
 	if !wantParts {
 		s, err := f.formatString(ms)
 		if err != nil {
-			return tifajs.Value{}, jsErr(err)
+			return beastjs.Value{}, jsErr(err)
 		}
 		return intlhook.Emit(a.VM(), s)
 	}
 	parts, err := f.format(ms)
 	if err != nil {
-		return tifajs.Value{}, jsErr(err)
+		return beastjs.Value{}, jsErr(err)
 	}
 
 	return formatted(a.VM(), parts, wantParts)
@@ -1014,7 +1014,7 @@ func partTypeOf(i int, s string) (int, bool) {
 // turn, which parts() in intl.js makes the formatToParts result of, each
 // type the index of partTypes or, for a type it does not have, the string,
 // or, joined, as the format one.
-func formatted(vm *tifajs.VM, parts []part, wantParts bool) (tifajs.Value, error) {
+func formatted(vm *beastjs.VM, parts []part, wantParts bool) (beastjs.Value, error) {
 	if wantParts {
 		l := make([]string, 0, 2*len(parts))
 		for _, p := range parts {
@@ -1047,29 +1047,29 @@ func formatted(vm *tifajs.VM, parts []part, wantParts bool) (tifajs.Value, error
 func jsErr(err error) error {
 	var e *jsError
 	if errors.As(err, &e) {
-		return &tifajs.Error{Name: e.ctor, Message: e.msg}
+		return &beastjs.Error{Name: e.ctor, Message: e.msg}
 	}
 
-	return &tifajs.Error{Name: "Error", Message: err.Error()}
+	return &beastjs.Error{Name: "Error", Message: err.Error()}
 }
 
-var durationFormatBuiltin = intlhook.NewBuiltin("dfFormat", 3, func(a tifajs.Args) (tifajs.Value, error) {
+var durationFormatBuiltin = intlhook.NewBuiltin("dfFormat", 3, func(a beastjs.Args) (beastjs.Value, error) {
 	door := intlhook.Open(a)
 	f, ok, err := formatterOf[*durationFormat](a)
 	if !ok {
-		return tifajs.UndefinedValue, err
+		return beastjs.UndefinedValue, err
 	}
 
 	s, _ := door.ShortWTF8(1, intlhook.KindTemporal)
 	fields, _ := a.Bool(2)
 	d, err := durationOf(s, fields)
 	if err != nil {
-		return tifajs.Value{}, jsErr(err)
+		return beastjs.Value{}, jsErr(err)
 	}
 
 	r, err := f.f.Format(d)
 	if err != nil {
-		return tifajs.Value{}, jsErr(rangeError("%s", err))
+		return beastjs.Value{}, jsErr(rangeError("%s", err))
 	}
 
 	return intlhook.Emit(a.VM(), r)

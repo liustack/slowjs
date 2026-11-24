@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -20,8 +20,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/liustack/tifajs"
-	"github.com/liustack/tifajs/tifa"
+	"github.com/liustack/beastjs"
+	"github.com/liustack/beastjs/tifa"
 )
 
 const (
@@ -62,7 +62,7 @@ type page struct {
 // bundle is a bundle compiled once, as tifa compiles it, with its pages.
 type bundle struct {
 	name  string
-	code  *tifajs.SharedBytecode
+	code  *beastjs.SharedBytecode
 	pages []*page
 }
 
@@ -123,8 +123,8 @@ func closeBundles(bs []*bundle) error {
 }
 
 // compile is Compile of tifa's renderer.go, for the script form of a bundle.
-func compile(src string) (*tifajs.SharedBytecode, error) {
-	vm, err := tifajs.NewVM()
+func compile(src string) (*beastjs.SharedBytecode, error) {
+	vm, err := beastjs.NewVM()
 	if err != nil {
 		return nil, err
 	}
@@ -133,20 +133,20 @@ func compile(src string) (*tifajs.SharedBytecode, error) {
 	if err := vm.SetEvalTimeout(startTimeout); err != nil {
 		return nil, err
 	}
-	code, err := vm.Compile(src, tifajs.EvalGlobal)
+	code, err := vm.Compile(src, beastjs.EvalGlobal)
 	if err != nil {
 		return nil, err
 	}
-	return tifajs.NewSharedBytecode(code)
+	return beastjs.NewSharedBytecode(code)
 }
 
 // pvm is a VM of a pool, with the state tifa's pool keeps for it.
 type pvm struct {
-	*tifajs.VM
+	*beastjs.VM
 	b  *bundle
 	id int
 	// the functions a render calls, taken once as tifa's Load takes them
-	global, reset, start, read tifajs.Value
+	global, reset, start, read beastjs.Value
 	// live is the memory after the last full collection, need what renders
 	// showed they need, threshold the one the pool set last, young the
 	// renders since the last full collection (pooledVM of tifa)
@@ -169,7 +169,7 @@ type pvm struct {
 // depth, tifa.Register and the bundle, collected, its threshold set and its
 // free memory given back.
 func load(b *bundle, id int, timeout time.Duration) (v *pvm, err error) {
-	vm, err := tifajs.NewVM()
+	vm, err := beastjs.NewVM()
 	if err != nil {
 		return nil, err
 	}
@@ -193,10 +193,10 @@ func load(b *bundle, id int, timeout time.Duration) (v *pvm, err error) {
 		return v, err
 	}
 	for _, t := range []struct {
-		v   *tifajs.Value
+		v   *beastjs.Value
 		src string
 	}{{&v.global, "globalThis"}, {&v.reset, resetResult}, {&v.start, "globalThis.startRender"}, {&v.read, readResult}} {
-		if *t.v, err = vm.EvalValue(t.src, tifajs.EvalGlobal); err != nil {
+		if *t.v, err = vm.EvalValue(t.src, beastjs.EvalGlobal); err != nil {
 			return v, err
 		}
 	}
@@ -216,7 +216,7 @@ func load(b *bundle, id int, timeout time.Duration) (v *pvm, err error) {
 // nothing, and Close is what frees them.
 func (v *pvm) close() error {
 	v.closed = true
-	for _, x := range []*tifajs.Value{&v.global, &v.reset, &v.start, &v.read} {
+	for _, x := range []*beastjs.Value{&v.global, &v.reset, &v.start, &v.read} {
 		x.Free()
 	}
 	return v.Close()
@@ -262,10 +262,10 @@ func (v *pvm) render(input string, timeout time.Duration) (string, error) {
 		return v.SetEvalTimeout(left)
 	}
 	steps := []func() (any, error){
-		func() (any, error) { return v.reset.Call(tifajs.UndefinedValue) },
+		func() (any, error) { return v.reset.Call(beastjs.UndefinedValue) },
 		func() (any, error) { return v.start.Call(v.global, input) },
 		func() (any, error) { return v.ExecutePendingJobs() },
-		func() (any, error) { return v.read.Call(tifajs.UndefinedValue) },
+		func() (any, error) { return v.read.Call(beastjs.UndefinedValue) },
 	}
 	var value any
 	for _, step := range steps {
@@ -427,11 +427,11 @@ func reference(b *bundle, timeout time.Duration) error {
 			return err
 		}
 	}
-	if _, err := v.Eval(countPushJS, tifajs.EvalGlobal); err != nil {
+	if _, err := v.Eval(countPushJS, beastjs.EvalGlobal); err != nil {
 		return err
 	}
 	for _, p := range b.pages {
-		if _, err := v.Eval(`globalThis.__stress_pushes = 0`, tifajs.EvalGlobal); err != nil {
+		if _, err := v.Eval(`globalThis.__stress_pushes = 0`, beastjs.EvalGlobal); err != nil {
 			return err
 		}
 		html, err := v.render(p.input, timeout)
@@ -441,7 +441,7 @@ func reference(b *bundle, timeout time.Duration) error {
 		if sha256.Sum256([]byte(html)) != p.hash {
 			return fmt.Errorf("%s: a render with push wrapped gave other HTML", p.name)
 		}
-		n, err := v.Eval(`globalThis.__stress_pushes`, tifajs.EvalGlobal)
+		n, err := v.Eval(`globalThis.__stress_pushes`, beastjs.EvalGlobal)
 		if err != nil {
 			return err
 		}

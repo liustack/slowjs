@@ -5,7 +5,7 @@ package intl_test
 import (
 	"testing"
 
-	intl "github.com/liustack/tifajs/internal/gointl"
+	intl "github.com/liustack/beastjs/internal/gointl"
 )
 
 // The expectations are node's, across several locales rather than one: English

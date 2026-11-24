@@ -6,14 +6,14 @@ read_when:
   - Looking for a Go function of the API that is not Eval or Call
   - Adding a function or type to the Go API (add it here)
   - Asking which release added a function
-  - Running the engine without writing Go (the tifajs command)
+  - Running the engine without writing Go (the beastjs command)
 ---
 
 # The Go API beyond Eval and Call
 
 English · [简体中文](api.zh-CN.md)
 
-The API is documented at [pkg.go.dev](https://pkg.go.dev/github.com/liustack/tifajs). Every program starts with `NewVM`, `VM.Eval`, `VM.Call` and `Value`. Besides them, it has the functions below. Each links to the doc that says why it is safe and how it was measured. Releases up to v0.31.12 were published as `github.com/liustack/slowjs` (v0.30.0 to v0.30.7 as `github.com/liustack/quickjs`).
+The API is documented at [pkg.go.dev](https://pkg.go.dev/github.com/liustack/beastjs). Every program starts with `NewVM`, `VM.Eval`, `VM.Call` and `Value`. Besides them, it has the functions below. Each links to the doc that says why it is safe and how it was measured. Releases up to v0.31.12 were published as `github.com/liustack/slowjs` (v0.30.0 to v0.30.7 as `github.com/liustack/quickjs`), and v0.32.0 as `github.com/liustack/tifajs`.
 
 ## Calling Go from JavaScript
 
@@ -65,4 +65,4 @@ Each of these defines a function on the global object, written in C inside the e
 
 ## Without Go
 
-- **The `tifajs` command** (v0.31.0): runs a JavaScript file in this engine, set up as tifa sets it up (Intl, Temporal, URL), with `print`, `console.log` and a timeout and memory limit that hold: to show a problem with a script, or to run one, without writing Go. Each GitHub release has it prebuilt for linux and darwin, on amd64 and arm64, and for windows/amd64, and from v0.31.12 for windows/arm64 too. [More](command.md)
+- **The `beastjs` command** (v0.31.0): runs a JavaScript file in this engine, set up as tifa sets it up (Intl, Temporal, URL), with `print`, `console.log` and a timeout and memory limit that hold: to show a problem with a script, or to run one, without writing Go. Each GitHub release has it prebuilt for linux and darwin, on amd64 and arm64, and for windows/amd64, and from v0.31.12 for windows/arm64 too. [More](command.md)

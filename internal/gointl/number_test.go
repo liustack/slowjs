@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	intl "github.com/liustack/tifajs/internal/gointl"
+	intl "github.com/liustack/beastjs/internal/gointl"
 )
 
 func newFormat(t *testing.T, tag string, opts intl.NumberFormatOptions) *intl.NumberFormat {

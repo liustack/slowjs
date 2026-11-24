@@ -8,7 +8,7 @@ assignees: ''
 
 ## The problem
 
-What are you trying to do that liustack/tifajs makes hard or impossible today?
+What are you trying to do that liustack/beastjs makes hard or impossible today?
 
 ## Proposed change
 
@@ -16,7 +16,7 @@ What you would like it to do.
 
 ## Scope check
 
-liustack/tifajs is a pure Go JavaScript engine for Go programs, kept for rendering React on the server ([tifa](https://github.com/liustack/tifa)). It is an engine, not Node: no `require`, `fs` or `process`, and the host gives a script what it needs through the Go API. Does this request fit that? If it widens it, say why it belongs here.
+liustack/beastjs is a pure Go JavaScript engine for Go programs, kept for rendering React on the server ([tifa](https://github.com/liustack/tifa)). It is an engine, not Node: no `require`, `fs` or `process`, and the host gives a script what it needs through the Go API. Does this request fit that? If it widens it, say why it belongs here.
 
 ## Alternatives
 

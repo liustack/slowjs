@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package intl // import "github.com/liustack/tifajs/intl"
+package intl // import "github.com/liustack/beastjs/intl"
 
 import (
 	"errors"
@@ -11,8 +11,8 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/liustack/tifajs"
-	"github.com/liustack/tifajs/internal/vmhook"
+	"github.com/liustack/beastjs"
+	"github.com/liustack/beastjs/internal/vmhook"
 )
 
 // A Builtin of Intl that does work in Go in proportion to a long input reads
@@ -36,7 +36,7 @@ type stopSpans struct {
 
 // measureStops evaluates src on vm with vmhook.Stop counted. The tests that
 // call it do not run in parallel, so no other call reads vmhook.Stop.
-func measureStops(t *testing.T, vm *tifajs.VM, src string) (stopSpans, error) {
+func measureStops(t *testing.T, vm *beastjs.VM, src string) (stopSpans, error) {
 	t.Helper()
 	var s stopSpans
 	var ms runtime.MemStats
@@ -55,14 +55,14 @@ func measureStops(t *testing.T, vm *tifajs.VM, src string) (stopSpans, error) {
 		return stop(vm)
 	}
 	defer func() { vmhook.Stop = stop }()
-	_, err := vm.Eval("(function () { "+src+"; })(); 0", tifajs.EvalGlobal)
+	_, err := vm.Eval("(function () { "+src+"; })(); 0", beastjs.EvalGlobal)
 	span()
 	return s, err
 }
 
 // isRangeError reports whether err is a RangeError a script can catch.
 func isRangeError(err error) bool {
-	var e *tifajs.Error
+	var e *beastjs.Error
 	return errors.As(err, &e) && !e.Uncatchable && e.Name == "RangeError"
 }
 
@@ -146,7 +146,7 @@ var holdWhole = map[string]bool{
 }
 
 // setUp makes the input of setup, of n units, in vm.
-func setUp(t *testing.T, vm *tifajs.VM, setup string, n int) {
+func setUp(t *testing.T, vm *beastjs.VM, setup string, n int) {
 	t.Helper()
 	eval(t, vm, "var N = "+strconv.Itoa(n)+"; "+setup+"; 0")
 }
@@ -201,7 +201,7 @@ func TestLongWorkRoom(t *testing.T) {
 
 // isOutOfMemory reports whether err ended the call as running out of memory.
 func isOutOfMemory(err error) bool {
-	var e *tifajs.Error
+	var e *beastjs.Error
 	return errors.As(err, &e) && e.Uncatchable && e.OutOfMemory
 }
 

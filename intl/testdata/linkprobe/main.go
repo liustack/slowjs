@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -8,12 +8,12 @@
 package main
 
 import (
-	"github.com/liustack/tifajs"
-	"github.com/liustack/tifajs/intl"
+	"github.com/liustack/beastjs"
+	"github.com/liustack/beastjs/intl"
 )
 
 func main() {
-	vm, err := tifajs.NewVM()
+	vm, err := beastjs.NewVM()
 	if err != nil {
 		panic(err)
 	}
@@ -34,7 +34,7 @@ func main() {
 		new Intl.Locale('en-US').getTimeZones(),
 		Intl.supportedValuesOf('timeZone').length,
 		'i'.toLocaleUpperCase('tr'),
-	].join()`, tifajs.EvalGlobal); err != nil {
+	].join()`, beastjs.EvalGlobal); err != nil {
 		panic(err)
 	}
 }

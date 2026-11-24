@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 package gen
 
@@ -12,11 +12,11 @@ import (
 
 // TestAddrTakenLeafRejected: a register-entry leaf whose address is taken has
 // no unified entry an indirect call could reach, so the pass must stop. Needs
-// LLVM 22.1.8 (TIFAJS_LLVM) and the pass (TIFAJS_SHADOW_PASS).
+// LLVM 22.1.8 (BEASTJS_LLVM) and the pass (BEASTJS_SHADOW_PASS).
 func TestAddrTakenLeafRejected(t *testing.T) {
-	llvm, pass := os.Getenv("TIFAJS_LLVM"), os.Getenv("TIFAJS_SHADOW_PASS")
+	llvm, pass := os.Getenv("BEASTJS_LLVM"), os.Getenv("BEASTJS_SHADOW_PASS")
 	if llvm == "" || pass == "" {
-		t.Skip("set TIFAJS_LLVM and TIFAJS_SHADOW_PASS")
+		t.Skip("set BEASTJS_LLVM and BEASTJS_SHADOW_PASS")
 	}
 	work := t.TempDir()
 	ir := filepath.Join(work, "a.ll")

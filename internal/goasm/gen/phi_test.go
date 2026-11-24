@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -18,12 +18,12 @@ import (
 // shadow stack. Each entry of a phi for one block must hold the same value, or
 // LLVM's verifier stops opt. The pass must give each phi one address per
 // incoming block, made in that block, at the offset of the local it replaces:
-// %a at 0, %b at 4. It needs LLVM 22.1.8 (TIFAJS_LLVM) and the built pass
-// (TIFAJS_SHADOW_PASS).
+// %a at 0, %b at 4. It needs LLVM 22.1.8 (BEASTJS_LLVM) and the built pass
+// (BEASTJS_SHADOW_PASS).
 func TestPhiNamesBlockTwice(t *testing.T) {
-	llvm, pass := os.Getenv("TIFAJS_LLVM"), os.Getenv("TIFAJS_SHADOW_PASS")
+	llvm, pass := os.Getenv("BEASTJS_LLVM"), os.Getenv("BEASTJS_SHADOW_PASS")
 	if llvm == "" || pass == "" {
-		t.Skip("set TIFAJS_LLVM and TIFAJS_SHADOW_PASS")
+		t.Skip("set BEASTJS_LLVM and BEASTJS_SHADOW_PASS")
 	}
 	shadow := filepath.Join(t.TempDir(), "switch.shadow.ll")
 	out, err := exec.Command(filepath.Join(llvm, "opt"), "-load-pass-plugin", pass, "-passes=goasm-shadow-stack",

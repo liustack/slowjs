@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/liustack/tifajs"
+	"github.com/liustack/beastjs"
 )
 
 var (
@@ -65,17 +65,17 @@ func TestClassify(t *testing.T) {
 	}{
 		{"html", "<p>ok</p>", nil, outHTML},
 		{"other html", "<p>no</p>", nil, outWrongHTML},
-		{"interrupted", "", &tifajs.Error{Name: "InternalError", Message: "interrupted", Uncatchable: true, Interrupted: true}, outInterrupted},
-		{"out of memory", "", &tifajs.Error{Name: "InternalError", Message: "out of memory", Uncatchable: true, OutOfMemory: true}, outOOM},
+		{"interrupted", "", &beastjs.Error{Name: "InternalError", Message: "interrupted", Uncatchable: true, Interrupted: true}, outInterrupted},
+		{"out of memory", "", &beastjs.Error{Name: "InternalError", Message: "out of memory", Uncatchable: true, OutOfMemory: true}, outOOM},
 		{"killed", "", killed, outKilled},
-		{"thrown", "", &tifajs.Error{Name: "TypeError", Message: "x is undefined"}, outThrown},
-		{"uncatchable panic", "", &tifajs.Error{Name: "Error", Uncatchable: true}, outOther},
-		{"interrupted and out of memory", "", &tifajs.Error{Uncatchable: true, Interrupted: true, OutOfMemory: true}, outOther},
+		{"thrown", "", &beastjs.Error{Name: "TypeError", Message: "x is undefined"}, outThrown},
+		{"uncatchable panic", "", &beastjs.Error{Name: "Error", Uncatchable: true}, outOther},
+		{"interrupted and out of memory", "", &beastjs.Error{Uncatchable: true, Interrupted: true, OutOfMemory: true}, outOther},
 		{"budget", "", errBudget, outBudget},
 		{"unresolved", "", errUnresolved, outUnresolved},
 		{"result", "", &resultError{`{"error":"x"}`}, outResult},
 		{"go error", "", errors.New("something else"), outOther},
-		{"wrapped", "", fmt.Errorf("render: %w", &tifajs.Error{Uncatchable: true, Interrupted: true}), outInterrupted},
+		{"wrapped", "", fmt.Errorf("render: %w", &beastjs.Error{Uncatchable: true, Interrupted: true}), outInterrupted},
 	} {
 		if got, _ := classify(p, c.html, c.err); got != c.want {
 			t.Errorf("%s: %s, want %s", c.name, outcomeNames[got], outcomeNames[c.want])
@@ -86,7 +86,7 @@ func TestClassify(t *testing.T) {
 // makeKilled kills a script, which only the engine can do, and returns the
 // error of the call.
 func makeKilled(t *testing.T) error {
-	vm, err := tifajs.NewVM()
+	vm, err := beastjs.NewVM()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,8 +94,8 @@ func makeKilled(t *testing.T) error {
 	if err := vm.SetEvalTimeout(time.Millisecond); err != nil {
 		t.Fatal(err)
 	}
-	_, err = vm.Eval(`Array.prototype.lastIndexOf.call({ length: 2 ** 31 - 1 }, -1)`, tifajs.EvalGlobal)
-	if !errors.Is(err, tifajs.ErrKilled) {
+	_, err = vm.Eval(`Array.prototype.lastIndexOf.call({ length: 2 ** 31 - 1 }, -1)`, beastjs.EvalGlobal)
+	if !errors.Is(err, beastjs.ErrKilled) {
 		t.Fatalf("the loop gave %v, want a kill", err)
 	}
 	return err

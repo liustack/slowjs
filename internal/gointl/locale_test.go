@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	intl "github.com/liustack/tifajs/internal/gointl"
+	intl "github.com/liustack/beastjs/internal/gointl"
 )
 
 // Parsing settles spelling: an identifier written any of the ways a tag is

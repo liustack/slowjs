@@ -1,5 +1,5 @@
 #!/bin/sh
-# Copyright (c) 2026 The liustack/tifajs Authors.
+# Copyright (c) 2026 The liustack/beastjs Authors.
 # SPDX-License-Identifier: MIT
 # Use of this source code is governed by the MIT license in LICENSE at the
 # root of this repository.
@@ -77,7 +77,7 @@ if [ "${GEN_PGO:-1}" = 0 ]; then
 fi
 verify=
 if [ -n "${GEN_VERIFY_BIN:-}" ]; then
-	verify="-verify-bin $GEN_VERIFY_BIN -verify-pkg github.com/liustack/tifajs/internal/cengine -verify-all"
+	verify="-verify-bin $GEN_VERIFY_BIN -verify-pkg github.com/liustack/beastjs/internal/cengine -verify-all"
 fi
 # shellcheck disable=SC2086
 .build/engine-gen -engine engine -llvm "$llvm" -pass $pass -arch "$arch" -mode pn -varargs-block \

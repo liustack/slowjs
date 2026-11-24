@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package tifajs // import "github.com/liustack/tifajs"
+package beastjs // import "github.com/liustack/beastjs"
 
 // The fuzz targets of the Go API: the parser and compiler, RegExp and JSON,
 // each run in VMs with an eval timeout and a memory limit. Every input must
@@ -21,7 +21,7 @@ package tifajs // import "github.com/liustack/tifajs"
 //
 // Run one with go test -run '^$' -fuzz '^FuzzEval$' -fuzztime 3m . (see
 // docs/internals/testing.md). While fuzzing, the scripts of the repository are seeds
-// too (fuzzRepoSeeds), and TIFAJS_FUZZ_SEEDS lists folders of more, such as
+// too (fuzzRepoSeeds), and BEASTJS_FUZZ_SEEDS lists folders of more, such as
 // test262/test.
 
 import (
@@ -130,7 +130,7 @@ func fuzzReasoned(err error) bool {
 		return true // a module whose top-level await never settles
 	}
 	switch s := err.Error(); {
-	case strings.HasPrefix(s, "tifajs: aborted draining after"):
+	case strings.HasPrefix(s, "beastjs: aborted draining after"):
 		return true // a job queue that feeds itself (ExecutePendingJobs)
 	case s == "failed to get BigInt.toString()", s == "big.Int.SetString failed":
 		return true // the script replaced BigInt.prototype.toString
@@ -214,7 +214,7 @@ func fuzzing() bool {
 }
 
 // fuzzRepoSeeds gives each script of the folders of the repository, and of
-// the folders TIFAJS_FUZZ_SEEDS lists (as PATH does), to add, with whether it is a module,
+// the folders BEASTJS_FUZZ_SEEDS lists (as PATH does), to add, with whether it is a module,
 // when the test runs with -fuzz. A plain go test runs only the seeds in
 // testdata/fuzz.
 func fuzzRepoSeeds(add func(src string, module bool)) {
@@ -222,7 +222,7 @@ func fuzzRepoSeeds(add func(src string, module bool)) {
 		return
 	}
 	dirs := []string{"engine/test/compare", "engine/test/regvm/corpus", "engine/test/regvm/js", "testdata", "compare/testdata"}
-	if d := os.Getenv("TIFAJS_FUZZ_SEEDS"); d != "" {
+	if d := os.Getenv("BEASTJS_FUZZ_SEEDS"); d != "" {
 		dirs = append(dirs, filepath.SplitList(d)...)
 	}
 	for _, d := range dirs {
@@ -244,13 +244,13 @@ func fuzzRepoSeeds(add func(src string, module bool)) {
 	}
 }
 
-// fuzzNativeSeeds gives each input of the folders TIFAJS_JS_FUZZ_CORPUS
+// fuzzNativeSeeds gives each input of the folders BEASTJS_JS_FUZZ_CORPUS
 // lists (as PATH does), in the form of engine/test/js-fuzz.c, whose kind
 // (the low two bits of its first byte) is kind, to add with the memory limit
 // it picks, when the test runs with -fuzz. So the Go targets run on the
 // generated engine what js-fuzz found with the coverage of the C.
 func fuzzNativeSeeds(kind byte, add func(limit byte, rest []byte)) {
-	d := os.Getenv("TIFAJS_JS_FUZZ_CORPUS")
+	d := os.Getenv("BEASTJS_JS_FUZZ_CORPUS")
 	if !fuzzing() || d == "" {
 		return
 	}

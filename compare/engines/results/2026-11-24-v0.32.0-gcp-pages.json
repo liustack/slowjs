@@ -26,7 +26,7 @@
             "same_as_liustack": false
           }
         },
-        "liustack-slowjs": {
+        "liustack-tifajs": {
           "spiral": {
             "normalized_sha256": "a4f6426afe89bab78a7f75b8fbea754153ce9e963f79fc5b04c9021a13af3949",
             "reference_sha256": "a4f6426afe89bab78a7f75b8fbea754153ce9e963f79fc5b04c9021a13af3949",
@@ -38,7 +38,7 @@
             "same_as_liustack": true
           }
         },
-        "liustack-slowjs-polyfill": {
+        "liustack-tifajs-polyfill": {
           "spiral": {
             "normalized_sha256": "a4f6426afe89bab78a7f75b8fbea754153ce9e963f79fc5b04c9021a13af3949",
             "reference_sha256": "a4f6426afe89bab78a7f75b8fbea754153ce9e963f79fc5b04c9021a13af3949",
@@ -122,7 +122,7 @@
             "same_as_liustack": false
           }
         },
-        "liustack-slowjs": {
+        "liustack-tifajs": {
           "home": {
             "normalized_sha256": "ba90233b818e0f1661a492b390b188ef6bb27258bfbee1ce5212811001910057",
             "reference_sha256": "ba90233b818e0f1661a492b390b188ef6bb27258bfbee1ce5212811001910057",
@@ -139,7 +139,7 @@
             "same_as_liustack": true
           }
         },
-        "liustack-slowjs-polyfill": {
+        "liustack-tifajs-polyfill": {
           "home": {
             "normalized_sha256": "d1c4a9b13208ad45bc06718cc0341b94d10e2aa858dcd47a571e71b84cf725ac",
             "reference_sha256": "ba90233b818e0f1661a492b390b188ef6bb27258bfbee1ce5212811001910057",
@@ -413,7 +413,7 @@
             "same_as_liustack": false
           }
         },
-        "liustack-slowjs": {
+        "liustack-tifajs": {
           "store-en-US-cart": {
             "normalized_sha256": "f3d6e013044a68f10bd83739fb2f44d8dec628b77aa86b0883939a46ace1b007",
             "reference_sha256": "f3d6e013044a68f10bd83739fb2f44d8dec628b77aa86b0883939a46ace1b007",
@@ -515,7 +515,7 @@
             "same_as_liustack": true
           }
         },
-        "liustack-slowjs-polyfill": {
+        "liustack-tifajs-polyfill": {
           "store-en-US-cart": {
             "normalized_sha256": "f3d6e013044a68f10bd83739fb2f44d8dec628b77aa86b0883939a46ace1b007",
             "reference_sha256": "f3d6e013044a68f10bd83739fb2f44d8dec628b77aa86b0883939a46ace1b007",
@@ -934,408 +934,408 @@
   },
   "go-quickjs-interp-bench": {
     "result": {
-      "load_ms": 47.227428,
+      "load_ms": 52.026255,
       "pages": [
         {
-          "cpu_ms_per_op": 30.153560000000002,
+          "cpu_ms_per_op": 27.841795,
           "html_bytes": 143145,
           "html_sum": "a4f6426afe89bab7",
           "input": "spiral.json",
           "ok": true,
           "render": {
-            "max_ns": 47587718,
-            "mean_ns": 30154758.985,
-            "median_ns": 24523844,
-            "min_ns": 22725295,
+            "max_ns": 54584454,
+            "mean_ns": 27844478.325,
+            "median_ns": 21309424,
+            "min_ns": 18995924,
             "n": 200
           }
         },
         {
-          "cpu_ms_per_op": 26.312330000000003,
+          "cpu_ms_per_op": 20.617240000000002,
           "html_bytes": 200918,
           "html_sum": "c9ff91ec05badba4",
           "input": "table.json",
           "ok": true,
           "render": {
-            "max_ns": 47218628,
-            "mean_ns": 26312924.57,
-            "median_ns": 23593284.5,
-            "min_ns": 22613634,
+            "max_ns": 50932625,
+            "mean_ns": 20618452.96,
+            "median_ns": 17437120,
+            "min_ns": 16440045,
             "n": 200
           }
         }
       ],
       "prelude_ms": [
-        24.062485
+        27.360782
       ]
     },
     "tries": [
       {
-        "cpu_s": 14.376,
+        "cpu_s": 12.44,
         "disturbed": 0,
         "sibling_ticks": 1,
         "try": 0,
-        "wall_s": 14.389
+        "wall_s": 12.453
       }
     ]
   },
   "go-quickjs-interp-mui-native": {
     "result": {
-      "load_ms": 130.070448,
+      "load_ms": 126.899259,
       "pages": [
         {
-          "cpu_ms_per_op": 74.28801,
+          "cpu_ms_per_op": 60.86754,
           "html_bytes": 98978,
           "html_sum": "ba90233b818e0f16",
           "input": "home.json",
           "ok": true,
           "render": {
-            "max_ns": 103771965,
-            "mean_ns": 74292953.49,
-            "median_ns": 66035763.5,
-            "min_ns": 61936584,
+            "max_ns": 102044214,
+            "mean_ns": 60874715.77,
+            "median_ns": 51788362.5,
+            "min_ns": 49450418,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 63.01593,
+          "cpu_ms_per_op": 56.3134,
           "html_bytes": 117458,
           "html_sum": "5795c52982138b0d",
           "input": "order.json",
           "ok": true,
           "render": {
-            "max_ns": 97218106,
-            "mean_ns": 63019471.76,
-            "median_ns": 55648141.5,
-            "min_ns": 53188877,
+            "max_ns": 115779672,
+            "mean_ns": 56318721.58,
+            "median_ns": 46992368.5,
+            "min_ns": 45336019,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 171.706,
+          "cpu_ms_per_op": 147.8903,
           "html_bytes": 160251,
           "html_sum": "0d4a65d85d270b44",
           "input": "orders.json",
           "ok": true,
           "render": {
-            "max_ns": 202415780,
-            "mean_ns": 171719204.71,
-            "median_ns": 175827722,
-            "min_ns": 134879687,
+            "max_ns": 203548799,
+            "mean_ns": 147909316.06,
+            "median_ns": 140604870,
+            "min_ns": 112027642,
             "n": 100
           }
         }
       ],
       "prelude_ms": [
-        27.821273
+        23.307634
       ]
     },
     "tries": [
       {
-        "cpu_s": 37.804,
+        "cpu_s": 32.423,
         "disturbed": 0,
-        "sibling_ticks": 6,
+        "sibling_ticks": 0,
         "try": 0,
-        "wall_s": 37.82
+        "wall_s": 32.44
       }
     ]
   },
   "go-quickjs-interp-native": {
     "result": {
-      "load_ms": 303.487635,
+      "load_ms": 302.686514,
       "pages": [
         {
-          "cpu_ms_per_op": 82.42768,
+          "cpu_ms_per_op": 74.47069,
           "html_bytes": 166080,
           "html_sum": "f3d6e013044a68f1",
           "input": "store-en-US-cart.json",
           "ok": true,
           "render": {
-            "max_ns": 140241445,
-            "mean_ns": 82432743.31,
-            "median_ns": 70207187.5,
-            "min_ns": 66748173,
+            "max_ns": 171788152,
+            "mean_ns": 74481200.78,
+            "median_ns": 60045743,
+            "min_ns": 56681944,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 68.6337,
+          "cpu_ms_per_op": 60.36395,
           "html_bytes": 137453,
           "html_sum": "ac4c738f22b7ad8b",
           "input": "store-en-US-checkout.json",
           "ok": true,
           "render": {
-            "max_ns": 130229668,
-            "mean_ns": 68638258.38,
-            "median_ns": 58440190,
-            "min_ns": 56083176,
+            "max_ns": 143135430,
+            "mean_ns": 60370949.33,
+            "median_ns": 49209356,
+            "min_ns": 47134597,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 158.63577999999998,
+          "cpu_ms_per_op": 137.25284,
           "html_bytes": 355664,
           "html_sum": "c24f09fbca745291",
           "input": "store-en-US-home.json",
           "ok": true,
           "render": {
-            "max_ns": 218397416,
-            "mean_ns": 158648204.54,
-            "median_ns": 137052631,
-            "min_ns": 126312038,
+            "max_ns": 225731246,
+            "mean_ns": 137269846.61,
+            "median_ns": 111774733.5,
+            "min_ns": 105843040,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 43.01341,
+          "cpu_ms_per_op": 36.90638,
           "html_bytes": 56060,
           "html_sum": "34d9aa65d6b88ac5",
           "input": "store-en-US-journal.json",
           "ok": true,
           "render": {
-            "max_ns": 99312015,
-            "mean_ns": 43016015.88,
-            "median_ns": 36691561,
-            "min_ns": 35031741,
+            "max_ns": 94845683,
+            "mean_ns": 36910035.05,
+            "median_ns": 30509561,
+            "min_ns": 29248502,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 153.99413,
+          "cpu_ms_per_op": 135.13112999999998,
           "html_bytes": 118172,
           "html_sum": "97bd73cc509fc44e",
           "input": "store-en-US-post.json",
           "ok": true,
           "render": {
-            "max_ns": 218362377,
-            "mean_ns": 154006169.78,
-            "median_ns": 134463881.5,
-            "min_ns": 118243451,
+            "max_ns": 227649234,
+            "mean_ns": 135149333.72,
+            "median_ns": 104700875,
+            "min_ns": 99064202,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 147.1176,
+          "cpu_ms_per_op": 123.59272999999999,
           "html_bytes": 348498,
           "html_sum": "6b88e45fc562df3c",
           "input": "store-en-US-product.json",
           "ok": true,
           "render": {
-            "max_ns": 219658645,
-            "mean_ns": 147128788.18,
-            "median_ns": 126598718,
-            "min_ns": 117153771,
+            "max_ns": 223378705,
+            "mean_ns": 123609685.7,
+            "median_ns": 99743195,
+            "min_ns": 96038786,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 228.97335999999999,
+          "cpu_ms_per_op": 190.18200000000002,
           "html_bytes": 482863,
           "html_sum": "02bf8893ffa28753",
           "input": "store-en-US-products.json",
           "ok": true,
           "render": {
-            "max_ns": 296494976,
-            "mean_ns": 228991114.3,
-            "median_ns": 206857899,
-            "min_ns": 182750305,
+            "max_ns": 322000850,
+            "mean_ns": 190207715.48,
+            "median_ns": 155605571.5,
+            "min_ns": 142521615,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 102.98978,
+          "cpu_ms_per_op": 87.53177,
           "html_bytes": 166384,
           "html_sum": "4c9603d46c78071e",
           "input": "store-zh-CN-cart.json",
           "ok": true,
           "render": {
-            "max_ns": 185490245,
-            "mean_ns": 102996727.43,
-            "median_ns": 86180484,
-            "min_ns": 80078560,
+            "max_ns": 213300287,
+            "mean_ns": 87543554.85,
+            "median_ns": 70689777.5,
+            "min_ns": 67810153,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 85.95244000000001,
+          "cpu_ms_per_op": 70.97547,
           "html_bytes": 137822,
           "html_sum": "0c5c6b71bd6fde75",
           "input": "store-zh-CN-checkout.json",
           "ok": true,
           "render": {
-            "max_ns": 168151299,
-            "mean_ns": 85957991.94,
-            "median_ns": 72167942,
-            "min_ns": 67120644,
+            "max_ns": 171810167,
+            "mean_ns": 70984133.63,
+            "median_ns": 58070106,
+            "min_ns": 55302906,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 195.47078000000002,
+          "cpu_ms_per_op": 160.55288000000002,
           "html_bytes": 356132,
           "html_sum": "7059ff5e666070a7",
           "input": "store-zh-CN-home.json",
           "ok": true,
           "render": {
-            "max_ns": 267801754,
-            "mean_ns": 195485835.17,
-            "median_ns": 166144473.5,
-            "min_ns": 156476812,
+            "max_ns": 253738547,
+            "mean_ns": 160574404.3,
+            "median_ns": 136569901,
+            "min_ns": 128800089,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 55.23845,
+          "cpu_ms_per_op": 45.76586,
           "html_bytes": 56232,
           "html_sum": "07f48444bb02cef1",
           "input": "store-zh-CN-journal.json",
           "ok": true,
           "render": {
-            "max_ns": 134380576,
-            "mean_ns": 55242369.03,
-            "median_ns": 46274898.5,
-            "min_ns": 44223229,
+            "max_ns": 133824067,
+            "mean_ns": 45771613.32,
+            "median_ns": 38520666,
+            "min_ns": 37273950,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 142.35263,
+          "cpu_ms_per_op": 122.68556000000001,
           "html_bytes": 118290,
           "html_sum": "5922352c3571757b",
           "input": "store-zh-CN-post.json",
           "ok": true,
           "render": {
-            "max_ns": 213529537,
-            "mean_ns": 142362784.82,
-            "median_ns": 116894581,
-            "min_ns": 107807194,
+            "max_ns": 221419156,
+            "mean_ns": 122702402.47,
+            "median_ns": 96774036,
+            "min_ns": 92735437,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 169.1119,
+          "cpu_ms_per_op": 150.63975,
           "html_bytes": 347867,
           "html_sum": "0dfe483eb8f4ca69",
           "input": "store-zh-CN-product.json",
           "ok": true,
           "render": {
-            "max_ns": 247545070,
-            "mean_ns": 169124697.87,
-            "median_ns": 143867820,
-            "min_ns": 135308257,
+            "max_ns": 307579065,
+            "mean_ns": 150662540.76,
+            "median_ns": 124276019,
+            "min_ns": 110971922,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 264.39784,
+          "cpu_ms_per_op": 238.44262999999998,
           "html_bytes": 483844,
           "html_sum": "4103661f069c060c",
           "input": "store-zh-CN-products.json",
           "ok": true,
           "render": {
-            "max_ns": 327820469,
-            "mean_ns": 264417651.63,
-            "median_ns": 261806606,
-            "min_ns": 202385731,
+            "max_ns": 367917899,
+            "mean_ns": 238480881.15,
+            "median_ns": 214721367,
+            "min_ns": 171943938,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 57.59151,
+          "cpu_ms_per_op": 46.66504,
           "html_bytes": 142867,
           "html_sum": "7cbe966ed47e9df2",
           "input": "wb-order-studio.json",
           "ok": true,
           "render": {
-            "max_ns": 129238288,
-            "mean_ns": 57595189.86,
-            "median_ns": 48752033,
-            "min_ns": 45632129,
+            "max_ns": 121485280,
+            "mean_ns": 46671395.89,
+            "median_ns": 38525685.5,
+            "min_ns": 35682611,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 49.01446,
+          "cpu_ms_per_op": 39.847970000000004,
           "html_bytes": 122031,
           "html_sum": "680d39f5441dd1ba",
           "input": "wb-order-weekend.json",
           "ok": true,
           "render": {
-            "max_ns": 107963214,
-            "mean_ns": 49017412.11,
-            "median_ns": 41110540,
-            "min_ns": 36935360,
+            "max_ns": 101295015,
+            "mean_ns": 39852633,
+            "median_ns": 32786857.5,
+            "min_ns": 30426432,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 64.08894000000001,
+          "cpu_ms_per_op": 51.50965,
           "html_bytes": 154021,
           "html_sum": "468a71818ec60367",
           "input": "wb-stats-studio.json",
           "ok": true,
           "render": {
-            "max_ns": 126192729,
-            "mean_ns": 64093322.93,
-            "median_ns": 53359281.5,
-            "min_ns": 50379778,
+            "max_ns": 126702878,
+            "mean_ns": 51515946.23,
+            "median_ns": 40412405,
+            "min_ns": 38568151,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 50.75752000000001,
+          "cpu_ms_per_op": 42.62909,
           "html_bytes": 127575,
           "html_sum": "8f3b6bb1289e8dc7",
           "input": "wb-stats-weekend.json",
           "ok": true,
           "render": {
-            "max_ns": 101132606,
-            "mean_ns": 50760491.44,
-            "median_ns": 42547774.5,
-            "min_ns": 39511580,
+            "max_ns": 104121555,
+            "mean_ns": 42634246.97,
+            "median_ns": 33321611.5,
+            "min_ns": 29759952,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 145.44396,
+          "cpu_ms_per_op": 125.44290000000001,
           "html_bytes": 225917,
           "html_sum": "0bf0f64224b051d1",
           "input": "wb-studio.json",
           "ok": true,
           "render": {
-            "max_ns": 314028612,
-            "mean_ns": 145453994.96,
-            "median_ns": 116865536,
-            "min_ns": 101571195,
+            "max_ns": 307464284,
+            "mean_ns": 125461138.63,
+            "median_ns": 96278231,
+            "min_ns": 81905180,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 86.34196,
+          "cpu_ms_per_op": 78.01086000000001,
           "html_bytes": 138464,
           "html_sum": "dd8ca3ece835b578",
           "input": "wb-weekend.json",
           "ok": true,
           "render": {
-            "max_ns": 178917865,
-            "mean_ns": 86348941.74,
-            "median_ns": 69107753,
-            "min_ns": 61366324,
+            "max_ns": 193436432,
+            "mean_ns": 78022091.21,
+            "median_ns": 57141276,
+            "min_ns": 51332818,
             "n": 100
           }
         }
       ],
       "prelude_ms": [
-        24.152914
+        23.883413
       ]
     },
     "tries": [
       {
-        "cpu_s": 285.367,
+        "cpu_s": 244.661,
         "disturbed": 0,
-        "sibling_ticks": 55,
+        "sibling_ticks": 9,
         "try": 0,
-        "wall_s": 285.399
+        "wall_s": 244.705
       }
     ]
   },
@@ -1345,26 +1345,26 @@
       "load_ms": 2,
       "pages": [
         {
-          "cpu_ms_per_op": 10.745,
+          "cpu_ms_per_op": 11.05,
           "html_bytes": 143162,
           "input": "spiral.json",
           "ok": true,
           "render": {
             "max_ns": 12000000,
-            "mean_ns": 10745000,
+            "mean_ns": 11045000,
             "median_ns": 11000000,
             "min_ns": 10000000,
             "n": 200
           }
         },
         {
-          "cpu_ms_per_op": 10.8,
+          "cpu_ms_per_op": 11.035,
           "html_bytes": 200935,
           "input": "table.json",
           "ok": true,
           "render": {
             "max_ns": 12000000,
-            "mean_ns": 10800000,
+            "mean_ns": 11035000,
             "median_ns": 11000000,
             "min_ns": 10000000,
             "n": 200
@@ -1373,16 +1373,16 @@
       ],
       "prelude_ms": [
         0,
-        2
+        1
       ]
     },
     "tries": [
       {
-        "cpu_s": 7.076,
+        "cpu_s": 7.037,
         "disturbed": 0,
-        "sibling_ticks": 0,
+        "sibling_ticks": 1,
         "try": 0,
-        "wall_s": 7.089
+        "wall_s": 7.056
       }
     ]
   },
@@ -1392,324 +1392,324 @@
       "load_ms": 9,
       "pages": [
         {
-          "cpu_ms_per_op": 69.62,
+          "cpu_ms_per_op": 71.87,
           "html_bytes": 98992,
           "input": "home.json",
           "ok": true,
           "render": {
-            "max_ns": 79000000,
-            "mean_ns": 69610000,
-            "median_ns": 69000000,
-            "min_ns": 67000000,
+            "max_ns": 84000000,
+            "mean_ns": 71870000,
+            "median_ns": 71000000,
+            "min_ns": 69000000,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 30.74,
+          "cpu_ms_per_op": 31.63,
           "html_bytes": 117470,
           "input": "order.json",
           "ok": true,
           "render": {
-            "max_ns": 38000000,
-            "mean_ns": 30740000,
-            "median_ns": 30000000,
-            "min_ns": 29000000,
-            "n": 100
-          }
-        },
-        {
-          "cpu_ms_per_op": 143.45,
-          "html_bytes": 160259,
-          "input": "orders.json",
-          "ok": true,
-          "render": {
-            "max_ns": 152000000,
-            "mean_ns": 143450000,
-            "median_ns": 143000000,
-            "min_ns": 140000000,
-            "n": 100
-          }
-        }
-      ],
-      "prelude_ms": [
-        0,
-        0,
-        100,
-        1
-      ]
-    },
-    "tries": [
-      {
-        "cpu_s": 33.41,
-        "disturbed": 0,
-        "sibling_ticks": 0,
-        "try": 0,
-        "wall_s": 33.423
-      }
-    ]
-  },
-  "hermes-pf": {
-    "result": {
-      "engine": "hermes",
-      "load_ms": 23,
-      "pages": [
-        {
-          "cpu_ms_per_op": 31.3,
-          "html_bytes": 166081,
-          "input": "store-en-US-cart.json",
-          "ok": true,
-          "render": {
             "max_ns": 40000000,
-            "mean_ns": 31300000,
+            "mean_ns": 31620000,
             "median_ns": 31000000,
             "min_ns": 29000000,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 27.54,
-          "html_bytes": 137459,
-          "input": "store-en-US-checkout.json",
+          "cpu_ms_per_op": 146.35,
+          "html_bytes": 160259,
+          "input": "orders.json",
           "ok": true,
           "render": {
-            "max_ns": 35000000,
-            "mean_ns": 27540000,
-            "median_ns": 27000000,
-            "min_ns": 26000000,
+            "max_ns": 157000000,
+            "mean_ns": 146350000,
+            "median_ns": 146000000,
+            "min_ns": 143000000,
             "n": 100
           }
-        },
+        }
+      ],
+      "prelude_ms": [
+        0,
+        0,
+        101,
+        2
+      ]
+    },
+    "tries": [
+      {
+        "cpu_s": 34.523,
+        "disturbed": 0,
+        "sibling_ticks": 2,
+        "try": 0,
+        "wall_s": 34.54
+      }
+    ]
+  },
+  "hermes-pf": {
+    "result": {
+      "engine": "hermes",
+      "load_ms": 21,
+      "pages": [
         {
-          "cpu_ms_per_op": 52.27,
-          "html_bytes": 355606,
-          "input": "store-en-US-home.json",
+          "cpu_ms_per_op": 32.75,
+          "html_bytes": 166081,
+          "input": "store-en-US-cart.json",
           "ok": true,
           "render": {
-            "max_ns": 61000000,
-            "mean_ns": 52270000,
-            "median_ns": 51000000,
-            "min_ns": 48000000,
-            "n": 100
-          }
-        },
-        {
-          "cpu_ms_per_op": 17.58,
-          "html_bytes": 56063,
-          "input": "store-en-US-journal.json",
-          "ok": true,
-          "render": {
-            "max_ns": 24000000,
-            "mean_ns": 17580000,
-            "median_ns": 17000000,
-            "min_ns": 16000000,
-            "n": 100
-          }
-        },
-        {
-          "cpu_ms_per_op": 53.63,
-          "html_bytes": 118169,
-          "input": "store-en-US-post.json",
-          "ok": true,
-          "render": {
-            "max_ns": 65000000,
-            "mean_ns": 53620000,
-            "median_ns": 53000000,
-            "min_ns": 51000000,
-            "n": 100
-          }
-        },
-        {
-          "cpu_ms_per_op": 62.91,
-          "html_bytes": 348473,
-          "input": "store-en-US-product.json",
-          "ok": true,
-          "render": {
-            "max_ns": 73000000,
-            "mean_ns": 62910000,
-            "median_ns": 62000000,
-            "min_ns": 60000000,
-            "n": 100
-          }
-        },
-        {
-          "cpu_ms_per_op": 73.61,
-          "html_bytes": 482824,
-          "input": "store-en-US-products.json",
-          "ok": true,
-          "render": {
-            "max_ns": 84000000,
-            "mean_ns": 73610000,
-            "median_ns": 72000000,
-            "min_ns": 68000000,
-            "n": 100
-          }
-        },
-        {
-          "cpu_ms_per_op": 38.22,
-          "html_bytes": 162119,
-          "input": "store-zh-CN-cart.json",
-          "ok": true,
-          "render": {
-            "max_ns": 48000000,
-            "mean_ns": 38210000,
-            "median_ns": 37000000,
-            "min_ns": 36000000,
-            "n": 100
-          }
-        },
-        {
-          "cpu_ms_per_op": 32.6,
-          "html_bytes": 134810,
-          "input": "store-zh-CN-checkout.json",
-          "ok": true,
-          "render": {
-            "max_ns": 45000000,
-            "mean_ns": 32600000,
+            "max_ns": 43000000,
+            "mean_ns": 32750000,
             "median_ns": 32000000,
             "min_ns": 31000000,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 61.37,
-          "html_bytes": 345831,
-          "input": "store-zh-CN-home.json",
+          "cpu_ms_per_op": 28.59,
+          "html_bytes": 137459,
+          "input": "store-en-US-checkout.json",
           "ok": true,
           "render": {
-            "max_ns": 74000000,
-            "mean_ns": 61370000,
-            "median_ns": 60000000,
-            "min_ns": 58000000,
+            "max_ns": 37000000,
+            "mean_ns": 28580000,
+            "median_ns": 28000000,
+            "min_ns": 27000000,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 21.85,
+          "cpu_ms_per_op": 54.61,
+          "html_bytes": 355606,
+          "input": "store-en-US-home.json",
+          "ok": true,
+          "render": {
+            "max_ns": 64000000,
+            "mean_ns": 54610000,
+            "median_ns": 53000000,
+            "min_ns": 52000000,
+            "n": 100
+          }
+        },
+        {
+          "cpu_ms_per_op": 18.18,
+          "html_bytes": 56063,
+          "input": "store-en-US-journal.json",
+          "ok": true,
+          "render": {
+            "max_ns": 25000000,
+            "mean_ns": 18180000,
+            "median_ns": 18000000,
+            "min_ns": 17000000,
+            "n": 100
+          }
+        },
+        {
+          "cpu_ms_per_op": 56.34,
+          "html_bytes": 118169,
+          "input": "store-en-US-post.json",
+          "ok": true,
+          "render": {
+            "max_ns": 68000000,
+            "mean_ns": 56340000,
+            "median_ns": 55000000,
+            "min_ns": 53000000,
+            "n": 100
+          }
+        },
+        {
+          "cpu_ms_per_op": 64.25,
+          "html_bytes": 348473,
+          "input": "store-en-US-product.json",
+          "ok": true,
+          "render": {
+            "max_ns": 77000000,
+            "mean_ns": 64250000,
+            "median_ns": 63000000,
+            "min_ns": 61000000,
+            "n": 100
+          }
+        },
+        {
+          "cpu_ms_per_op": 77.65,
+          "html_bytes": 482824,
+          "input": "store-en-US-products.json",
+          "ok": true,
+          "render": {
+            "max_ns": 91000000,
+            "mean_ns": 77650000,
+            "median_ns": 76000000,
+            "min_ns": 72000000,
+            "n": 100
+          }
+        },
+        {
+          "cpu_ms_per_op": 39.1,
+          "html_bytes": 162119,
+          "input": "store-zh-CN-cart.json",
+          "ok": true,
+          "render": {
+            "max_ns": 51000000,
+            "mean_ns": 39100000,
+            "median_ns": 38000000,
+            "min_ns": 37000000,
+            "n": 100
+          }
+        },
+        {
+          "cpu_ms_per_op": 32.98,
+          "html_bytes": 134810,
+          "input": "store-zh-CN-checkout.json",
+          "ok": true,
+          "render": {
+            "max_ns": 45000000,
+            "mean_ns": 32980000,
+            "median_ns": 32000000,
+            "min_ns": 30000000,
+            "n": 100
+          }
+        },
+        {
+          "cpu_ms_per_op": 62.66,
+          "html_bytes": 345831,
+          "input": "store-zh-CN-home.json",
+          "ok": true,
+          "render": {
+            "max_ns": 75000000,
+            "mean_ns": 62660000,
+            "median_ns": 61000000,
+            "min_ns": 59000000,
+            "n": 100
+          }
+        },
+        {
+          "cpu_ms_per_op": 22.38,
           "html_bytes": 53970,
           "input": "store-zh-CN-journal.json",
           "ok": true,
           "render": {
-            "max_ns": 29000000,
-            "mean_ns": 21840000,
+            "max_ns": 30000000,
+            "mean_ns": 22380000,
             "median_ns": 22000000,
             "min_ns": 21000000,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 50.37,
+          "cpu_ms_per_op": 52.57,
           "html_bytes": 111564,
           "input": "store-zh-CN-post.json",
           "ok": true,
           "render": {
-            "max_ns": 63000000,
-            "mean_ns": 50370000,
-            "median_ns": 49000000,
-            "min_ns": 47000000,
+            "max_ns": 66000000,
+            "mean_ns": 52570000,
+            "median_ns": 52000000,
+            "min_ns": 50000000,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 74.42,
+          "cpu_ms_per_op": 77.08,
           "html_bytes": 335721,
           "input": "store-zh-CN-product.json",
           "ok": true,
           "render": {
-            "max_ns": 87000000,
-            "mean_ns": 74420000,
-            "median_ns": 73000000,
-            "min_ns": 70000000,
+            "max_ns": 90000000,
+            "mean_ns": 77080000,
+            "median_ns": 76000000,
+            "min_ns": 74000000,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 82.6,
+          "cpu_ms_per_op": 85.84,
           "html_bytes": 473594,
           "input": "store-zh-CN-products.json",
           "ok": true,
           "render": {
-            "max_ns": 95000000,
-            "mean_ns": 82600000,
-            "median_ns": 81000000,
-            "min_ns": 77000000,
+            "max_ns": 107000000,
+            "mean_ns": 85840000,
+            "median_ns": 84000000,
+            "min_ns": 80000000,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 66.03,
+          "cpu_ms_per_op": 68.61,
           "html_bytes": 142049,
           "input": "wb-order-studio.json",
           "ok": true,
           "render": {
-            "max_ns": 78000000,
-            "mean_ns": 66030000,
-            "median_ns": 65500000,
-            "min_ns": 64000000,
+            "max_ns": 82000000,
+            "mean_ns": 68610000,
+            "median_ns": 68000000,
+            "min_ns": 65000000,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 48.54,
+          "cpu_ms_per_op": 50.06,
           "html_bytes": 121711,
           "input": "wb-order-weekend.json",
           "ok": true,
           "render": {
-            "max_ns": 61000000,
-            "mean_ns": 48540000,
-            "median_ns": 48000000,
-            "min_ns": 47000000,
+            "max_ns": 64000000,
+            "mean_ns": 50060000,
+            "median_ns": 50000000,
+            "min_ns": 48000000,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 89.93,
+          "cpu_ms_per_op": 92.79,
           "html_bytes": 153568,
           "input": "wb-stats-studio.json",
           "ok": true,
           "render": {
-            "max_ns": 103000000,
-            "mean_ns": 89930000,
-            "median_ns": 89000000,
-            "min_ns": 87000000,
+            "max_ns": 106000000,
+            "mean_ns": 92790000,
+            "median_ns": 92000000,
+            "min_ns": 90000000,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 59.39,
+          "cpu_ms_per_op": 61.92,
           "html_bytes": 127193,
           "input": "wb-stats-weekend.json",
           "ok": true,
           "render": {
             "max_ns": 71000000,
-            "mean_ns": 59370000,
-            "median_ns": 59000000,
-            "min_ns": 58000000,
+            "mean_ns": 61910000,
+            "median_ns": 61000000,
+            "min_ns": 59000000,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 92.63,
+          "cpu_ms_per_op": 97.78,
           "html_bytes": 225316,
           "input": "wb-studio.json",
           "ok": true,
           "render": {
-            "max_ns": 106000000,
-            "mean_ns": 92630000,
-            "median_ns": 91000000,
-            "min_ns": 89000000,
+            "max_ns": 115000000,
+            "mean_ns": 97770000,
+            "median_ns": 97000000,
+            "min_ns": 91000000,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 51.82,
+          "cpu_ms_per_op": 54.86,
           "html_bytes": 138121,
           "input": "wb-weekend.json",
           "ok": true,
           "render": {
-            "max_ns": 66000000,
-            "mean_ns": 51820000,
-            "median_ns": 51000000,
-            "min_ns": 49000000,
+            "max_ns": 72000000,
+            "mean_ns": 54850000,
+            "median_ns": 54000000,
+            "min_ns": 52000000,
             "n": 100
           }
         }
@@ -1717,49 +1717,49 @@
       "prelude_ms": [
         0,
         0,
-        100,
-        1
+        101,
+        2
       ]
     },
     "tries": [
       {
-        "cpu_s": 143.508,
+        "cpu_s": 149.588,
         "disturbed": 0,
-        "sibling_ticks": 38,
+        "sibling_ticks": 3,
         "try": 0,
-        "wall_s": 143.533
+        "wall_s": 149.642
       }
     ]
   },
-  "liustack-slowjs-bench": {
+  "liustack-tifajs-bench": {
     "result": {
-      "load_ms": 75.953621,
+      "load_ms": 75.33586,
       "pages": [
         {
-          "cpu_ms_per_op": 11.348324999999999,
+          "cpu_ms_per_op": 11.557195,
           "html_bytes": 143145,
           "html_sum": "a4f6426afe89bab7",
           "input": "spiral.json",
           "ok": true,
           "render": {
-            "max_ns": 14171666,
-            "mean_ns": 11350165.295,
-            "median_ns": 11183887,
-            "min_ns": 10702778,
+            "max_ns": 15018226,
+            "mean_ns": 11557191.105,
+            "median_ns": 11343247,
+            "min_ns": 10794007,
             "n": 200
           }
         },
         {
-          "cpu_ms_per_op": 9.84949,
+          "cpu_ms_per_op": 9.264645,
           "html_bytes": 200918,
           "html_sum": "c9ff91ec05badba4",
           "input": "table.json",
           "ok": true,
           "render": {
-            "max_ns": 12357167,
-            "mean_ns": 9851321.71,
-            "median_ns": 9479883,
-            "min_ns": 8914968,
+            "max_ns": 12851907,
+            "mean_ns": 9264422.535,
+            "median_ns": 8934622.5,
+            "min_ns": 8407038,
             "n": 200
           }
         }
@@ -1767,57 +1767,57 @@
     },
     "tries": [
       {
-        "cpu_s": 5.433,
+        "cpu_s": 5.326,
         "disturbed": 0,
         "sibling_ticks": 0,
         "try": 0,
-        "wall_s": 5.443
+        "wall_s": 5.336
       }
     ]
   },
-  "liustack-slowjs-mui-native": {
+  "liustack-tifajs-mui-native": {
     "result": {
-      "load_ms": 203.902769,
+      "load_ms": 199.093756,
       "pages": [
         {
-          "cpu_ms_per_op": 29.60484,
+          "cpu_ms_per_op": 28.33436,
           "html_bytes": 98978,
           "html_sum": "ba90233b818e0f16",
           "input": "home.json",
           "ok": true,
           "render": {
-            "max_ns": 35702962,
-            "mean_ns": 29606220.84,
-            "median_ns": 29188027.5,
-            "min_ns": 27794013,
+            "max_ns": 35529621,
+            "mean_ns": 28337113.88,
+            "median_ns": 27798327.5,
+            "min_ns": 26289522,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 26.447950000000002,
+          "cpu_ms_per_op": 26.33695,
           "html_bytes": 117458,
           "html_sum": "5795c52982138b0d",
           "input": "order.json",
           "ok": true,
           "render": {
-            "max_ns": 32140941,
-            "mean_ns": 26449559.3,
-            "median_ns": 26341438,
-            "min_ns": 24478804,
+            "max_ns": 33952031,
+            "mean_ns": 26339300.92,
+            "median_ns": 25901763,
+            "min_ns": 24464033,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 67.70759,
+          "cpu_ms_per_op": 65.76774,
           "html_bytes": 160251,
           "html_sum": "0d4a65d85d270b44",
           "input": "orders.json",
           "ok": true,
           "render": {
-            "max_ns": 82339289,
-            "mean_ns": 67713857.63,
-            "median_ns": 66516688,
-            "min_ns": 64417414,
+            "max_ns": 78282989,
+            "mean_ns": 65775566.46,
+            "median_ns": 64734377.5,
+            "min_ns": 62429263,
             "n": 100
           }
         }
@@ -1825,295 +1825,295 @@
     },
     "tries": [
       {
-        "cpu_s": 15.293,
+        "cpu_s": 14.859,
         "disturbed": 0,
-        "sibling_ticks": 10,
+        "sibling_ticks": 2,
         "try": 0,
-        "wall_s": 15.307
+        "wall_s": 14.873
       }
     ]
   },
-  "liustack-slowjs-native": {
+  "liustack-tifajs-native": {
     "result": {
-      "load_ms": 480.146309,
+      "load_ms": 472.300013,
       "pages": [
         {
-          "cpu_ms_per_op": 22.217869999999998,
+          "cpu_ms_per_op": 22.40777,
           "html_bytes": 166080,
           "html_sum": "f3d6e013044a68f1",
           "input": "store-en-US-cart.json",
           "ok": true,
           "render": {
-            "max_ns": 34806761,
-            "mean_ns": 22219255.7,
-            "median_ns": 21312079.5,
-            "min_ns": 20388305,
+            "max_ns": 44283559,
+            "mean_ns": 22409692.9,
+            "median_ns": 21196135,
+            "min_ns": 19719955,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 18.874670000000002,
+          "cpu_ms_per_op": 18.79638,
           "html_bytes": 137453,
           "html_sum": "ac4c738f22b7ad8b",
           "input": "store-en-US-checkout.json",
           "ok": true,
           "render": {
-            "max_ns": 34975071,
-            "mean_ns": 18875836.09,
-            "median_ns": 18175026,
-            "min_ns": 16866256,
+            "max_ns": 37894870,
+            "mean_ns": 18797985.52,
+            "median_ns": 17865820,
+            "min_ns": 16388846,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 42.3613,
+          "cpu_ms_per_op": 40.324690000000004,
           "html_bytes": 355664,
           "html_sum": "c24f09fbca745291",
           "input": "store-en-US-home.json",
           "ok": true,
           "render": {
-            "max_ns": 56325696,
-            "mean_ns": 42364197.26,
-            "median_ns": 40508930,
-            "min_ns": 38785561,
+            "max_ns": 56525945,
+            "mean_ns": 40328388.67,
+            "median_ns": 38682770,
+            "min_ns": 37104470,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 8.707,
+          "cpu_ms_per_op": 8.4251,
           "html_bytes": 56060,
           "html_sum": "34d9aa65d6b88ac5",
           "input": "store-en-US-journal.json",
           "ok": true,
           "render": {
-            "max_ns": 24483305,
-            "mean_ns": 8707114.99,
-            "median_ns": 8422712.5,
-            "min_ns": 7915448,
+            "max_ns": 27791402,
+            "mean_ns": 8425286.82,
+            "median_ns": 8039487.5,
+            "min_ns": 7629478,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 59.2372,
+          "cpu_ms_per_op": 58.57037999999999,
           "html_bytes": 118172,
           "html_sum": "97bd73cc509fc44e",
           "input": "store-en-US-post.json",
           "ok": true,
           "render": {
-            "max_ns": 82012499,
-            "mean_ns": 59241062.86,
-            "median_ns": 50310262,
-            "min_ns": 47389068,
+            "max_ns": 83199708,
+            "mean_ns": 58574990.14,
+            "median_ns": 48832146.5,
+            "min_ns": 46337448,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 41.46862,
+          "cpu_ms_per_op": 40.19626,
           "html_bytes": 348498,
           "html_sum": "6b88e45fc562df3c",
           "input": "store-en-US-product.json",
           "ok": true,
           "render": {
-            "max_ns": 60395824,
-            "mean_ns": 41471204.29,
-            "median_ns": 39699995,
-            "min_ns": 38716050,
+            "max_ns": 63237753,
+            "mean_ns": 40199763.63,
+            "median_ns": 38366615,
+            "min_ns": 36674830,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 65.44058,
+          "cpu_ms_per_op": 64.30087,
           "html_bytes": 482863,
           "html_sum": "02bf8893ffa28753",
           "input": "store-en-US-products.json",
           "ok": true,
           "render": {
-            "max_ns": 86183269,
-            "mean_ns": 65445108.51,
-            "median_ns": 62573314.5,
-            "min_ns": 60787554,
+            "max_ns": 95971495,
+            "mean_ns": 64306851.04,
+            "median_ns": 60896258.5,
+            "min_ns": 57475475,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 24.722939999999998,
+          "cpu_ms_per_op": 22.84086,
           "html_bytes": 166384,
           "html_sum": "4c9603d46c78071e",
           "input": "store-zh-CN-cart.json",
           "ok": true,
           "render": {
-            "max_ns": 52411907,
-            "mean_ns": 24724597.74,
-            "median_ns": 23280549,
-            "min_ns": 22424104,
+            "max_ns": 48520107,
+            "mean_ns": 22841723.26,
+            "median_ns": 21776654,
+            "min_ns": 20454545,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 20.40364,
+          "cpu_ms_per_op": 19.88974,
           "html_bytes": 137822,
           "html_sum": "0c5c6b71bd6fde75",
           "input": "store-zh-CN-checkout.json",
           "ok": true,
           "render": {
-            "max_ns": 42631909,
-            "mean_ns": 20404878.64,
-            "median_ns": 19533205,
-            "min_ns": 19011295,
+            "max_ns": 46831087,
+            "mean_ns": 19891409.42,
+            "median_ns": 18851705,
+            "min_ns": 17487795,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 45.975739999999995,
+          "cpu_ms_per_op": 44.08791,
           "html_bytes": 356132,
           "html_sum": "7059ff5e666070a7",
           "input": "store-zh-CN-home.json",
           "ok": true,
           "render": {
-            "max_ns": 71616622,
-            "mean_ns": 45979415.67,
-            "median_ns": 43823919,
-            "min_ns": 42070589,
+            "max_ns": 72280531,
+            "mean_ns": 44093314.89,
+            "median_ns": 41667079,
+            "min_ns": 40313429,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 10.32668,
+          "cpu_ms_per_op": 9.67324,
           "html_bytes": 56232,
           "html_sum": "07f48444bb02cef1",
           "input": "store-zh-CN-journal.json",
           "ok": true,
           "render": {
-            "max_ns": 37923971,
-            "mean_ns": 10326926.59,
-            "median_ns": 9710502,
-            "min_ns": 9141728,
+            "max_ns": 37740660,
+            "mean_ns": 9674118.18,
+            "median_ns": 9129747.5,
+            "min_ns": 8498188,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 48.34928,
+          "cpu_ms_per_op": 46.87947,
           "html_bytes": 118290,
           "html_sum": "5922352c3571757b",
           "input": "store-zh-CN-post.json",
           "ok": true,
           "render": {
-            "max_ns": 79423570,
-            "mean_ns": 48352515.95,
-            "median_ns": 40768374.5,
-            "min_ns": 38909790,
+            "max_ns": 78159049,
+            "mean_ns": 46884452.3,
+            "median_ns": 39659409,
+            "min_ns": 37098470,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 44.40876,
+          "cpu_ms_per_op": 42.46454,
           "html_bytes": 347867,
           "html_sum": "0dfe483eb8f4ca69",
           "input": "store-zh-CN-product.json",
           "ok": true,
           "render": {
-            "max_ns": 70657092,
-            "mean_ns": 44413417.01,
-            "median_ns": 42000999.5,
-            "min_ns": 40506840,
+            "max_ns": 71966471,
+            "mean_ns": 42469650.53,
+            "median_ns": 40551099,
+            "min_ns": 38731660,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 68.8308,
+          "cpu_ms_per_op": 66.44509,
           "html_bytes": 483844,
           "html_sum": "4103661f069c060c",
           "input": "store-zh-CN-products.json",
           "ok": true,
           "render": {
-            "max_ns": 98928445,
-            "mean_ns": 68835800.18,
-            "median_ns": 65430783.5,
-            "min_ns": 63849714,
+            "max_ns": 95903034,
+            "mean_ns": 66454242.49,
+            "median_ns": 63233138,
+            "min_ns": 60865613,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 19.35925,
+          "cpu_ms_per_op": 19.4432,
           "html_bytes": 142867,
           "html_sum": "7cbe966ed47e9df2",
           "input": "wb-order-studio.json",
           "ok": true,
           "render": {
-            "max_ns": 51391958,
-            "mean_ns": 19360690.24,
-            "median_ns": 18362755.5,
-            "min_ns": 16589506,
+            "max_ns": 47664617,
+            "mean_ns": 19444882.07,
+            "median_ns": 18110745,
+            "min_ns": 16690505,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 17.80261,
+          "cpu_ms_per_op": 16.831010000000003,
           "html_bytes": 122031,
           "html_sum": "680d39f5441dd1ba",
           "input": "wb-order-weekend.json",
           "ok": true,
           "render": {
-            "max_ns": 49351298,
-            "mean_ns": 17803826.24,
-            "median_ns": 16582556,
-            "min_ns": 15623507,
+            "max_ns": 46248507,
+            "mean_ns": 16832996.91,
+            "median_ns": 15877336,
+            "min_ns": 14274077,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 22.14449,
+          "cpu_ms_per_op": 21.784830000000003,
           "html_bytes": 154021,
           "html_sum": "468a71818ec60367",
           "input": "wb-stats-studio.json",
           "ok": true,
           "render": {
-            "max_ns": 51015447,
-            "mean_ns": 22145904.32,
-            "median_ns": 20697685,
-            "min_ns": 19794455,
+            "max_ns": 54892845,
+            "mean_ns": 21787534.52,
+            "median_ns": 20237854.5,
+            "min_ns": 18942675,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 17.50997,
+          "cpu_ms_per_op": 16.41454,
           "html_bytes": 127575,
           "html_sum": "8f3b6bb1289e8dc7",
           "input": "wb-stats-weekend.json",
           "ok": true,
           "render": {
-            "max_ns": 43944839,
-            "mean_ns": 17510806.68,
-            "median_ns": 16194316,
-            "min_ns": 15759776,
+            "max_ns": 45040208,
+            "mean_ns": 16416372.79,
+            "median_ns": 15314986,
+            "min_ns": 14395806,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 45.70326,
+          "cpu_ms_per_op": 44.143879999999996,
           "html_bytes": 225917,
           "html_sum": "0bf0f64224b051d1",
           "input": "wb-studio.json",
           "ok": true,
           "render": {
-            "max_ns": 77740900,
-            "mean_ns": 45706322.17,
-            "median_ns": 41907989,
-            "min_ns": 40629350,
+            "max_ns": 83255258,
+            "mean_ns": 44148484.12,
+            "median_ns": 40228379,
+            "min_ns": 38682859,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 27.433960000000003,
+          "cpu_ms_per_op": 27.03529,
           "html_bytes": 138464,
           "html_sum": "dd8ca3ece835b578",
           "input": "wb-weekend.json",
           "ok": true,
           "render": {
-            "max_ns": 63544474,
-            "mean_ns": 27435138.66,
-            "median_ns": 25161118.5,
-            "min_ns": 23664054,
+            "max_ns": 65725272,
+            "mean_ns": 27037325.09,
+            "median_ns": 24322948,
+            "min_ns": 23223183,
             "n": 100
           }
         }
@@ -2121,1234 +2121,1234 @@
     },
     "tries": [
       {
-        "cpu_s": 81.928,
+        "cpu_s": 79.462,
         "disturbed": 0,
-        "sibling_ticks": 34,
+        "sibling_ticks": 4,
         "try": 0,
-        "wall_s": 81.945
+        "wall_s": 79.483
       }
     ]
   },
-  "liustack-slowjs-polyfill-bench": {
+  "liustack-tifajs-polyfill-bench": {
     "result": {
-      "load_ms": 73.053102,
+      "load_ms": 74.842999,
       "pages": [
         {
-          "cpu_ms_per_op": 11.31699,
+          "cpu_ms_per_op": 11.19774,
           "html_bytes": 143145,
           "html_sum": "a4f6426afe89bab7",
           "input": "spiral.json",
           "ok": true,
           "render": {
-            "max_ns": 14365587,
-            "mean_ns": 11317291.8,
-            "median_ns": 11087812.5,
-            "min_ns": 10795697,
+            "max_ns": 14069206,
+            "mean_ns": 11198144.795,
+            "median_ns": 10942432,
+            "min_ns": 10578087,
             "n": 200
           }
         },
         {
-          "cpu_ms_per_op": 9.694585,
+          "cpu_ms_per_op": 9.75831,
           "html_bytes": 200918,
           "html_sum": "c9ff91ec05badba4",
           "input": "table.json",
           "ok": true,
           "render": {
-            "max_ns": 11347867,
-            "mean_ns": 9694834.605,
-            "median_ns": 9357988,
-            "min_ns": 8982788,
+            "max_ns": 12818636,
+            "mean_ns": 9758779.415,
+            "median_ns": 9324042.5,
+            "min_ns": 8517977,
             "n": 200
           }
         }
       ],
       "prelude_ms": [
-        24.396964
+        24.846274
       ]
     },
     "tries": [
       {
-        "cpu_s": 5.393,
+        "cpu_s": 5.384,
         "disturbed": 0,
-        "sibling_ticks": 1,
+        "sibling_ticks": 2,
         "try": 0,
-        "wall_s": 5.405
+        "wall_s": 5.399
       }
     ]
   },
-  "liustack-slowjs-polyfill-mui-pf": {
+  "liustack-tifajs-polyfill-mui-pf": {
     "result": {
-      "load_ms": 180.753806,
+      "load_ms": 180.982531,
       "pages": [
         {
-          "cpu_ms_per_op": 61.12339,
+          "cpu_ms_per_op": 61.524179999999994,
           "html_bytes": 99002,
           "html_sum": "d1c4a9b13208ad45",
           "input": "home.json",
           "ok": true,
           "render": {
-            "max_ns": 90883908,
-            "mean_ns": 61127676.9,
-            "median_ns": 60630705,
-            "min_ns": 57833636,
+            "max_ns": 94331235,
+            "mean_ns": 61530197.3,
+            "median_ns": 60613718.5,
+            "min_ns": 58331584,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 30.5485,
+          "cpu_ms_per_op": 31.09402,
           "html_bytes": 117460,
           "html_sum": "25c42bb0489a0e3e",
           "input": "order.json",
           "ok": true,
           "render": {
-            "max_ns": 54063466,
-            "mean_ns": 30549338.46,
-            "median_ns": 30228772.5,
-            "min_ns": 28488633,
+            "max_ns": 60877883,
+            "mean_ns": 31096387.72,
+            "median_ns": 30319572,
+            "min_ns": 28830442,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 127.3392,
+          "cpu_ms_per_op": 127.64075000000001,
           "html_bytes": 160301,
           "html_sum": "2a0c8832456d0349",
           "input": "orders.json",
           "ok": true,
           "render": {
-            "max_ns": 167375909,
-            "mean_ns": 127347681.45,
-            "median_ns": 125703724,
-            "min_ns": 122940859,
+            "max_ns": 171582264,
+            "mean_ns": 127654398.5,
+            "median_ns": 125540533,
+            "min_ns": 123384527,
             "n": 100
           }
         }
       ],
       "prelude_ms": [
-        0.10524,
-        311.561903,
-        21.889814
+        0.10284,
+        308.970407,
+        22.406974
       ]
     },
     "tries": [
       {
-        "cpu_s": 27.229,
+        "cpu_s": 27.415,
         "disturbed": 0,
-        "sibling_ticks": 3,
+        "sibling_ticks": 0,
         "try": 0,
-        "wall_s": 27.237
+        "wall_s": 27.429
       }
     ]
   },
-  "liustack-slowjs-polyfill-pf": {
+  "liustack-tifajs-polyfill-pf": {
     "result": {
-      "load_ms": 452.000979,
+      "load_ms": 461.693856,
       "pages": [
         {
-          "cpu_ms_per_op": 33.78835,
+          "cpu_ms_per_op": 34.06907,
           "html_bytes": 166080,
           "html_sum": "f3d6e013044a68f1",
           "input": "store-en-US-cart.json",
           "ok": true,
           "render": {
-            "max_ns": 70327272,
-            "mean_ns": 33790177.69,
-            "median_ns": 32440787,
-            "min_ns": 31080542,
+            "max_ns": 86543507,
+            "mean_ns": 34072150.88,
+            "median_ns": 32171636.5,
+            "min_ns": 31060121,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 28.62509,
+          "cpu_ms_per_op": 28.41384,
           "html_bytes": 137453,
           "html_sum": "ac4c738f22b7ad8b",
           "input": "store-en-US-checkout.json",
           "ok": true,
           "render": {
-            "max_ns": 68293443,
-            "mean_ns": 28625901.8,
-            "median_ns": 27470733.5,
-            "min_ns": 26397154,
+            "max_ns": 75807320,
+            "mean_ns": 28415471.13,
+            "median_ns": 26983003,
+            "min_ns": 25709213,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 59.46424,
+          "cpu_ms_per_op": 59.584669999999996,
           "html_bytes": 355664,
           "html_sum": "c24f09fbca745291",
           "input": "store-en-US-home.json",
           "ok": true,
           "render": {
-            "max_ns": 95773376,
-            "mean_ns": 59467541.21,
-            "median_ns": 56969981,
-            "min_ns": 55651596,
+            "max_ns": 101701863,
+            "mean_ns": 59590239.85,
+            "median_ns": 56651729.5,
+            "min_ns": 55343725,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 18.39928,
+          "cpu_ms_per_op": 17.7939,
           "html_bytes": 56060,
           "html_sum": "34d9aa65d6b88ac5",
           "input": "store-en-US-journal.json",
           "ok": true,
           "render": {
-            "max_ns": 63738644,
-            "mean_ns": 18399921.21,
-            "median_ns": 17419600.5,
-            "min_ns": 16944336,
+            "max_ns": 71154010,
+            "mean_ns": 17795161.13,
+            "median_ns": 17292515,
+            "min_ns": 16275606,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 69.37980999999999,
+          "cpu_ms_per_op": 68.46155,
           "html_bytes": 118172,
           "html_sum": "97bd73cc509fc44e",
           "input": "store-en-US-post.json",
           "ok": true,
           "render": {
-            "max_ns": 121920030,
-            "mean_ns": 69383654.08,
-            "median_ns": 59740185,
-            "min_ns": 57997525,
+            "max_ns": 126842535,
+            "mean_ns": 68468462,
+            "median_ns": 57792699,
+            "min_ns": 55402545,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 59.048770000000005,
+          "cpu_ms_per_op": 59.74521,
           "html_bytes": 348498,
           "html_sum": "6b88e45fc562df3c",
           "input": "store-en-US-product.json",
           "ok": true,
           "render": {
-            "max_ns": 101795005,
-            "mean_ns": 59052537.7,
-            "median_ns": 56475286,
-            "min_ns": 55366356,
+            "max_ns": 110444921,
+            "mean_ns": 59752094.29,
+            "median_ns": 56698915,
+            "min_ns": 54836105,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 84.53896,
+          "cpu_ms_per_op": 83.42551999999999,
           "html_bytes": 482863,
           "html_sum": "02bf8893ffa28753",
           "input": "store-en-US-products.json",
           "ok": true,
           "render": {
-            "max_ns": 129435158,
-            "mean_ns": 84544056.01,
-            "median_ns": 80473755,
-            "min_ns": 77501230,
+            "max_ns": 145770421,
+            "mean_ns": 83434728.96,
+            "median_ns": 79397783.5,
+            "min_ns": 77434479,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 39.85402,
+          "cpu_ms_per_op": 39.4173,
           "html_bytes": 166384,
           "html_sum": "4c9603d46c78071e",
           "input": "store-zh-CN-cart.json",
           "ok": true,
           "render": {
-            "max_ns": 94744456,
-            "mean_ns": 39855573.4,
-            "median_ns": 38210711,
-            "min_ns": 36822351,
+            "max_ns": 98993913,
+            "mean_ns": 39421496.8,
+            "median_ns": 37585495,
+            "min_ns": 36705590,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 33.69779,
+          "cpu_ms_per_op": 32.795030000000004,
           "html_bytes": 137822,
           "html_sum": "0c5c6b71bd6fde75",
           "input": "store-zh-CN-checkout.json",
           "ok": true,
           "render": {
-            "max_ns": 91956148,
-            "mean_ns": 33698810.34,
-            "median_ns": 32467357,
-            "min_ns": 31265193,
+            "max_ns": 98926823,
+            "mean_ns": 32798277.58,
+            "median_ns": 31429016.5,
+            "min_ns": 30552282,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 71.47768,
+          "cpu_ms_per_op": 70.40848,
           "html_bytes": 356132,
           "html_sum": "7059ff5e666070a7",
           "input": "store-zh-CN-home.json",
           "ok": true,
           "render": {
-            "max_ns": 125299199,
-            "mean_ns": 71481957.98,
-            "median_ns": 68524938,
-            "min_ns": 66026254,
+            "max_ns": 128661565,
+            "mean_ns": 70416950.09,
+            "median_ns": 67531492,
+            "min_ns": 66183262,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 21.980030000000003,
+          "cpu_ms_per_op": 22.552229999999998,
           "html_bytes": 56232,
           "html_sum": "07f48444bb02cef1",
           "input": "store-zh-CN-journal.json",
           "ok": true,
           "render": {
-            "max_ns": 80027800,
-            "mean_ns": 21980662.53,
-            "median_ns": 21389960,
-            "min_ns": 20799075,
+            "max_ns": 88587396,
+            "mean_ns": 22554508.78,
+            "median_ns": 21178519,
+            "min_ns": 20569484,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 62.04162,
+          "cpu_ms_per_op": 60.5186,
           "html_bytes": 118290,
           "html_sum": "5922352c3571757b",
           "input": "store-zh-CN-post.json",
           "ok": true,
           "render": {
-            "max_ns": 126631909,
-            "mean_ns": 62046086.96,
-            "median_ns": 54071436.5,
-            "min_ns": 52413267,
+            "max_ns": 135229014,
+            "mean_ns": 60525374,
+            "median_ns": 52065701,
+            "min_ns": 49917056,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 67.87472,
+          "cpu_ms_per_op": 67.84563,
           "html_bytes": 347867,
           "html_sum": "0dfe483eb8f4ca69",
           "input": "store-zh-CN-product.json",
           "ok": true,
           "render": {
-            "max_ns": 118618501,
-            "mean_ns": 67880607.95,
-            "median_ns": 65206684,
-            "min_ns": 63803144,
+            "max_ns": 128234065,
+            "mean_ns": 67853219.73,
+            "median_ns": 65475597.5,
+            "min_ns": 63996723,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 95.27781999999999,
+          "cpu_ms_per_op": 94.02835999999999,
           "html_bytes": 483844,
           "html_sum": "4103661f069c060c",
           "input": "store-zh-CN-products.json",
           "ok": true,
           "render": {
-            "max_ns": 153614412,
-            "mean_ns": 95283582.52,
-            "median_ns": 91375577.5,
-            "min_ns": 88834189,
+            "max_ns": 164267485,
+            "mean_ns": 94039847.69,
+            "median_ns": 90057505.5,
+            "min_ns": 87665676,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 37.36368,
+          "cpu_ms_per_op": 36.76638,
           "html_bytes": 142827,
           "html_sum": "3029ea2ed7be5b5f",
           "input": "wb-order-studio.json",
           "ok": true,
           "render": {
-            "max_ns": 99706205,
-            "mean_ns": 37364958.8,
-            "median_ns": 35572576,
-            "min_ns": 34242772,
+            "max_ns": 112346340,
+            "mean_ns": 36769962.12,
+            "median_ns": 35276920.5,
+            "min_ns": 33421731,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 29.4632,
+          "cpu_ms_per_op": 28.566370000000003,
           "html_bytes": 122007,
           "html_sum": "cd367851be079144",
           "input": "wb-order-weekend.json",
           "ok": true,
           "render": {
-            "max_ns": 88278358,
-            "mean_ns": 29464654.72,
-            "median_ns": 28324212.5,
-            "min_ns": 26985874,
+            "max_ns": 100052703,
+            "mean_ns": 28568890.09,
+            "median_ns": 27026233,
+            "min_ns": 26143122,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 46.44254,
+          "cpu_ms_per_op": 45.27648,
           "html_bytes": 154005,
           "html_sum": "f22c78855e73f2e6",
           "input": "wb-stats-studio.json",
           "ok": true,
           "render": {
-            "max_ns": 104304774,
-            "mean_ns": 46444402.02,
-            "median_ns": 44659099,
-            "min_ns": 43511149,
+            "max_ns": 119792678,
+            "mean_ns": 45281430.78,
+            "median_ns": 43709568,
+            "min_ns": 42089419,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 33.79444,
+          "cpu_ms_per_op": 32.91704,
           "html_bytes": 127559,
           "html_sum": "50972ab667000e2a",
           "input": "wb-stats-weekend.json",
           "ok": true,
           "render": {
-            "max_ns": 94119797,
-            "mean_ns": 33795475.03,
-            "median_ns": 31921297,
-            "min_ns": 30732092,
+            "max_ns": 101119283,
+            "mean_ns": 32919799.91,
+            "median_ns": 30809536,
+            "min_ns": 29868921,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 67.91525,
+          "cpu_ms_per_op": 66.6172,
           "html_bytes": 225863,
           "html_sum": "0c93a9a4f43223e2",
           "input": "wb-studio.json",
           "ok": true,
           "render": {
-            "max_ns": 132865397,
-            "mean_ns": 67918394.7,
-            "median_ns": 63852749,
-            "min_ns": 62619934,
+            "max_ns": 157792727,
+            "mean_ns": 66624018.41,
+            "median_ns": 62231128,
+            "min_ns": 60473024,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 40.3003,
+          "cpu_ms_per_op": 38.92066,
           "html_bytes": 138436,
           "html_sum": "4fed6dfe53f91b43",
           "input": "wb-weekend.json",
           "ok": true,
           "render": {
-            "max_ns": 113346862,
-            "mean_ns": 40302192.46,
-            "median_ns": 37380040.5,
-            "min_ns": 36528840,
+            "max_ns": 116014178,
+            "mean_ns": 38925091.11,
+            "median_ns": 35893875,
+            "min_ns": 35012971,
             "n": 100
           }
         }
       ],
       "prelude_ms": [
-        0.09809,
-        308.965044,
-        22.137424
+        0.12935,
+        311.796506,
+        22.164094
       ]
     },
     "tries": [
       {
-        "cpu_s": 122.324,
+        "cpu_s": 121.102,
         "disturbed": 0,
-        "sibling_ticks": 10,
+        "sibling_ticks": 6,
         "try": 0,
-        "wall_s": 122.342
+        "wall_s": 121.127
       }
     ]
   },
   "moejs-bench": {
     "result": {
-      "load_ms": 96.763516,
+      "load_ms": 96.252634,
       "pages": [
         {
-          "cpu_ms_per_op": 15.941565,
+          "cpu_ms_per_op": 15.979655000000001,
           "html_bytes": 143145,
           "html_sum": "a4f6426afe89bab7",
           "input": "spiral.json",
           "ok": true,
           "render": {
-            "max_ns": 27549954,
-            "mean_ns": 15941283.19,
-            "median_ns": 12171957,
-            "min_ns": 11236488,
+            "max_ns": 28770712,
+            "mean_ns": 15980402.075,
+            "median_ns": 12345126.5,
+            "min_ns": 11122157,
             "n": 200
           }
         },
         {
-          "cpu_ms_per_op": 13.691110000000002,
+          "cpu_ms_per_op": 13.868495000000001,
           "html_bytes": 200918,
           "html_sum": "c9ff91ec05badba4",
           "input": "table.json",
           "ok": true,
           "render": {
-            "max_ns": 26221564,
-            "mean_ns": 13690805.705,
-            "median_ns": 10184852.5,
-            "min_ns": 9634208,
+            "max_ns": 26502603,
+            "mean_ns": 13869022.365,
+            "median_ns": 10369306.5,
+            "min_ns": 9623707,
             "n": 200
           }
         }
       ],
       "prelude_ms": [
-        0.18764,
-        47.492078
+        0.20308,
+        46.479597
       ]
     },
     "tries": [
       {
-        "cpu_s": 7.599,
+        "cpu_s": 7.616,
         "disturbed": 0,
-        "sibling_ticks": 11,
+        "sibling_ticks": 0,
         "try": 0,
-        "wall_s": 7.612
+        "wall_s": 7.625
       }
     ]
   },
   "moejs-mui-native": {
     "result": {
-      "load_ms": 235.618651,
+      "load_ms": 253.22187,
       "pages": [
         {
-          "cpu_ms_per_op": 42.71668,
+          "cpu_ms_per_op": 42.591440000000006,
           "html_bytes": 98978,
           "html_sum": "ba90233b818e0f16",
           "input": "home.json",
           "ok": true,
           "render": {
-            "max_ns": 58118675,
-            "mean_ns": 42718299.3,
-            "median_ns": 38730641,
-            "min_ns": 36832331,
+            "max_ns": 59536643,
+            "mean_ns": 42596385.21,
+            "median_ns": 38490179,
+            "min_ns": 37354250,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 40.08059,
+          "cpu_ms_per_op": 39.33637,
           "html_bytes": 117458,
           "html_sum": "5795c52982138b0d",
           "input": "order.json",
           "ok": true,
           "render": {
-            "max_ns": 58639856,
-            "mean_ns": 40082169.09,
-            "median_ns": 36183611,
-            "min_ns": 34216761,
+            "max_ns": 57889915,
+            "mean_ns": 39340177.22,
+            "median_ns": 35241865,
+            "min_ns": 33035291,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 100.03778,
+          "cpu_ms_per_op": 98.09496999999999,
           "html_bytes": 160251,
           "html_sum": "0d4a65d85d270b44",
           "input": "orders.json",
           "ok": true,
           "render": {
-            "max_ns": 117623911,
-            "mean_ns": 100043095.89,
-            "median_ns": 101278844.5,
-            "min_ns": 85099519,
+            "max_ns": 112191270,
+            "mean_ns": 98106456.66,
+            "median_ns": 101400447,
+            "min_ns": 85820916,
             "n": 100
           }
         }
       ],
       "prelude_ms": [
-        0.18611,
-        46.080178
+        0.19796,
+        49.988697
       ]
     },
     "tries": [
       {
-        "cpu_s": 22.572,
+        "cpu_s": 22.331,
         "disturbed": 0,
-        "sibling_ticks": 1,
+        "sibling_ticks": 2,
         "try": 0,
-        "wall_s": 22.585
+        "wall_s": 22.344
       }
     ]
   },
   "moejs-native": {
     "result": {
-      "load_ms": 527.099878,
+      "load_ms": 545.154911,
       "pages": [
         {
-          "cpu_ms_per_op": 41.22397,
+          "cpu_ms_per_op": 43.29129,
           "html_bytes": 166080,
           "html_sum": "f3d6e013044a68f1",
           "input": "store-en-US-cart.json",
           "ok": true,
           "render": {
-            "max_ns": 70774392,
-            "mean_ns": 41226254.79,
-            "median_ns": 35744671,
-            "min_ns": 34451031,
+            "max_ns": 72966830,
+            "mean_ns": 43295913.68,
+            "median_ns": 36945995,
+            "min_ns": 35385400,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 35.10161,
+          "cpu_ms_per_op": 36.58536,
           "html_bytes": 137453,
           "html_sum": "ac4c738f22b7ad8b",
           "input": "store-en-US-checkout.json",
           "ok": true,
           "render": {
-            "max_ns": 65941023,
-            "mean_ns": 35104591.38,
-            "median_ns": 29985152.5,
-            "min_ns": 28771403,
+            "max_ns": 71401481,
+            "mean_ns": 36590392.73,
+            "median_ns": 31203916,
+            "min_ns": 29261012,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 78.62621,
+          "cpu_ms_per_op": 81.56108,
           "html_bytes": 355664,
           "html_sum": "c24f09fbca745291",
           "input": "store-en-US-home.json",
           "ok": true,
           "render": {
-            "max_ns": 105478483,
-            "mean_ns": 78634452.98,
-            "median_ns": 71948607,
-            "min_ns": 65254754,
+            "max_ns": 108295371,
+            "mean_ns": 81573697.38,
+            "median_ns": 79020298,
+            "min_ns": 68435351,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 21.01834,
+          "cpu_ms_per_op": 21.89924,
           "html_bytes": 56060,
           "html_sum": "34d9aa65d6b88ac5",
           "input": "store-en-US-journal.json",
           "ok": true,
           "render": {
-            "max_ns": 50119248,
-            "mean_ns": 21019264.16,
-            "median_ns": 18115711,
-            "min_ns": 17107925,
+            "max_ns": 52905156,
+            "mean_ns": 21900323.51,
+            "median_ns": 18464085,
+            "min_ns": 17494355,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 78.79946,
+          "cpu_ms_per_op": 83.49253,
           "html_bytes": 118172,
           "html_sum": "97bd73cc509fc44e",
           "input": "store-en-US-post.json",
           "ok": true,
           "render": {
-            "max_ns": 113254812,
-            "mean_ns": 78805159.47,
-            "median_ns": 64311819,
-            "min_ns": 61343045,
+            "max_ns": 119003587,
+            "mean_ns": 83502783.96,
+            "median_ns": 68330271,
+            "min_ns": 63498442,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 71.90363,
+          "cpu_ms_per_op": 76.76031,
           "html_bytes": 348498,
           "html_sum": "6b88e45fc562df3c",
           "input": "store-en-US-product.json",
           "ok": true,
           "render": {
-            "max_ns": 107564143,
-            "mean_ns": 71908587.75,
-            "median_ns": 60935760,
-            "min_ns": 58770125,
+            "max_ns": 123069406,
+            "mean_ns": 76769548.71,
+            "median_ns": 67212531.5,
+            "min_ns": 61040843,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 113.00443,
+          "cpu_ms_per_op": 120.77712,
           "html_bytes": 482863,
           "html_sum": "02bf8893ffa28753",
           "input": "store-en-US-products.json",
           "ok": true,
           "render": {
-            "max_ns": 142559795,
-            "mean_ns": 113011376.2,
-            "median_ns": 98705261,
-            "min_ns": 91056147,
+            "max_ns": 167736324,
+            "mean_ns": 120790792.15,
+            "median_ns": 104897201,
+            "min_ns": 94549214,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 50.773810000000005,
+          "cpu_ms_per_op": 53.80209,
           "html_bytes": 166384,
           "html_sum": "4c9603d46c78071e",
           "input": "store-zh-CN-cart.json",
           "ok": true,
           "render": {
-            "max_ns": 90073648,
-            "mean_ns": 50776740.05,
-            "median_ns": 42394119.5,
-            "min_ns": 40836500,
+            "max_ns": 105343942,
+            "mean_ns": 53807567.19,
+            "median_ns": 44324833,
+            "min_ns": 41280788,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 41.79309,
+          "cpu_ms_per_op": 45.64907,
           "html_bytes": 137822,
           "html_sum": "0c5c6b71bd6fde75",
           "input": "store-zh-CN-checkout.json",
           "ok": true,
           "render": {
-            "max_ns": 81662319,
-            "mean_ns": 41795303.46,
-            "median_ns": 34935911,
-            "min_ns": 33248902,
+            "max_ns": 92934134,
+            "mean_ns": 45655090.98,
+            "median_ns": 37342389.5,
+            "min_ns": 35161500,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 96.68233000000001,
+          "cpu_ms_per_op": 102.07907999999999,
           "html_bytes": 356132,
           "html_sum": "7059ff5e666070a7",
           "input": "store-zh-CN-home.json",
           "ok": true,
           "render": {
-            "max_ns": 141932064,
-            "mean_ns": 96688269.55,
-            "median_ns": 81253744.5,
-            "min_ns": 78641470,
+            "max_ns": 143980040,
+            "mean_ns": 102091523.57,
+            "median_ns": 93458859,
+            "min_ns": 81285427,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 27.49783,
+          "cpu_ms_per_op": 29.14761,
           "html_bytes": 56232,
           "html_sum": "07f48444bb02cef1",
           "input": "store-zh-CN-journal.json",
           "ok": true,
           "render": {
-            "max_ns": 62836054,
-            "mean_ns": 27499044.1,
-            "median_ns": 22821544,
-            "min_ns": 21977775,
+            "max_ns": 69162450,
+            "mean_ns": 29150815.25,
+            "median_ns": 23727933,
+            "min_ns": 22465724,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 72.89953,
+          "cpu_ms_per_op": 78.68771,
           "html_bytes": 118290,
           "html_sum": "5922352c3571757b",
           "input": "store-zh-CN-post.json",
           "ok": true,
           "render": {
-            "max_ns": 106498854,
-            "mean_ns": 72904409.86,
-            "median_ns": 58442680,
-            "min_ns": 56714296,
+            "max_ns": 132412414,
+            "mean_ns": 78697322.51,
+            "median_ns": 62353067.5,
+            "min_ns": 58992884,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 84.17365,
+          "cpu_ms_per_op": 89.38811,
           "html_bytes": 347867,
           "html_sum": "0dfe483eb8f4ca69",
           "input": "store-zh-CN-product.json",
           "ok": true,
           "render": {
-            "max_ns": 124052689,
-            "mean_ns": 84178466.19,
-            "median_ns": 69406538,
-            "min_ns": 67012563,
+            "max_ns": 141331191,
+            "mean_ns": 89398676.85,
+            "median_ns": 73314875,
+            "min_ns": 69415251,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 128.27475,
+          "cpu_ms_per_op": 138.53383,
           "html_bytes": 483844,
           "html_sum": "4103661f069c060c",
           "input": "store-zh-CN-products.json",
           "ok": true,
           "render": {
-            "max_ns": 155413101,
-            "mean_ns": 128283622.29,
-            "median_ns": 125548303.5,
-            "min_ns": 104944084,
+            "max_ns": 190616318,
+            "mean_ns": 138551051.26,
+            "median_ns": 129725724,
+            "min_ns": 107613521,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 28.67457,
+          "cpu_ms_per_op": 31.308180000000004,
           "html_bytes": 142867,
           "html_sum": "7cbe966ed47e9df2",
           "input": "wb-order-studio.json",
           "ok": true,
           "render": {
-            "max_ns": 64780794,
-            "mean_ns": 28675908.34,
-            "median_ns": 24029969,
-            "min_ns": 22942685,
+            "max_ns": 70254961,
+            "mean_ns": 31311175.42,
+            "median_ns": 25742213,
+            "min_ns": 23110664,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 24.92764,
+          "cpu_ms_per_op": 26.5068,
           "html_bytes": 122031,
           "html_sum": "680d39f5441dd1ba",
           "input": "wb-order-weekend.json",
           "ok": true,
           "render": {
-            "max_ns": 56849605,
-            "mean_ns": 24928562.31,
-            "median_ns": 20790720,
-            "min_ns": 19105095,
+            "max_ns": 60956353,
+            "mean_ns": 26510122.1,
+            "median_ns": 22186679,
+            "min_ns": 20394025,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 33.84742,
+          "cpu_ms_per_op": 34.60479,
           "html_bytes": 154021,
           "html_sum": "468a71818ec60367",
           "input": "wb-stats-studio.json",
           "ok": true,
           "render": {
-            "max_ns": 72213592,
-            "mean_ns": 33850255.88,
-            "median_ns": 27696488,
-            "min_ns": 26209684,
+            "max_ns": 74061140,
+            "mean_ns": 34608228.96,
+            "median_ns": 28204137.5,
+            "min_ns": 26450493,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 26.33028,
+          "cpu_ms_per_op": 27.65953,
           "html_bytes": 127575,
           "html_sum": "8f3b6bb1289e8dc7",
           "input": "wb-stats-weekend.json",
           "ok": true,
           "render": {
-            "max_ns": 59635775,
-            "mean_ns": 26331441.92,
-            "median_ns": 21997339,
-            "min_ns": 20766914,
+            "max_ns": 64249662,
+            "mean_ns": 27662642.05,
+            "median_ns": 22640574,
+            "min_ns": 21169914,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 70.27526,
+          "cpu_ms_per_op": 71.97557,
           "html_bytes": 225917,
           "html_sum": "0bf0f64224b051d1",
           "input": "wb-studio.json",
           "ok": true,
           "render": {
-            "max_ns": 134244396,
-            "mean_ns": 70279333.86,
-            "median_ns": 55934421,
-            "min_ns": 53121017,
+            "max_ns": 137263042,
+            "mean_ns": 71984239.15,
+            "median_ns": 57755434,
+            "min_ns": 54472925,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 42.68678,
+          "cpu_ms_per_op": 43.20563,
           "html_bytes": 138464,
           "html_sum": "dd8ca3ece835b578",
           "input": "wb-weekend.json",
           "ok": true,
           "render": {
-            "max_ns": 88858128,
-            "mean_ns": 42689139.5,
-            "median_ns": 34249871.5,
-            "min_ns": 31841222,
+            "max_ns": 91841745,
+            "mean_ns": 43210249.92,
+            "median_ns": 34694311,
+            "min_ns": 32988031,
             "n": 100
           }
         }
       ],
       "prelude_ms": [
-        0.18396,
-        49.616818
+        0.21262,
+        48.779536
       ]
     },
     "tries": [
       {
-        "cpu_s": 142.299,
+        "cpu_s": 150.591,
         "disturbed": 0,
-        "sibling_ticks": 25,
+        "sibling_ticks": 7,
         "try": 0,
-        "wall_s": 142.321
+        "wall_s": 150.618
       }
     ]
   },
   "node-jitless-bench": {
     "result": {
       "engine": "node-jitless",
-      "load_ms": 17.04595599999999,
+      "load_ms": 16.922826000000015,
       "pages": [
         {
-          "cpu_ms_per_op": 10.18875,
+          "cpu_ms_per_op": 10.25615,
           "html_bytes": 143145,
           "input": "spiral.json",
           "ok": true,
           "render": {
-            "max_ns": 21201315,
-            "mean_ns": 10187261,
-            "median_ns": 9825773,
-            "min_ns": 9550117,
+            "max_ns": 22165144,
+            "mean_ns": 10254827,
+            "median_ns": 9921408,
+            "min_ns": 9574198,
             "n": 200
           }
         },
         {
-          "cpu_ms_per_op": 9.732325000000001,
+          "cpu_ms_per_op": 9.851369999999998,
           "html_bytes": 200918,
           "input": "table.json",
           "ok": true,
           "render": {
-            "max_ns": 23083284,
-            "mean_ns": 9741478,
-            "median_ns": 9308213,
-            "min_ns": 9005267,
+            "max_ns": 26782573,
+            "mean_ns": 9850740,
+            "median_ns": 9377373,
+            "min_ns": 9043258,
             "n": 200
           }
         }
       ],
       "prelude_ms": [
-        17.885885000000002
+        17.79765599999999
       ]
     },
     "tries": [
       {
-        "cpu_s": 5.209,
+        "cpu_s": 5.275,
         "disturbed": 0,
         "sibling_ticks": 1,
         "try": 0,
-        "wall_s": 5.224
+        "wall_s": 5.288
       }
     ]
   },
   "node-jitless-mui-native": {
     "result": {
       "engine": "node-jitless",
-      "load_ms": 64.462153,
+      "load_ms": 62.685604,
       "pages": [
         {
-          "cpu_ms_per_op": 31.782340000000005,
+          "cpu_ms_per_op": 32.21766,
           "html_bytes": 98975,
           "input": "home.json",
           "ok": true,
           "render": {
-            "max_ns": 52099106,
-            "mean_ns": 31782693,
-            "median_ns": 31399476,
-            "min_ns": 30368092,
+            "max_ns": 55003616,
+            "mean_ns": 32219094,
+            "median_ns": 31757447,
+            "min_ns": 30695062,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 27.89,
+          "cpu_ms_per_op": 28.13054,
           "html_bytes": 117453,
           "input": "order.json",
           "ok": true,
           "render": {
-            "max_ns": 30579872,
-            "mean_ns": 27889215,
-            "median_ns": 27794817,
-            "min_ns": 26468323,
+            "max_ns": 30230123,
+            "mean_ns": 28131762,
+            "median_ns": 27958768,
+            "min_ns": 26663383,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 71.03038000000001,
+          "cpu_ms_per_op": 72.14476,
           "html_bytes": 160242,
           "input": "orders.json",
           "ok": true,
           "render": {
-            "max_ns": 73394510,
-            "mean_ns": 71035126,
-            "median_ns": 70955686,
-            "min_ns": 69556881,
+            "max_ns": 75835441,
+            "mean_ns": 72152539,
+            "median_ns": 72078372,
+            "min_ns": 70500982,
             "n": 100
           }
         }
       ],
       "prelude_ms": [
-        17.818574999999996
+        17.454936000000004
       ]
     },
     "tries": [
       {
-        "cpu_s": 16.275,
+        "cpu_s": 16.485,
         "disturbed": 0,
-        "sibling_ticks": 6,
+        "sibling_ticks": 1,
         "try": 0,
-        "wall_s": 16.289
+        "wall_s": 16.499
       }
     ]
   },
   "node-jitless-native": {
     "result": {
       "engine": "node-jitless",
-      "load_ms": 114.13212100000001,
+      "load_ms": 111.76601199999999,
       "pages": [
         {
-          "cpu_ms_per_op": 19.717370000000003,
+          "cpu_ms_per_op": 20.16817,
           "html_bytes": 166064,
           "input": "store-en-US-cart.json",
           "ok": true,
           "render": {
-            "max_ns": 41449700,
-            "mean_ns": 19716027,
-            "median_ns": 19083620,
-            "min_ns": 18229006,
+            "max_ns": 44638909,
+            "mean_ns": 20167612,
+            "median_ns": 19425571,
+            "min_ns": 18618176,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 17.030119999999997,
+          "cpu_ms_per_op": 17.193630000000002,
           "html_bytes": 137442,
           "input": "store-en-US-checkout.json",
           "ok": true,
           "render": {
-            "max_ns": 36552351,
-            "mean_ns": 17028830,
-            "median_ns": 16327726,
-            "min_ns": 15411956,
+            "max_ns": 24296525,
+            "mean_ns": 17192820,
+            "median_ns": 16642221,
+            "min_ns": 16117595,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 35.81712,
+          "cpu_ms_per_op": 36.772580000000005,
           "html_bytes": 355589,
           "input": "store-en-US-home.json",
           "ok": true,
           "render": {
-            "max_ns": 40052010,
-            "mean_ns": 35818478,
-            "median_ns": 35638256,
-            "min_ns": 34323591,
+            "max_ns": 40487000,
+            "mean_ns": 36774200,
+            "median_ns": 36379251,
+            "min_ns": 35357872,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 7.656350000000002,
+          "cpu_ms_per_op": 7.733119999999999,
           "html_bytes": 56046,
           "input": "store-en-US-journal.json",
           "ok": true,
           "render": {
-            "max_ns": 10457678,
-            "mean_ns": 7655262,
-            "median_ns": 7426848,
-            "min_ns": 7184789,
+            "max_ns": 10334688,
+            "mean_ns": 7732209,
+            "median_ns": 7622778,
+            "min_ns": 7397958,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 41.39477000000001,
+          "cpu_ms_per_op": 41.382569999999994,
           "html_bytes": 118152,
           "input": "store-en-US-post.json",
           "ok": true,
           "render": {
-            "max_ns": 44978718,
-            "mean_ns": 41395783,
-            "median_ns": 41155410,
-            "min_ns": 39973729,
+            "max_ns": 72956933,
+            "mean_ns": 41386969,
+            "median_ns": 40922440,
+            "min_ns": 39467250,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 36.34402,
+          "cpu_ms_per_op": 37.06754999999999,
           "html_bytes": 348456,
           "input": "store-en-US-product.json",
           "ok": true,
           "render": {
-            "max_ns": 63410974,
-            "mean_ns": 36345458,
-            "median_ns": 35550321,
-            "min_ns": 34564701,
+            "max_ns": 73330522,
+            "mean_ns": 37070130,
+            "median_ns": 36221986,
+            "min_ns": 35076581,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 57.129259999999995,
+          "cpu_ms_per_op": 57.650820000000024,
           "html_bytes": 482807,
           "input": "store-en-US-products.json",
           "ok": true,
           "render": {
-            "max_ns": 80141460,
-            "mean_ns": 57131833,
-            "median_ns": 56199806,
-            "min_ns": 54514806,
+            "max_ns": 62036835,
+            "mean_ns": 57656595,
+            "median_ns": 57178151,
+            "min_ns": 55931246,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 20.505930000000006,
+          "cpu_ms_per_op": 20.955430000000014,
           "html_bytes": 162102,
           "input": "store-zh-CN-cart.json",
           "ok": true,
           "render": {
-            "max_ns": 23759355,
-            "mean_ns": 20505315,
-            "median_ns": 20281250,
-            "min_ns": 19405045,
+            "max_ns": 24375874,
+            "mean_ns": 20955611,
+            "median_ns": 20643745,
+            "min_ns": 20093205,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 17.833889999999993,
+          "cpu_ms_per_op": 18.413999999999977,
           "html_bytes": 134793,
           "input": "store-zh-CN-checkout.json",
           "ok": true,
           "render": {
-            "max_ns": 24464804,
-            "mean_ns": 17832775,
-            "median_ns": 17374445,
-            "min_ns": 16670326,
+            "max_ns": 57189736,
+            "mean_ns": 18415889,
+            "median_ns": 17513835,
+            "min_ns": 16597446,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 38.80556000000001,
+          "cpu_ms_per_op": 39.327479999999994,
           "html_bytes": 345814,
           "input": "store-zh-CN-home.json",
           "ok": true,
           "render": {
-            "max_ns": 43901209,
-            "mean_ns": 38806380,
-            "median_ns": 38251380,
-            "min_ns": 37203431,
+            "max_ns": 43563289,
+            "mean_ns": 39331270,
+            "median_ns": 38865171,
+            "min_ns": 37989570,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 8.338269999999975,
+          "cpu_ms_per_op": 8.736100000000006,
           "html_bytes": 53953,
           "input": "store-zh-CN-journal.json",
           "ok": true,
           "render": {
-            "max_ns": 12787827,
-            "mean_ns": 8337279,
-            "median_ns": 8150268,
-            "min_ns": 7927178,
+            "max_ns": 12115957,
+            "mean_ns": 8734543,
+            "median_ns": 8607738,
+            "min_ns": 8304888,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 33.61671000000002,
+          "cpu_ms_per_op": 33.83161,
           "html_bytes": 111547,
           "input": "store-zh-CN-post.json",
           "ok": true,
           "render": {
-            "max_ns": 37052710,
-            "mean_ns": 33619225,
-            "median_ns": 33524821,
-            "min_ns": 32092482,
+            "max_ns": 36315631,
+            "mean_ns": 33833800,
+            "median_ns": 33573256,
+            "min_ns": 32528102,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 37.03991000000002,
+          "cpu_ms_per_op": 38.76353999999999,
           "html_bytes": 335704,
           "input": "store-zh-CN-product.json",
           "ok": true,
           "render": {
-            "max_ns": 40877979,
-            "mean_ns": 37041238,
-            "median_ns": 36677071,
-            "min_ns": 35433671,
+            "max_ns": 71289752,
+            "mean_ns": 38766590,
+            "median_ns": 37845841,
+            "min_ns": 36791081,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 59.271010000000025,
+          "cpu_ms_per_op": 61.31193999999996,
           "html_bytes": 473577,
           "input": "store-zh-CN-products.json",
           "ok": true,
           "render": {
-            "max_ns": 89926148,
-            "mean_ns": 59274414,
-            "median_ns": 58555500,
-            "min_ns": 56135975,
+            "max_ns": 101847295,
+            "mean_ns": 61319030,
+            "median_ns": 60465275,
+            "min_ns": 57227726,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 16.683930000000036,
+          "cpu_ms_per_op": 17.30087999999996,
           "html_bytes": 142072,
           "input": "wb-order-studio.json",
           "ok": true,
           "render": {
-            "max_ns": 20626115,
-            "mean_ns": 16682744,
-            "median_ns": 16420021,
-            "min_ns": 15550646,
+            "max_ns": 22937154,
+            "mean_ns": 17301006,
+            "median_ns": 16905445,
+            "min_ns": 15921735,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 14.590180000000037,
+          "cpu_ms_per_op": 15.02101999999999,
           "html_bytes": 121718,
           "input": "wb-order-weekend.json",
           "ok": true,
           "render": {
-            "max_ns": 18770895,
-            "mean_ns": 14588951,
-            "median_ns": 14341762,
-            "min_ns": 13659047,
+            "max_ns": 20810085,
+            "mean_ns": 15020570,
+            "median_ns": 14735662,
+            "min_ns": 14001446,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 18.672549999999973,
+          "cpu_ms_per_op": 19.036929999999995,
           "html_bytes": 153567,
           "input": "wb-stats-studio.json",
           "ok": true,
           "render": {
-            "max_ns": 22599564,
-            "mean_ns": 18671320,
-            "median_ns": 18295950,
-            "min_ns": 17652335,
+            "max_ns": 23569524,
+            "mean_ns": 19036919,
+            "median_ns": 18662041,
+            "min_ns": 18034576,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 15.431959999999963,
+          "cpu_ms_per_op": 15.031569999999993,
           "html_bytes": 127192,
           "input": "wb-stats-weekend.json",
           "ok": true,
           "render": {
-            "max_ns": 59007834,
-            "mean_ns": 15432077,
-            "median_ns": 14640816,
-            "min_ns": 14042496,
+            "max_ns": 20818845,
+            "mean_ns": 15031350,
+            "median_ns": 14686827,
+            "min_ns": 14007227,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 38.95848999999995,
+          "cpu_ms_per_op": 38.776619999999966,
           "html_bytes": 225353,
           "input": "wb-studio.json",
           "ok": true,
           "render": {
-            "max_ns": 49182867,
-            "mean_ns": 38959028,
-            "median_ns": 37357105,
-            "min_ns": 35824670,
+            "max_ns": 47708768,
+            "mean_ns": 38779489,
+            "median_ns": 37447160,
+            "min_ns": 35026941,
             "n": 100
           }
         },
         {
-          "cpu_ms_per_op": 23.522370000000084,
+          "cpu_ms_per_op": 23.988659999999946,
           "html_bytes": 138132,
           "input": "wb-weekend.json",
           "ok": true,
           "render": {
-            "max_ns": 34047781,
-            "mean_ns": 23522005,
-            "median_ns": 22645859,
-            "min_ns": 21251214,
+            "max_ns": 66861104,
+            "mean_ns": 23989178,
+            "median_ns": 22679309,
+            "min_ns": 22014195,
             "n": 100
           }
         }
       ],
       "prelude_ms": [
-        17.387146
+        17.941906000000003
       ]
     },
     "tries": [
       {
-        "cpu_s": 68.31,
+        "cpu_s": 69.528,
         "disturbed": 0,
-        "sibling_ticks": 8,
+        "sibling_ticks": 3,
         "try": 0,
-        "wall_s": 68.328
+        "wall_s": 69.551
       }
     ]
   },
   "quickjs-2026-06-04-bench": {
     "result": {
       "engine": "quickjs-2026-06-04",
-      "load_ms": 39.54548999853432,
+      "load_ms": 38.20339095592499,
       "pages": [
         {
           "html_bytes": 143145,
           "input": "spiral.json",
           "ok": true,
           "render": {
-            "max_ns": 24946204,
-            "mean_ns": 20931256,
-            "median_ns": 20710880,
-            "min_ns": 19852235,
+            "max_ns": 24048184,
+            "mean_ns": 20882933,
+            "median_ns": 20651919,
+            "min_ns": 19800045,
             "n": 200
           }
         },
@@ -3357,42 +3357,42 @@
           "input": "table.json",
           "ok": true,
           "render": {
-            "max_ns": 23272144,
-            "mean_ns": 21001925,
-            "median_ns": 20818835,
-            "min_ns": 19715775,
+            "max_ns": 22781745,
+            "mean_ns": 21034673,
+            "median_ns": 20907810,
+            "min_ns": 19960125,
             "n": 200
           }
         }
       ],
       "prelude_ms": [
-        11.918696999549866
+        11.318397045135498
       ]
     },
     "tries": [
       {
-        "cpu_s": 10.59,
+        "cpu_s": 10.565,
         "disturbed": 0,
         "sibling_ticks": 0,
         "try": 0,
-        "wall_s": 10.601
+        "wall_s": 10.579
       }
     ]
   },
   "quickjs-2026-06-04-mui-pf": {
     "result": {
       "engine": "quickjs-2026-06-04",
-      "load_ms": 98.8550450000912,
+      "load_ms": 103.81668400764465,
       "pages": [
         {
           "html_bytes": 98975,
           "input": "home.json",
           "ok": true,
           "render": {
-            "max_ns": 173488436,
-            "mean_ns": 146892769,
-            "median_ns": 146416968,
-            "min_ns": 143146874,
+            "max_ns": 186436614,
+            "mean_ns": 149790022,
+            "median_ns": 149758133,
+            "min_ns": 141977385,
             "n": 100
           }
         },
@@ -3401,10 +3401,10 @@
           "input": "order.json",
           "ok": true,
           "render": {
-            "max_ns": 89570007,
-            "mean_ns": 57435257,
-            "median_ns": 57020156,
-            "min_ns": 55126776,
+            "max_ns": 95664657,
+            "mean_ns": 56131984,
+            "median_ns": 55638371,
+            "min_ns": 54706736,
             "n": 100
           }
         },
@@ -3413,44 +3413,44 @@
           "input": "orders.json",
           "ok": true,
           "render": {
-            "max_ns": 357805280,
-            "mean_ns": 290549757,
-            "median_ns": 289324642,
-            "min_ns": 281220259,
+            "max_ns": 355572622,
+            "mean_ns": 291461245,
+            "median_ns": 287872294,
+            "min_ns": 280605941,
             "n": 100
           }
         }
       ],
       "prelude_ms": [
-        0.026510000228881836,
-        221.69864399917424,
-        10.778417000547051
+        0.02740001678466797,
+        230.69717395305634,
+        11.033066987991333
       ]
     },
     "tries": [
       {
-        "cpu_s": 60.551,
+        "cpu_s": 60.997,
         "disturbed": 0,
-        "sibling_ticks": 107,
+        "sibling_ticks": 1,
         "try": 0,
-        "wall_s": 60.568
+        "wall_s": 61.018
       }
     ]
   },
   "quickjs-2026-06-04-pf": {
     "result": {
       "engine": "quickjs-2026-06-04",
-      "load_ms": 260.64037400111556,
+      "load_ms": 260.2526559829712,
       "pages": [
         {
           "html_bytes": 166064,
           "input": "store-en-US-cart.json",
           "ok": true,
           "render": {
-            "max_ns": 117270531,
-            "mean_ns": 52841953,
-            "median_ns": 51584331,
-            "min_ns": 49648737,
+            "max_ns": 109601993,
+            "mean_ns": 52422276,
+            "median_ns": 51278367,
+            "min_ns": 49835088,
             "n": 100
           }
         },
@@ -3459,10 +3459,10 @@
           "input": "store-en-US-checkout.json",
           "ok": true,
           "render": {
-            "max_ns": 155795271,
-            "mean_ns": 46014494,
-            "median_ns": 44906443,
-            "min_ns": 42420570,
+            "max_ns": 167351009,
+            "mean_ns": 45530586,
+            "median_ns": 44160174,
+            "min_ns": 41937899,
             "n": 100
           }
         },
@@ -3471,10 +3471,10 @@
           "input": "store-en-US-home.json",
           "ok": true,
           "render": {
-            "max_ns": 310873302,
-            "mean_ns": 99494635,
-            "median_ns": 95379051,
-            "min_ns": 91856876,
+            "max_ns": 329417879,
+            "mean_ns": 98834238,
+            "median_ns": 94665066,
+            "min_ns": 90660478,
             "n": 100
           }
         },
@@ -3483,10 +3483,10 @@
           "input": "store-en-US-journal.json",
           "ok": true,
           "render": {
-            "max_ns": 27730013,
-            "mean_ns": 25791613,
-            "median_ns": 25748433,
-            "min_ns": 24828483,
+            "max_ns": 26746193,
+            "mean_ns": 25559013,
+            "median_ns": 25484569,
+            "min_ns": 24842123,
             "n": 100
           }
         },
@@ -3495,10 +3495,10 @@
           "input": "store-en-US-post.json",
           "ok": true,
           "render": {
-            "max_ns": 497101485,
-            "mean_ns": 103433202,
-            "median_ns": 88340193,
-            "min_ns": 84127499,
+            "max_ns": 536605807,
+            "mean_ns": 104858984,
+            "median_ns": 89274538,
+            "min_ns": 85241919,
             "n": 100
           }
         },
@@ -3507,10 +3507,10 @@
           "input": "store-en-US-product.json",
           "ok": true,
           "render": {
-            "max_ns": 506595132,
-            "mean_ns": 97673149,
-            "median_ns": 92948052,
-            "min_ns": 90669818,
+            "max_ns": 524543300,
+            "mean_ns": 99270565,
+            "median_ns": 94647986,
+            "min_ns": 92731197,
             "n": 100
           }
         },
@@ -3519,10 +3519,10 @@
           "input": "store-en-US-products.json",
           "ok": true,
           "render": {
-            "max_ns": 626614362,
-            "mean_ns": 138919963,
-            "median_ns": 133503771,
-            "min_ns": 129270187,
+            "max_ns": 635396663,
+            "mean_ns": 140234958,
+            "median_ns": 134527462,
+            "min_ns": 131964657,
             "n": 100
           }
         },
@@ -3531,10 +3531,10 @@
           "input": "store-zh-CN-cart.json",
           "ok": true,
           "render": {
-            "max_ns": 654786125,
-            "mean_ns": 64653956,
-            "median_ns": 58359285,
-            "min_ns": 57268285,
+            "max_ns": 667110995,
+            "mean_ns": 64874108,
+            "median_ns": 58644630,
+            "min_ns": 57692326,
             "n": 100
           }
         },
@@ -3543,10 +3543,10 @@
           "input": "store-zh-CN-checkout.json",
           "ok": true,
           "render": {
-            "max_ns": 53886236,
-            "mean_ns": 51373105,
-            "median_ns": 51214612,
-            "min_ns": 49392087,
+            "max_ns": 57605915,
+            "mean_ns": 53177916,
+            "median_ns": 52922562,
+            "min_ns": 49831197,
             "n": 100
           }
         },
@@ -3555,10 +3555,10 @@
           "input": "store-zh-CN-home.json",
           "ok": true,
           "render": {
-            "max_ns": 795243179,
-            "mean_ns": 115491550,
-            "median_ns": 108281393,
-            "min_ns": 104634053,
+            "max_ns": 882159462,
+            "mean_ns": 117855315,
+            "median_ns": 109756808,
+            "min_ns": 107642484,
             "n": 100
           }
         },
@@ -3567,10 +3567,10 @@
           "input": "store-zh-CN-journal.json",
           "ok": true,
           "render": {
-            "max_ns": 33414952,
-            "mean_ns": 31607696,
-            "median_ns": 31516102,
-            "min_ns": 30929673,
+            "max_ns": 32284112,
+            "mean_ns": 31377165,
+            "median_ns": 31370833,
+            "min_ns": 30540082,
             "n": 100
           }
         },
@@ -3579,10 +3579,10 @@
           "input": "store-zh-CN-post.json",
           "ok": true,
           "render": {
-            "max_ns": 910762620,
-            "mean_ns": 87767127,
-            "median_ns": 80068815,
-            "min_ns": 75734901,
+            "max_ns": 987395586,
+            "mean_ns": 88865886,
+            "median_ns": 79597195,
+            "min_ns": 76797261,
             "n": 100
           }
         },
@@ -3591,10 +3591,10 @@
           "input": "store-zh-CN-product.json",
           "ok": true,
           "render": {
-            "max_ns": 110494041,
-            "mean_ns": 105927237,
-            "median_ns": 105775814,
-            "min_ns": 103076023,
+            "max_ns": 113146623,
+            "mean_ns": 107725335,
+            "median_ns": 107438679,
+            "min_ns": 104781034,
             "n": 100
           }
         },
@@ -3603,10 +3603,10 @@
           "input": "store-zh-CN-products.json",
           "ok": true,
           "render": {
-            "max_ns": 1088046185,
-            "mean_ns": 157591952,
-            "median_ns": 147995002,
-            "min_ns": 143544224,
+            "max_ns": 1217291370,
+            "mean_ns": 162866181,
+            "median_ns": 151953737,
+            "min_ns": 147389384,
             "n": 100
           }
         },
@@ -3615,10 +3615,10 @@
           "input": "wb-order-studio.json",
           "ok": true,
           "render": {
-            "max_ns": 56918686,
-            "mean_ns": 54474267,
-            "median_ns": 54460801,
-            "min_ns": 52216347,
+            "max_ns": 57446916,
+            "mean_ns": 54675624,
+            "median_ns": 54601511,
+            "min_ns": 52945267,
             "n": 100
           }
         },
@@ -3627,10 +3627,10 @@
           "input": "wb-order-weekend.json",
           "ok": true,
           "render": {
-            "max_ns": 47820598,
-            "mean_ns": 43285369,
-            "median_ns": 43229134,
-            "min_ns": 41523950,
+            "max_ns": 44420599,
+            "mean_ns": 42946695,
+            "median_ns": 42854664,
+            "min_ns": 41860050,
             "n": 100
           }
         },
@@ -3639,10 +3639,10 @@
           "input": "wb-stats-studio.json",
           "ok": true,
           "render": {
-            "max_ns": 1214557054,
-            "mean_ns": 78712521,
-            "median_ns": 67178863,
-            "min_ns": 64885584,
+            "max_ns": 1248586842,
+            "mean_ns": 78407105,
+            "median_ns": 66327084,
+            "min_ns": 64572014,
             "n": 100
           }
         },
@@ -3651,10 +3651,10 @@
           "input": "wb-stats-weekend.json",
           "ok": true,
           "render": {
-            "max_ns": 52604147,
-            "mean_ns": 48886362,
-            "median_ns": 48666338,
-            "min_ns": 47430338,
+            "max_ns": 50944887,
+            "mean_ns": 48309595,
+            "median_ns": 48243688,
+            "min_ns": 46279309,
             "n": 100
           }
         },
@@ -3663,10 +3663,10 @@
           "input": "wb-studio.json",
           "ok": true,
           "render": {
-            "max_ns": 107371873,
-            "mean_ns": 101041811,
-            "median_ns": 100603960,
-            "min_ns": 96786646,
+            "max_ns": 121648110,
+            "mean_ns": 104759241,
+            "median_ns": 104048869,
+            "min_ns": 100170175,
             "n": 100
           }
         },
@@ -3675,590 +3675,27 @@
           "input": "wb-weekend.json",
           "ok": true,
           "render": {
-            "max_ns": 1524503726,
-            "mean_ns": 73623971,
-            "median_ns": 58694500,
-            "min_ns": 56936556,
+            "max_ns": 1781942990,
+            "mean_ns": 78855073,
+            "median_ns": 61268060,
+            "min_ns": 58542736,
             "n": 100
           }
         }
       ],
       "prelude_ms": [
-        0.02761100046336651,
-        226.7764720004052,
-        10.753598000854254
+        0.02671992778778076,
+        222.8518749475479,
+        10.64773690700531
       ]
     },
     "tries": [
       {
-        "cpu_s": 194.176,
+        "cpu_s": 197.122,
         "disturbed": 0,
-        "sibling_ticks": 148,
+        "sibling_ticks": 5,
         "try": 0,
-        "wall_s": 194.205
-      }
-    ]
-  },
-  "_paired": {
-    "ours_first_session_ms": {
-      "bench": 10.465238912781686,
-      "mui": 36.94906633609467,
-      "shop": 27.801256266293738
-    },
-    "ours_geomean_ms": {
-      "bench": [
-        10.409844706211997,
-        10.669422601528161,
-        10.343271837031304,
-        10.147998854157159,
-        10.337951356977118,
-        10.561261093108152,
-        10.465238912781686,
-        10.276892966857734,
-        10.334179226527862,
-        10.089799707792768,
-        10.57237975123151,
-        10.615650115949094
-      ],
-      "mui": [
-        37.20966298064843,
-        38.04862380963309,
-        36.94403022703389,
-        36.2157233949176,
-        37.35503218959866,
-        38.50884556991701,
-        36.94906633609467,
-        35.98211812030046,
-        35.98876949291427,
-        36.12235149824028,
-        37.566208366305,
-        37.93446932767583
-      ],
-      "shop": [
-        27.966064646582105,
-        28.1120946089035,
-        28.191487859864775,
-        27.06753566935626,
-        27.765070657623106,
-        28.212367668187124,
-        27.801256266293763,
-        26.933206766875525,
-        27.54672369430736,
-        26.679554681947394,
-        28.736503598727143,
-        28.13193698325034
-      ]
-    },
-    "pairs": [
-      {
-        "Engine": "go-quickjs-interp",
-        "Group": "bench",
-        "Slots": [
-          "r1-go-quickjs-interp",
-          "r2-go-quickjs-interp"
-        ],
-        "SlotGeo": [
-          2.705856117789803,
-          2.693793496284866
-        ],
-        "Med": 2.6998248070373343,
-        "Lo": 2.693793496284866,
-        "Hi": 2.705856117789803,
-        "PageMed": {
-          "spiral.json": 2.6669172251871895,
-          "table.json": 2.733419914933107
-        },
-        "PLo": 2.6669172251871895,
-        "PHi": 2.733419914933107,
-        "GeoOfMed": 2.69996382472151
-      },
-      {
-        "Engine": "go-quickjs-interp",
-        "Group": "mui",
-        "Slots": [
-          "r1-go-quickjs-interp",
-          "r2-go-quickjs-interp"
-        ],
-        "SlotGeo": [
-          2.4987862768241587,
-          2.5241763660738163
-        ],
-        "Med": 2.5114813214489873,
-        "Lo": 2.4987862768241587,
-        "Hi": 2.5241763660738163,
-        "PageMed": {
-          "home.json": 2.551166168854998,
-          "order.json": 2.392775652757762,
-          "orders.json": 2.595159818619604
-        },
-        "PLo": 2.392775652757762,
-        "PHi": 2.595159818619604,
-        "GeoOfMed": 2.511510195083786
-      },
-      {
-        "Engine": "go-quickjs-interp",
-        "Group": "shop",
-        "Slots": [
-          "r1-go-quickjs-interp",
-          "r2-go-quickjs-interp"
-        ],
-        "SlotGeo": [
-          3.637055733318736,
-          3.551730553802099
-        ],
-        "Med": 3.5943931435604175,
-        "Lo": 3.551730553802099,
-        "Hi": 3.637055733318736,
-        "PageMed": {
-          "store-en-US-cart.json": 3.768836194395367,
-          "store-en-US-checkout.json": 3.7287128001010226,
-          "store-en-US-home.json": 3.845829980913571,
-          "store-en-US-journal.json": 4.958538065714249,
-          "store-en-US-post.json": 2.613699504377066,
-          "store-en-US-product.json": 3.550120335418714,
-          "store-en-US-products.json": 3.5654579875329375,
-          "store-zh-CN-cart.json": 4.3628611956819565,
-          "store-zh-CN-checkout.json": 4.240488769114405,
-          "store-zh-CN-home.json": 4.347692679594252,
-          "store-zh-CN-journal.json": 5.526758805283683,
-          "store-zh-CN-post.json": 2.99589784313949,
-          "store-zh-CN-product.json": 3.972046196198055,
-          "store-zh-CN-products.json": 3.8983724391712156,
-          "wb-order-studio.json": 2.9383663175954835,
-          "wb-order-weekend.json": 2.8957713532045024,
-          "wb-stats-studio.json": 2.941309072882744,
-          "wb-stats-weekend.json": 2.929978887644099,
-          "wb-studio.json": 3.139701680841614,
-          "wb-weekend.json": 3.0822800663942806
-        },
-        "PLo": 2.613699504377066,
-        "PHi": 5.526758805283683,
-        "GeoOfMed": 3.5946371241874537
-      },
-      {
-        "Engine": "hermes",
-        "Group": "bench",
-        "Slots": [
-          "r1-hermes",
-          "r2-hermes"
-        ],
-        "SlotGeo": [
-          1.041494903036716,
-          1.0353664683398711
-        ],
-        "Med": 1.0384306856882937,
-        "Lo": 1.0353664683398711,
-        "Hi": 1.041494903036716,
-        "PageMed": {
-          "spiral.json": 0.9559990784443377,
-          "table.json": 1.1280311669300287
-        },
-        "PLo": 0.9559990784443377,
-        "PHi": 1.1280311669300287,
-        "GeoOfMed": 1.0384588369509877
-      },
-      {
-        "Engine": "hermes",
-        "Group": "mui",
-        "Slots": [
-          "r1-hermes",
-          "r2-hermes"
-        ],
-        "SlotGeo": [
-          1.8260046283143705,
-          1.8457347058308673
-        ],
-        "Med": 1.835869667072619,
-        "Lo": 1.8260046283143705,
-        "Hi": 1.8457347058308673,
-        "PageMed": {
-          "home.json": 2.440384000719999,
-          "order.json": 1.1651019398879505,
-          "orders.json": 2.176351710106199
-        },
-        "PLo": 1.1651019398879505,
-        "PHi": 2.440384000719999,
-        "GeoOfMed": 1.835905791337006
-      },
-      {
-        "Engine": "hermes",
-        "Group": "shop",
-        "Slots": [
-          "r1-hermes",
-          "r2-hermes"
-        ],
-        "SlotGeo": [
-          1.761965816882698,
-          1.8009172972341523
-        ],
-        "Med": 1.7814415570584252,
-        "Lo": 1.761965816882698,
-        "Hi": 1.8009172972341523,
-        "PageMed": {
-          "store-en-US-cart.json": 1.4347246846457649,
-          "store-en-US-checkout.json": 1.473431426276632,
-          "store-en-US-home.json": 1.2601575769159954,
-          "store-en-US-journal.json": 2.0346451628748494,
-          "store-en-US-post.json": 0.9318043051460103,
-          "store-en-US-product.json": 1.5365913832595584,
-          "store-en-US-products.json": 1.1395683684683866,
-          "store-zh-CN-cart.json": 1.6105322647131581,
-          "store-zh-CN-checkout.json": 1.6388994367527032,
-          "store-zh-CN-home.json": 1.3640611998222352,
-          "store-zh-CN-journal.json": 2.2097001822339433,
-          "store-zh-CN-post.json": 1.0723910689945275,
-          "store-zh-CN-product.json": 1.7201095740468382,
-          "store-zh-CN-products.json": 1.2120095452867081,
-          "wb-order-studio.json": 3.568092966922863,
-          "wb-order-weekend.json": 3.0280167822348973,
-          "wb-stats-studio.json": 4.290752140129701,
-          "wb-stats-weekend.json": 3.5641917165832844,
-          "wb-studio.json": 2.0639426006534904,
-          "wb-weekend.json": 1.9345018931524265
-        },
-        "PLo": 0.9318043051460103,
-        "PHi": 4.290752140129701,
-        "GeoOfMed": 1.7815777305218137
-      },
-      {
-        "Engine": "liustack-slowjs-polyfill",
-        "Group": "bench",
-        "Slots": [
-          "r1-liustack-slowjs-polyfill",
-          "r2-liustack-slowjs-polyfill"
-        ],
-        "SlotGeo": [
-          1.013200961161463,
-          1.0119477507408052
-        ],
-        "Med": 1.0125743559511342,
-        "Lo": 1.0119477507408052,
-        "Hi": 1.013200961161463,
-        "PageMed": {
-          "spiral.json": 1.0077911212458193,
-          "table.json": 1.017381851958052
-        },
-        "PLo": 1.0077911212458193,
-        "PHi": 1.017381851958052,
-        "GeoOfMed": 1.012575131691448
-      },
-      {
-        "Engine": "liustack-slowjs-polyfill",
-        "Group": "mui",
-        "Slots": [
-          "r1-liustack-slowjs-polyfill",
-          "r2-liustack-slowjs-polyfill"
-        ],
-        "SlotGeo": [
-          1.6584562974811585,
-          1.6193748798238095
-        ],
-        "Med": 1.638915588652484,
-        "Lo": 1.6193748798238095,
-        "Hi": 1.6584562974811585,
-        "PageMed": {
-          "home.json": 2.0629774388094315,
-          "order.json": 1.128236569682657,
-          "orders.json": 1.891400458390026
-        },
-        "PLo": 1.128236569682657,
-        "PHi": 2.0629774388094315,
-        "GeoOfMed": 1.6389261333403518
-      },
-      {
-        "Engine": "liustack-slowjs-polyfill",
-        "Group": "shop",
-        "Slots": [
-          "r1-liustack-slowjs-polyfill",
-          "r2-liustack-slowjs-polyfill"
-        ],
-        "SlotGeo": [
-          1.6399321085433858,
-          1.6604917494989198
-        ],
-        "Med": 1.6502119290211528,
-        "Lo": 1.6399321085433858,
-        "Hi": 1.6604917494989198,
-        "PageMed": {
-          "store-en-US-cart.json": 1.5778124499531552,
-          "store-en-US-checkout.json": 1.5634664558724618,
-          "store-en-US-home.json": 1.4744306713205293,
-          "store-en-US-journal.json": 2.160719736220866,
-          "store-en-US-post.json": 1.242318506616003,
-          "store-en-US-product.json": 1.4874902075386591,
-          "store-en-US-products.json": 1.3388139976461237,
-          "store-zh-CN-cart.json": 1.7128428866722927,
-          "store-zh-CN-checkout.json": 1.7078537876376827,
-          "store-zh-CN-home.json": 1.6331187608800062,
-          "store-zh-CN-journal.json": 2.267136394893363,
-          "store-zh-CN-post.json": 1.3259346384953206,
-          "store-zh-CN-product.json": 1.6038936969653959,
-          "store-zh-CN-products.json": 1.4243621063612877,
-          "wb-order-studio.json": 1.967902878209832,
-          "wb-order-weekend.json": 1.771423191777143,
-          "wb-stats-studio.json": 2.208086296523212,
-          "wb-stats-weekend.json": 2.035352289257896,
-          "wb-studio.json": 1.5346599821841855,
-          "wb-weekend.json": 1.4640809145957365
-        },
-        "PLo": 1.242318506616003,
-        "PHi": 2.267136394893363,
-        "GeoOfMed": 1.6503107674324737
-      },
-      {
-        "Engine": "moejs",
-        "Group": "bench",
-        "Slots": [
-          "r1-moejs",
-          "r2-moejs"
-        ],
-        "SlotGeo": [
-          1.411678042468605,
-          1.4363463101080591
-        ],
-        "Med": 1.4240121762883322,
-        "Lo": 1.411678042468605,
-        "Hi": 1.4363463101080591,
-        "PageMed": {
-          "spiral.json": 1.3997828816500606,
-          "table.json": 1.4486956325057077
-        },
-        "PLo": 1.3997828816500606,
-        "PHi": 1.4486956325057077,
-        "GeoOfMed": 1.4240292648336608
-      },
-      {
-        "Engine": "moejs",
-        "Group": "mui",
-        "Slots": [
-          "r1-moejs",
-          "r2-moejs"
-        ],
-        "SlotGeo": [
-          1.503009568891692,
-          1.495948081675939
-        ],
-        "Med": 1.4994788252838154,
-        "Lo": 1.495948081675939,
-        "Hi": 1.503009568891692,
-        "PageMed": {
-          "home.json": 1.4811645320706797,
-          "order.json": 1.504759103024704,
-          "orders.json": 1.5126974630939531
-        },
-        "PLo": 1.4811645320706797,
-        "PHi": 1.5126974630939531,
-        "GeoOfMed": 1.4994803787784017
-      },
-      {
-        "Engine": "moejs",
-        "Group": "shop",
-        "Slots": [
-          "r1-moejs",
-          "r2-moejs"
-        ],
-        "SlotGeo": [
-          1.826503573761763,
-          1.839345824171113
-        ],
-        "Med": 1.8329246989664378,
-        "Lo": 1.826503573761763,
-        "Hi": 1.839345824171113,
-        "PageMed": {
-          "store-en-US-cart.json": 1.9259662534164634,
-          "store-en-US-checkout.json": 1.90649446660361,
-          "store-en-US-home.json": 1.9360898606760775,
-          "store-en-US-journal.json": 2.4561194669237247,
-          "store-en-US-post.json": 1.3866962707338946,
-          "store-en-US-product.json": 1.7948048524527545,
-          "store-en-US-products.json": 1.7895756326768075,
-          "store-zh-CN-cart.json": 2.193890591036964,
-          "store-zh-CN-checkout.json": 2.116327373226205,
-          "store-zh-CN-home.json": 2.190287085937256,
-          "store-zh-CN-journal.json": 2.842754763047206,
-          "store-zh-CN-post.json": 1.5779292080710463,
-          "store-zh-CN-product.json": 1.9877014769993364,
-          "store-zh-CN-products.json": 1.9393501213236308,
-          "wb-order-studio.json": 1.531925744297736,
-          "wb-order-weekend.json": 1.4792809962521694,
-          "wb-stats-studio.json": 1.5715552871288625,
-          "wb-stats-weekend.json": 1.5287357470646445,
-          "wb-studio.json": 1.5619978392746399,
-          "wb-weekend.json": 1.5777770935536792
-        },
-        "PLo": 1.3866962707338946,
-        "PHi": 2.842754763047206,
-        "GeoOfMed": 1.8330777172992871
-      },
-      {
-        "Engine": "node-jitless",
-        "Group": "bench",
-        "Slots": [
-          "r1-node-jitless",
-          "r2-node-jitless"
-        ],
-        "SlotGeo": [
-          0.9635910674992396,
-          0.9665762005288947
-        ],
-        "Med": 0.9650836340140672,
-        "Lo": 0.9635910674992396,
-        "Hi": 0.9665762005288947,
-        "PageMed": {
-          "spiral.json": 0.9078751075509315,
-          "table.json": 1.0259108406634256
-        },
-        "PLo": 0.9078751075509315,
-        "PHi": 1.0259108406634256,
-        "GeoOfMed": 0.9650901070910292
-      },
-      {
-        "Engine": "node-jitless",
-        "Group": "mui",
-        "Slots": [
-          "r1-node-jitless",
-          "r2-node-jitless"
-        ],
-        "SlotGeo": [
-          1.1054162454750298,
-          1.0927798919884018
-        ],
-        "Med": 1.0990980687317158,
-        "Lo": 1.0927798919884018,
-        "Hi": 1.1054162454750298,
-        "PageMed": {
-          "home.json": 1.1265201772720546,
-          "order.json": 1.0776923017080096,
-          "orders.json": 1.093653275176322
-        },
-        "PLo": 1.0776923017080096,
-        "PHi": 1.1265201772720546,
-        "GeoOfMed": 1.0991015097657302
-      },
-      {
-        "Engine": "node-jitless",
-        "Group": "shop",
-        "Slots": [
-          "r1-node-jitless",
-          "r2-node-jitless"
-        ],
-        "SlotGeo": [
-          0.8756132962955826,
-          0.8945847062089345
-        ],
-        "Med": 0.8850990012522586,
-        "Lo": 0.8756132962955826,
-        "Hi": 0.8945847062089345,
-        "PageMed": {
-          "store-en-US-cart.json": 0.9191035446100335,
-          "store-en-US-checkout.json": 0.9354575202903532,
-          "store-en-US-home.json": 0.8783826962341055,
-          "store-en-US-journal.json": 0.8881974255124004,
-          "store-en-US-post.json": 0.7256845986392325,
-          "store-en-US-product.json": 0.9131699807293754,
-          "store-en-US-products.json": 0.912290442999222,
-          "store-zh-CN-cart.json": 0.9041595741977486,
-          "store-zh-CN-checkout.json": 0.9171302631123939,
-          "store-zh-CN-home.json": 0.8929737575767198,
-          "store-zh-CN-journal.json": 0.8947573155251103,
-          "store-zh-CN-post.json": 0.7438948241361882,
-          "store-zh-CN-product.json": 0.8951110787845802,
-          "store-zh-CN-products.json": 0.9021828156652542,
-          "wb-order-studio.json": 0.9095774495151625,
-          "wb-order-weekend.json": 0.917800080988872,
-          "wb-stats-studio.json": 0.9129826902768938,
-          "wb-stats-weekend.json": 0.900445355779012,
-          "wb-studio.json": 0.8961798414174627,
-          "wb-weekend.json": 0.8783895806774893
-        },
-        "PLo": 0.7256845986392325,
-        "PHi": 0.9354575202903532,
-        "GeoOfMed": 0.8851673334428013
-      },
-      {
-        "Engine": "quickjs-2026-06-04",
-        "Group": "bench",
-        "Slots": [
-          "r1-quickjs-2026-06-04",
-          "r2-quickjs-2026-06-04"
-        ],
-        "SlotGeo": [
-          1.983144875526937,
-          1.9414650521607568
-        ],
-        "Med": 1.962304963843847,
-        "Lo": 1.9414650521607568,
-        "Hi": 1.983144875526937,
-        "PageMed": {
-          "spiral.json": 1.8118290688604006,
-          "table.json": 2.125393849013002
-        },
-        "PLo": 1.8118290688604006,
-        "PHi": 2.125393849013002,
-        "GeoOfMed": 1.9623583664608384
-      },
-      {
-        "Engine": "quickjs-2026-06-04",
-        "Group": "mui",
-        "Slots": [
-          "r1-quickjs-2026-06-04",
-          "r2-quickjs-2026-06-04"
-        ],
-        "SlotGeo": [
-          3.589239769899121,
-          3.587505198415472
-        ],
-        "Med": 3.5883724841572966,
-        "Lo": 3.587505198415472,
-        "Hi": 3.589239769899121,
-        "PageMed": {
-          "home.json": 4.971119641822462,
-          "order.json": 2.1590843183904243,
-          "orders.json": 4.305058278106115
-        },
-        "PLo": 2.1590843183904243,
-        "PHi": 4.971119641822462,
-        "GeoOfMed": 3.5884008527357425
-      },
-      {
-        "Engine": "quickjs-2026-06-04",
-        "Group": "shop",
-        "Slots": [
-          "r1-quickjs-2026-06-04",
-          "r2-quickjs-2026-06-04"
-        ],
-        "SlotGeo": [
-          2.469592208976333,
-          2.4609543280046653
-        ],
-        "Med": 2.465273268490499,
-        "Lo": 2.4609543280046653,
-        "Hi": 2.469592208976333,
-        "PageMed": {
-          "store-en-US-cart.json": 2.337317469790812,
-          "store-en-US-checkout.json": 2.3772168695236173,
-          "store-en-US-home.json": 2.3270182061323688,
-          "store-en-US-journal.json": 2.882473638062149,
-          "store-en-US-post.json": 1.7333825905249194,
-          "store-en-US-product.json": 2.3281224739409696,
-          "store-en-US-products.json": 2.117101889410187,
-          "store-zh-CN-cart.json": 2.649945096996571,
-          "store-zh-CN-checkout.json": 2.494646551471571,
-          "store-zh-CN-home.json": 2.5366598885658362,
-          "store-zh-CN-journal.json": 3.1742391748430077,
-          "store-zh-CN-post.json": 1.82873264930617,
-          "store-zh-CN-product.json": 2.4207266679440913,
-          "store-zh-CN-products.json": 2.2982872493984337,
-          "wb-order-studio.json": 2.75869689473814,
-          "wb-order-weekend.json": 2.4724731455726454,
-          "wb-stats-studio.json": 3.549432433572389,
-          "wb-stats-weekend.json": 2.804257141642492,
-          "wb-studio.json": 2.212239984498221,
-          "wb-weekend.json": 2.660856188752327
-        },
-        "PLo": 1.7333825905249194,
-        "PHi": 3.549432433572389,
-        "GeoOfMed": 2.4655589099313917
+        "wall_s": 197.162
       }
     ]
   }

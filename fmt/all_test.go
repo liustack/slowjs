@@ -1,16 +1,16 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package fmt // import "github.com/liustack/tifajs/fmt"
+package fmt // import "github.com/liustack/beastjs/fmt"
 
 import (
 	"fmt"
 	"os"
 	"testing"
 
-	"github.com/liustack/tifajs"
+	"github.com/liustack/beastjs"
 )
 
 func TestMain(m *testing.M) {
@@ -18,7 +18,7 @@ func TestMain(m *testing.M) {
 }
 
 func ExampleRegister_printf() {
-	vm, err := tifajs.NewVM()
+	vm, err := beastjs.NewVM()
 	if err != nil {
 		panic(err)
 	}
@@ -33,7 +33,7 @@ func ExampleRegister_printf() {
 		panic(err)
 	}
 
-	v, err := vm.Eval(`fmt.printf('Math.PI=%v\n', Math.PI)`, tifajs.EvalGlobal)
+	v, err := vm.Eval(`fmt.printf('Math.PI=%v\n', Math.PI)`, beastjs.EvalGlobal)
 	if err != nil {
 		panic(err)
 	}
@@ -45,7 +45,7 @@ func ExampleRegister_printf() {
 }
 
 func ExampleRegister_sprint() {
-	vm, err := tifajs.NewVM()
+	vm, err := beastjs.NewVM()
 	if err != nil {
 		panic(err)
 	}
@@ -60,7 +60,7 @@ func ExampleRegister_sprint() {
 		panic(err)
 	}
 
-	v, err := vm.Eval(`fmt.sprint([2*21, 'foo', {bar: Math.exp(1)}])`, tifajs.EvalGlobal)
+	v, err := vm.Eval(`fmt.sprint([2*21, 'foo', {bar: Math.exp(1)}])`, beastjs.EvalGlobal)
 	if err != nil {
 		panic(err)
 	}

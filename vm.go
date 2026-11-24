@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-package tifajs // import "github.com/liustack/tifajs"
+package beastjs // import "github.com/liustack/beastjs"
 
 // Making a VM, its settings, its memory and closing it.
 
@@ -13,7 +13,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/liustack/tifajs/internal/hostmem"
+	"github.com/liustack/beastjs/internal/hostmem"
 )
 
 // VM is a javascript realm, with its global object, and the runtime that runs
@@ -106,10 +106,10 @@ func (m *VM) SetShapeCache(n int) error {
 		return err
 	}
 	if n < 0 || n > math.MaxInt32/8 {
-		return fmt.Errorf("tifajs: a shape cache of %d shapes", n)
+		return fmt.Errorf("beastjs: a shape cache of %d shapes", n)
 	}
 	if m.jsSetShapeCache(int32(n)) != 0 {
-		return fmt.Errorf("tifajs: out of memory for a shape cache of %d shapes", n)
+		return fmt.Errorf("beastjs: out of memory for a shape cache of %d shapes", n)
 	}
 	return nil
 }
@@ -131,7 +131,7 @@ func (m *VM) SetRegExpCache(n, bytes int) error {
 		return err
 	}
 	if n < 0 || bytes < 0 || n > math.MaxInt32/8 || uint64(bytes) > uint64(^uintptr(0)) {
-		return fmt.Errorf("tifajs: a regexp cache of %d regexps in %d bytes", n, bytes)
+		return fmt.Errorf("beastjs: a regexp cache of %d regexps in %d bytes", n, bytes)
 	}
 	m.jsSetRegExpCache(int32(n), uint64(bytes))
 	return nil
@@ -261,7 +261,7 @@ func (m *VM) SetStrip(s Strip) {
 }
 
 // errCloseInCall is the error of Close during a call into the VM.
-var errCloseInCall = errors.New("tifajs: Close while the VM runs a call")
+var errCloseInCall = errors.New("beastjs: Close while the VM runs a call")
 
 // Close frees m and all it holds, then runs the functions of [VM.OnClose].
 //

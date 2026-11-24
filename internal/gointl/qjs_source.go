@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/tifajs Authors.
+// Copyright (c) 2026 The liustack/beastjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
@@ -11,10 +11,10 @@ import (
 	"io/fs"
 	"sync"
 
-	"github.com/liustack/tifajs/internal/gointl/internal/qjspack"
+	"github.com/liustack/beastjs/internal/gointl/internal/qjspack"
 )
 
-// The data liustack/tifajs builds in, in place of go-intl's data.pack: the packs
+// The data liustack/beastjs builds in, in place of go-intl's data.pack: the packs
 // internal/qjspack/gen writes into qjsdata/ from go-intl's data directory,
 // cut down to Chromium's locales. A pack is read where it lies, and a
 // chunk of it is inflated into the heap the first time a formatter reads one

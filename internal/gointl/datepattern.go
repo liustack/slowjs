@@ -4,7 +4,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/liustack/tifajs/internal/gointl/internal/datedata"
+	"github.com/liustack/beastjs/internal/gointl/internal/datedata"
 )
 
 // UTS #35 date patterns.
