@@ -13,6 +13,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/liustack/beastjs/internal/goversion"
 )
 
 // The package runs on the C engine of internal/cengine and its Go host.
@@ -76,7 +78,7 @@ func TestEngineUnsupportedTarget(t *testing.T) {
 		for _, pkg := range []string{".", "./internal/cengine"} {
 			t.Run(target+" "+pkg, func(t *testing.T) {
 				goos, goarch, _ := strings.Cut(target, "/")
-				cmd := exec.Command(gobin, "build", "-o", os.DevNull, pkg)
+				cmd := exec.Command(gobin, slices.Concat([]string{"build"}, goversion.TagArgs(), []string{"-o", os.DevNull, pkg})...)
 				cmd.Env = append(os.Environ(), "GOFLAGS=", "GOOS="+goos, "GOARCH="+goarch, "CGO_ENABLED=0")
 				out, err := cmd.CombinedOutput()
 				if err == nil {
@@ -174,7 +176,7 @@ func TestEngineAsmOptions(t *testing.T) {
 		{"spectre=index/linux/amd64", "linux", "amd64", "-spectre=index", ""},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			cmd := exec.Command(gobin, "build", "-asmflags="+cengine+"="+c.asmflags, "-o", os.DevNull, ".")
+			cmd := exec.Command(gobin, slices.Concat([]string{"build"}, goversion.TagArgs(), []string{"-asmflags=" + cengine + "=" + c.asmflags, "-o", os.DevNull, "."})...)
 			cmd.Env = append(os.Environ(), "GOFLAGS=", "CGO_ENABLED=0", "GOOS="+c.goos, "GOARCH="+c.goarch)
 			out, err := cmd.CombinedOutput()
 			if c.want == "" {
@@ -214,7 +216,7 @@ func TestEngineBuildmodeShared(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds the standard library again for -buildmode=shared")
 	}
-	cmd := exec.Command(gobin, "build", "-buildmode=shared", "./internal/cengine")
+	cmd := exec.Command(gobin, slices.Concat([]string{"build"}, goversion.TagArgs(), []string{"-buildmode=shared", "./internal/cengine"})...)
 	cmd.Env = append(os.Environ(), "GOFLAGS=", "CGO_ENABLED=0", "GOOS=linux", "GOARCH=amd64")
 	out, err := cmd.CombinedOutput()
 	if err == nil {
