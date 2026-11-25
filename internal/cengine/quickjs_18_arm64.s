@@ -22209,15 +22209,15 @@ TEXT ·js_array_buffer_transfer(SB), $136-16
 	WORD $0xa942a6aa
 	WORD $0xeb0a0128
 	WORD $0xeb0a0129
-	WORD $0x54002883
+	WORD $0x540028a3
 	WORD $0xf140093f
-	WORD $0x54002843
+	WORD $0x54002863
 	WORD $0xd1400908
 	WORD $0xeb0802df
-	WORD $0x540027e8
-	WORD $0x340029d1
+	WORD $0x54002808
+	WORD $0x340029f1
 	WORD $0xaa1f03e8
-	WORD $0xb4002b6f
+	WORD $0xb4002b8f
 	WORD $0xb98001ca
 	WORD $0xeb0a01ff
 	WORD $0x540003a1
@@ -22286,12 +22286,12 @@ TEXT ·js_array_buffer_transfer(SB), $136-16
 	WORD $0x7100183f
 	WORD $0x540017e0
 	WORD $0x3100043f
-	WORD $0x54002a61
+	WORD $0x54002a81
 	WORD $0x79402408
 	WORD $0x71004d1f
-	WORD $0x54002a01
+	WORD $0x54002a21
 	WORD $0xf9401408
-	WORD $0xb40029c8
+	WORD $0xb40029e8
 	WORD $0xa94527eb
 	WORD $0xaa0103ea
 	WORD $0xf94033f3
@@ -22302,7 +22302,7 @@ TEXT ·js_array_buffer_transfer(SB), $136-16
 	WORD $0x1a89b169
 	WORD $0x93407d22
 	WORD $0xf141005f
-	WORD $0x540026e8
+	WORD $0x54002708
 	BL ·memcpy(SB)
 	WORD $0xf94037e8
 	WORD $0xf94047e9
@@ -22409,16 +22409,16 @@ TEXT ·js_array_buffer_transfer(SB), $136-16
 	WORD $0xf8050ee0
 	WORD $0x1400003c
 	WORD $0x7100213f
-	WORD $0x54000ce0
+	WORD $0x54000d00
 	WORD $0x71000d3f
-	WORD $0x54000e60
+	WORD $0x54000e80
 	WORD $0xaa0903f7
 	WORD $0x7100193f
 	WORD $0xb90053f1
 	WORD $0xa9072ff0
 	WORD $0xa90633ee
 	WORD $0xf90047ed
-	WORD $0x54001760
+	WORD $0x54001780
 	WORD $0xf94047e8
 	WORD $0xf94037f5
 	WORD $0xaa0a03f6
@@ -22459,7 +22459,7 @@ TEXT ·js_array_buffer_transfer(SB), $136-16
 	WORD $0x54fffa02
 	WORD $0x93407d4f
 	WORD $0xd375fde8
-	WORD $0xb5000808
+	WORD $0xb5000828
 	WORD $0x394021c8
 	WORD $0x34ffdf48
 	MOVD $·engine_rodata+49413(SB), R22
@@ -22473,18 +22473,18 @@ TEXT ·js_array_buffer_transfer(SB), $136-16
 	BL ·JS_ThrowTypeError(SB)
 	WORD $0xaa1f03e0
 	WORD $0x528000c1
-	WORD $0x1400009e
+	WORD $0x1400009f
 	WORD $0xf94027e9
 	WORD $0x12800008
 	WORD $0xf9403fea
 	WORD $0xeb08013f
 	WORD $0xf94047e9
-	WORD $0x54000e61
+	WORD $0x54000e81
 	WORD $0x79402548
 	WORD $0x71004d1f
-	WORD $0x54000e01
+	WORD $0x54000e21
 	WORD $0xf9401548
-	WORD $0xb4000dc8
+	WORD $0xb4000de8
 	WORD $0xf9400916
 	WORD $0xf94037f5
 	WORD $0x91028134
@@ -22507,6 +22507,7 @@ TEXT ·js_array_buffer_transfer(SB), $136-16
 	WORD $0xf9000abf
 	WORD $0x91028114
 	WORD $0xb90002bf
+	WORD $0xa902febf
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
 	BL ·js_array_buffer_update_typed_arrays(SB)
@@ -22523,11 +22524,11 @@ TEXT ·js_array_buffer_transfer(SB), $136-16
 	WORD $0x1e612000
 	WORD $0x54000acb
 	MOVD $·engine_rodata+1666(SB), R22
-	WORD $0x17fffeed
+	WORD $0x17fffeec
 	WORD $0xaa1f03ef
 	WORD $0x394021c8
-	WORD $0x35fff7c8
-	WORD $0x17fffeb6
+	WORD $0x35fff7a8
+	WORD $0x17fffeb5
 	WORD $0x910281b4
 	WORD $0xf90047ed
 	WORD $0xa90633ee
@@ -22543,20 +22544,20 @@ TEXT ·js_array_buffer_transfer(SB), $136-16
 	WORD $0xa945bbef
 	WORD $0xf94037ec
 	WORD $0xf94047ed
-	WORD $0x35ffd691
+	WORD $0x35ffd671
 	WORD $0xb94005c8
-	WORD $0x37ffd648
+	WORD $0x37ffd628
 	WORD $0xeb0801ff
 	WORD $0xf9004da8
 	WORD $0x54000089
 	MOVD $·engine_rodata+49353(SB), R22
-	WORD $0x17ffffa7
+	WORD $0x17ffffa6
 	WORD $0xf94019c8
 	MOVD $·js_array_buffer_free(SB), R9
 	WORD $0x910261aa
 	WORD $0xeb09011f
 	WORD $0x9a9f0148
-	WORD $0xb5ffd4ef
+	WORD $0xb5ffd4cf
 	WORD $0xf90011a8
 	WORD $0x52800268
 	WORD $0x52800069
@@ -22577,7 +22578,7 @@ TEXT ·js_array_buffer_transfer(SB), $136-16
 	WORD $0xf9000bf5
 	BL ·js_array_buffer_constructor3(SB)
 	WORD $0x7100183f
-	WORD $0x54fff280
+	WORD $0x54fff260
 	WORD $0xf94047e8
 	WORD $0xa946dbf5
 	WORD $0xf9403ff7
@@ -22589,7 +22590,7 @@ TEXT ·js_array_buffer_transfer(SB), $136-16
 	WORD $0xf90013f7
 	BL ·JS_DetachArrayBuffer(SB)
 	WORD $0xa94703e1
-	WORD $0x17ffff88
+	WORD $0x17ffff87
 	WORD $0xf94037f5
 	WORD $0x91028134
 	WORD $0x52800276
@@ -22599,13 +22600,13 @@ TEXT ·js_array_buffer_transfer(SB), $136-16
 	BL ·JS_ThrowTypeErrorInvalidClass(SB)
 	WORD $0xf94047e9
 	WORD $0xaa1f03e8
-	WORD $0x17ffff8a
+	WORD $0x17ffff89
 	WORD $0xaa1f03e0
 	WORD $0x2a1703e1
-	WORD $0x17ffff7b
+	WORD $0x17ffff7a
 	WORD $0x9e78000f
 	WORD $0xd375fde8
-	WORD $0xb4ffed48
+	WORD $0xb4ffed28
 	WORD $0x17ffffa8
 	WORD $0xf94047e8
 	WORD $0xaa0003f5
@@ -22618,7 +22619,7 @@ TEXT ·js_array_buffer_transfer(SB), $136-16
 	WORD $0xf90013f7
 	BL ·goasm_chunked_memcpy(SB)
 	WORD $0xf94033f3
-	WORD $0x17fffec0
+	WORD $0x17fffebf
 	WORD $0xf94047e8
 	WORD $0xf94037f5
 	WORD $0x52800276

@@ -3663,6 +3663,66 @@ static void test_read_null_reference(void)
     vm_free(&v);
 }
 
+/* The release callback of an ArrayBuffer made by JS_NewArrayBuffer runs once
+   whichever way the buffer ends: detached by JS_DetachArrayBuffer, or
+   transferred by script to a buffer of the same size (the new buffer keeps the
+   callback) or of another size (the data is copied and released at once)
+   (upstream QuickJS 813636e). */
+static int release_count;
+static void *release_ptr;
+
+static void count_release(JSRuntime *rt, void *opaque, void *ptr)
+{
+    (void)rt;
+    CHECK(opaque == (void *)&release_count, "opaque of the callback");
+    release_count++;
+    release_ptr = ptr;
+    free(ptr);
+}
+
+static void test_array_buffer_release_once(void)
+{
+    static const char *const scripts[] = {
+        NULL,                              /* JS_DetachArrayBuffer */
+        "globalThis.t = ab.transfer()",    /* same size */
+        "globalThis.t = ab.transfer(16)",  /* longer */
+        "globalThis.t = ab.transfer(2)",   /* shorter */
+    };
+    int i;
+
+    for (i = 0; i < (int)countof(scripts); i++) {
+        VM v = vm_new();
+        uint8_t *data = malloc(8);
+        JSValue ab, g;
+
+        memset(data, 7, 8);
+        release_count = 0;
+        ab = JS_NewArrayBuffer(v.ctx, data, 8, count_release, &release_count, FALSE);
+        CHECK(!JS_IsException(ab), "buffer %d", i);
+        g = JS_GetGlobalObject(v.ctx);
+        CHECK(JS_SetPropertyStr(v.ctx, g, "ab", JS_DupValue(v.ctx, ab)) >= 0, "global ab");
+        JS_FreeValue(v.ctx, g);
+        if (scripts[i]) {
+            JSValue r = JS_Eval(v.ctx, scripts[i], strlen(scripts[i]), "<unit>", JS_EVAL_TYPE_GLOBAL);
+
+            CHECK(!JS_IsException(r), "script %d", i);
+            if (JS_IsException(r))
+                JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+            JS_FreeValue(v.ctx, r);
+        } else {
+            JS_DetachArrayBuffer(v.ctx, ab);
+            CHECK(release_count == 1, "detached: released %d times", release_count);
+        }
+        g = JS_GetGlobalObject(v.ctx);
+        eval_ok(v.ctx, "delete globalThis.ab; delete globalThis.t");
+        JS_FreeValue(v.ctx, g);
+        JS_FreeValue(v.ctx, ab);
+        JS_RunGC(v.rt);
+        CHECK(release_count == 1, "case %d: released %d times", i, release_count);
+        vm_free(&v);
+    }
+}
+
 int main(void)
 {
     test_compile_stops();
@@ -3712,6 +3772,7 @@ int main(void)
     test_rv_nesting_limits();
     test_template_object_sealed();
     test_read_null_reference();
+    test_array_buffer_release_once();
     if (failures) {
         printf("unit-api: %d of %ld checks failed\n", failures, checks);
         return 1;

@@ -74445,8 +74445,13 @@ void JS_DetachArrayBuffer(JSContext *ctx, JSValueConst obj)
 
     if (!abuf || abuf->detached)
         return;
-    if (abuf->free_func)
+    if (abuf->free_func) {
         abuf->free_func(ctx->rt, abuf->opaque, abuf->data);
+        /* The backing data has been released. Do not release it again when
+           the detached ArrayBuffer object is later finalized. */
+        abuf->free_func = NULL;
+        abuf->opaque = NULL;
+    }
     abuf->data = NULL;
     abuf->byte_length = 0;
     abuf->detached = TRUE;
@@ -74598,6 +74603,8 @@ static JSValue js_array_buffer_transfer(JSContext *ctx,
         abuf->data = NULL;
         abuf->byte_length = 0;
         abuf->detached = TRUE;
+        abuf->free_func = NULL;
+        abuf->opaque = NULL;
         js_array_buffer_update_typed_arrays(abuf);
     }
     return res;
