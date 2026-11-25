@@ -1,0 +1,11 @@
+"var {\"a\" = b} = {a:7}; b" -> SyntaxError expecting ':'
+"var {0 + b} = {0:7}; b" -> SyntaxError expecting ':'
+"var {[\"a\"] ; b} = {a:7}; b" -> SyntaxError expecting ':'
+"({\"a\" ! b} = {a:7}); b" -> SyntaxError expecting ':'
+"var {\"a\" [b]} = {a:[7]}; b" -> SyntaxError expecting ':'
+"var {a: [b]} = {a:[1]}; b" -> 1
+"var {\"a\": b} = {a:2}; b" -> 2
+"var {0: b} = {0:3}; b" -> 3
+"var {[\"a\"]: b} = {a:4}; b" -> 4
+"var {a = 5} = {}; a" -> 5
+"var {\"a\" 1: b} = {a:7}; b" -> SyntaxError expecting ':'

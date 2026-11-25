@@ -54,6 +54,7 @@ Where an upstream commit meets a change of liustack/beastjs, that change stays a
 | `673c622` fixed regexp skipping after template or private field (#596) | the scan that tells an arrow function parameter list from a parenthesized expression takes the `/` after a complete template or a private name for a division, so `(a = \`8\` / 2) => a` compiles | all of it | `compare/parse_regexp_after_template.js` |
 | `c4b449c` fixed array literal parsing | an array literal with a hole, or with more than 32 elements, needs a comma between elements: `[, 1 2]` is a SyntaxError | all of it | `compare/array_literal_missing_comma.js` |
 | `1eba383` Fix the stack depth of an optional call through a with scope | `with (o) { f?.() }` compiles, and the short cut of `?.` drops the object and the function | all of it | `compare/with_optional_call.js` |
+| `c9d81f5` reject destructuring patterns without ':' after a property name | `var {"a" = b} = o` and `var {0 + b} = o` are SyntaxErrors | all of it | `compare/destructure_property_colon.js` |
 
 ## Iterator concatenation
 

@@ -32854,7 +32854,7 @@ static __exception int js_parse_destructuring_element1(JSParseState *s, int tok,
                 return -1;
             var_name = JS_ATOM_NULL;
             if (prop_type == PROP_TYPE_IDENT) {
-                if (next_token(s))
+                if (js_parse_expect(s, ':'))
                     goto prop_error;
                 tok1 = 0;
                 if (s->token.val == '[' || s->token.val == '{') {
