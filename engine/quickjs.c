@@ -52024,12 +52024,20 @@ static JSValue js_function_toString(JSContext *ctx, JSValueConst this_val,
             break;
         }
         suff = "() {\n    [native code]\n}";
-        /* a revoked Proxy has no name to read, and a live one must not run its
-           get trap */
-        if (p->class_id == JS_CLASS_PROXY)
-            name = JS_UNDEFINED;
-        else
-            name = JS_GetProperty(ctx, this_val, JS_ATOM_name);
+        /* no code of the script runs: the name is the own name property when
+           it is a string held as a value, with no getter called, and none
+           otherwise. The name a built-in was made with is not kept. A
+           revoked Proxy has no name to read, and a live one must not run
+           its get trap */
+        name = JS_UNDEFINED;
+        if (p->class_id != JS_CLASS_PROXY) {
+            JSProperty *pr;
+            JSShapeProperty *prs = find_own_property(&pr, p, JS_ATOM_name);
+
+            if (prs && (prs->flags & JS_PROP_TMASK) == JS_PROP_NORMAL &&
+                JS_IsString(pr->u.value))
+                name = JS_DupValue(ctx, pr->u.value);
+        }
         if (JS_IsUndefined(name))
             name = JS_AtomToString(ctx, JS_ATOM_empty_string);
         return JS_ConcatString3(ctx, pref, name, suff);
