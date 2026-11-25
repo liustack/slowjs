@@ -70988,30 +70988,24 @@ static JSValue js_promise_withResolvers(JSContext *ctx,
     result_promise = js_new_promise_capability(ctx, resolving_funcs, this_val);
     if (JS_IsException(result_promise))
         return result_promise;
+    /* JS_DefinePropertyValue releases the value it is given, also when it
+       fails: each define gets a reference of its own, and the three are
+       released once below (upstream 0943061) */
     obj = JS_NewObject(ctx);
-    if (JS_IsException(obj))
-        goto exception;
-    if (JS_DefinePropertyValue(ctx, obj, JS_ATOM_promise, result_promise,
-                               JS_PROP_C_W_E) < 0) {
-        goto exception;
+    if (JS_IsException(obj) ||
+        JS_DefinePropertyValue(ctx, obj, JS_ATOM_promise,
+                               JS_DupValue(ctx, result_promise), JS_PROP_C_W_E) < 0 ||
+        JS_DefinePropertyValue(ctx, obj, JS_ATOM_resolve,
+                               JS_DupValue(ctx, resolving_funcs[0]), JS_PROP_C_W_E) < 0 ||
+        JS_DefinePropertyValue(ctx, obj, JS_ATOM_reject,
+                               JS_DupValue(ctx, resolving_funcs[1]), JS_PROP_C_W_E) < 0) {
+        JS_FreeValue(ctx, obj);
+        obj = JS_EXCEPTION;
     }
-    result_promise = JS_UNDEFINED;
-    if (JS_DefinePropertyValue(ctx, obj, JS_ATOM_resolve, resolving_funcs[0],
-                               JS_PROP_C_W_E) < 0) {
-        goto exception;
-    }
-    resolving_funcs[0] = JS_UNDEFINED;
-    if (JS_DefinePropertyValue(ctx, obj, JS_ATOM_reject, resolving_funcs[1],
-                               JS_PROP_C_W_E) < 0) {
-        goto exception;
-    }
-    return obj;
-exception:
     JS_FreeValue(ctx, resolving_funcs[0]);
     JS_FreeValue(ctx, resolving_funcs[1]);
     JS_FreeValue(ctx, result_promise);
-    JS_FreeValue(ctx, obj);
-    return JS_EXCEPTION;
+    return obj;
 }
 
 static JSValue js_promise_try(JSContext *ctx, JSValueConst this_val,

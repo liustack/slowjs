@@ -843,6 +843,18 @@ static void test_shared_shape_oom(void)
                       "true,1,", 1);
 }
 
+/* Promise.withResolvers defines promise, resolve and reject on a new
+   object. JS_DefinePropertyValue releases the value it was given when it
+   fails, and the call used to release it again (upstream 0943061). */
+static void test_with_resolvers_oom(void)
+{
+    each_call_failing("Promise.withResolvers",
+                      "globalThis.f = () => { const r = Promise.withResolvers()\n"
+                      "  return [typeof r.promise, typeof r.resolve, typeof r.reject].join() }\n"
+                      "f(); f()",
+                      "object,function,function", 1);
+}
+
 /* A key that converts to a symbol, a symbol of the engine such as
    Symbol.iterator or one of the script, gives the symbol one reference to
    the key and takes it back, however often it is used. The atom of a
@@ -11538,6 +11550,7 @@ int main(int argc, char **argv)
     test_json_key_cache();
     test_json_stringify_oom();
     test_shared_shape_oom();
+    test_with_resolvers_oom();
     test_symbol_key_refs();
     test_json_stringify_list_oom();
     test_json_walk();
