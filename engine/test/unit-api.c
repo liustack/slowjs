@@ -3585,6 +3585,41 @@ static void test_stop_async_frees(void)
     }
 }
 
+/* A template object read back from bytecode is sealed as a parsed one is: the
+   strings array and its raw array are frozen, their length is neither
+   writable nor configurable (upstream QuickJS 88130c0). */
+static void test_template_object_sealed(void)
+{
+    static const char src[] =
+        "function tag(s) { return s; }"
+        "var s = tag`a${1}b`;"
+        "[Object.isFrozen(s), Object.isFrozen(s.raw),"
+        " Object.getOwnPropertyDescriptor(s, 'length').writable,"
+        " Object.getOwnPropertyDescriptor(s, 'length').configurable,"
+        " Object.getOwnPropertyDescriptor(s.raw, 'length').writable].join()";
+    static const char want[] = "true,true,false,false,false";
+    VM v = vm_new();
+    JSValue f = JS_Eval(v.ctx, src, strlen(src), "<unit>", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+    JSValue r;
+    const char *s;
+    uint8_t *buf;
+    size_t size;
+
+    CHECK(!JS_IsException(f), "compiled");
+    buf = JS_WriteObject(v.ctx, &size, f, JS_WRITE_OBJ_BYTECODE);
+    JS_FreeValue(v.ctx, f);
+    CHECK(buf != NULL, "written");
+    if (buf) {
+        r = JS_EvalFunction(v.ctx, JS_ReadObject(v.ctx, buf, size, JS_READ_OBJ_BYTECODE));
+        s = JS_IsException(r) ? NULL : JS_ToCString(v.ctx, r);
+        CHECK(s && !strcmp(s, want), "read back: %s, want %s", s ? s : "(exception)", want);
+        JS_FreeCString(v.ctx, s);
+        JS_FreeValue(v.ctx, r);
+        js_free(v.ctx, buf);
+    }
+    vm_free(&v);
+}
+
 int main(void)
 {
     test_compile_stops();
@@ -3632,6 +3667,7 @@ int main(void)
     test_rv_new_in_loop();
     test_rv_frame_limits();
     test_rv_nesting_limits();
+    test_template_object_sealed();
     if (failures) {
         printf("unit-api: %d of %ld checks failed\n", failures, checks);
         return 1;

@@ -19,6 +19,7 @@ What changed in `github.com/liustack/beastjs` (its name from v0.33.0, `github.co
 - `Array.prototype.sort` calls the comparator for two identical values, as the specification says.
 - `new ArrayBuffer(0, { maxByteLength: 2 ** 64 })` and `maxByteLength: Infinity` throw a `RangeError` where they made a resizable buffer with a maximum of 0.
 - `JSON.parse` with a reviver reads the length of an array (also a Proxy of one) as the specification does: a length of -1 is 0 and a length above 2^32 is kept.
+- A template object (the strings array of a tagged template) in bytecode that `EvalBytecode` runs is frozen as when the source is parsed.
 
 ## [v0.33.0] - 2026-11-24
 

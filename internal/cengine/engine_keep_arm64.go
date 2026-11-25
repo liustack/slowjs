@@ -1587,6 +1587,7 @@ var goasmKeep = []any{
 	rv_with_op,
 	rv_with_slow,
 	scalbn,
+	seal_template_obj,
 	seq_prop_cb,
 	set_array_length,
 	set_date_field,
