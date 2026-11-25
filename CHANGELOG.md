@@ -11,6 +11,7 @@ What changed in `github.com/liustack/beastjs` (its name from v0.33.0, `github.co
 - `with (o) { f?.() }` compiles, where it stopped with `InternalError: inconsistent stack size`.
 - `var {"a" = b} = o` and `var {0 + b} = o` are a `SyntaxError`, as in Node.
 - A function with more than 65533 block scopes fails with `InternalError: too many scopes`, where it was compiled into wrong code before.
+- `Array.prototype.values`, `keys` and `entries` on an array-like, the `ownKeys` result of a Proxy and `RegExp` `replace` with a custom `exec` read a length as the specification does: a length of -1 is 0 (it was 4294967295, so an iterator ran four billion times) and a length above 2^32 is kept. An `ownKeys` list longer than 2^31 - 1 is a `RangeError`.
 
 ## [v0.33.0] - 2026-11-24
 

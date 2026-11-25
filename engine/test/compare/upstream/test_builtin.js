@@ -234,6 +234,19 @@ function test_array()
     /* sort writes back every element, even those already in place */
     assert_throws(TypeError, () => Array.prototype.sort.call("aa"));
     assert_throws(TypeError, () => Object.freeze([1, 2]).sort());
+
+    test_array_iterator();
+}
+
+function test_array_iterator()
+{
+    var n = 0;
+    for (var x of Array.prototype.values.call({ length: -1, 0: "a" })) { if (++n > 3) break; }
+    assert(n, 0);
+
+    n = 0;
+    for (var k of Array.prototype.keys.call({ length: 2 ** 32 + 1 })) { if (++n > 5) break; }
+    assert(n, 6);
 }
 
 function test_string()
