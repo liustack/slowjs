@@ -1,0 +1,33 @@
+1 primitive: 5
+1 undefined: undefined
+1 same object: [true,2]
+1 a wrapper is new: true
+1 next throws: throws RangeError
+1 for of: throws TypeError
+1 spread: throws TypeError
+1 map: throws TypeError
+1 toArray: throws TypeError
+1 toArray of objects: [0,1,2]
+1 return primitive: 7
+2 primitive: 5
+2 undefined: undefined
+2 same object: [true,2]
+2 a wrapper is new: true
+2 next throws: throws RangeError
+2 for of: throws TypeError
+2 spread: throws TypeError
+2 map: throws TypeError
+2 toArray: throws TypeError
+2 toArray of objects: [0,1,2]
+2 return primitive: 7
+3 primitive: 5
+3 undefined: undefined
+3 same object: [true,2]
+3 a wrapper is new: true
+3 next throws: throws RangeError
+3 for of: throws TypeError
+3 spread: throws TypeError
+3 map: throws TypeError
+3 toArray: throws TypeError
+3 toArray of objects: [0,1,2]
+3 return primitive: 7

@@ -23840,8 +23840,10 @@ static JSValue JS_IteratorNext3(JSContext *ctx, JSValueConst enum_obj,
                                      pdone, p->u.cfunc.magic);
             js_call_leave(ctx->rt);
             /* only the next of an Iterator.from wrapper gives *pdone == 2 here,
-               with a result that may be no object: its caller needs one */
-            if (unlikely(*pdone == 2) && !JS_IsObject(obj) &&
+               with a result that may be no object: its caller needs one,
+               unless it is the next of another wrapper, which gives the
+               result on as it is */
+            if (unlikely(*pdone == 2) && check_object && !JS_IsObject(obj) &&
                 !JS_IsException(obj)) {
                 JS_FreeValue(ctx, obj);
                 JS_ThrowTypeError(ctx, "iterator must return an object");
