@@ -3756,6 +3756,55 @@ static void test_array_buffer_no_release(void)
     }
 }
 
+/* JS_WRITE_OBJ_BYTECODE writes a frozen array as a template object, which the
+   reader seals again, and any other array as an array. An array that was only
+   made not extensible, or sealed, keeps a length and elements that can be
+   written: before, the writer took every array that was not extensible for a
+   template object, and it came back with its elements and its length read
+   only. */
+static void test_bytecode_array_round_trip(void)
+{
+    static const struct { const char *make, *check, *want; } cases[] = {
+        { "Object.preventExtensions([])",
+          "(function () { 'use strict'; a.length = 2; return a.length; })()", "2" },
+        { "Object.preventExtensions([1, 2])",
+          "(function () { 'use strict'; a[0] = 5; a.length = 1; return a.join(); })()", "5" },
+        { "Object.seal([1, 2])",
+          "(function () { 'use strict'; a[0] = 5; return a.join(); })()", "5,2" },
+        { "Object.freeze([1, 2])",
+          "[Object.isFrozen(a), a.join(), Object.getOwnPropertyDescriptor(a, 'length').writable].join()",
+          "true,1,2,false" },
+        { "Object.freeze([])", "[Object.isFrozen(a), a.length].join()", "true,0" },
+    };
+    int i;
+
+    for (i = 0; i < (int)countof(cases); i++) {
+        VM v = vm_new();
+        JSValue val = JS_Eval(v.ctx, cases[i].make, strlen(cases[i].make), "<unit>", JS_EVAL_TYPE_GLOBAL);
+        JSValue r, g;
+        uint8_t *buf;
+        size_t size;
+
+        CHECK(!JS_IsException(val), "%s: the eval", cases[i].make);
+        buf = JS_WriteObject(v.ctx, &size, val, JS_WRITE_OBJ_BYTECODE);
+        JS_FreeValue(v.ctx, val);
+        CHECK(buf != NULL, "%s: written", cases[i].make);
+        if (!buf) {
+            vm_free(&v);
+            continue;
+        }
+        r = JS_ReadObject(v.ctx, buf, size, JS_READ_OBJ_BYTECODE);
+        js_free(v.ctx, buf);
+        CHECK(!JS_IsException(r), "%s: read", cases[i].make);
+        g = JS_GetGlobalObject(v.ctx);
+        CHECK(JS_SetPropertyStr(v.ctx, g, "a", r) >= 0, "global a");
+        JS_FreeValue(v.ctx, g);
+        CHECK(eval_is(v.ctx, cases[i].check, cases[i].want), "%s read back: %s, want %s",
+              cases[i].make, cases[i].check, cases[i].want);
+        vm_free(&v);
+    }
+}
+
 /* JS_GetTypedArrayBuffer gives the byte length the typed array has now: a
    typed array that follows a resizable ArrayBuffer is as long as the buffer
    lets it be (upstream QuickJS 56d38b8). */
@@ -3847,6 +3896,7 @@ int main(void)
     test_array_buffer_release_once();
     test_typed_array_buffer_length();
     test_array_buffer_no_release();
+    test_bytecode_array_round_trip();
     if (failures) {
         printf("unit-api: %d of %ld checks failed\n", failures, checks);
         return 1;

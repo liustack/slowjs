@@ -47797,6 +47797,8 @@ static int JS_WriteModule(BCWriterState *s, JSValueConst obj)
     return -1;
 }
 
+static __exception int js_shape_test_integrity(JSContext *ctx, JSObject *p, BOOL is_frozen);
+
 /* XXX: be compatible with the structured clone algorithm */
 static int JS_WriteArray(BCWriterState *s, JSValueConst obj)
 {
@@ -47808,15 +47810,18 @@ static int JS_WriteArray(BCWriterState *s, JSValueConst obj)
     JSShapeProperty *prs;
     JSProperty *pr;
     
+    /* a frozen array, as seal_template_obj leaves a template object, is
+       written as a template object when we are saving bytecode, and the
+       reader freezes it again. Another array that is not extensible is
+       written as an array: its elements and its length stay writable */
+    is_template = FALSE;
     if (s->allow_bytecode && !p->extensible) {
-        /* not extensible array: we consider it is a
-           template when we are saving bytecode */
-        bc_put_u8(s, BC_TAG_TEMPLATE_OBJECT);
-        is_template = TRUE;
-    } else {
-        bc_put_u8(s, BC_TAG_ARRAY);
-        is_template = FALSE;
+        ret = js_shape_test_integrity(ctx, p, TRUE);
+        if (ret < 0)
+            goto fail;
+        is_template = (ret == TRUE);
     }
+    bc_put_u8(s, is_template ? BC_TAG_TEMPLATE_OBJECT : BC_TAG_ARRAY);
     if (js_get_length32(ctx, &len, obj)) /* no side effect */
         goto fail;
     bc_put_leb128(s, len);
