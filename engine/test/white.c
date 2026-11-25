@@ -3284,3 +3284,8 @@ int white_sb_size(const StringBuffer *b)
 {
     return b->size;
 }
+
+int white_sb_wide(const StringBuffer *b)
+{
+    return b->is_wide_char;
+}

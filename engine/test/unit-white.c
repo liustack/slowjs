@@ -67,6 +67,7 @@ void white_sb_fake_length(struct StringBuffer *b, int len, int size);
 int white_string_len_max(void);
 int white_sb_realloc(struct StringBuffer *b, int new_len, int c);
 int white_sb_size(const struct StringBuffer *b);
+int white_sb_wide(const struct StringBuffer *b);
 const uint8_t *white_json_string_run(struct StringBuffer *b, const uint8_t *p, const uint8_t *end, int sep);
 int white_json_quote_run(struct StringBuffer *b, JSValueConst s, int *pi);
 uintptr_t white_json_run_limit(uintptr_t p, uintptr_t end);
@@ -559,6 +560,25 @@ static void test_sb_room_past_two_thirds(void)
     white_sb_fake_length(b, 0, size);
     CHECK(white_sb_realloc(b, size + 1, 'x') == 0, "the room of %d characters did not grow", size);
     CHECK(white_sb_size(b) == max, "the room of %d characters grew to %d, want %d", size, white_sb_size(b), max);
+    white_sb_free(v.ctx, b);
+    vm_free(&v);
+}
+
+/* A buffer of 8 bits made wide puts the slack of its new block in its room,
+   up to the longest string, as string_buffer_realloc does. Past it the
+   buffer took characters with no check: toUpperCase of 2^30 - 1 characters,
+   the first U+00FF and the last U+00DF, gave a string of 2^30. The buffer is
+   made to look as large as the longest string, with nothing in it. */
+static void test_sb_widen_room(void)
+{
+    VM v = vm_new();
+    struct StringBuffer *b = white_sb_new(v.ctx, 32, 0, 0);
+    int max = white_string_len_max();
+
+    white_sb_fake_length(b, 0, max);
+    CHECK(white_sb_putc16(b, 0x100) == 0, "the buffer of %d characters was not made wide", max);
+    CHECK(white_sb_wide(b) && white_sb_size(b) == max, "the room made wide is %d characters, want %d",
+          white_sb_size(b), max);
     white_sb_free(v.ctx, b);
     vm_free(&v);
 }
@@ -11633,6 +11653,7 @@ int main(int argc, char **argv)
     test_json_runs_oom();
     test_json_run_too_long();
     test_sb_room_past_two_thirds();
+    test_sb_widen_room();
     test_json_run_limit();
     test_json_plain_run();
     test_json_count_high_bytes();

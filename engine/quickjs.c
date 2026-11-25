@@ -6229,7 +6229,10 @@ static no_inline int string_buffer_widen(StringBuffer *s, int size)
                                  sizeof(JSString) + (size << 1), &slack);
     if (!str)
         return string_buffer_set_error(s);
-    size += slack >> 1;
+    /* the slack is room up to the longest string, as string_buffer_realloc
+       takes it: past it the buffer took characters with no check, and a
+       string of 2^30 characters was made */
+    size = min_int(size + (slack >> 1), JS_STRING_LEN_MAX);
     s->str = str;
     /* The characters are widened from the end, JS_ROPE_STEP at a time when
        there are more than that, with the flag read after each step: the

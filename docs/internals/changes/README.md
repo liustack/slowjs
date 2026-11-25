@@ -328,6 +328,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | The register loop adds two flat 8-bit strings into a temp (the left one of 1 to 8192 characters, the right one of 1 to 512) itself: it grows the left one in place or copies both, as `JS_ConcatString` does, without its three calls | v0.31.4 | `rv_concat8` in [engine/regvm-ops-basic.h](../../../engine/regvm-ops-basic.h) |
 | A keyed read (`o[k]`) by a string that keeps no atom looks it up in the atom table without making one: found, the string keeps the atom as a key made from it does. Not found, no object has that name, so the read is undefined through a chain of ordinary objects and fast arrays, with no atom made and freed. An exotic object on the chain, an index, a long key and a string that starts with a digit take the generic path | v0.31.4 | `rv_key_lookup` in [engine/regvm-ops-object.h](../../../engine/regvm-ops-object.h) |
 | A string buffer grows half as large again also past 715,827,882 characters, where it grew by each append and copied itself each time | v0.33.1 | [strings.md](strings.md) |
+| A string buffer made wide keeps its room at the longest string (2^30 - 1 characters), so that no string is longer | v0.33.1 | [strings.md](strings.md) |
 
 ## JSON
 
