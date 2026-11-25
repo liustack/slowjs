@@ -67790,19 +67790,13 @@ static __exception int js_proxy_get_own_property_names1(JSContext *ctx,
     if (is_extensible < 0)
         goto fail;
 
-    /* check if there are non configurable properties */
-    if (s->is_revoked) {
-        JS_ThrowTypeErrorRevokedProxy(ctx);
-        goto fail;
-    }
+    /* check if there are non configurable properties. The trap or the
+       reading of its result may have revoked the proxy: the checks go on
+       with the target the call began with, which s still holds */
     if (JS_GetOwnPropertyNamesInternal(ctx, &tab2, &len2, JS_VALUE_GET_OBJ(s->target),
                                JS_GPN_STRING_MASK | JS_GPN_SYMBOL_MASK))
         goto fail;
     for(i = 0; i < len2; i++) {
-        if (s->is_revoked) {
-            JS_ThrowTypeErrorRevokedProxy(ctx);
-            goto fail;
-        }
         res = js_get_own_property_flags(ctx, &desc, JS_VALUE_GET_OBJ(s->target),
                                 tab2[i].atom);
         if (res < 0)
