@@ -62,6 +62,7 @@ Where an upstream commit meets a change of liustack/beastjs, that change stays a
 | `7e59fe8` Fix Function.prototype.toString for a revoked proxy | a Proxy of a function prints with an empty name, with no read of `name` and no call of its get trap, and a revoked one prints like a live one | all of it | `test_builtin.js` of upstream (its test) |
 | `0a0f817` fixed Math.sumPrecise | the counter of the sum starts at 126, so the limbs cannot overflow on 300 values of 2^53 - 1 | all of it | `test_builtin.js` of upstream (its test) |
 | `1cc7446` Array.prototype.sort: remove the same value optimization which is not really spec compliant | `sort` calls the comparator for two identical values too | all of it | `compare/sort_same_value.js` |
+| `66fdddf` Apply ToIndex to the maxByteLength option of the ArrayBuffer constructor | `maxByteLength` of 2^64 or more, and Infinity, is a RangeError, where ToInt64 wrapped it to a small number | all of it | `compare/array_buffer_max_length.js` |
 
 ## Iterator concatenation
 

@@ -17,6 +17,7 @@ What changed in `github.com/liustack/beastjs` (its name from v0.33.0, `github.co
 - `Function.prototype.toString` of a revoked Proxy of a function returns its text instead of throwing, and no longer runs the `get` trap of a live one.
 - `Math.sumPrecise` of many large numbers is exact (300 times 2^53 - 1 was wrong).
 - `Array.prototype.sort` calls the comparator for two identical values, as the specification says.
+- `new ArrayBuffer(0, { maxByteLength: 2 ** 64 })` and `maxByteLength: Infinity` throw a `RangeError` where they made a resizable buffer with a maximum of 0.
 
 ## [v0.33.0] - 2026-11-24
 

@@ -299,7 +299,6 @@ var goasmKeep = []any{
 	JS_ToInt64,
 	JS_ToInt64Clamp,
 	JS_ToInt64Ext,
-	JS_ToInt64Free,
 	JS_ToInt64Sat,
 	JS_ToLengthFree,
 	JS_ToNumberFree,
