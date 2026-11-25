@@ -49078,6 +49078,8 @@ static JSValue JS_ReadObjectTag(BCReaderState *s)
     int ret;
 
     obj = JS_NewObject(ctx);
+    if (JS_IsException(obj))
+        return obj;
     if (BC_add_object_ref(s, obj))
         goto fail;
     if (bc_get_leb128(s, &prop_count))
@@ -49114,6 +49116,8 @@ static JSValue JS_ReadArray(BCReaderState *s, int tag)
     BOOL is_template;
 
     obj = JS_NewArray(ctx);
+    if (JS_IsException(obj))
+        return obj;
     if (BC_add_object_ref(s, obj))
         goto fail;
     is_template = (tag == BC_TAG_TEMPLATE_OBJECT);

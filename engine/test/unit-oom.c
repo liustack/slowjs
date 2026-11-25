@@ -3002,6 +3002,69 @@ static void test_array_readonly_length_oom(void)
     }
 }
 
+/* Values read back from bytecode with little memory left, from a full heap
+   with a few blocks back and with each room up to 4 KiB: the read gives the
+   value whole or fails with the out of memory error. A frozen array is
+   written as a template object. When the array or the object could not be
+   made, the reader went on with the exception as if it were one, and sealed
+   it, which crashed for an array with no element and no raw strings. */
+static void test_read_object_oom(void)
+{
+    static const struct { const char *make, *check; } cases[] = {
+        { "Object.freeze([])", "Array.isArray(r) && Object.isFrozen(r) && r.length === 0" },
+        { "(function tag(s) { return s; })`a${1}b`", "Object.isFrozen(r) && Object.isFrozen(r.raw) && r.join() === 'a,b'" },
+        { "({ a: 1, b: [2] })", "r.a === 1 && r.b[0] === 2" },
+    };
+    FillRoom rm[FILL_ROOMS];
+    size_t nrooms = fill_rooms(rm), k, size;
+    int i, made, failed, unc;
+
+    for (i = 0; i < (int)countof(cases); i++) {
+        VM v = vm_new();
+        JSValue val = JS_Eval(v.ctx, cases[i].make, strlen(cases[i].make), "<unit>", JS_EVAL_TYPE_GLOBAL);
+        uint8_t *buf;
+
+        CHECK(!JS_IsException(val), "%s: the eval", cases[i].make);
+        buf = JS_WriteObject(v.ctx, &size, val, JS_WRITE_OBJ_BYTECODE);
+        JS_FreeValue(v.ctx, val);
+        CHECK(buf != NULL, "%s: written", cases[i].make);
+        made = failed = 0;
+        for (k = 0; buf && k < nrooms + 4096 / 8 + 1; k++) {
+            JSValue r, g;
+
+            if (k < nrooms) {
+                fill_memory(&v);
+                free_blocks(&v, rm[k].min, rm[k].max, rm[k].n);
+            } else {
+                room(&v, (k - nrooms) * 8);
+            }
+            r = JS_ReadObject(v.ctx, buf, size, JS_READ_OBJ_BYTECODE);
+            unc = JS_IsException(r) && JS_IsUncatchableException(v.ctx);
+            if (k < nrooms)
+                release_blocks(&v);
+            else
+                unlimit(&v);
+            if (JS_IsException(r)) {
+                char *t = exception_text(v.ctx);
+
+                failed++;
+                CHECK(unc, "%s, room %zu: the read fails with %s, not the out of memory error", cases[i].make, k, t ? t : "?");
+                free(t);
+                continue;
+            }
+            made++;
+            g = JS_GetGlobalObject(v.ctx);
+            CHECK(JS_SetPropertyStr(v.ctx, g, "r", r) >= 0, "global r");
+            JS_FreeValue(v.ctx, g);
+            CHECK(eval_is(v.ctx, cases[i].check, "true"), "%s, room %zu: the value read is not whole", cases[i].make, k);
+            CHECK(eval_ok(v.ctx, "delete globalThis.r"), "delete r");
+        }
+        CHECK(made > 0 && failed > 0, "%s: %d reads made the value and %d failed, want both", cases[i].make, made, failed);
+        js_free(v.ctx, buf);
+        vm_free(&v);
+    }
+}
+
 /* The empty string is the string of an atom: making it takes no memory,
    from a full heap too, where a string of one character fails. The string
    of an index atom is made, with memory. */
@@ -3856,6 +3919,7 @@ int main(void)
     test_array_room_oom();
     test_array_length_oom();
     test_array_readonly_length_oom();
+    test_read_object_oom();
     test_string_append_oom();
     test_string_add_oom();
     test_copy_props_oom();
