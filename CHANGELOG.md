@@ -7,6 +7,7 @@ What changed in `github.com/liustack/beastjs` (its name from v0.33.0, `github.co
 ### Fixed
 
 - An arrow function whose parameter default divides after a template or a private name, such as `` (a = `8` / 2) => a ``, compiles, as in Node.
+- `[, 1 2]` and other array literals that miss a comma after a hole or past 32 elements are a `SyntaxError`, as in Node.
 
 ## [v0.33.0] - 2026-11-24
 
