@@ -1,0 +1,15 @@
+all, fulfill then reject: rejected 2
+all, fulfill twice: [1,9]
+all, reject then fulfill: rejected 2
+all, reject twice: rejected 2
+all, reject, fulfill, reject: rejected 2
+allSettled, fulfill then reject: [{"status":"fulfilled","value":1},{"status":"fulfilled","value":9}]
+allSettled, fulfill twice: [{"status":"fulfilled","value":1},{"status":"fulfilled","value":9}]
+allSettled, reject then fulfill: [{"status":"rejected","reason":2},{"status":"fulfilled","value":9}]
+allSettled, reject twice: [{"status":"rejected","reason":2},{"status":"fulfilled","value":9}]
+allSettled, reject, fulfill, reject: [{"status":"rejected","reason":2},{"status":"fulfilled","value":9}]
+any, fulfill then reject: 1
+any, fulfill twice: 1
+any, reject then fulfill: 1
+any, reject twice: 9
+any, reject, fulfill, reject: 1

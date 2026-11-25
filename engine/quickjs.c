@@ -71112,7 +71112,7 @@ static JSValue js_promise_all_resolve_element(JSContext *ctx,
 {
     int resolve_type = magic & 3;
     int is_reject = magic & 4;
-    BOOL alreadyCalled = JS_ToBool(ctx, func_data[0]);
+    JSValue *already_called = &func_data[0];
     JSValueConst values = func_data[2];
     JSValueConst resolve = func_data[3];
     JSValueConst resolve_element_env = func_data[4];
@@ -71121,9 +71121,13 @@ static JSValue js_promise_all_resolve_element(JSContext *ctx,
 
     if (JS_ToInt32(ctx, &index, func_data[1]))
         return JS_EXCEPTION;
-    if (alreadyCalled)
+    /* the two functions of an element of allSettled share one flag: the
+       reject function holds the fulfill function in place of its own */
+    if (resolve_type == PROMISE_MAGIC_allSettled && is_reject)
+        already_called = &JS_VALUE_GET_OBJ(func_data[0])->u.c_function_data_record->data[0];
+    if (JS_ToBool(ctx, *already_called))
         return JS_UNDEFINED;
-    func_data[0] = JS_NewBool(ctx, TRUE);
+    *already_called = JS_NewBool(ctx, TRUE);
 
     if (resolve_type == PROMISE_MAGIC_allSettled) {
         JSValue str;
@@ -71256,6 +71260,8 @@ static JSValue js_promise_all(JSContext *ctx, JSValueConst this_val,
             }
 
             if (magic == PROMISE_MAGIC_allSettled) {
+                /* its flag is that of resolve_element */
+                resolve_element_data[0] = resolve_element;
                 reject_element =
                     JS_NewCFunctionData(ctx, js_promise_all_resolve_element, 1,
                                         magic | 4, 5, resolve_element_data);
