@@ -67731,7 +67731,7 @@ static __exception int js_proxy_get_own_property_names1(JSContext *ctx,
     JSPropertyEnum *tab, *tab2;
     JSAtom atom;
     JSPropertyDescriptor desc;
-    int res, is_extensible, is_configurable, idx;
+    int res, is_extensible, idx;
 
     s = get_proxy_method(ctx, &method, obj, JS_ATOM_ownKeys);
     if (!s)
@@ -67804,19 +67804,24 @@ static __exception int js_proxy_get_own_property_names1(JSContext *ctx,
     if (JS_GetOwnPropertyNamesInternal(ctx, &tab2, &len2, JS_VALUE_GET_OBJ(s->target),
                                JS_GPN_STRING_MASK | JS_GPN_SYMBOL_MASK))
         goto fail;
+    /* the descriptor of every key of the target is read before the result
+       is checked (step 16), so that an error from reading one comes first.
+       tab2[i].is_enumerable holds whether key i is not configurable */
     for(i = 0; i < len2; i++) {
         res = js_get_own_property_flags(ctx, &desc, JS_VALUE_GET_OBJ(s->target),
                                 tab2[i].atom);
         if (res < 0)
             goto fail;
         /* a key the target gives no descriptor for, as a proxy target may,
-           counts with the configurable ones (step 16) */
-        is_configurable = TRUE;
+           counts with the configurable ones */
+        tab2[i].is_enumerable = FALSE;
         if (res) {
             js_free_desc(ctx, &desc);
-            is_configurable = (desc.flags & JS_PROP_CONFIGURABLE) != 0;
+            tab2[i].is_enumerable = !(desc.flags & JS_PROP_CONFIGURABLE);
         }
-        if (!is_configurable || !is_extensible) {
+    }
+    for(i = 0; i < len2; i++) {
+        if (tab2[i].is_enumerable || !is_extensible) {
             idx = find_prop_key(tab, len, tab2[i].atom);
             if (idx < 0) {
                 JS_ThrowTypeError(ctx, "proxy: target property must be present in proxy ownKeys");
