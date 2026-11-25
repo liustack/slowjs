@@ -31046,7 +31046,6 @@ static int js_parse_skip_parens_token(JSParseState *s, int *pbits, BOOL no_line_
                 if (level >= sizeof(state))
                     goto done;
                 state[level++] = '`';
-                last_tok = '('; /* regexp allowed after it */
             }
             break;
         case TOK_EOF:
@@ -31086,6 +31085,12 @@ static int js_parse_skip_parens_token(JSParseState *s, int *pbits, BOOL no_line_
             (token_is_pseudo_keyword(s, JS_ATOM_of) ||
              token_is_pseudo_keyword(s, JS_ATOM_yield))) {
             last_tok = TOK_OF;
+        } else if (s->token.val == TOK_TEMPLATE && s->token.u.str.sep != '`') {
+            /* a template part that ends with "${" opens a substitution,
+               which may start with a regexp. Setting last_tok in the
+               switch above is lost here. Only a complete template makes
+               the "/" after it a division (is_regexp_allowed) */
+            last_tok = '(';
         } else {
             last_tok = s->token.val;
         }

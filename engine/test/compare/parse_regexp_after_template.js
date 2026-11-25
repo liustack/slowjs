@@ -15,4 +15,13 @@ var h = (a = `${1 + 1}` / 2, b = /x/.test('x')) => [a, b];
 print(JSON.stringify(h()));
 var k = (a = (`a`) / 1) => String(a);
 print(k());
+// A substitution may start with a regexp, also one with a parenthesis in a
+// class, which the scan must not count. Upstream 673c622 lost this: the
+// "(" it set as the last token for "${" was overwritten by the template.
+var m = (a = `x${/[)]/.source}y`) => a;
+print(m());
+var n = (a = `${/[(]/.source}`, b = `${1}` / 2) => a + " " + b;
+print(n());
+var p = (a = `${`${/[)]/.source}`}` + `${/a/}/${/b/}`) => a;
+print(p());
 out.join("\n")
