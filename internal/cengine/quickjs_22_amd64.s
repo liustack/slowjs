@@ -7970,7 +7970,7 @@ TEXT ·js_json_to_str(SB), $272-16
 	QUAD $0x848b480b72f70000
 	QUAD $0xfc40ff000000b824
 	LEAQ ·engine_rodata+652(SB), R14
-	LEAQ ·engine_rodata+125198(SB), SI
+	LEAQ ·engine_rodata+125214(SB), SI
 	QUAD $0x0000010024a48b4c
 	QUAD $0x0000010824ac8b4c
 	QUAD $0x000000b824bc8b4c

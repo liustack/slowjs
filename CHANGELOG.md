@@ -14,6 +14,7 @@ What changed in `github.com/liustack/beastjs` (its name from v0.33.0, `github.co
 - `Array.prototype.values`, `keys` and `entries` on an array-like, the `ownKeys` result of a Proxy and `RegExp` `replace` with a custom `exec` read a length as the specification does: a length of -1 is 0 (it was 4294967295, so an iterator ran four billion times) and a length above 2^32 is kept. An `ownKeys` list longer than 2^31 - 1 is a `RangeError`.
 - `Iterator.prototype.drop` no longer reads the `value` of the items it throws away.
 - The `next` and `return` of an `Iterator.from` wrapper give back what the method they wrap returned.
+- `Function.prototype.toString` of a revoked Proxy of a function returns its text instead of throwing, and no longer runs the `get` trap of a live one.
 
 ## [v0.33.0] - 2026-11-24
 

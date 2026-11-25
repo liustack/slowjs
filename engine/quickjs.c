@@ -51977,7 +51977,12 @@ static JSValue js_function_toString(JSContext *ctx, JSValueConst this_val,
             break;
         }
         suff = "() {\n    [native code]\n}";
-        name = JS_GetProperty(ctx, this_val, JS_ATOM_name);
+        /* a revoked Proxy has no name to read, and a live one must not run its
+           get trap */
+        if (p->class_id == JS_CLASS_PROXY)
+            name = JS_UNDEFINED;
+        else
+            name = JS_GetProperty(ctx, this_val, JS_ATOM_name);
         if (JS_IsUndefined(name))
             name = JS_AtomToString(ctx, JS_ATOM_empty_string);
         return JS_ConcatString3(ctx, pref, name, suff);

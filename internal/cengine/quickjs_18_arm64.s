@@ -21087,7 +21087,7 @@ TEXT ·js_async_module_execution_fulfilled(SB), $184-16
 	WORD $0x924009e8
 	WORD $0xf1001d1f
 	WORD $0x54001780
-	MOVD $·engine_rodata+124176(SB), R9
+	MOVD $·engine_rodata+124192(SB), R9
 	WORD $0xf8687928
 	WORD $0xf90047e8
 	WORD $0xd37ef608
@@ -21791,7 +21791,7 @@ TEXT ·js_async_module_execution_fulfilled(SB), $184-16
 	WORD $0x924009e8
 	WORD $0xf1001d1f
 	WORD $0x540017e0
-	MOVD $·engine_rodata+124176(SB), R9
+	MOVD $·engine_rodata+124192(SB), R9
 	WORD $0xf8687928
 	WORD $0xf90047e8
 	WORD $0xd37ef608

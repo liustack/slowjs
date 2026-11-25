@@ -2580,7 +2580,7 @@ TEXT ·js_async_module_execution_fulfilled(SB), $224-64
 	BYTE $0x07
 	BYTE $0x74
 	BYTE $0x13
-	LEAQ ·engine_rodata+125256(SB), CX
+	LEAQ ·engine_rodata+125272(SB), CX
 	QUAD $0x24848948c1048b48
 	QUAD $0x9d148d4a000000c8
 	QUAD $0xdd048d4a00000000
@@ -2648,7 +2648,7 @@ TEXT ·js_async_module_execution_fulfilled(SB), $224-64
 	BYTE $0x07
 	BYTE $0x74
 	BYTE $0x13
-	LEAQ ·engine_rodata+125256(SB), CX
+	LEAQ ·engine_rodata+125272(SB), CX
 	QUAD $0x24848948c1048b48
 	QUAD $0x9d148d4a000000c0
 	QUAD $0xdd048d4a00000000
