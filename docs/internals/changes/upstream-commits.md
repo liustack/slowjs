@@ -53,6 +53,7 @@ Where an upstream commit meets a change of liustack/beastjs, that change stays a
 | `b25da59` add_fast_array_element: don't update the array length in case of memory allocation error (#576) and handling the specific case of p->u.array.count = INT32_MAX | an element added to a fast array that fails for want of memory leaves the length, and an element added after 2^31 - 1 elements, a count no script reaches, is not written past the block | the length set once the room is there, made first, and a check where the array grows in place of the test of the index, with a limit of ours on the room of a fast array and on the properties of a shape ([below](#an-append-that-runs-out-of-memory-leaves-the-length)) | `unit-oom` (`test_array_length_oom`), `unit-white` (`test_max_index`) |
 | `673c622` fixed regexp skipping after template or private field (#596) | the scan that tells an arrow function parameter list from a parenthesized expression takes the `/` after a complete template or a private name for a division, so `(a = \`8\` / 2) => a` compiles | all of it | `compare/parse_regexp_after_template.js` |
 | `c4b449c` fixed array literal parsing | an array literal with a hole, or with more than 32 elements, needs a comma between elements: `[, 1 2]` is a SyntaxError | all of it | `compare/array_literal_missing_comma.js` |
+| `1eba383` Fix the stack depth of an optional call through a with scope | `with (o) { f?.() }` compiles, and the short cut of `?.` drops the object and the function | all of it | `compare/with_optional_call.js` |
 
 ## Iterator concatenation
 
