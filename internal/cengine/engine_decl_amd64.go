@@ -183,7 +183,7 @@ func JS_IsUncatchableException(a0 uintptr, a1 uintptr) uintptr
 func JS_IteratorClose(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr)
 func JS_IteratorGetCompleteValue(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr)
 func JS_IteratorNext(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr)
-func JS_IteratorNext2(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr, a7 uintptr, a8 uintptr)
+func JS_IteratorNext3(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr, a7 uintptr, a8 uintptr, a9 uintptr)
 func JS_JSONStringify_block(a0 uintptr, a1 uintptr) (r0, r1 uintptr)
 func JS_LoadModule(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
 func JS_LoadModuleInternal(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr)

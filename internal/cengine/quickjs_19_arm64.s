@@ -14002,7 +14002,7 @@ TEXT ·js_async_from_sync_iterator_next(SB), $152-16
 	WORD $0xf90017f8
 	BL ·js_new_promise_capability(SB)
 	WORD $0x7100183f
-	WORD $0x54004880
+	WORD $0x540048c0
 	WORD $0xa947a7e8
 	WORD $0xa90507e0
 	WORD $0x3100051f
@@ -14034,7 +14034,7 @@ TEXT ·js_async_from_sync_iterator_next(SB), $152-16
 	WORD $0x540006c2
 	WORD $0xb94073e8
 	WORD $0x7100051f
-	WORD $0x54001501
+	WORD $0x54001541
 	WORD $0xf94037e8
 	WORD $0xf94047f5
 	WORD $0xf9404fe9
@@ -14059,9 +14059,9 @@ TEXT ·js_async_from_sync_iterator_next(SB), $152-16
 	WORD $0xf9005900
 	WORD $0xf9404fe8
 	WORD $0xf9005d01
-	WORD $0x540013a0
+	WORD $0x540013e0
 	WORD $0x910201ca
-	WORD $0x140000a8
+	WORD $0x140000aa
 	WORD $0xf9404fe8
 	WORD $0xf94047f5
 	MOVD $·engine_rodata+28248(SB), R22
@@ -14074,7 +14074,7 @@ TEXT ·js_async_from_sync_iterator_next(SB), $152-16
 	BL ·JS_ThrowTypeError(SB)
 	WORD $0xf9404fee
 	WORD $0xf94047ed
-	WORD $0x1400008d
+	WORD $0x1400008f
 	WORD $0xa9410540
 	WORD $0x3100243f
 	WORD $0x54000083
@@ -14087,7 +14087,7 @@ TEXT ·js_async_from_sync_iterator_next(SB), $152-16
 	WORD $0xf94047ed
 	WORD $0xf9404fee
 	WORD $0x7100183f
-	WORD $0x54001000
+	WORD $0x54001040
 	WORD $0xf94043ea
 	WORD $0xb94063eb
 	WORD $0xa9402548
@@ -14102,11 +14102,13 @@ TEXT ·js_async_from_sync_iterator_next(SB), $152-16
 	WORD $0xf94037e9
 	WORD $0xb90029c8
 	WORD $0x910301c8
-	WORD $0xf90011c1
 	WORD $0xa90321c9
+	WORD $0x52800028
+	WORD $0xf90011c1
+	WORD $0xb90041c8
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·JS_IteratorNext2(SB)
+	BL ·JS_IteratorNext3(SB)
 	WORD $0xf9404fe8
 	WORD $0xf9403ff7
 	WORD $0xf94033f6
@@ -14200,7 +14202,7 @@ TEXT ·js_async_from_sync_iterator_next(SB), $152-16
 	WORD $0xf90013f7
 	WORD $0xf90017f8
 	BL ·JS_IteratorClose(SB)
-	WORD $0x17ffff80
+	WORD $0x17ffff7e
 	WORD $0xa94857e8
 	WORD $0x2a1f03f8
 	WORD $0xa9405d16
@@ -14219,7 +14221,7 @@ TEXT ·js_async_from_sync_iterator_next(SB), $152-16
 	WORD $0x3967212a
 	WORD $0xf944e128
 	WORD $0x350043aa
-	WORD $0x100044ca
+	WORD $0x1000448a
 	WORD $0xf944dd2b
 	WORD $0x3dc00140
 	WORD $0x9126e12a
@@ -14390,7 +14392,7 @@ TEXT ·js_async_from_sync_iterator_next(SB), $152-16
 	WORD $0x9103c1d4
 	WORD $0x910141d7
 	WORD $0xaa0d03f5
-	WORD $0x17fffebb
+	WORD $0x17fffeb9
 	WORD $0xb94073e8
 	WORD $0xf90027e0
 	WORD $0xf90033e1
@@ -14483,7 +14485,7 @@ TEXT ·js_async_from_sync_iterator_next(SB), $152-16
 	WORD $0xf9404fee
 	WORD $0xf94047ed
 	WORD $0x17ffff3f
-	WORD $0x100022e8
+	WORD $0x100022a8
 	WORD $0xf9003bff
 	WORD $0x3dc00100
 	WORD $0x52800068
@@ -14580,7 +14582,7 @@ TEXT ·js_async_from_sync_iterator_next(SB), $152-16
 	WORD $0x5400008b
 	WORD $0xaa1f03e0
 	WORD $0x528000c1
-	WORD $0x140000be
+	WORD $0x140000bc
 	WORD $0xf94009b5
 	WORD $0x9103c1d4
 	WORD $0xf90007f4
@@ -14759,8 +14761,6 @@ TEXT ·js_async_from_sync_iterator_next(SB), $152-16
 	WORD $0x54ffbc60
 	WORD $0x52800029
 	WORD $0x17fffe2b
-	WORD $0xd503201f
-	WORD $0xd503201f
 	WORD $0x00000000
 	WORD $0x00000000
 	WORD $0x00000003

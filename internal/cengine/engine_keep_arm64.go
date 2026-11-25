@@ -143,7 +143,7 @@ var goasmKeep = []any{
 	JS_IteratorClose,
 	JS_IteratorGetCompleteValue,
 	JS_IteratorNext,
-	JS_IteratorNext2,
+	JS_IteratorNext3,
 	JS_JSONStringify_block,
 	JS_LoadModule,
 	JS_LoadModuleInternal,
