@@ -192,3 +192,4 @@ Judged by reading each diff against the tree of liustack/beastjs.
 - New features, which Vite compiles away: the new iterator helpers (`zip`, `zipKeyed`, `join`, `includes`, chunking), `Promise.allKeyed`, `Array.fromAsync`, explicit resource management, `Atomics.waitAsync`.
 - API for embedders that tifa does not use (the `JS_To*` exports and the like), upstream's Temporal and Intl (liustack/beastjs has go-intl) and upstream's test tools.
 
+- `ef5c6e3` (the line `2 * (op - OP_dec) - 1` of `js_unary_arith_slow`) needs nothing here: the line has the type unsigned int (an enum with no negative value is unsigned int for clang too), and 0xFFFFFFFF is -1 only where the limb is 32 bits. The engine is always built with 32-bit limbs (`-U__SIZEOF_INT128__` in `engine/test/flags.sh`), so the result is right. The bug is only in a build with 64-bit limbs.
