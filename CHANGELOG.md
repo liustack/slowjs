@@ -21,6 +21,7 @@ What changed in `github.com/liustack/beastjs` (its name from v0.33.0, `github.co
 - `JSON.parse` with a reviver reads the length of an array (also a Proxy of one) as the specification does: a length of -1 is 0 and a length above 2^32 is kept.
 - A template object (the strings array of a tagged template) in bytecode that `EvalBytecode` runs is frozen as when the source is parsed.
 - `Promise.withResolvers` no longer frees a value twice when it runs out of memory.
+- A `for in` loop over a string, a number or a boolean no longer crashes when it runs out of memory.
 
 ## [v0.33.0] - 2026-11-24
 

@@ -855,6 +855,21 @@ static void test_with_resolvers_oom(void)
                       "object,function,function", 1);
 }
 
+/* A for in over a string, a number or a boolean makes an object of it
+   first. When that runs out of memory, the loop used to go on with the
+   exception as its object (upstream 3579302). */
+static void test_for_in_primitive_oom(void)
+{
+    each_call_failing("a for in over primitives",
+                      "globalThis.f = () => { let s = ''\n"
+                      "  for (const k in 'abc') s += k\n"
+                      "  for (const k in 7) s += k\n"
+                      "  for (const k in true) s += k\n"
+                      "  return s }\n"
+                      "f(); f()",
+                      "012", 1);
+}
+
 /* A key that converts to a symbol, a symbol of the engine such as
    Symbol.iterator or one of the script, gives the symbol one reference to
    the key and takes it back, however often it is used. The atom of a
@@ -11551,6 +11566,7 @@ int main(int argc, char **argv)
     test_json_stringify_oom();
     test_shared_shape_oom();
     test_with_resolvers_oom();
+    test_for_in_primitive_oom();
     test_symbol_key_refs();
     test_json_stringify_list_oom();
     test_json_walk();
