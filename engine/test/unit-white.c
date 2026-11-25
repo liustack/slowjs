@@ -843,6 +843,59 @@ static void test_shared_shape_oom(void)
                       "true,1,", 1);
 }
 
+/* A key that converts to a symbol, a symbol of the engine such as
+   Symbol.iterator or one of the script, gives the symbol one reference to
+   the key and takes it back, however often it is used. The atom of a
+   symbol of the engine has no count, so the reference the conversion gave
+   used to stay on its symbol for each use (upstream c530305). Each way of
+   using a key runs 100 times twice, after a first run that fills the
+   caches, and the second run must leave the count of the symbol as the
+   first did. */
+static void test_symbol_key_refs(void)
+{
+    static const char *const syms[] = { "Symbol.iterator", "Symbol.for('wskShared')", "Symbol('wskMine')" };
+    static const char *const uses[] = {
+        "o[k]", "o[k] = 1", "k in o", "delete o[k]", "o.hasOwnProperty(k)",
+        "o.propertyIsEnumerable(k)", "Reflect.get(o, k)", "Reflect.set(o, k, 2)", "Reflect.has(o, k)",
+        "Reflect.deleteProperty(o, k)", "Reflect.getOwnPropertyDescriptor(o, k)",
+        "Object.getOwnPropertyDescriptor(o, k)",
+        "Reflect.defineProperty(o, k, { value: 3, configurable: true })",
+        "Object.defineProperty(o, k, { value: 3, configurable: true })",
+        "({ [k]: 4 })", "(class { static [k] = 5 })",
+    };
+    size_t s, u;
+
+    for (s = 0; s < countof(syms); s++) {
+        for (u = 0; u < countof(uses); u++) {
+            VM v = vm_new();
+            char src[512];
+            JSValue gl, sym;
+            int first, second;
+
+            snprintf(src, sizeof(src),
+                     "globalThis.sym = %s\n"
+                     "globalThis.g = () => { const o = {}, k = { toString() { return sym } }\n"
+                     "  for (let i = 0; i < 100; i++) %s }\n"
+                     "g(); g(); 0",
+                     syms[s], uses[u]);
+            CHECK(eval_ok(v.ctx, src), "%s, %s: the setup threw", syms[s], uses[u]);
+            gl = JS_GetGlobalObject(v.ctx);
+            sym = JS_GetPropertyStr(v.ctx, gl, "sym");
+            JS_FreeValue(v.ctx, gl);
+            CHECK(JS_VALUE_GET_TAG(sym) == JS_TAG_SYMBOL, "%s: no symbol", syms[s]);
+            JS_RunGC(v.rt);
+            first = white_ref_count(sym);
+            CHECK(eval_ok(v.ctx, "g()"), "%s, %s: g threw", syms[s], uses[u]);
+            JS_RunGC(v.rt);
+            second = white_ref_count(sym);
+            CHECK(second == first, "%s, %s: the symbol has %d references after 100 uses, %d before",
+                  syms[s], uses[u], second, first);
+            JS_FreeValue(v.ctx, sym);
+            vm_free(&v);
+        }
+    }
+}
+
 /* JSON.stringify with an array as its replacer copies the names of that
    array into a list of its own. When adding a name to the list runs out of
    memory, the stringify fails with the out of memory error: it used to go
@@ -11485,6 +11538,7 @@ int main(int argc, char **argv)
     test_json_key_cache();
     test_json_stringify_oom();
     test_shared_shape_oom();
+    test_symbol_key_refs();
     test_json_stringify_list_oom();
     test_json_walk();
     test_backtrace_attribute_checks();

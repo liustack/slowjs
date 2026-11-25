@@ -67,6 +67,7 @@ Where an upstream commit meets a change of liustack/beastjs, that change stays a
 | `f68db0e` Check for NULL object references in deserializer | a reference to the empty slot a typed array holds while its buffer is read is refused with a SyntaxError, not followed | all of it | `unit-api`, `test_read_null_reference` |
 | `813636e` fixed duplicate Invocation of the ArrayBuffer Release Callback | the release callback of an ArrayBuffer made by `JS_NewArrayBuffer` runs once after `JS_DetachArrayBuffer` or `transfer()` | all of it | `unit-api`, `test_array_buffer_release_once` |
 | `56d38b8` fixed JS_GetTypedArrayBuffer() length reporting with resizable array buffers | `JS_GetTypedArrayBuffer` reports the byte length the typed array has now | all of it | `unit-api`, `test_typed_array_buffer_length` |
+| `c530305` Fix symbol leak in JS_ValueToAtom (#590) | a key that converts to a symbol of the engine, such as an object whose `toString` returns `Symbol.iterator`, no longer adds a reference to the symbol at each use | all of it, with the new signature of `js_symbol_to_atom` | `unit-white`, `test_symbol_key_refs` |
 
 ## Iterator concatenation
 
