@@ -1028,6 +1028,7 @@ var goasmKeep = []any{
 	js_parse_function_decl,
 	js_parse_function_decl2,
 	js_parse_function_decl21,
+	js_parse_left_hand_side_expr,
 	js_parse_postfix_expr,
 	js_parse_postfix_expr1,
 	js_parse_property_name,

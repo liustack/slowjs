@@ -10,6 +10,7 @@ What changed in `github.com/liustack/beastjs` (its name from v0.33.0, `github.co
 - `[, 1 2]` and other array literals that miss a comma after a hole or past 32 elements are a `SyntaxError`, as in Node.
 - `with (o) { f?.() }` compiles, where it stopped with `InternalError: inconsistent stack size`.
 - `var {"a" = b} = o` and `var {0 + b} = o` are a `SyntaxError`, as in Node.
+- A function with more than 65533 block scopes fails with `InternalError: too many scopes`, where it was compiled into wrong code before.
 
 ## [v0.33.0] - 2026-11-24
 
