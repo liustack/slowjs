@@ -3259,3 +3259,13 @@ static int white_gc_garbage(JSRuntime *rt)
 {
     return !list_empty(&rt->tmp_obj_list);
 }
+
+/* ---- the growth of the arrays of js_resize_array ---- */
+
+/* js_realloc_array of the array *parray of *psize elements of elem_size
+   bytes, to req_size elements or more. A test gives it a made-up size with
+   no block (*parray NULL), so that it needs no gigabyte. */
+int white_realloc_array(JSContext *ctx, void **parray, int elem_size, int *psize, int req_size)
+{
+    return js_realloc_array(ctx, parray, elem_size, psize, req_size);
+}

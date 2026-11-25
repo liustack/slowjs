@@ -174,6 +174,7 @@ int white_regvm_stack(JSContext *ctx, long out[7]);
 int white_set_code(JSContext *ctx, JSValueConst f, const uint8_t *code, int len, int stack_size, int undo);
 uint32_t white_array_fake_count(JSContext *ctx, JSValueConst a, uint32_t count);
 int64_t white_array_room(JSValueConst a);
+int white_realloc_array(JSContext *ctx, void **parray, int elem_size, int *psize, int req_size);
 int64_t white_shape_fake_count(JSValueConst o, uint32_t count);
 uint32_t white_shape_prop_max(void);
 void white_set_array_from_first(long long k);
@@ -10727,6 +10728,36 @@ static void test_max_index(void)
     }
 }
 
+/* ---- the growth of an array of js_resize_array ----
+
+   js_realloc_array makes an array of js_resize_array (the labels, constants
+   and variables of a function, the entries of a module, the records of
+   JSON.parse with a reviver) half as large again. It counted the bytes in
+   an int, which wrapped past 2 GiB: to a negative size that the heap
+   refused, out of memory with memory to spare (an array that grows comes
+   there first), or, from a size whose half again passes 4 GiB, to a small
+   block given as the room of the larger count. The array is made up, with
+   no block, so that no gigabyte is needed: 178,956,972 elements of 16
+   bytes, half again 268,435,458 of them, 2^32 + 32 bytes. That is more
+   than the heap gives, and the growth fails. Before, it got a block of 32
+   bytes for them. */
+static void test_realloc_array_size(void)
+{
+    VM v = vm_new();
+    void *a = NULL;
+    int size = 178956972, ret;
+    char *t;
+
+    ret = white_realloc_array(v.ctx, &a, 16, &size, size + 1);
+    t = exception_text(v.ctx);
+    CHECK(ret < 0 && !a && size == 178956972 && t && strcmp(t, "InternalError: out of memory") == 0,
+          "growth past 4 GiB: %d, %s, %d elements in %zu bytes, want the out of memory error", ret,
+          t ? t : "no exception", size, a ? js_malloc_usable_size(v.ctx, a) : 0);
+    free(t);
+    js_free(v.ctx, a);
+    vm_free(&v);
+}
+
 /* ---- a property added to a shape at its limit ----
 
    A shape holds at most 2^26 - 1 properties (JS_SHAPE_PROP_MAX): the index
@@ -11654,6 +11685,7 @@ int main(int argc, char **argv)
     test_typeof_is();
     test_share_local_slots();
     test_max_index();
+    test_realloc_array_size();
     test_max_props();
     test_array_from_past_32_bits();
     test_define_existing_oom();

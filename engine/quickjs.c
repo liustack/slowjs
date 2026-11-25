@@ -3144,15 +3144,26 @@ char *js_strdup(JSContext *ctx, const char *str)
     return js_strndup(ctx, str, strlen(str));
 }
 
+/* Make the array *parray of *psize elements of elem_size bytes larger, to
+   req_size elements or more and half as large again at least. The count is
+   taken in 32 bits unsigned and the bytes in size_t (upstream 2519774): in
+   an int, the count times 3 wrapped past 715,827,882 elements and the bytes
+   past 2 GiB, to a negative size that the heap refused (out of memory with
+   memory to spare) or to a small block given as the room of the larger
+   count. The heap gives no block of more than JS_HEAP_MAX_REQUEST bytes
+   (under 4 GiB) and the elements of these arrays are of 4 bytes or more, so
+   a count, and the room of a block, is at most 2^30 and its half again fits
+   an int. */
 static no_inline __exception int js_realloc_array(JSContext *ctx, void **parray,
                                       int elem_size, int *psize, int req_size)
 {
-    int new_size;
+    uint32_t size = *psize, new_size;
     size_t slack;
     void *new_array;
-    /* XXX: potential arithmetic overflow */
-    new_size = max_int(req_size, *psize * 3 / 2);
-    new_array = js_realloc2(ctx, *parray, new_size * elem_size, &slack);
+
+    assert(elem_size >= 4);
+    new_size = max_uint32(req_size, size + size / 2);
+    new_array = js_realloc2(ctx, *parray, (size_t)new_size * elem_size, &slack);
     if (!new_array)
         return -1;
     new_size += slack / elem_size;
