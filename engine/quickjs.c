@@ -6264,7 +6264,11 @@ static no_inline int string_buffer_realloc(StringBuffer *s, int new_len, int c)
         JS_ThrowInternalError(s->ctx, "string too long");
         return string_buffer_set_error(s);
     }
-    new_size = min_int(max_int(new_len, s->size * 3 / 2), JS_STRING_LEN_MAX);
+    /* s->size + s->size / 2 is s->size * 3 / 2, which wrapped past
+       715,827,882 characters: the room then grew only by what each append
+       asked for, and each growth copied the whole buffer. The room is at
+       most JS_STRING_LEN_MAX, so this is under 2^31. */
+    new_size = min_int(max_int(new_len, s->size + s->size / 2), JS_STRING_LEN_MAX);
     /* the buffer of join, once it takes 64 Ki characters or more: the steps
        of a short join test one compare */
     if (unlikely(new_size >= (64 << 10)))

@@ -23,6 +23,7 @@ What changed in `github.com/liustack/beastjs` (its name from v0.33.0, `github.co
 - `Promise.withResolvers` no longer frees a value twice when it runs out of memory.
 - A `for in` loop over a string, a number or a boolean no longer crashes when it runs out of memory.
 - `JSON.parse` with a reviver, and the parser on a very large function or module, no longer run out of memory when one of their arrays passes 2 GiB while memory is left.
+- A string built piece by piece, such as the result of `JSON.stringify`, no longer slows down to a copy of the whole string at every append past about 716 million characters.
 
 ## [v0.33.0] - 2026-11-24
 

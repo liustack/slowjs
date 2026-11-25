@@ -3269,3 +3269,18 @@ int white_realloc_array(JSContext *ctx, void **parray, int elem_size, int *psize
 {
     return js_realloc_array(ctx, parray, elem_size, psize, req_size);
 }
+
+/* ---- the room of a string buffer ---- */
+
+/* string_buffer_realloc of b to new_len characters or more, for the
+   character c */
+int white_sb_realloc(StringBuffer *b, int new_len, int c)
+{
+    return string_buffer_realloc(b, new_len, c);
+}
+
+/* the room of b, in characters */
+int white_sb_size(const StringBuffer *b)
+{
+    return b->size;
+}

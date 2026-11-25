@@ -65,6 +65,8 @@ int white_sb_units(const struct StringBuffer *b, uint16_t *out, int cap);
 int white_sb_error(const struct StringBuffer *b);
 void white_sb_fake_length(struct StringBuffer *b, int len, int size);
 int white_string_len_max(void);
+int white_sb_realloc(struct StringBuffer *b, int new_len, int c);
+int white_sb_size(const struct StringBuffer *b);
 const uint8_t *white_json_string_run(struct StringBuffer *b, const uint8_t *p, const uint8_t *end, int sep);
 int white_json_quote_run(struct StringBuffer *b, JSValueConst s, int *pi);
 uintptr_t white_json_run_limit(uintptr_t p, uintptr_t end);
@@ -542,6 +544,25 @@ static void test_json_run_too_long(void)
     }
     vm_free(&v);
 }
+/* A string buffer grows half as large again, up to the longest string, also
+   past 715,827,882 characters. It took its room times 3 in an int, which
+   wrapped there: the room then grew only by what each append asked for, and
+   each growth copied the buffer, so that JSON.stringify of a million strings
+   of a thousand characters took minutes. The buffer is made to look that
+   large, with nothing in it, so that the room is asked for and not filled. */
+static void test_sb_room_past_two_thirds(void)
+{
+    VM v = vm_new();
+    struct StringBuffer *b = white_sb_new(v.ctx, 32, 0, 0);
+    int max = white_string_len_max(), size = 800000000;
+
+    white_sb_fake_length(b, 0, size);
+    CHECK(white_sb_realloc(b, size + 1, 'x') == 0, "the room of %d characters did not grow", size);
+    CHECK(white_sb_size(b) == max, "the room of %d characters grew to %d, want %d", size, white_sb_size(b), max);
+    white_sb_free(v.ctx, b);
+    vm_free(&v);
+}
+
 /* json_plain_run against a loop of one byte at a time: every length up to 40,
    a byte that ends the run at every place or none, and random bytes, in
    blocks of the exact length (so that a read past the end shows under
@@ -11611,6 +11632,7 @@ int main(int argc, char **argv)
     test_json_quote_run();
     test_json_runs_oom();
     test_json_run_too_long();
+    test_sb_room_past_two_thirds();
     test_json_run_limit();
     test_json_plain_run();
     test_json_count_high_bytes();
