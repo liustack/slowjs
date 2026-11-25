@@ -3723,6 +3723,45 @@ static void test_array_buffer_release_once(void)
     }
 }
 
+/* JS_GetTypedArrayBuffer gives the byte length the typed array has now: a
+   typed array that follows a resizable ArrayBuffer is as long as the buffer
+   lets it be (upstream QuickJS 56d38b8). */
+static void test_typed_array_buffer_length(void)
+{
+    static const struct {
+        const char *make;
+        size_t offset, length_before, length_after;
+    } cases[] = {
+        { "new Uint8Array(ab)", 0, 8, 12 },
+        { "new Uint16Array(ab, 2)", 2, 6, 10 },
+        { "new Uint8Array(ab, 0, 4)", 0, 4, 4 },
+    };
+    int i;
+
+    for (i = 0; i < (int)countof(cases); i++) {
+        VM v = vm_new();
+        char src[200];
+        JSValue r, buffer;
+        size_t off = 99, len = 99, per = 99;
+
+        snprintf(src, sizeof(src),
+                 "var ab = new ArrayBuffer(8, { maxByteLength: 16 }); var ta = %s; ta", cases[i].make);
+        r = JS_Eval(v.ctx, src, strlen(src), "<unit>", JS_EVAL_TYPE_GLOBAL);
+        CHECK(!JS_IsException(r), "case %d", i);
+        buffer = JS_GetTypedArrayBuffer(v.ctx, r, &off, &len, &per);
+        CHECK(!JS_IsException(buffer) && off == cases[i].offset && len == cases[i].length_before,
+              "case %d before: offset %d length %d", i, (int)off, (int)len);
+        JS_FreeValue(v.ctx, buffer);
+        JS_FreeValue(v.ctx, JS_Eval(v.ctx, "ab.resize(12)", 13, "<unit>", JS_EVAL_TYPE_GLOBAL));
+        buffer = JS_GetTypedArrayBuffer(v.ctx, r, &off, &len, &per);
+        CHECK(!JS_IsException(buffer) && len == cases[i].length_after,
+              "case %d after resize: length %d, want %d", i, (int)len, (int)cases[i].length_after);
+        JS_FreeValue(v.ctx, buffer);
+        JS_FreeValue(v.ctx, r);
+        vm_free(&v);
+    }
+}
+
 int main(void)
 {
     test_compile_stops();
@@ -3773,6 +3812,7 @@ int main(void)
     test_template_object_sealed();
     test_read_null_reference();
     test_array_buffer_release_once();
+    test_typed_array_buffer_length();
     if (failures) {
         printf("unit-api: %d of %ld checks failed\n", failures, checks);
         return 1;

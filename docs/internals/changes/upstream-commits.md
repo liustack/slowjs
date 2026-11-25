@@ -66,6 +66,7 @@ Where an upstream commit meets a change of liustack/beastjs, that change stays a
 | `88130c0` correctly seal template objects when deserializing them | a template object read back from bytecode is frozen as a parsed one is: its `length` and the `length` of `raw` are no longer writable | all of it, using our `seal_template_obj` | `unit-api`, `test_template_object_sealed`, and `TestBytecodeTemplateObjectSealed` in the root package |
 | `f68db0e` Check for NULL object references in deserializer | a reference to the empty slot a typed array holds while its buffer is read is refused with a SyntaxError, not followed | all of it | `unit-api`, `test_read_null_reference` |
 | `813636e` fixed duplicate Invocation of the ArrayBuffer Release Callback | the release callback of an ArrayBuffer made by `JS_NewArrayBuffer` runs once after `JS_DetachArrayBuffer` or `transfer()` | all of it | `unit-api`, `test_array_buffer_release_once` |
+| `56d38b8` fixed JS_GetTypedArrayBuffer() length reporting with resizable array buffers | `JS_GetTypedArrayBuffer` reports the byte length the typed array has now | all of it | `unit-api`, `test_typed_array_buffer_length` |
 
 ## Iterator concatenation
 
