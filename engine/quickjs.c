@@ -74612,7 +74612,10 @@ static JSValue js_array_buffer_transfer(JSContext *ctx,
                     return res;
                 new_abuf = JS_GetOpaque2(ctx, res, JS_CLASS_ARRAY_BUFFER);
                 memcpy(new_abuf->data, abuf->data, min_int(old_len, new_len));
-                abuf->free_func(ctx->rt, abuf->opaque, abuf->data);
+                /* a buffer of JS_NewArrayBuffer may have no callback: its
+                   memory stays with the host */
+                if (abuf->free_func)
+                    abuf->free_func(ctx->rt, abuf->opaque, abuf->data);
             } else {
                 JSArrayBuffer *new_abuf;
                 uint8_t *new_bs;

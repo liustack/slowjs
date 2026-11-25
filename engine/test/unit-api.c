@@ -3723,6 +3723,39 @@ static void test_array_buffer_release_once(void)
     }
 }
 
+/* An ArrayBuffer of JS_NewArrayBuffer with no release callback keeps memory
+   the host owns. Transferring it copies the bytes, or for the same size keeps
+   the memory, and never calls the missing callback. */
+static void test_array_buffer_no_release(void)
+{
+    static const char *const scripts[] = {
+        "var t = ab.transfer(); [t.byteLength, new Uint8Array(t)[7]].join()",
+        "var t = ab.transfer(16); [t.byteLength, new Uint8Array(t)[7], new Uint8Array(t)[15]].join()",
+        "var t = ab.transfer(2); [t.byteLength, new Uint8Array(t)[1]].join()",
+        "var t = ab.transfer(0); [t.byteLength, ab.detached].join()",
+        "var t = ab.transferToFixedLength(4); [t.byteLength, new Uint8Array(t)[3]].join()",
+    };
+    static const char *const want[] = { "8,7", "16,7,0", "2,7", "0,true", "4,7" };
+    static uint8_t data[8];
+    int i;
+
+    for (i = 0; i < (int)countof(scripts); i++) {
+        VM v = vm_new();
+        JSValue ab, g;
+
+        memset(data, 7, sizeof(data));
+        ab = JS_NewArrayBuffer(v.ctx, data, sizeof(data), NULL, NULL, FALSE);
+        CHECK(!JS_IsException(ab), "buffer %d", i);
+        g = JS_GetGlobalObject(v.ctx);
+        CHECK(JS_SetPropertyStr(v.ctx, g, "ab", ab) >= 0, "global ab");
+        JS_FreeValue(v.ctx, g);
+        CHECK(eval_is(v.ctx, scripts[i], want[i]), "%s: want %s", scripts[i], want[i]);
+        CHECK(eval_is(v.ctx, "ab.detached", "true"), "%s: the buffer is not detached", scripts[i]);
+        CHECK(data[0] == 7 && data[7] == 7, "%s: the memory of the host changed", scripts[i]);
+        vm_free(&v);
+    }
+}
+
 /* JS_GetTypedArrayBuffer gives the byte length the typed array has now: a
    typed array that follows a resizable ArrayBuffer is as long as the buffer
    lets it be (upstream QuickJS 56d38b8). */
@@ -3813,6 +3846,7 @@ int main(void)
     test_read_null_reference();
     test_array_buffer_release_once();
     test_typed_array_buffer_length();
+    test_array_buffer_no_release();
     if (failures) {
         printf("unit-api: %d of %ld checks failed\n", failures, checks);
         return 1;
