@@ -3620,6 +3620,49 @@ static void test_template_object_sealed(void)
     vm_free(&v);
 }
 
+/* An object reference to the slot a typed array holds while its buffer is
+   read is refused with a SyntaxError, not followed into a NULL object
+   (upstream QuickJS f68db0e). The bytes are a typed array written with
+   references, whose buffer is replaced by a reference to the typed array
+   itself. */
+static void test_read_null_reference(void)
+{
+    VM v = vm_new();
+    JSValue ta, pair, r;
+    uint8_t *a, *b, bytes[16];
+    size_t asize, bsize;
+    const char *s;
+
+    ta = JS_Eval(v.ctx, "new Uint8Array(1)", 17, "<unit>", JS_EVAL_TYPE_GLOBAL);
+    pair = JS_Eval(v.ctx, "var o = {}; [o, o]", 18, "<unit>", JS_EVAL_TYPE_GLOBAL);
+    a = JS_WriteObject(v.ctx, &asize, ta, JS_WRITE_OBJ_REFERENCE);
+    b = JS_WriteObject(v.ctx, &bsize, pair, JS_WRITE_OBJ_REFERENCE);
+    CHECK(a && b && asize > 8 && bsize > 3, "written");
+    if (a && b && asize > 8 && bsize > 3) {
+        /* header (version, no atoms), tag, element type, length, offset */
+        memcpy(bytes, a, 6);
+        /* the last two bytes of the pair: the tag of a reference and index 0 */
+        bytes[6] = b[bsize - 2];
+        bytes[7] = 0;
+        r = JS_ReadObject(v.ctx, bytes, 8, JS_READ_OBJ_REFERENCE);
+        CHECK(JS_IsException(r), "the reference to the typed array is refused");
+        if (JS_IsException(r)) {
+            JSValue e = JS_GetException(v.ctx);
+            s = JS_ToCString(v.ctx, e);
+            CHECK(s && strstr(s, "invalid object reference"), "error: %s", s ? s : "(none)");
+            JS_FreeCString(v.ctx, s);
+            JS_FreeValue(v.ctx, e);
+        } else {
+            JS_FreeValue(v.ctx, r);
+        }
+    }
+    js_free(v.ctx, a);
+    js_free(v.ctx, b);
+    JS_FreeValue(v.ctx, ta);
+    JS_FreeValue(v.ctx, pair);
+    vm_free(&v);
+}
+
 int main(void)
 {
     test_compile_stops();
@@ -3668,6 +3711,7 @@ int main(void)
     test_rv_frame_limits();
     test_rv_nesting_limits();
     test_template_object_sealed();
+    test_read_null_reference();
     if (failures) {
         printf("unit-api: %d of %ld checks failed\n", failures, checks);
         return 1;
