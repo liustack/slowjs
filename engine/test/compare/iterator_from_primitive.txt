@@ -1,0 +1,16 @@
+string: ["a","b"]
+object without Symbol.iterator: [0,1]
+number: throws TypeError
+null: throws TypeError
+Symbol.iterator deleted, string: throws TypeError
+Symbol.iterator deleted, empty string: throws TypeError
+Symbol.iterator deleted, String object: object
+Symbol.iterator null, string: throws TypeError
+Symbol.iterator null, empty string: throws TypeError
+Symbol.iterator null, String object: object
+Symbol.iterator undefined, string: throws TypeError
+Symbol.iterator undefined, empty string: throws TypeError
+Symbol.iterator undefined, String object: object
+Symbol.iterator gives a number: throws TypeError
+Symbol.iterator gives an object: []
+restored: ["a","b"]

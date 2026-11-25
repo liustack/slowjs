@@ -55333,6 +55333,10 @@ static JSValue js_iterator_from(JSContext *ctx, JSValueConst this_val,
     if (JS_IsException(method))
         return JS_EXCEPTION;
     if (JS_IsNull(method) || JS_IsUndefined(method)) {
+        /* GetIteratorFlattenable: the iterator is obj itself, and a string
+           with no Symbol.iterator is no object */
+        if (!JS_IsObject(obj))
+            return JS_ThrowTypeErrorNotAnObject(ctx);
         iter = JS_DupValue(ctx, obj);
     } else {
         iter = JS_GetIterator2(ctx, obj, method);
