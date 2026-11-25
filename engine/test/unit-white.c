@@ -855,6 +855,27 @@ static void test_with_resolvers_oom(void)
                       "object,function,function", 1);
 }
 
+/* Promise.allSettled and Promise.any make two functions for each element.
+   When the second one, or the slot of the element in the list of errors
+   of any, runs out of memory, the call used to keep the first function and
+   the promise of the element for ever (upstream dfe36a8). The promises
+   never settle, so no job holds what the call made. */
+static void test_promise_all_elements_oom(void)
+{
+    each_call_failing("Promise.allSettled",
+                      "globalThis.f = () => { const ps = []\n"
+                      "  for (let i = 0; i < 6; i++) ps.push(new Promise(() => {}))\n"
+                      "  return Promise.allSettled(ps) instanceof Promise }\n"
+                      "f(); f()",
+                      "true", 1);
+    each_call_failing("Promise.any",
+                      "globalThis.f = () => { const ps = []\n"
+                      "  for (let i = 0; i < 6; i++) ps.push(new Promise(() => {}))\n"
+                      "  return Promise.any(ps) instanceof Promise }\n"
+                      "f(); f()",
+                      "true", 1);
+}
+
 /* A for in over a string, a number or a boolean makes an object of it
    first. When that runs out of memory, the loop used to go on with the
    exception as its object (upstream 3579302). */
@@ -11566,6 +11587,7 @@ int main(int argc, char **argv)
     test_json_stringify_oom();
     test_shared_shape_oom();
     test_with_resolvers_oom();
+    test_promise_all_elements_oom();
     test_for_in_primitive_oom();
     test_symbol_key_refs();
     test_json_stringify_list_oom();

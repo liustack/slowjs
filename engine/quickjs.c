@@ -71212,12 +71212,16 @@ static JSValue js_promise_all(JSContext *ctx, JSValueConst this_val,
                                         magic | 4, 5, resolve_element_data);
                 if (JS_IsException(reject_element)) {
                     JS_FreeValue(ctx, next_promise);
+                    JS_FreeValue(ctx, resolve_element);
                     goto fail_reject1;
                 }
             } else if (magic == PROMISE_MAGIC_any) {
                 if (JS_DefinePropertyValueUint32(ctx, values, index,
-                                                 JS_UNDEFINED, JS_PROP_C_W_E) < 0)
+                                                 JS_UNDEFINED, JS_PROP_C_W_E) < 0) {
+                    JS_FreeValue(ctx, next_promise);
+                    JS_FreeValue(ctx, resolve_element);
                     goto fail_reject1;
+                }
                 reject_element = resolve_element;
                 resolve_element = JS_DupValue(ctx, resolving_funcs[0]);
             } else {
