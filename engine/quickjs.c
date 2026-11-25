@@ -65339,7 +65339,8 @@ static JSValue internalize_json_property1(JSContext *ctx, JSValueConst holder,
     JSValue val, new_el, name_val, res, context;
     JSValueConst args[3];
     int ret, is_array;
-    uint32_t i, len = 0;
+    int64_t i, len = 0;
+    uint32_t natoms = 0;
     JSAtom prop;
     JSPropertyEnum *atoms = NULL;
 
@@ -65374,16 +65375,19 @@ static JSValue internalize_json_property1(JSContext *ctx, JSValueConst holder,
         if (is_array < 0)
             goto fail;
         if (is_array) {
-            if (js_get_length32(ctx, &len, val))
+            /* val can be a Proxy of an Array: LengthOfArrayLike reads any
+               length up to 2**53 - 1, not ToUint32 of it */
+            if (js_get_length64(ctx, &len, val))
                 goto fail;
         } else {
-            ret = JS_GetOwnPropertyNamesInternal(ctx, &atoms, &len, JS_VALUE_GET_OBJ(val), JS_GPN_ENUM_ONLY | JS_GPN_STRING_MASK);
+            ret = JS_GetOwnPropertyNamesInternal(ctx, &atoms, &natoms, JS_VALUE_GET_OBJ(val), JS_GPN_ENUM_ONLY | JS_GPN_STRING_MASK);
             if (ret < 0)
                 goto fail;
+            len = natoms;
         }
         for(i = 0; i < len; i++) {
             if (is_array) {
-                prop = JS_NewAtomUInt32(ctx, i);
+                prop = JS_NewAtomInt64(ctx, i);
                 if (prop == JS_ATOM_NULL)
                     goto fail;
             } else {
@@ -65413,7 +65417,7 @@ static JSValue internalize_json_property1(JSContext *ctx, JSValueConst holder,
                 goto fail;
         }
     }
-    JS_FreePropertyEnum(ctx, atoms, len);
+    JS_FreePropertyEnum(ctx, atoms, natoms);
     atoms = NULL;
     name_val = JS_AtomToValue(ctx, name);
     if (JS_IsException(name_val))
@@ -65427,7 +65431,7 @@ static JSValue internalize_json_property1(JSContext *ctx, JSValueConst holder,
     JS_FreeValue(ctx, context);
     return res;
  fail:
-    JS_FreePropertyEnum(ctx, atoms, len);
+    JS_FreePropertyEnum(ctx, atoms, natoms);
     JS_FreeValue(ctx, context);
     JS_FreeValue(ctx, val);
     return JS_EXCEPTION;

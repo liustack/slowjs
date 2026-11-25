@@ -18,6 +18,7 @@ What changed in `github.com/liustack/beastjs` (its name from v0.33.0, `github.co
 - `Math.sumPrecise` of many large numbers is exact (300 times 2^53 - 1 was wrong).
 - `Array.prototype.sort` calls the comparator for two identical values, as the specification says.
 - `new ArrayBuffer(0, { maxByteLength: 2 ** 64 })` and `maxByteLength: Infinity` throw a `RangeError` where they made a resizable buffer with a maximum of 0.
+- `JSON.parse` with a reviver reads the length of an array (also a Proxy of one) as the specification does: a length of -1 is 0 and a length above 2^32 is kept.
 
 ## [v0.33.0] - 2026-11-24
 

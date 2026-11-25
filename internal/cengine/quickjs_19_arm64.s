@@ -7481,7 +7481,7 @@ TEXT ·internalize_json_property(SB), $248-16
 	WORD $0xf9400988
 	WORD $0xb949ad09
 	WORD $0x711f413f
-	WORD $0x5400112a
+	WORD $0x5400114a
 	WORD $0x1102c289
 	WORD $0xf944c10a
 	WORD $0x321c53eb
@@ -7489,7 +7489,7 @@ TEXT ·internalize_json_property(SB), $248-16
 	WORD $0xcb090169
 	WORD $0xcb0a0129
 	WORD $0xf140413f
-	WORD $0x5400122b
+	WORD $0x5400124b
 	WORD $0xa9422eaa
 	WORD $0xb949ad09
 	WORD $0xa940deb6
@@ -7500,8 +7500,9 @@ TEXT ·internalize_json_property(SB), $248-16
 	WORD $0xa9432aab
 	WORD $0xaa0c03f5
 	WORD $0xb909ad09
-	WORD $0xb9009a9f
-	WORD $0xf900529f
+	WORD $0xf9004e9f
+	WORD $0xb900a29f
+	WORD $0xf900569f
 	WORD $0x9102c294
 	WORD $0xa90cabeb
 	WORD $0xf9007fec
@@ -7515,7 +7516,7 @@ TEXT ·internalize_json_property(SB), $248-16
 	BL ·JS_GetPropertyObj(SB)
 	WORD $0x2a0103e8
 	WORD $0xf100191f
-	WORD $0x54002d00
+	WORD $0x54002d40
 	WORD $0xf9406bea
 	WORD $0xa90d87e0
 	WORD $0xf90043e8
@@ -7630,7 +7631,7 @@ TEXT ·internalize_json_property(SB), $248-16
 	BL ·JS_ThrowRangeError(SB)
 	WORD $0xaa1f03e0
 	WORD $0x528000c1
-	WORD $0x140000f9
+	WORD $0x140000fb
 	WORD $0xf9405beb
 	WORD $0x17ffff9a
 	MOVD $·engine_rodata+6696(SB), R22
@@ -7749,7 +7750,7 @@ TEXT ·internalize_json_property(SB), $248-16
 	WORD $0x4b0803e8
 	WORD $0x1ac82568
 	WORD $0xf8685920
-	WORD $0xb40015e0
+	WORD $0xb4001620
 	WORD $0x92679aa8
 	WORD $0xf940c108
 	WORD $0xb9401409
@@ -7761,7 +7762,7 @@ TEXT ·internalize_json_property(SB), $248-16
 	WORD $0xb9402009
 	WORD $0x34000249
 	WORD $0xf9401800
-	WORD $0xb4001420
+	WORD $0xb4001460
 	WORD $0xd1000508
 	WORD $0xf100011f
 	WORD $0x54fffe8c
@@ -7798,8 +7799,8 @@ TEXT ·internalize_json_property(SB), $248-16
 	WORD $0x540005a1
 	WORD $0xf9407fec
 	WORD $0xf94077f5
-	WORD $0xf94052b6
-	WORD $0xb9409ab7
+	WORD $0xf94056b6
+	WORD $0xb940a2b7
 	WORD $0x9102c2b4
 	WORD $0xaa0c03f5
 	WORD $0xf90007f4
@@ -7814,10 +7815,10 @@ TEXT ·internalize_json_property(SB), $248-16
 	WORD $0x51000508
 	WORD $0x7100011f
 	WORD $0xb81fc2c8
-	WORD $0x54000c4d
+	WORD $0x54000c8d
 	WORD $0xf94073e9
 	WORD $0x3100253f
-	WORD $0x54000683
+	WORD $0x540006c3
 	WORD $0xf9406fea
 	WORD $0xaa0903f7
 	WORD $0xf9407fe9
@@ -7827,7 +7828,7 @@ TEXT ·internalize_json_property(SB), $248-16
 	WORD $0x51000508
 	WORD $0x7100011f
 	WORD $0xb81fc148
-	WORD $0x540005ac
+	WORD $0x540005ec
 	WORD $0xf94077e8
 	WORD $0xf9400935
 	WORD $0xaa0a03f6
@@ -7839,23 +7840,23 @@ TEXT ·internalize_json_property(SB), $248-16
 	WORD $0xf90013f7
 	BL ·__JS_FreeValueRT(SB)
 	WORD $0xa94c83e1
-	WORD $0x14000020
+	WORD $0x14000022
 	WORD $0xf94043e9
 	WORD $0x12800008
 	WORD $0xeb08013f
-	WORD $0x54000441
+	WORD $0x54000481
 	WORD $0xa94da7f8
 	WORD $0xf9407ff5
 	WORD $0xf94077eb
 	WORD $0x79402708
 	WORD $0x7100cd1f
 	WORD $0xaa1803e8
-	WORD $0x54000b00
+	WORD $0x54000b40
 	WORD $0x3100053f
-	WORD $0x54000fa1
+	WORD $0x54000fe1
 	WORD $0x79402508
 	WORD $0x7100091f
-	WORD $0x54000f41
+	WORD $0x54000f81
 	WORD $0xaa1803f7
 	WORD $0xf94073f8
 	WORD $0x9102c174
@@ -7865,10 +7866,12 @@ TEXT ·internalize_json_property(SB), $248-16
 	WORD $0xf9000ff6
 	WORD $0xf90013f7
 	WORD $0xf90017f8
-	BL ·js_get_length32(SB)
+	BL ·js_get_length64(SB)
 	WORD $0x35fff740
+	WORD $0xf94077f5
 	WORD $0xb90077ff
-	WORD $0x1400007b
+	WORD $0xf9404ea8
+	WORD $0x1400007e
 	WORD $0xaa1f03e0
 	WORD $0x528000c1
 	WORD $0xf9407fe9
@@ -7876,11 +7879,11 @@ TEXT ·internalize_json_property(SB), $248-16
 	WORD $0xb949ad09
 	WORD $0x51000529
 	WORD $0xb909ad09
-	WORD $0x1400020e
+	WORD $0x14000210
 	WORD $0xf9407fec
 	WORD $0xf94077f5
 	WORD $0xf94057e8
-	WORD $0xb4002dc8
+	WORD $0xb4002e08
 	WORD $0xf94057e9
 	WORD $0x9102c2b4
 	WORD $0xaa0c03f5
@@ -7893,7 +7896,7 @@ TEXT ·internalize_json_property(SB), $248-16
 	WORD $0xf90013f7
 	BL ·JS_NewStringLen(SB)
 	WORD $0x7100183f
-	WORD $0x54fff3e0
+	WORD $0x54fff3a0
 	WORD $0xa949abe8
 	WORD $0xf94077f5
 	WORD $0xf9407fe9
@@ -7910,8 +7913,8 @@ TEXT ·internalize_json_property(SB), $248-16
 	BL ·JS_DefinePropertyValue_block(SB)
 	WORD $0xf9407fec
 	WORD $0xf94077f5
-	WORD $0x36f82a00
-	WORD $0x17ffff8f
+	WORD $0x36f82a40
+	WORD $0x17ffff8d
 	WORD $0xf9407fe8
 	WORD $0xf9400915
 	WORD $0xf94077e8
@@ -7921,7 +7924,7 @@ TEXT ·internalize_json_property(SB), $248-16
 	WORD $0xf9000ff6
 	WORD $0xf90013f7
 	BL ·__JS_FreeValueRT(SB)
-	WORD $0x17ffff96
+	WORD $0x17ffff94
 	WORD $0x92679aa9
 	WORD $0xf900c128
 	WORD $0x9102c2b4
@@ -7934,10 +7937,10 @@ TEXT ·internalize_json_property(SB), $248-16
 	BL ·js_new_proto_shape(SB)
 	WORD $0xf94077f5
 	WORD $0xf9407fec
-	WORD $0xb5ffed00
+	WORD $0xb5ffecc0
 	WORD $0x528000c8
 	WORD $0xa909ffe8
-	WORD $0x17ffff75
+	WORD $0x17ffff73
 	WORD $0xb90083ff
 	WORD $0xf9006bf8
 	WORD $0xf94077e8
@@ -7945,11 +7948,11 @@ TEXT ·internalize_json_property(SB), $248-16
 	WORD $0xf940c108
 	WORD $0xb94083e9
 	WORD $0x710fa53f
-	WORD $0x540035a0
+	WORD $0x540035e0
 	WORD $0xf9406be9
 	WORD $0xf940152a
 	WORD $0x39408549
-	WORD $0x350036e9
+	WORD $0x35003729
 	WORD $0xb9400949
 	WORD $0xf940014a
 	WORD $0xf9006bea
@@ -7976,10 +7979,10 @@ TEXT ·internalize_json_property(SB), $248-16
 	WORD $0xf900c148
 	WORD $0xa94d63e8
 	WORD $0x3100053f
-	WORD $0x54fff0a0
+	WORD $0x54fff060
 	WORD $0x9102c174
-	WORD $0x91028176
-	WORD $0x91026177
+	WORD $0x9102a176
+	WORD $0x91028177
 	WORD $0x52800239
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
@@ -7988,17 +7991,19 @@ TEXT ·internalize_json_property(SB), $248-16
 	WORD $0xf90017f8
 	WORD $0xf9001bf9
 	BL ·JS_GetOwnPropertyNamesInternal(SB)
-	WORD $0x37ffe800
-	WORD $0x52800028
-	WORD $0xb90077e8
+	WORD $0x37ffe7c0
 	WORD $0xf94077f5
+	WORD $0x52800029
+	WORD $0xb90077e9
+	WORD $0xb940a2a8
+	WORD $0xf9004ea8
 	WORD $0xf9407fec
-	WORD $0xb9409aa8
-	WORD $0xf90037e8
-	WORD $0x34001f68
-	WORD $0xf94052a8
+	WORD $0xf100051f
+	WORD $0x54001f8b
+	WORD $0xf94056a9
 	WORD $0xaa1f03f6
-	WORD $0xf9002fe8
+	WORD $0xf90037e8
+	WORD $0xf9002fe9
 	WORD $0xb94077e8
 	WORD $0xf90043f6
 	WORD $0x360001a8
@@ -8019,10 +8024,10 @@ TEXT ·internalize_json_property(SB), $248-16
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
 	WORD $0xf9000ff6
-	BL ·JS_NewAtomUInt32(SB)
+	BL ·JS_NewAtomInt64(SB)
 	WORD $0xf94077f5
 	WORD $0xf9407fec
-	WORD $0x34ffe400
+	WORD $0x34ffe380
 	WORD $0xa94da3e9
 	WORD $0x9102c2b4
 	WORD $0xb900d3e0
@@ -8177,7 +8182,7 @@ TEXT ·internalize_json_property(SB), $248-16
 	WORD $0xb81fc2c8
 	WORD $0x5400044d
 	WORD $0xf94077f5
-	WORD $0x37ffd0aa
+	WORD $0x37ffd02a
 	WORD $0xf94043f6
 	WORD $0xf94037e8
 	WORD $0x910006d6
@@ -8220,7 +8225,7 @@ TEXT ·internalize_json_property(SB), $248-16
 	WORD $0xf9407fec
 	WORD $0xf94077f5
 	WORD $0x36fffaea
-	WORD $0x17fffe5a
+	WORD $0x17fffe56
 	WORD $0xf9403fe8
 	WORD $0x3100251f
 	WORD $0x540000e3
@@ -8246,8 +8251,8 @@ TEXT ·internalize_json_property(SB), $248-16
 	WORD $0xf9407fec
 	WORD $0x1280000a
 	WORD $0x17ffffb0
-	WORD $0xf94052b6
-	WORD $0xb9409ab7
+	WORD $0xf94056b6
+	WORD $0xb940a2b7
 	WORD $0x9102c2b4
 	WORD $0xaa0c03f5
 	WORD $0xf90007f4
@@ -8257,7 +8262,7 @@ TEXT ·internalize_json_property(SB), $248-16
 	BL ·JS_FreePropertyEnum(SB)
 	WORD $0xf94077f5
 	WORD $0xf9405bf6
-	WORD $0xf90052bf
+	WORD $0xf90056bf
 	WORD $0x37f80cd6
 	WORD $0xf9407fec
 	WORD $0xf9400988
@@ -8276,7 +8281,7 @@ TEXT ·internalize_json_property(SB), $248-16
 	WORD $0x928000c1
 	WORD $0xf94073e9
 	WORD $0x7100183f
-	WORD $0x54ffc440
+	WORD $0x54ffc3c0
 	WORD $0xf9406fea
 	WORD $0xf90042a9
 	WORD $0xaa1503e8
@@ -8317,13 +8322,13 @@ TEXT ·internalize_json_property(SB), $248-16
 	WORD $0xf9404ff7
 	WORD $0xf9407fe9
 	WORD $0x310026ff
-	WORD $0x54ffc863
+	WORD $0x54ffc823
 	WORD $0xb85fc148
 	WORD $0x51000508
 	WORD $0x7100051f
 	WORD $0xb81fc148
-	WORD $0x54ffc7ca
-	WORD $0x17fffe11
+	WORD $0x54ffc78a
+	WORD $0x17fffe0d
 	WORD $0xf94077e8
 	WORD $0xf9407ff5
 	WORD $0xb940d3f6
@@ -8334,7 +8339,7 @@ TEXT ·internalize_json_property(SB), $248-16
 	BL ·JS_FreeAtom(SB)
 	WORD $0xf94077f5
 	WORD $0xf9407fec
-	WORD $0x17fffde8
+	WORD $0x17fffde4
 	WORD $0xf9407fe8
 	WORD $0xa90c83e1
 	WORD $0xf9400915

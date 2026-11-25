@@ -335,6 +335,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | JSON copies runs of plain characters | v0.26.17 | [json.md](json.md#json-copies-runs-of-plain-characters) |
 | A string that `JSON.stringify` wrote with no escape keeps a mark, a bit of its header, so the next write of the same string, as a value or as a key, copies it without looking at its characters. A marked string is copied, not changed in place, when something is appended to it | v0.31.4 | `JSString.plain` in [engine/quickjs.c](../../../engine/quickjs.c) |
 | `JSON.stringify` with no replacer and no indent writes plain objects and arrays from their shapes and elements, and leaves every value that may run code to the general path, which takes over the rest of each open object before such code runs. The check of a cycle is a C array, not a JavaScript one | v0.31.3 | `json_walk_object` in [engine/quickjs.c](../../../engine/quickjs.c) |
+| `JSON.parse` with a reviver reads the length of an array, also a Proxy of one, as ToLength and counts with an int64_t. Upstream still reads it as ToUint32 | Unreleased | [json_reviver_length.js](../../../engine/test/compare/json_reviver_length.js) |
 
 ## Operators
 
