@@ -6893,6 +6893,13 @@ static JSValue JS_ConcatString3(JSContext *ctx, const char *str1,
     p = JS_VALUE_GET_STRING(str2);
     len1 = strlen(str1);
     len3 = strlen(str3);
+    /* past the longest string, as a concatenation: "bound " + a name of
+       2^30 - 1 characters made a longer string, and of 16 bits its length
+       times 2 wrapped in an int */
+    if (p->len > JS_STRING_LEN_MAX - len1 - len3) {
+        JS_ThrowInternalError(ctx, "string too long");
+        goto fail;
+    }
 
     if (string_buffer_init2(ctx, b, len1 + p->len + len3, p->is_wide_char))
         goto fail;

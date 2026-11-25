@@ -68,6 +68,8 @@ int white_string_len_max(void);
 int white_sb_realloc(struct StringBuffer *b, int new_len, int c);
 int white_sb_size(const struct StringBuffer *b);
 int white_sb_wide(const struct StringBuffer *b);
+JSValue white_concat_string3(JSContext *ctx, const char *str1, JSValueConst str2, const char *str3);
+uint32_t white_string_fake_len(JSValueConst v, uint32_t len);
 const uint8_t *white_json_string_run(struct StringBuffer *b, const uint8_t *p, const uint8_t *end, int sep);
 int white_json_quote_run(struct StringBuffer *b, JSValueConst s, int *pi);
 uintptr_t white_json_run_limit(uintptr_t p, uintptr_t end);
@@ -581,6 +583,50 @@ static void test_sb_widen_room(void)
           white_sb_size(b), max);
     white_sb_free(v.ctx, b);
     vm_free(&v);
+}
+
+/* JS_ConcatString3 makes "bound " + name, "[object " + tag + "]" and the
+   like. It did not check the length: a function named with 2^30 - 1
+   characters gave a bound function whose name had 2^30 + 5, longer than the
+   longest string, and for a name of 16 bits the length times 2 wrapped in an
+   int and gave out of memory. It throws "string too long", as a
+   concatenation does. The string is made to look that long
+   (white_string_fake_len): before, the copy read past its block, so each
+   case runs in a process of its own. */
+static void concat3_case(int wide)
+{
+    VM v = vm_new();
+    JSValue s = JS_NewString(v.ctx, wide ? "\xc4\x80" "bc" : "abc"), r;
+    uint32_t old = white_string_fake_len(s, white_string_len_max());
+    char *t;
+
+    r = white_concat_string3(v.ctx, "bound ", s, "");
+    t = exception_text(v.ctx);
+    CHECK(JS_IsException(r) && t && strcmp(t, "InternalError: string too long") == 0,
+          "%s: %s, want InternalError: string too long", wide ? "16 bits" : "8 bits", t ? t : "no exception");
+    free(t);
+    white_string_fake_len(s, old);
+    JS_FreeValue(v.ctx, r);
+    JS_FreeValue(v.ctx, s);
+    vm_free(&v);
+}
+
+static void test_concat3_too_long(void)
+{
+    char wide_arg[4];
+    char *args[4];
+    int wide, st;
+
+    for (wide = 0; wide < 2; wide++) {
+        snprintf(wide_arg, sizeof(wide_arg), "%d", wide);
+        args[1] = "concat3";
+        args[2] = wide_arg;
+        args[3] = NULL;
+        st = run_self(args);
+        CHECK(WIFEXITED(st) && WEXITSTATUS(st) == 0, "a string of three past the longest, %s: %s %d",
+              wide ? "16 bits" : "8 bits", WIFSIGNALED(st) ? "stopped by signal" : "exit status",
+              WIFSIGNALED(st) ? WTERMSIG(st) : WEXITSTATUS(st));
+    }
 }
 
 /* json_plain_run against a loop of one byte at a time: every length up to 40,
@@ -11640,6 +11686,13 @@ int main(int argc, char **argv)
         fflush(stdout);
         host_leave(failures ? 1 : 0);
     }
+    /* one case of test_concat3_too_long, in a process of its own */
+    if (argc == 3 && strcmp(argv[1], "concat3") == 0) {
+        failures = 0;
+        concat3_case(atoi(argv[2]));
+        fflush(stdout);
+        host_leave(failures ? 1 : 0);
+    }
     /* one case of test_max_props, in a process of its own */
     if (argc == 3 && strcmp(argv[1], "max-props") == 0) {
         failures = 0;
@@ -11654,6 +11707,7 @@ int main(int argc, char **argv)
     test_json_run_too_long();
     test_sb_room_past_two_thirds();
     test_sb_widen_room();
+    test_concat3_too_long();
     test_json_run_limit();
     test_json_plain_run();
     test_json_count_high_bytes();

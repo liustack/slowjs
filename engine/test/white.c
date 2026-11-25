@@ -3289,3 +3289,21 @@ int white_sb_wide(const StringBuffer *b)
 {
     return b->is_wide_char;
 }
+
+/* JS_ConcatString3 of str1, str2 and str3. str2 is not freed. */
+JSValue white_concat_string3(JSContext *ctx, const char *str1, JSValueConst str2, const char *str3)
+{
+    return JS_ConcatString3(ctx, str1, JS_DupValue(ctx, str2), str3);
+}
+
+/* white_string_fake_len gives the flat string v the length len and gives
+   back the one it had. Its block stays as it is: a test of a string as long
+   as the longest one puts the length back before anything reads past it. */
+uint32_t white_string_fake_len(JSValueConst v, uint32_t len)
+{
+    JSString *p = JS_VALUE_GET_STRING(v);
+    uint32_t old = p->len;
+
+    p->len = len;
+    return old;
+}

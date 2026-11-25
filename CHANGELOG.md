@@ -25,6 +25,7 @@ What changed in `github.com/liustack/beastjs` (its name from v0.33.0, `github.co
 - `JSON.parse` with a reviver, and the parser on a very large function or module, no longer run out of memory when one of their arrays passes 2 GiB while memory is left.
 - A string built piece by piece, such as the result of `JSON.stringify`, no longer slows down to a copy of the whole string at every append past about 716 million characters.
 - `toUpperCase` and other builders of a string of about 2^30 characters that turn wide no longer give a string one character longer than the longest the engine allows.
+- The name of a bound function, `Object.prototype.toString` with a `Symbol.toStringTag`, and the other strings the engine builds as prefix + string + suffix throw `InternalError: string too long` past 2^30 - 1 characters, where they gave a longer string or ran out of memory.
 
 ## [v0.33.0] - 2026-11-24
 
