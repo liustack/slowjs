@@ -61665,17 +61665,31 @@ static void sum_precise_init(SumPreciseState *s)
 static void sum_precise_renorm(SumPreciseState *s)
 {
     int64_t v, carry;
-    int i;
-    
+    int i, n;
+
+    n = s->n_limbs;
+    if (n == 0)
+        return;
     carry = 0;
-    for(i = 0; i < s->n_limbs; i++) {
+    for(i = 0; i < n - 1; i++) {
         v = s->acc[i] + carry;
         s->acc[i] = v & (((uint64_t)1 << SP_LIMB_BITS) - 1);
         carry = v >> SP_LIMB_BITS;
     }
+    /* The top limb holds the sign of the sum and stays signed while it
+       fits in SP_LIMB_BITS bits and a sign. Masking it too would move
+       the sign of a negative sum into a new limb of -1 at every call,
+       until the limbs ran out and the sign was dropped. */
+    v = s->acc[n - 1] + carry;
+    if (v > -((int64_t)1 << SP_LIMB_BITS) && v < ((int64_t)1 << SP_LIMB_BITS)) {
+        s->acc[n - 1] = v;
+        return;
+    }
+    s->acc[n - 1] = v & (((uint64_t)1 << SP_LIMB_BITS) - 1);
+    carry = v >> SP_LIMB_BITS;
     /* we add a failsafe but it should be never reached in a
        reasonnable amount of time */
-    if (carry != 0 && s->n_limbs < SUM_PRECISE_ACC_LEN)
+    if (n < SUM_PRECISE_ACC_LEN)
         s->acc[s->n_limbs++] = carry;
 }
 
