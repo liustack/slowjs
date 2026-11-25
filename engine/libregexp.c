@@ -410,7 +410,10 @@ static int re_string_copy(void *opaque, uint32_t *dst, const uint32_t *src,
     size_t n = len * sizeof(src[0]), off, m;
 
     if (n < LRE_COPY_STEP) {
-        memcpy(dst, src, n);
+        /* an empty string of \q{} has no buffer (src is NULL), and memcpy
+           takes no null pointer, not even for 0 bytes */
+        if (n)
+            memcpy(dst, src, n);
         return 0;
     }
     for (off = 0; off < n; off += m) {

@@ -103,6 +103,7 @@ int white_lre_literal(const char *re, int flags, void *opaque, char *out, size_t
 int white_lre_plan_size(const char *re, int flags, void *opaque, int *rest, char *names, size_t n);
 int white_lre_plan(const char *re, int flags, void *opaque, char *out, size_t n);
 int white_lre_split_same(const char *re, int flags, void *opaque, const uint32_t *units, int n, long *calls);
+long white_lre_null_copies(void);
 JSValue white_compile_failing(JSContext *ctx, const char *js, int fail, int mode, int *nallocs);
 JSValue white_read_failing(JSContext *ctx, const uint8_t *buf, size_t len, int fail, int *nallocs);
 int white_op(int i);
@@ -11663,6 +11664,38 @@ static void test_module_load_stops(void)
     free(src);
 }
 
+/* ---- the empty strings of a class of the v flag ----
+
+   An empty string of \q{} has no buffer: re_string_copy copied it with
+   memcpy from a null pointer, which C does not allow even for 0 bytes (the
+   memcpy of engine/libc did nothing). memcpy and memcmp of libregexp.c count
+   such calls (white-regexp.c). Each way to put an empty string in a class
+   gives the answer of Node 24, with no such call. */
+static void test_regexp_empty_class_string(void)
+{
+    static const struct { const char *src, *want; } cases[] = {
+        { "/[\\q{}]/v.test('')", "true" },
+        { "/[\\q{|a}]/v.exec('')[0].length", "0" },
+        { "/^[\\q{}x]$/v.test('x')", "true" },
+        { "/^[\\q{}--\\q{}]$/v.test('')", "false" },
+        { "/^[\\q{}&&\\q{}]$/v.test('')", "true" },
+        { "/^[\\q{}]$/vi.test('')", "true" },
+        { "/^[\\q{}\\q{}a]$/v.test('')", "true" },
+        { "/^[[\\q{}]--a]$/v.test('')", "true" },
+    };
+    VM v = vm_new();
+    size_t i;
+
+    for (i = 0; i < countof(cases); i++) {
+        long before = white_lre_null_copies();
+
+        CHECK(eval_is(v.ctx, cases[i].src, cases[i].want), "%s: want %s", cases[i].src, cases[i].want);
+        CHECK(white_lre_null_copies() == before, "%s: %ld calls of memcpy or memcmp with a null pointer",
+              cases[i].src, white_lre_null_copies() - before);
+    }
+    vm_free(&v);
+}
+
 int main(int argc, char **argv)
 {
     /* one case of test_gc_in_free, in a process of its own */
@@ -11818,6 +11851,7 @@ int main(int argc, char **argv)
     test_regexp_plan_size();
     test_regexp_first_set();
     test_regexp_split_same();
+    test_regexp_empty_class_string();
     test_compile_one_failure(0);
     test_compile_one_failure(1);
     test_emit_tables();

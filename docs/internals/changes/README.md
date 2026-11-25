@@ -310,6 +310,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | replace with a function and match by a regexp that nothing changed find their matches with no calls of exec | v0.31.3 | `js_regexp_replace_fn` and `js_regexp_match_fast` in [quickjs.c](../../../engine/quickjs.c) |
 | A replace or match by a regexp that nothing changed that fails (stopped by the host, out of memory, a throw) leaves lastIndex where the generic path leaves it at the same stage: while it finds the matches, or once it has found them | v0.31.3 | `js_regexp_reset_lastIndex` in [quickjs.c](../../../engine/quickjs.c) |
 | The table of first characters of a regexp knows `\s` and `\S`, so a regexp that starts with one skips to where a match can start | v0.31.3 | `lre_first_set` in [libregexp.c](../../../engine/libregexp.c) |
+| An empty string of `\q{}` is not copied with memcpy from a null pointer, a fault of the kind the 8th point of upstream #610 names | v0.33.1 | [regexp.md](regexp.md) |
 
 ## Strings
 
