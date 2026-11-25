@@ -24804,7 +24804,7 @@ TEXT ·js_math_sumPrecise(SB), $168-48
 	BL ·__JS_FreeValueRT(SB)
 	WORD $0xf9404ff5
 	WORD $0x17ffff1c
-	WORD $0x52801f48
+	WORD $0x52800fc8
 	WORD $0x910642b4
 	WORD $0xb90046a8
 	WORD $0x910102b5
@@ -24956,7 +24956,7 @@ TEXT ·js_math_sumPrecise(SB), $168-48
 	WORD $0xd503201f
 	WORD $0xd503201f
 	WORD $0x00000000
-	WORD $0x000000fa
+	WORD $0x0000007e
 	RET
 
 TEXT ·sum_precise_renorm(SB), $72-16
