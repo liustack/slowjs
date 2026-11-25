@@ -54453,11 +54453,6 @@ static int js_array_cmp_generic(const void *a, const void *b, void *opaque) {
         goto exception;
 
     if (psc->has_method) {
-        /* custom sort function is specified as returning 0 for identical
-         * objects: avoid method call overhead.
-         */
-        if (!memcmp(&ap->val, &bp->val, sizeof(ap->val)))
-            goto cmp_same;
         argv[0] = ap->val;
         argv[1] = bp->val;
         res = js_call(ctx, psc->method, JS_UNDEFINED, 2, argv);
@@ -54494,7 +54489,6 @@ static int js_array_cmp_generic(const void *a, const void *b, void *opaque) {
     }
     if (cmp != 0)
         return cmp;
-cmp_same:
     /* make sort stable: compare array offsets */
     return (ap->pos > bp->pos) - (ap->pos < bp->pos);
 

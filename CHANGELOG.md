@@ -16,6 +16,7 @@ What changed in `github.com/liustack/beastjs` (its name from v0.33.0, `github.co
 - The `next` and `return` of an `Iterator.from` wrapper give back what the method they wrap returned.
 - `Function.prototype.toString` of a revoked Proxy of a function returns its text instead of throwing, and no longer runs the `get` trap of a live one.
 - `Math.sumPrecise` of many large numbers is exact (300 times 2^53 - 1 was wrong).
+- `Array.prototype.sort` calls the comparator for two identical values, as the specification says.
 
 ## [v0.33.0] - 2026-11-24
 

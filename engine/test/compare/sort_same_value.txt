@@ -1,0 +1,6 @@
+objects: 2 true
+numbers: 1
+strings: 2
+arguments: true
+stable: 3,1,3,2,1
+sorted: 1,1,2,3,3
