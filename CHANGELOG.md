@@ -4,6 +4,10 @@ What changed in `github.com/liustack/beastjs` (its name from v0.33.0, `github.co
 
 ## [Unreleased]
 
+### Fixed
+
+- An arrow function whose parameter default divides after a template or a private name, such as `` (a = `8` / 2) => a ``, compiles, as in Node.
+
 ## [v0.33.0] - 2026-11-24
 
 ### Changed
