@@ -717,6 +717,14 @@
                             if (unlikely(JS_IsException(val)))              \
                                 goto exception;                             \
                         }                                                   \
+                        /* the object of the variables a direct eval made   \
+                           (is_with 0) holds the bindings of a function,    \
+                           whose base is undefined (WithBaseObject() of a   \
+                           declarative record): only a with object is this */ \
+                        if (!is_with) {                                     \
+                            JS_FreeValue(ctx, sp[-1]);                      \
+                            sp[-1] = JS_UNDEFINED;                          \
+                        }                                                   \
                         *sp++ = val;                                        \
                         break;                                              \
                     }                                                       \

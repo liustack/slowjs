@@ -1,0 +1,12 @@
+result var of eval "undefined"
+result var of eval optional "undefined"
+result var of eval tagged "undefined"
+result var of eval in function "undefined"
+result call in eval "undefined"
+result function in with "undefined"
+result function in with direct "undefined"
+result parameter "undefined"
+result with object "o"
+mem-end obj=215 atom=557 shape=126 prop=1000 jsfunc=11 cfunc=127 array=2 fast_array=2 elements=9 binary=0
+mem-gc obj=194 atom=555 shape=122 prop=964 jsfunc=2 cfunc=127 array=2 fast_array=2 elements=9 binary=0
+--- status exit 0
