@@ -1,0 +1,15 @@
+result plain: "function parseInt() { [native code] }"
+result getter of a getter: "function get size() { [native code] }"
+result symbol name: "function [Symbol.split]() { [native code] }"
+result constructor: "function Array() { [native code] }"
+result getter: "function () { [native code] } 0"
+result getter that throws: "function () { [native code] }"
+result value: "function other() { [native code] }"
+result deleted: "function () { [native code] }"
+result not a string: "function () { [native code] }"
+result bound: "function bound f() { [native code] }"
+result bound with a getter that throws: "function () { [native code] }"
+result proxy: "function () { [native code] }"
+mem-end obj=208 atom=602 shape=129 prop=1033 jsfunc=4 cfunc=139 array=2 fast_array=2 elements=12 binary=0
+mem-gc obj=208 atom=602 shape=129 prop=1033 jsfunc=4 cfunc=139 array=2 fast_array=2 elements=12 binary=0
+--- status exit 0

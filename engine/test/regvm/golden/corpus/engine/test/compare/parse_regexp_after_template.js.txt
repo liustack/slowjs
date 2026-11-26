@@ -1,0 +1,10 @@
+result 4
+result 5
+result [1,true]
+result NaN
+result x[)]y
+result [(] 0.5
+result [)]/a///b/
+mem-end obj=204 atom=560 shape=124 prop=987 jsfunc=11 cfunc=129 array=2 fast_array=2 elements=7 binary=0
+mem-gc obj=204 atom=560 shape=124 prop=987 jsfunc=11 cfunc=129 array=2 fast_array=2 elements=7 binary=0
+--- status exit 0

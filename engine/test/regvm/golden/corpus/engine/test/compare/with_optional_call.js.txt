@@ -1,0 +1,8 @@
+result undefined
+result g
+result [null,"g",null]
+result [5,5,"number"]
+result ok
+mem-end obj=195 atom=553 shape=125 prop=969 jsfunc=5 cfunc=126 array=2 fast_array=2 elements=5 binary=0
+mem-gc obj=195 atom=553 shape=125 prop=969 jsfunc=5 cfunc=126 array=2 fast_array=2 elements=5 binary=0
+--- status exit 0

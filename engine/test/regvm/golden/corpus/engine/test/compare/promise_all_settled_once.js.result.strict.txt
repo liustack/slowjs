@@ -1,0 +1,18 @@
+result all, fulfill then reject: rejected 2
+result all, fulfill twice: [1,9]
+result all, reject then fulfill: rejected 2
+result all, reject twice: rejected 2
+result all, reject, fulfill, reject: rejected 2
+result allSettled, fulfill then reject: [{"status":"fulfilled","value":1},{"status":"fulfilled","value":9}]
+result allSettled, fulfill twice: [{"status":"fulfilled","value":1},{"status":"fulfilled","value":9}]
+result allSettled, reject then fulfill: [{"status":"rejected","reason":2},{"status":"fulfilled","value":9}]
+result allSettled, reject twice: [{"status":"rejected","reason":2},{"status":"fulfilled","value":9}]
+result allSettled, reject, fulfill, reject: [{"status":"rejected","reason":2},{"status":"fulfilled","value":9}]
+result any, fulfill then reject: 1
+result any, fulfill twice: 1
+result any, reject then fulfill: 1
+result any, reject twice: 9
+result any, reject, fulfill, reject: 1
+mem-end obj=253 atom=559 shape=135 prop=1111 jsfunc=8 cfunc=136 array=3 fast_array=3 elements=18 binary=0
+mem-gc obj=208 atom=556 shape=127 prop=991 jsfunc=6 cfunc=136 array=3 fast_array=3 elements=18 binary=0
+--- status exit 0

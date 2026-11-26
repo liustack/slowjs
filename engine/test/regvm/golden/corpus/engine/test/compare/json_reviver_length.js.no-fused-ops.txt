@@ -1,0 +1,5 @@
+result reviver calls: 4
+result result length: 2
+mem-end obj=196 atom=548 shape=123 prop=958 jsfunc=1 cfunc=126 array=5 fast_array=5 elements=5 binary=0
+mem-gc obj=196 atom=548 shape=123 prop=958 jsfunc=1 cfunc=126 array=5 fast_array=5 elements=5 binary=0
+--- status exit 0

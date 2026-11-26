@@ -1,0 +1,9 @@
+result drop 2 of 5: [2,false,["next 0","done 0","next 1","done 1","next 2","done 2","value 2"]]
+result drop 2 of 1: [null,true,["next 0","done 0","next 1","done 1"]]
+result drop 0: [0,false,["next 0","done 0","value 0"]]
+result drop, done throws: ["done","stop"]
+result drop, a result that is not an object: throws TypeError
+result drop on an array iterator: [3,4]
+mem-end obj=196 atom=558 shape=131 prop=966 jsfunc=6 cfunc=130 array=2 fast_array=2 elements=6 binary=0
+mem-gc obj=196 atom=558 shape=131 prop=966 jsfunc=6 cfunc=130 array=2 fast_array=2 elements=6 binary=0
+--- status exit 0
