@@ -2719,6 +2719,75 @@ static void test_module_eval_stops(void)
     CHECK(rejected > 10, "%ld imports after a stop rejected with the error the module recorded", rejected);
 }
 
+/* A function whose captures need the flow of capture_by_value: 70 lets,
+   two groups of 64 slots, each captured by an arrow, then 6,000 increments
+   of them. The compile reads the flag in that pass too. It is stopped at
+   each of its readings in turn: each stop ends with the error interrupted,
+   or, in the conversion to the register code, with the compile done and the
+   flag still set, as in compile_stops (AddressSanitizer and the leak check
+   of vm_free see what it frees). Each compile starts after one stopped at
+   its first reading, so that all of them start from the same count of work
+   (it goes on from one compile to the next) and read the flag as often.
+   Statements that start with no name keep the parse from reading the flag
+   at each (peek_token). */
+static void test_by_value_stops(void)
+{
+    static char src[1 << 16];
+    size_t n = 0;
+    long reads = 0, k;
+    JSValue r;
+    char *t;
+    int i, set;
+    VM v = vm_new();
+    volatile int *flag = JS_GetInterruptFlag(v.rt);
+
+#define ADD(...) (n += (size_t)snprintf(src + n, sizeof(src) - n, __VA_ARGS__))
+    ADD("(function(){let v0=0");
+    for (i = 1; i < 70; i++)
+        ADD(",v%d=0", i);
+    ADD(";void[");
+    for (i = 0; i < 70; i++)
+        ADD("()=>v%d,", i);
+    ADD("];");
+    for (i = 0; i < 6000; i++)
+        ADD("++v%d;", i % 70);
+    ADD("})");
+#undef ADD
+    for (k = 0; k <= reads && !failures; k++) {
+        host_poll_stop_after(1);
+        r = JS_Eval(v.ctx, src, n, "stops.js", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+        host_poll_stop_after(0);
+        *flag = 0;
+        CHECK(JS_IsException(r), "the compile stopped at its first reading went on");
+        free(exception_text(v.ctx));
+        if (k == 0) {
+            reads = host_poll_reads;
+            r = JS_Eval(v.ctx, src, n, "stops.js", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+            reads = host_poll_reads - reads;
+            CHECK(!JS_IsException(r), "the function does not compile");
+            CHECK(reads > 100, "the function read the flag %ld times", reads);
+            JS_FreeValue(v.ctx, r);
+            continue;
+        }
+        host_poll_stop_after(k);
+        r = JS_Eval(v.ctx, src, n, "stops.js", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+        host_poll_stop_after(0);
+        set = *flag;
+        *flag = 0;
+        if (JS_IsException(r)) {
+            t = exception_text(v.ctx);
+            CHECK(t && strcmp(t, "InternalError: interrupted") == 0, "the stop at reading %ld of %ld: %s", k, reads,
+                  t ? t : "no exception");
+            free(t);
+        } else {
+            CHECK(set, "the stop at reading %ld of %ld did not stop the compile", k, reads);
+            JS_FreeValue(v.ctx, r);
+        }
+        CHECK(flag[1] == 0, "the stop at reading %ld of %ld left the mark at %d", k, reads, flag[1]);
+    }
+    vm_free(&v);
+}
+
 /* A stop at each reading of the flag in an import of module b.js, which
    binds 300 names of a.js and a namespace a.js exports from c.js, then an
    import of b.js again with no stop, once the jobs of the first are done.
@@ -3981,6 +4050,7 @@ int main(void)
     test_compile_names_closed_blocks();
     test_link_stops();
     test_module_eval_stops();
+    test_by_value_stops();
     test_link_retry();
     test_module_await_stops();
     test_module_await_species();

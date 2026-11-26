@@ -46138,8 +46138,19 @@ typedef struct {
     int *succ, *succ_at;   /* normal successors, by block */
     int *hand, *hand_at;   /* the handlers of the try bodies a block is in */
     int *ev, *ev_at;       /* events: var_ref_idx << 1 | close, in order */
+    int *ev_blk;           /* the block of each event */
     int *site_blk, *site_ev, *site_child; /* the places closures are made */
     int nsite;
+    /* by group of 64 slots, those of group q from at[q] to at[q + 1]: the
+       events of its slots (their indexes in ev, in order), and the
+       captures of its slots by a closure made at a site (the index of the
+       site, and the slot less the first of the group), in the order of the
+       sites */
+    int *gev, *gev_at;
+    int *cap_site, *cap_at;
+    uint64_t *cap_mask;
+    uint64_t *gmask;       /* while the sites are put by group: the slots of each group */
+    int *touched;          /* and the groups with some */
 } CBVGraph;
 
 static __exception int capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
@@ -46161,8 +46172,9 @@ static __exception int capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
     CBVGraph g;
 
     /* the flag is read as the walks and the flow go (js_compile_poll): -1
-       with "interrupted" thrown when it was stopped, as with no memory */
-#define CBV_POLL(n) do { if (js_compile_poll(ctx, (n))) { stopped = TRUE; goto bad; } } while (0)
+       with "interrupted" thrown when it was stopped, as with no memory. n is
+       the work done since the last one (JS_WORK) */
+#define CBV_POLL(n) do { JS_WORK(n); if (js_compile_poll(ctx, (n))) { stopped = TRUE; goto bad; } } while (0)
     memset(&g, 0, sizeof(g));
     if (len < 0 || len > INT32_MAX / 8)
         goto bad;
@@ -46430,7 +46442,9 @@ static __exception int capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
                 g.succ_at = js_malloc_rt(rt, sizeof(int) * (g.nb + 3));
                 g.hand = js_malloc_rt(rt, sizeof(int) * (nhand + 1));
                 g.hand_at = js_malloc_rt(rt, sizeof(int) * (g.nb + 3));
-                g.ev = js_malloc_rt(rt, sizeof(int) * (nev + 1));
+                /* the events, then the block of each */
+                g.ev = js_malloc_rt(rt, sizeof(int) * 2 * (nev + 1));
+                g.ev_blk = g.ev + nev + 1;
                 g.ev_at = js_malloc_rt(rt, sizeof(int) * (g.nb + 3));
                 g.site_blk = js_malloc_rt(rt, sizeof(int) * (ns + 1));
                 g.site_ev = js_malloc_rt(rt, sizeof(int) * (ns + 1));
@@ -46455,8 +46469,10 @@ static __exception int capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
                     if ((kind == CBV_WRITE || kind == CBV_CLOSE) && space != 2) {
                         r = ref_of[space ? idx : idx + b->arg_count];
                         if (r >= 0 && ok[r] && writes[r]) {
-                            if (s == 1)
+                            if (s == 1) {
                                 g.ev[nev] = r << 1 | (kind == CBV_CLOSE);
+                                g.ev_blk[nev] = i;
+                            }
                             nev++;
                         }
                     }
@@ -46527,101 +46543,188 @@ static __exception int capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
         }
     }
 
-    /* 64 slots at a time: in[b] has the slots a write of which a path from
-       the start of block b reaches, with no close_loc of it before: the
-       blocks, vret (g.nb) and vexc (g.nb + 1). The passes have a budget,
-       past which every slot keeps its JSVarRef. */
-    in = js_malloc_rt(rt, sizeof(uint64_t) * (g.nb + 2));
-    gen = js_malloc_rt(rt, sizeof(uint64_t) * (g.nb + 2));
-    kill = js_malloc_rt(rt, sizeof(uint64_t) * (g.nb + 2));
-    if (!in || !gen || !kill)
-        goto no_mem;
-    budget = ((int64_t)1 << 22) + (int64_t)64 * len;
-    for (base = 0; base < n; base += 64) {
-        uint64_t want = 0, seen, out, fail;
-        for (r = base; r < n && r < base + 64; r++) {
-            if (ok[r] && writes[r])
-                want |= (uint64_t)1 << (r - base);
+    /* 64 slots at a time, a group: in[b] has the slots a write of which a
+       path from the start of block b reaches, with no close_loc of it
+       before: the blocks, vret (g.nb) and vexc (g.nb + 1). The passes have
+       a budget, past which every slot keeps its JSVarRef. A group goes over
+       its own events and the sites that capture its slots only, each site
+       once (g.gev, g.cap_site), so that the work is the code and the flow,
+       not the groups times the sites, nor the sites times the events after
+       them in their block. */
+    {
+        int ngroup = (n + 63) / 64, nev = g.ev_at[g.nb + 2], q, e, lo, hi, cur, nt;
+        int64_t ncap;
+
+        /* in, gen, kill and gmask in one block, gev_at, cap_at, touched
+           and gev in another */
+        in = js_malloc_rt(rt, sizeof(uint64_t) * (3 * (g.nb + 2) + ngroup));
+        g.gev_at = js_malloc_rt(rt, sizeof(int) * (2 * (ngroup + 2) + ngroup + nev + 1));
+        if (!in || !g.gev_at)
+            goto no_mem;
+        gen = in + g.nb + 2;
+        kill = gen + g.nb + 2;
+        g.gmask = kill + g.nb + 2;
+        memset(g.gmask, 0, sizeof(uint64_t) * ngroup);
+        g.cap_at = g.gev_at + ngroup + 2;
+        g.touched = g.cap_at + ngroup + 2;
+        g.gev = g.touched + ngroup;
+        memset(g.gev_at, 0, sizeof(int) * 2 * (ngroup + 2));
+        /* the events by group, in order: counted at gev_at[q + 2], then
+           gev_at[q + 1] is where those of q go, and once they are in,
+           gev_at[q] where they start */
+        for (k = 0; k < nev; k++) {
+            CBV_POLL(1);
+            g.gev_at[(g.ev[k] >> 1) / 64 + 2]++;
         }
-        if (!want)
-            continue;
-        for (i = 0; i <= g.nb + 1; i++) {
-            CBV_POLL(JS_CODE_WORK + g.ev_at[i + 1] - g.ev_at[i]);
-            gen[i] = kill[i] = seen = 0;
-            for (k = g.ev_at[i]; k < g.ev_at[i + 1]; k++) {
-                r = g.ev[k] >> 1;
-                if (r < base || r >= base + 64)
-                    continue;
-                if (!(seen & ((uint64_t)1 << (r - base)))) {
-                    seen |= (uint64_t)1 << (r - base);
-                    if (g.ev[k] & 1)
-                        kill[i] |= (uint64_t)1 << (r - base);
-                    else
-                        gen[i] |= (uint64_t)1 << (r - base);
+        for (q = 2; q <= ngroup; q++)
+            g.gev_at[q] += g.gev_at[q - 1];
+        CBV_POLL(ngroup);
+        for (k = 0; k < nev; k++) {
+            CBV_POLL(1);
+            g.gev[g.gev_at[(g.ev[k] >> 1) / 64 + 1]++] = k;
+        }
+        /* the sites by group, in order, with the slots of the group the
+           closure made there captures that may need the flow: the same
+           count, then fill */
+        ncap = 0;
+        for (s = 0; s < 2; s++) {
+            if (s == 1) {
+                for (q = 2; q <= ngroup; q++)
+                    g.cap_at[q] += g.cap_at[q - 1];
+                /* cap_mask, then cap_site */
+                g.cap_mask = js_malloc_rt(rt, (sizeof(uint64_t) + sizeof(int)) * (ncap + 1));
+                if (!g.cap_mask)
+                    goto no_mem;
+                g.cap_site = (int *)(g.cap_mask + ncap + 1);
+            }
+            for (j = 0; j < g.nsite; j++) {
+                JSFunctionBytecode *c = cbv_child(b, g.site_child[j]);
+                CBV_POLL(JS_CODE_WORK + c->closure_var_count);
+                nt = 0;
+                for (k = 0; k < c->closure_var_count; k++) {
+                    JSClosureVar *cv = &c->closure_var[k];
+                    if (cv->closure_type == JS_CLOSURE_LOCAL || cv->closure_type == JS_CLOSURE_ARG) {
+                        r = ref_of[cv->closure_type == JS_CLOSURE_LOCAL ? cv->var_idx + b->arg_count : cv->var_idx];
+                        if (!ok[r] || !writes[r])
+                            continue;
+                        q = r / 64;
+                        if (!g.gmask[q])
+                            g.touched[nt++] = q;
+                        g.gmask[q] |= (uint64_t)1 << (r - q * 64);
+                    }
+                }
+                for (k = 0; k < nt; k++) {
+                    q = g.touched[k];
+                    if (s == 0) {
+                        g.cap_at[q + 2]++;
+                        /* past what an int counts, there is no memory for it */
+                        if (++ncap > INT32_MAX / (int)(sizeof(uint64_t) + sizeof(int)))
+                            goto no_mem;
+                    } else {
+                        g.cap_site[g.cap_at[q + 1]] = j;
+                        g.cap_mask[g.cap_at[q + 1]++] = g.gmask[q];
+                    }
+                    g.gmask[q] = 0;
                 }
             }
-            in[i] = gen[i];
         }
-        do {
-            changed = 0;
-            for (i = g.nb + 1; i >= 0; i--) {
-                uint64_t v;
-                budget -= 1 + (g.succ_at[i + 1] - g.succ_at[i]) + (g.hand_at[i + 1] - g.hand_at[i]);
-                if (budget < 0)
-                    goto bad;
-                CBV_POLL(1 + (g.succ_at[i + 1] - g.succ_at[i]) + (g.hand_at[i + 1] - g.hand_at[i]));
+        budget = ((int64_t)1 << 22) + (int64_t)64 * len;
+        for (q = 0; q < ngroup; q++) {
+            uint64_t want = 0, seen, out, fail, bit, f;
+            base = q * 64;
+            for (r = base; r < n && r < base + 64; r++) {
+                if (ok[r] && writes[r])
+                    want |= (uint64_t)1 << (r - base);
+            }
+            if (!want)
+                continue;
+            /* gen and kill: the first event of each slot in the block. The
+               events of the group from the last, so that the first one of
+               each block is the one that stays */
+            for (i = 0; i <= g.nb + 1; i++) {
+                CBV_POLL(1);
+                gen[i] = kill[i] = 0;
+            }
+            for (e = g.gev_at[q + 1] - 1; e >= g.gev_at[q]; e--) {
+                CBV_POLL(1);
+                k = g.gev[e];
+                i = g.ev_blk[k];
+                bit = (uint64_t)1 << ((g.ev[k] >> 1) - base);
+                if (g.ev[k] & 1) {
+                    kill[i] |= bit;
+                    gen[i] &= ~bit;
+                } else {
+                    gen[i] |= bit;
+                    kill[i] &= ~bit;
+                }
+            }
+            memcpy(in, gen, sizeof(uint64_t) * (g.nb + 2));
+            do {
+                changed = 0;
+                for (i = g.nb + 1; i >= 0; i--) {
+                    uint64_t v;
+                    budget -= 1 + (g.succ_at[i + 1] - g.succ_at[i]) + (g.hand_at[i + 1] - g.hand_at[i]);
+                    if (budget < 0)
+                        goto bad;
+                    CBV_POLL(1 + (g.succ_at[i + 1] - g.succ_at[i]) + (g.hand_at[i + 1] - g.hand_at[i]));
+                    out = 0;
+                    for (k = g.succ_at[i]; k < g.succ_at[i + 1]; k++)
+                        out |= in[g.succ[k]];
+                    v = gen[i] | (out & ~kill[i]);
+                    for (k = g.hand_at[i]; k < g.hand_at[i + 1]; k++)
+                        v |= in[g.hand[k]];
+                    if (v != in[i]) {
+                        in[i] = v;
+                        changed = 1;
+                    }
+                }
+            } while (changed);
+            /* each place a closure is made, from the last: a write its
+               slots can reach after it. seen has the slots with an event
+               after the site in its block, fail those whose first such
+               event is a write, as the events of the block from the last
+               go past the sites */
+            lo = g.cap_at[q];
+            e = g.gev_at[q + 1];
+            cur = -1;
+            seen = fail = 0;
+            for (hi = g.cap_at[q + 1]; hi > lo; hi--) {
+                int w = 0;
+                j = g.cap_site[hi - 1];
+                i = g.site_blk[j];
+                if (i != cur) {
+                    cur = i;
+                    seen = fail = 0;
+                }
+                /* an event of a block after this one was gone past for the
+                   sites there, or comes after all of them */
+                while (e > g.gev_at[q] && g.gev[e - 1] >= g.site_ev[j]) {
+                    k = g.gev[--e];
+                    w++;
+                    if (k >= g.ev_at[i + 1])
+                        continue;
+                    bit = (uint64_t)1 << ((g.ev[k] >> 1) - base);
+                    seen |= bit;
+                    if (g.ev[k] & 1)
+                        fail &= ~bit;
+                    else
+                        fail |= bit;
+                }
+                CBV_POLL(JS_CODE_WORK + w);
+                f = g.cap_mask[hi - 1] & want;
+                if (!f)
+                    continue;
                 out = 0;
                 for (k = g.succ_at[i]; k < g.succ_at[i + 1]; k++)
                     out |= in[g.succ[k]];
-                v = gen[i] | (out & ~kill[i]);
+                out = fail | (out & ~seen);
                 for (k = g.hand_at[i]; k < g.hand_at[i + 1]; k++)
-                    v |= in[g.hand[k]];
-                if (v != in[i]) {
-                    in[i] = v;
-                    changed = 1;
+                    out |= in[g.hand[k]];
+                f &= out;
+                while (f) {
+                    ok[base + ctz64(f)] = 0;
+                    f &= f - 1;
                 }
-            }
-        } while (changed);
-        /* each place a closure is made: a write its slots can reach after it */
-        for (j = 0; j < g.nsite; j++) {
-            JSFunctionBytecode *c = cbv_child(b, g.site_child[j]);
-            uint64_t alias = 0;
-            i = g.site_blk[j];
-            CBV_POLL(JS_CODE_WORK + c->closure_var_count + g.ev_at[i + 1] - g.site_ev[j]);
-            for (k = 0; k < c->closure_var_count; k++) {
-                JSClosureVar *cv = &c->closure_var[k];
-                if (cv->closure_type == JS_CLOSURE_LOCAL || cv->closure_type == JS_CLOSURE_ARG) {
-                    r = ref_of[cv->closure_type == JS_CLOSURE_LOCAL ? cv->var_idx + b->arg_count : cv->var_idx];
-                    if (r >= base && r < base + 64)
-                        alias |= (uint64_t)1 << (r - base);
-                }
-            }
-            alias &= want;
-            if (!alias)
-                continue;
-            out = 0;
-            for (k = g.succ_at[i]; k < g.succ_at[i + 1]; k++)
-                out |= in[g.succ[k]];
-            seen = fail = 0;
-            for (k = g.site_ev[j]; k < g.ev_at[i + 1]; k++) {
-                uint64_t bit;
-                r = g.ev[k] >> 1;
-                if (r < base || r >= base + 64)
-                    continue;
-                bit = (uint64_t)1 << (r - base);
-                if (!(seen & bit)) {
-                    seen |= bit;
-                    if (!(g.ev[k] & 1))
-                        fail |= bit;
-                }
-            }
-            fail |= out & ~seen;
-            for (k = g.hand_at[i]; k < g.hand_at[i + 1]; k++)
-                fail |= in[g.hand[k]];
-            fail &= alias;
-            for (r = base; r < n && r < base + 64; r++) {
-                if (fail & ((uint64_t)1 << (r - base)))
-                    ok[r] = 0;
             }
         }
     }
@@ -46672,8 +46775,6 @@ static __exception int capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
     js_free_rt(rt, lead);
     js_free_rt(rt, catch_blk);
     js_free_rt(rt, in);
-    js_free_rt(rt, gen);
-    js_free_rt(rt, kill);
     js_free_rt(rt, g.blk);
     js_free_rt(rt, g.start);
     js_free_rt(rt, g.succ);
@@ -46682,6 +46783,8 @@ static __exception int capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
     js_free_rt(rt, g.hand_at);
     js_free_rt(rt, g.ev);
     js_free_rt(rt, g.ev_at);
+    js_free_rt(rt, g.gev_at);
+    js_free_rt(rt, g.cap_mask);
     js_free_rt(rt, g.site_blk);
     js_free_rt(rt, g.site_ev);
     js_free_rt(rt, g.site_child);

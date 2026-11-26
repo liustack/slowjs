@@ -6219,6 +6219,54 @@ static void test_capture_by_value(void)
     vm_free(&v);
 }
 
+/* The work of capture_by_value (its readings of the flag count it, JS_WORK)
+   grows with the code, not with the places closures are made times the
+   writes after them: a function of n classes in a row, and one of n arrows
+   that each capture a let, then n writes of the lets, in one block. Four
+   times the code is at most six times the work (it was 62 times). */
+static void test_by_value_work(void)
+{
+    static const char *const shapes[] = { "classes", "arrows then writes" };
+    static char src[1 << 18];
+    unsigned long work[2];
+    int shape, size, n, i;
+    size_t k;
+    JSValue r;
+    VM v;
+
+    for (shape = 0; shape < 2; shape++) {
+        for (size = 0; size < 2; size++) {
+            n = size ? 4000 : 1000;
+            k = 0;
+#define ADD(...) (k += (size_t)snprintf(src + k, sizeof(src) - k, __VA_ARGS__))
+            ADD("(function(){");
+            if (shape == 0) {
+                for (i = 0; i < n; i++)
+                    ADD("class C%d{m(){return C%d}}", i, i);
+            } else {
+                for (i = 0; i < n; i++)
+                    ADD("let v%d=0;", i);
+                for (i = 0; i < n; i++)
+                    ADD("let g%d=()=>v%d;", i, i);
+                for (i = 0; i < n; i++)
+                    ADD("v%d=1;", i);
+            }
+            ADD("})");
+#undef ADD
+            v = vm_new();
+            white_work_reset();
+            r = JS_Eval(v.ctx, src, k, "by-value-work.js", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+            CHECK(!JS_IsException(r), "%s, %d: the function does not compile", shapes[shape], n);
+            work[size] = white_work_sum();
+            JS_FreeValue(v.ctx, r);
+            vm_free(&v);
+        }
+        printf("unit-white: test_by_value_work: %s: %lu units for 1000, %lu for 4000\n", shapes[shape], work[0],
+               work[1]);
+        CHECK(work[1] <= 6 * work[0], "%s: %lu units of work for 1000, %lu for 4000", shapes[shape], work[0], work[1]);
+    }
+}
+
 /* JS_ReadObject reads a function of as many closure variables as the
    compiler makes, 65534, and refuses more: by_value_count, 16 bits, counts
    the cells of a closure, one for each closure variable that holds its
@@ -12085,6 +12133,7 @@ int main(int argc, char **argv)
     test_iterator_close_oom();
     test_tdz_checks();
     test_capture_by_value();
+    test_by_value_work();
     test_closure_var_limit();
     test_closure_gc_in_build();
     test_gc_block();
