@@ -5114,28 +5114,35 @@ static void test_parens_table_replace(void)
    into it when the table grows. Whether a string reads differently in
    strict mode is told by the lexer, not by a second scan of the string. The sources: a string of 131072 escapes, a comment of 200000
    bytes after a bracket, and 140000 brackets, whose table grows to 524288
-   entries. */
+   entries. The comment starts at 128 places 512 bytes apart, one of them
+   just after a multiple of JS_ROPE_STEP, where the look for a line feed
+   reads nearly JS_ROPE_STEP bytes before the table is made for the bracket:
+   the table reads the flag before it clears its entries. */
 static void test_parens_work_gaps(void)
 {
     static const struct {
         const char *what, *head, *rep, *tail;
         int n;
         unsigned long least;
+        int shifts;
     } cases[] = {
-        { "a string of escapes", "[\"", "\\n", "\"]", 131072, 0 },
-        { "a long comment", "((a)/*", "x", "*/, 1)", 200000, 200000 },
-        { "many brackets", "(", "(0),", "0)", 140000, 262144 },
+        { "a string of escapes", "[\"", "\\n", "\"]", 131072, 0, 1 },
+        { "a long comment", "((a)/*", "x", "*/, 1)", 200000, 200000, 128 },
+        { "many brackets", "(", "(0),", "0)", 140000, 262144, 1 },
     };
     size_t i, len;
-    int k;
+    int k, sh;
 
-    for (i = 0; i < countof(cases); i++) {
+    for (i = 0; i < countof(cases); i++)
+    for (sh = 0; sh < cases[i].shifts; sh++) {
         VM v = vm_new();
-        char *src = malloc(strlen(cases[i].head) + strlen(cases[i].rep) * cases[i].n + strlen(cases[i].tail) + 1);
+        char *src = malloc(512 * sh + strlen(cases[i].head) + strlen(cases[i].rep) * cases[i].n + strlen(cases[i].tail) + 1);
         unsigned long total, longest;
         JSValue r;
 
-        len = sprintf(src, "%s", cases[i].head);
+        memset(src, ' ', 512 * sh);
+        len = 512 * sh;
+        len += sprintf(src + len, "%s", cases[i].head);
         for (k = 0; k < cases[i].n; k++)
             len += sprintf(src + len, "%s", cases[i].rep);
         len += sprintf(src + len, "%s", cases[i].tail);
@@ -5148,8 +5155,8 @@ static void test_parens_work_gaps(void)
         longest = white_paren_work_take(&total);
         CHECK(total >= cases[i].least, "%s: %lu units of work, want at least %lu",
               cases[i].what, total, cases[i].least);
-        CHECK(longest <= (1 << 16), "%s: %lu units of work between two readings of the flag",
-              cases[i].what, longest);
+        CHECK(longest <= (1 << 16), "%s, %d spaces before: %lu units of work between two readings of the flag",
+              cases[i].what, 512 * sh, longest);
         free(src);
         vm_free(&v);
     }

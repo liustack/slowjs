@@ -31799,7 +31799,9 @@ static JSParenEntry *js_paren_find(JSParenCache *pc, uint32_t key)
    (full), so that the lookahead reads on as it did before the table: the
    table changes what a parse costs, never whether it works. Clearing the new
    table and copying the old one into it read the interrupt flag every
-   JS_COMPILE_POLL_STEP entries. -1 with "interrupted" thrown, and the table
+   JS_COMPILE_POLL_STEP entries, and before and after them, so that their
+   work and the look for a line feed (js_paren_has_lf) before and after the
+   growth are stretches of their own. -1 with "interrupted" thrown, and the table
    as it was. */
 static int js_paren_put(JSContext *ctx, JSParenCache *pc, uint32_t key,
                         uint32_t val)
@@ -31829,7 +31831,7 @@ static int js_paren_put(JSContext *ctx, JSParenCache *pc, uint32_t key,
         }
         for (j = 0; j < size; j += n) {
             n = min_uint32(size - j, JS_COMPILE_POLL_STEP);
-            if (j != 0 && js_poll_interrupts(ctx)) {
+            if (js_poll_interrupts(ctx)) {
                 js_free_rt(ctx->rt, tab);
                 return -1;
             }
@@ -31851,6 +31853,10 @@ static int js_paren_put(JSContext *ctx, JSParenCache *pc, uint32_t key,
                 tab[i] = old[k];
             }
             JS_PAREN_WORK(n);
+        }
+        if (js_poll_interrupts(ctx)) {
+            js_free_rt(ctx->rt, tab);
+            return -1;
         }
         js_free_rt(ctx->rt, old);
         pc->tab = tab;
