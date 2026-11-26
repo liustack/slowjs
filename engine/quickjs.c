@@ -27887,6 +27887,9 @@ typedef struct JSParseState {
     /* the answers of js_parse_skip_parens_token, NULL until its first
        call, freed at the end of the parse (js_parse_free_paren_cache) */
     struct JSParenCache *paren_cache;
+    /* the allocator refused the room for paren_cache: the parse goes on
+       without it */
+    BOOL paren_cache_off;
 } JSParseState;
 
 typedef struct JSOpCode {
@@ -30991,6 +30994,9 @@ static BOOL has_lf_in_range(const uint8_t *p1, const uint8_t *p2)
 #ifndef JS_PAREN_WORK
 #define JS_PAREN_WORK(n) ((void)0)
 #endif
+#ifndef JS_PAREN_REFUSED
+#define JS_PAREN_REFUSED() ((void)0)
+#endif
 
 /* What js_parse_skip_parens_token() answered for the bracket at a position
    of the source. The lookahead from a bracket goes through every bracket
@@ -31026,6 +31032,7 @@ typedef struct JSParenCache {
     JSParenEntry *tab;          /* open addressing, a power of 2 entries */
     uint32_t size;
     uint32_t count;
+    BOOL full;                  /* the table could not grow (js_paren_put) */
     /* the lookahead under way: for each level, the offset of its bracket
        and the SKIP_HAS_* bits seen at that level (SKIP_HAS_ASSIGNMENT and
        SKIP_MODE_DEP also inside it, added to the level around it when it
@@ -31096,10 +31103,13 @@ static JSParenEntry *js_paren_find(JSParenCache *pc, uint32_t key)
 }
 
 /* Keeps val for the bracket at key. An answer from the bracket under another
-   mode is replaced in place: the table grows only for a new bracket. The
-   copy of a table that grows reads the interrupt flag every
-   JS_COMPILE_POLL_STEP entries. -1 with the exception pending when it ran
-   out of memory or was interrupted, and the table as it was. */
+   mode is replaced in place: the table grows only for a new bracket. A table
+   the allocator does not let grow stays as it is and keeps no new answer
+   (full), so that the lookahead reads on as it did before the table: the
+   table changes what a parse costs, never whether it works. Clearing the new
+   table and copying the old one into it read the interrupt flag every
+   JS_COMPILE_POLL_STEP entries. -1 with "interrupted" thrown, and the table
+   as it was. */
 static int js_paren_put(JSContext *ctx, JSParenCache *pc, uint32_t key,
                         uint32_t val)
 {
@@ -31111,36 +31121,47 @@ static int js_paren_put(JSContext *ctx, JSParenCache *pc, uint32_t key,
         e->val = val;
         return 0;
     }
+    if (pc->full)
+        return 0;
     if ((pc->count + 1) * 2 > pc->size) {
-        JSParenEntry *tab, *old = pc->tab;
-        uint32_t j, size = pc->size ? pc->size * 2 : 1024;
+        JSParenEntry *tab = NULL, *old = pc->tab;
+        uint32_t j, k, n, size = pc->size ? pc->size * 2 : 1024;
 
-        /* 2^30 entries are 8 GiB: the size of 32 bits never runs over */
-        if (pc->size >= (1u << 30)) {
-            JS_ThrowOutOfMemory(ctx);
-            return -1;
+        /* 2^30 entries are 8 GiB: the size of 32 bits never runs over.
+           js_malloc_rt does not throw */
+        if (pc->size < (1u << 30))
+            tab = js_malloc_rt(ctx->rt, sizeof(tab[0]) * size);
+        if (!tab) {
+            JS_PAREN_REFUSED();
+            pc->full = TRUE;
+            return 0;
         }
-        tab = js_mallocz(ctx, sizeof(tab[0]) * size);
-        if (!tab)
-            return -1;
-        for (j = 0; j < pc->size; j++) {
-            if ((j & (JS_COMPILE_POLL_STEP - 1)) == 0 && j != 0) {
-                JS_PAREN_WORK(JS_COMPILE_POLL_STEP);
-                if (js_poll_interrupts(ctx)) {
-                    js_free(ctx, tab);
-                    return -1;
-                }
+        for (j = 0; j < size; j += n) {
+            n = min_uint32(size - j, JS_COMPILE_POLL_STEP);
+            if (j != 0 && js_poll_interrupts(ctx)) {
+                js_free_rt(ctx->rt, tab);
+                return -1;
             }
-            if (old[j].key == 0)
-                continue;
-            for (i = js_paren_hash(old[j].key, size); tab[i].key != 0;
-                 i = (i + 1) & (size - 1))
-                continue;
-            tab[i] = old[j];
+            memset(tab + j, 0, sizeof(tab[0]) * n);
+            JS_PAREN_WORK(n);
         }
-        if (pc->size)
-            JS_PAREN_WORK(((pc->size - 1) & (JS_COMPILE_POLL_STEP - 1)) + 1);
-        js_free(ctx, old);
+        for (j = 0; j < pc->size; j += n) {
+            n = min_uint32(pc->size - j, JS_COMPILE_POLL_STEP);
+            if (js_poll_interrupts(ctx)) {
+                js_free_rt(ctx->rt, tab);
+                return -1;
+            }
+            for (k = j; k < j + n; k++) {
+                if (old[k].key == 0)
+                    continue;
+                for (i = js_paren_hash(old[k].key, size); tab[i].key != 0;
+                     i = (i + 1) & (size - 1))
+                    continue;
+                tab[i] = old[k];
+            }
+            JS_PAREN_WORK(n);
+        }
+        js_free_rt(ctx->rt, old);
         pc->tab = tab;
         pc->size = size;
         JS_PAREN_GROW(size);
@@ -31235,11 +31256,16 @@ static int js_parse_skip_parens_token(JSParseState *s, int *pbits, BOOL no_line_
     BOOL fresh, word;
 
     pc = s->paren_cache;
-    if (!pc) {
-        pc = js_mallocz(s->ctx, sizeof(*pc));
-        if (!pc)
-            return TOK_ERROR;
-        s->paren_cache = pc;
+    if (!pc && !s->paren_cache_off) {
+        /* js_mallocz_rt does not throw: without the room, the lookahead
+           reads as it did before the table */
+        pc = js_mallocz_rt(s->ctx->rt, sizeof(*pc));
+        if (pc) {
+            s->paren_cache = pc;
+        } else {
+            JS_PAREN_REFUSED();
+            s->paren_cache_off = TRUE;
+        }
     }
     mode = js_parse_skip_mode(s) << JS_PAREN_MODE_SHIFT;
     /* the brackets are kept by an offset of 32 bits */

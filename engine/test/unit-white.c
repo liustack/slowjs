@@ -196,6 +196,7 @@ unsigned long white_work_sum(void);
 unsigned long white_skip_tokens_read(void);
 unsigned long white_paren_size_take(void);
 unsigned long white_paren_work_take(unsigned long *total);
+int white_paren_refused_take(void);
 void white_work_add(unsigned long n);
 size_t white_sb_block_usable(const struct StringBuffer *b);
 void white_front_drain(JSContext *ctx);
@@ -5096,11 +5097,11 @@ static void test_parens_table_replace(void)
 /* What the lookahead does for its table besides reading tokens
    (JS_PAREN_WORK) reads the interrupt flag at least every JS_ROPE_STEP bytes
    or entries: the look for a line feed in the space before the token after
-   a bracket, and the copy of the table when it grows. Whether a string reads
-   differently in strict mode is told by the lexer, not by a second scan of
-   the string. The sources: a string of 131072 escapes, a comment of 200000
-   bytes after a bracket, and 140000 brackets, whose table is copied at
-   262144 entries. */
+   a bracket, and the clearing of a new table and the copy of the old one
+   into it when the table grows. Whether a string reads differently in
+   strict mode is told by the lexer, not by a second scan of the string. The sources: a string of 131072 escapes, a comment of 200000
+   bytes after a bracket, and 140000 brackets, whose table grows to 524288
+   entries. */
 static void test_parens_work_gaps(void)
 {
     static const struct {
@@ -8714,6 +8715,47 @@ static void compile_one(int calls, size_t script, int fail, const char *want)
     host_leave(failures ? 1 : failed ? 10 : 0);
 }
 
+/* An allocation of the table of the lookahead (JSParenCache) that the
+   allocator refuses changes nothing the compile gives: the parse goes on
+   without the table, or with the table it has, keeping no more answers, as
+   the parse before the table did. Each call of the allocator of a compile
+   fails in turn, and when it was one of the table (JS_PAREN_REFUSED), the
+   compile works and its code gives what it gives with every call working.
+   The sources take the table at its first allocation and, with 600
+   brackets, when it grows. */
+static void test_parens_alloc_refused(void)
+{
+    char *many = malloc(16 + 8 * 600), *srcs[3];
+    size_t i, len;
+    int k;
+
+    len = sprintf(many, "var t = (");
+    for (k = 0; k < 600; k++)
+        len += sprintf(many + len, "(%d),", k);
+    sprintf(many + len, "0); t");
+    srcs[0] = "(0)";
+    srcs[1] = "((a) => ((b) => (c) => a + b + c))(1)(2)(3)";
+    srcs[2] = many;
+    for (i = 0; i < countof(srcs); i++) {
+        char what[32], want[256], got[256];
+        int n, m, fail, failed, refused = 0;
+
+        snprintf(what, sizeof(what), "parens %zu", i);
+        CHECK(!compile_failing(what, srcs[i], 0, MODE_CALLS, &n, want, sizeof(want)), "%s does not compile", what);
+        for (fail = 1; fail <= n; fail++) {
+            white_paren_refused_take();
+            failed = compile_failing(what, srcs[i], fail, MODE_CALLS, &m, got, sizeof(got));
+            if (!white_paren_refused_take())
+                continue;
+            refused++;
+            CHECK(!failed && strcmp(got, want) == 0, "%s, call %d refused for the table: %s, want %s",
+                  what, fail, failed ? "the compile failed" : got, want);
+        }
+        CHECK(refused >= (i == 2 ? 3 : 2), "%s: %d calls of the table refused", what, refused);
+    }
+    free(many);
+}
+
 static void test_compile_one_failure(int calls)
 {
     struct compile_script scripts[COMPILE_SCRIPTS];
@@ -11942,6 +11984,7 @@ int main(int argc, char **argv)
     test_parens_lookahead_linear();
     test_parens_table_replace();
     test_parens_work_gaps();
+    test_parens_alloc_refused();
     test_poll_scan();
     test_poll_insert();
     test_poll_compile();

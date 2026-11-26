@@ -154,6 +154,9 @@ static unsigned long white_skip_tokens;
 static unsigned long white_paren_size, white_paren_work, white_paren_work_max, white_paren_work_total;
 #define JS_PAREN_GROW(size) (white_paren_size = (size))
 #define JS_PAREN_WORK(n) (white_paren_work += (n), white_paren_work_total += (n))
+/* JS_PAREN_REFUSED counts the allocations of the table the allocator refused */
+static int white_paren_refused;
+#define JS_PAREN_REFUSED() (white_paren_refused++)
 
 #define host_poll white_host_poll
 
@@ -3337,6 +3340,16 @@ unsigned long white_paren_size_take(void)
     unsigned long n = white_paren_size;
 
     white_paren_size = 0;
+    return n;
+}
+
+/* the allocations of the table of the lookahead the allocator refused
+   (JS_PAREN_REFUSED), and 0 again */
+int white_paren_refused_take(void)
+{
+    int n = white_paren_refused;
+
+    white_paren_refused = 0;
     return n;
 }
 
