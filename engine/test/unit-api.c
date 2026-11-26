@@ -2362,6 +2362,74 @@ static void test_rv_nesting_limits(void)
     }
 }
 
+/* names_src writes in buf a source of n names declared by decl ("var" or
+   "const"), ten to a statement, then an array of n / 10 functions that each
+   refer to 100 of them from a function inside, around body:
+   "(function(){%s})" for a function, "%s" for a script or a module. The
+   functions come last, so that the pass that captures by value
+   (capture_by_value in engine/quickjs.c), which goes over the code after
+   each function made, has little to go over. */
+static void names_src(char *buf, size_t size, const char *body, const char *decl, int n)
+{
+    static char s[1 << 22];
+    size_t k = 0;
+    int i, j, r = 1;
+
+#define ADD(...) (k += (size_t)snprintf(s + k, sizeof(s) - k, __VA_ARGS__))
+    for (i = 0; i < n; i++)
+        ADD("%s%sn%d=%d%s", i % 10 ? "" : decl, i % 10 ? "" : " ", i, i, i % 10 == 9 ? ";" : ",");
+    ADD("[");
+    for (i = 0; i < n / 10; i++) {
+        ADD("function(a){return function(){return 0");
+        for (j = 0; j < 100; j++) {
+            r = r * 1103515245 + 12345;
+            ADD("+n%d", (int)((unsigned)r >> 8) % n);
+        }
+        ADD("}},");
+    }
+    ADD("];");
+#undef ADD
+    snprintf(buf, size, body, s);
+}
+
+/* names_reads returns how many times the compile of src reads the interrupt
+   flag, which it does after a count of its work (rt->compile_left): one unit
+   for each entry a look for a name goes over. */
+static long names_reads(const char *src, int flags)
+{
+    VM v = vm_new();
+    long reads = host_poll_reads;
+    JSValue r = JS_Eval(v.ctx, src, strlen(src), "names.js", flags | JS_EVAL_FLAG_COMPILE_ONLY);
+
+    reads = host_poll_reads - reads;
+    CHECK(!JS_IsException(r), "the source of names does not compile");
+    JS_FreeValue(v.ctx, r);
+    vm_free(&v);
+    return reads;
+}
+
+/* A bundle puts thousands of names in one function, and the functions in it
+   refer to them: the compile of each reference must not look through all the
+   names around it, or the compile grows as the square of the bundle. Eight
+   times the names and the references must cost at most twelve times the
+   work, where the square makes it sixty-four. */
+static void test_compile_names_linear(void)
+{
+    static const char *decls[] = { "var", "const" };
+    static char src[1 << 22];
+    long small, large;
+    size_t i;
+
+    for (i = 0; i < countof(decls); i++) {
+        names_src(src, sizeof(src), "(function(){%s})", decls[i], 500);
+        small = names_reads(src, JS_EVAL_TYPE_GLOBAL);
+        names_src(src, sizeof(src), "(function(){%s})", decls[i], 4000);
+        large = names_reads(src, JS_EVAL_TYPE_GLOBAL);
+        CHECK(large <= 12 * small, "%ss in a function: the compile of 4,000 names read the flag %ld times, of 500 %ld",
+              decls[i], large, small);
+    }
+}
+
 /* A compile stopped at a reading of the interrupt flag frees what it made,
    the code of each pass included, by its opcodes: compile_stops compiles src
    in a VM of its own once to count its readings, then stops it at each of
@@ -2475,6 +2543,11 @@ static void test_compile_stops(void)
     ADD("}");
     compile_stops("a module of 2,000 exports", src, JS_EVAL_TYPE_MODULE);
 #undef ADD
+    /* the indexes of the names (find_var in engine/quickjs.c) */
+    names_src(src, sizeof(src), "(function(){%s})", "var", 400);
+    compile_stops("400 vars in a function", src, JS_EVAL_TYPE_GLOBAL);
+    names_src(src, sizeof(src), "%s", "const", 400);
+    compile_stops("400 consts of a script", src, JS_EVAL_TYPE_GLOBAL);
 }
 
 /* A module that imports each of 300 names of another one, then all of them
@@ -3867,6 +3940,7 @@ static void test_typed_array_buffer_length(void)
 int main(void)
 {
     test_compile_stops();
+    test_compile_names_linear();
     test_link_stops();
     test_module_eval_stops();
     test_link_retry();
