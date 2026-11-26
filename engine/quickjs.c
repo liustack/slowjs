@@ -41739,6 +41739,54 @@ static int optimize_scope_make_ref(JSContext *ctx, JSFunctionDef *s,
     return pos_next;
 }
 
+/* Where the write of the reference of an OP_scope_make_ref is: the position of
+   its OP_put_ref_value, after the label and the opcode put_lvalue() puts
+   between them, or -1 when the code there is not that. */
+static int scope_make_ref_put_pos(const uint8_t *bc_buf, const LabelSlot *ls)
+{
+    int pos = ls->pos, op;
+
+    if (pos < 5 || bc_buf[pos - 5] != OP_label)
+        return -1;
+    op = bc_buf[pos];
+    if (op == OP_insert3 || op == OP_perm4 || op == OP_nop || op == OP_rot3l)
+        pos++;
+    return bc_buf[pos] == OP_put_ref_value ? pos : -1;
+}
+
+/* An OP_scope_make_ref, made because a with statement may hold the name, that
+   resolves to a const before any with object or var object can take it
+   (label_done == -1): the reference reads the const and only its write
+   throws, after the right side, and a logical assignment that does not write
+   returns the value, as in a scope without a with. Two undefined stand for the
+   object and the name of the reference, which the code after it keeps and
+   drops as it would theirs, the OP_get_ref_value after it reads the const
+   with get_op, and the throw takes the place of the label and the
+   OP_put_ref_value. Call it when scope_make_ref_put_pos() finds the write. */
+static int optimize_scope_make_ref_const(JSContext *ctx, DynBuf *bc,
+                                         uint8_t *bc_buf, LabelSlot *ls,
+                                         int pos_next, int get_op, int idx,
+                                         JSAtom var_name)
+{
+    int pos = ls->pos - 5, end_pos = scope_make_ref_put_pos(bc_buf, ls) + 1;
+
+    dbuf_putc(bc, OP_undefined);
+    dbuf_putc(bc, OP_undefined);
+    if (bc_buf[pos_next] == OP_get_ref_value) {
+        dbuf_putc(bc, get_op);
+        dbuf_put_u16(bc, idx);
+        pos_next++;
+    }
+    /* the label and the write take 6 or 7 bytes, the throw 6 */
+    bc_buf[pos] = OP_throw_error;
+    put_u32(bc_buf + pos + 1, JS_DupAtom(ctx, var_name));
+    bc_buf[pos + 5] = JS_THROW_VAR_RO;
+    pos += 6;
+    while (pos < end_pos)
+        bc_buf[pos++] = OP_nop;
+    return pos_next;
+}
+
 static int add_var_this(JSContext *ctx, JSFunctionDef *fd)
 {
     int idx;
@@ -41854,6 +41902,15 @@ static __exception int resolve_scope_var(JSContext *ctx, JSFunctionDef *s,
         var_index_scope_find(ctx, s, var_name, scope_level, &idx, &is_arg_scope)) {
         if (idx >= 0) {
             vd = &s->vars[idx];
+            /* as in the walk below */
+            if (vd->is_const && op == OP_scope_make_ref &&
+                label_done == -1 &&
+                scope_make_ref_put_pos(bc_buf, ls) >= 0) {
+                pos_next = optimize_scope_make_ref_const(ctx, bc, bc_buf, ls, pos_next,
+                                                         vd->is_lexical ? OP_get_loc_check : OP_get_loc,
+                                                         idx, var_name);
+                goto done;
+            }
             if ((op == OP_scope_put_var || op == OP_scope_make_ref) &&
                 vd->is_const) {
                 dbuf_putc(bc, OP_throw_error);
@@ -41870,6 +41927,14 @@ static __exception int resolve_scope_var(JSContext *ctx, JSFunctionDef *s,
         vd = &s->vars[idx];
         if (vd->var_name == var_name) {
             if (op == OP_scope_put_var || op == OP_scope_make_ref) {
+                if (vd->is_const && op == OP_scope_make_ref &&
+                    label_done == -1 &&
+                    scope_make_ref_put_pos(bc_buf, ls) >= 0) {
+                    pos_next = optimize_scope_make_ref_const(ctx, bc, bc_buf, ls, pos_next,
+                                                             vd->is_lexical ? OP_get_loc_check : OP_get_loc,
+                                                             idx, var_name);
+                    goto done;
+                }
                 if (vd->is_const) {
                     dbuf_putc(bc, OP_throw_error);
                     dbuf_put_u32(bc, JS_DupAtom(ctx, var_name));
@@ -41921,6 +41986,13 @@ static __exception int resolve_scope_var(JSContext *ctx, JSFunctionDef *s,
             s->vars[var_idx].is_const) {
             /* only happens when assigning a function expression name
                in strict mode */
+            if (op == OP_scope_make_ref && label_done == -1 &&
+                scope_make_ref_put_pos(bc_buf, ls) >= 0) {
+                pos_next = optimize_scope_make_ref_const(ctx, bc, bc_buf, ls, pos_next,
+                                                         s->vars[var_idx].is_lexical ? OP_get_loc_check : OP_get_loc,
+                                                         var_idx, var_name);
+                goto done;
+            }
             dbuf_putc(bc, OP_throw_error);
             dbuf_put_u32(bc, JS_DupAtom(ctx, var_name));
             dbuf_putc(bc, JS_THROW_VAR_RO);
@@ -42048,8 +42120,11 @@ static __exception int resolve_scope_var(JSContext *ctx, JSFunctionDef *s,
             var_index_scope_find(ctx, fd, var_name, scope_level, &idx, &is_arg_scope)) {
             if (idx >= 0) {
                 vd = &fd->vars[idx];
+                /* as in the walk below */
                 if ((op == OP_scope_put_var || op == OP_scope_make_ref) &&
-                    vd->is_const) {
+                    vd->is_const &&
+                    !(op == OP_scope_make_ref && label_done == -1 &&
+                      scope_make_ref_put_pos(bc_buf, ls) >= 0)) {
                     dbuf_putc(bc, OP_throw_error);
                     dbuf_put_u32(bc, JS_DupAtom(ctx, var_name));
                     dbuf_putc(bc, JS_THROW_VAR_RO);
@@ -42065,7 +42140,11 @@ static __exception int resolve_scope_var(JSContext *ctx, JSFunctionDef *s,
             vd = &fd->vars[idx];
             if (vd->var_name == var_name) {
                 if (op == OP_scope_put_var || op == OP_scope_make_ref) {
-                    if (vd->is_const) {
+                    /* a reference to a const that no with object can take
+                       goes on to the closure variable */
+                    if (vd->is_const &&
+                        !(op == OP_scope_make_ref && label_done == -1 &&
+                          scope_make_ref_put_pos(bc_buf, ls) >= 0)) {
                         dbuf_putc(bc, OP_throw_error);
                         dbuf_put_u32(bc, JS_DupAtom(ctx, var_name));
                         dbuf_putc(bc, JS_THROW_VAR_RO);
@@ -42289,6 +42368,14 @@ static __exception int resolve_scope_var(JSContext *ctx, JSFunctionDef *s,
         }
         if (idx >= 0) {
         has_idx:
+            if (op == OP_scope_make_ref && s->closure_var[idx].is_const &&
+                label_done == -1 && scope_make_ref_put_pos(bc_buf, ls) >= 0) {
+                pos_next = optimize_scope_make_ref_const(ctx, bc, bc_buf, ls, pos_next,
+                                                         s->closure_var[idx].is_lexical ?
+                                                         OP_get_var_ref_check : OP_get_var_ref,
+                                                         idx, var_name);
+                goto done;
+            }
             if ((op == OP_scope_put_var || op == OP_scope_make_ref) &&
                 s->closure_var[idx].is_const) {
                 dbuf_putc(bc, OP_throw_error);
