@@ -2371,7 +2371,25 @@ static void test_rv_nesting_limits(void)
    the flag is 0 again (the mark of a stopped compile, JS_GetInterruptFlag in
    engine/quickjs.h). Run under AddressSanitizer, it shows that no stop leaves
    code that the freeing reads past its opcodes, and the VM, freed at the end,
-   that no stop leaks. */
+   that no stop leaks. The count of the work goes on from one compile to the
+   next (rt->compile_left in engine/quickjs.c), which moves the readings of a
+   compile by one either way: each compile starts where a stop at the first
+   reading leaves the count (compile_stop_first), so that each reads the flag
+   where the one that counted did. */
+static void compile_stop_first(VM *v, const char *src, int flags)
+{
+    volatile int *flag = JS_GetInterruptFlag(v->rt);
+    JSValue r;
+
+    host_poll_stop_after(1);
+    r = JS_Eval(v->ctx, src, strlen(src), "stops.js", flags | JS_EVAL_FLAG_COMPILE_ONLY);
+    host_poll_stop_after(0);
+    *flag = 0;
+    if (JS_IsException(r))
+        r = JS_GetException(v->ctx);
+    JS_FreeValue(v->ctx, r);
+}
+
 static void compile_stops(const char *what, const char *src, int flags)
 {
     VM v = vm_new();
@@ -2381,12 +2399,14 @@ static void compile_stops(const char *what, const char *src, int flags)
     char *t;
     int set;
 
+    compile_stop_first(&v, src, flags);
     reads = host_poll_reads;
     r = JS_Eval(v.ctx, src, strlen(src), "stops.js", flags | JS_EVAL_FLAG_COMPILE_ONLY);
     reads = host_poll_reads - reads;
     CHECK(!JS_IsException(r), "%s does not compile", what);
     JS_FreeValue(v.ctx, r);
     for (k = 1; k <= reads && !failures; k++) {
+        compile_stop_first(&v, src, flags);
         host_poll_stop_after(k);
         r = JS_Eval(v.ctx, src, strlen(src), "stops.js", flags | JS_EVAL_FLAG_COMPILE_ONLY);
         host_poll_stop_after(0);
