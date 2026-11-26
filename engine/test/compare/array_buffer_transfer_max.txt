@@ -1,0 +1,15 @@
+transfer(undefined): 1 true 2
+transferToFixedLength(undefined): 1 false
+transfer(0): 0 true 2
+transferToFixedLength(0): 0 false
+transfer(1): 1 true 2
+transferToFixedLength(1): 1 false
+transfer(2): 2 true 2
+transferToFixedLength(2): 2 false
+transfer(3): throws RangeError
+transferToFixedLength(3): 3 false
+transfer(1048576): throws RangeError
+transferToFixedLength(1048576): 1048576 false
+the source after a RangeError: false 1
+detached first: throws TypeError
+not resizable: 3

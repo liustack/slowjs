@@ -1,0 +1,18 @@
+result transfer(undefined): 1 true 2
+result transferToFixedLength(undefined): 1 false
+result transfer(0): 0 true 2
+result transferToFixedLength(0): 0 false
+result transfer(1): 1 true 2
+result transferToFixedLength(1): 1 false
+result transfer(2): 2 true 2
+result transferToFixedLength(2): 2 false
+result transfer(3): throws RangeError
+result transferToFixedLength(3): 3 false
+result transfer(1048576): throws RangeError
+result transferToFixedLength(1048576): 1048576 false
+result the source after a RangeError: false 1
+result detached first: throws TypeError
+result not resizable: 3
+mem-end obj=192 atom=548 shape=122 prop=953 jsfunc=1 cfunc=128 array=2 fast_array=2 elements=15 binary=0
+mem-gc obj=192 atom=548 shape=122 prop=953 jsfunc=1 cfunc=128 array=2 fast_array=2 elements=15 binary=0
+--- status exit 0

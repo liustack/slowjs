@@ -1,0 +1,44 @@
+0 undefined: false 0
+0 0: true 0
+0 4: true 4
+0 8: true 8
+0 8.9: true 8
+0 -0.5: true 0
+0 16: true 16
+0 9007199254740991: RangeError
+0 9007199254740992: RangeError
+0 9223372036854776000: RangeError
+0 18446744073709552000: RangeError
+0 36893488147419103000: RangeError
+0 100000000000000000000: RangeError
+0 Infinity: RangeError
+0 -Infinity: RangeError
+0 -1: RangeError
+0 NaN: true 0
+0 null: true 0
+0 true: true 1
+0 object: true 0
+0 object: true 12
+4 undefined: false 4
+4 0: RangeError
+4 4: true 4
+4 8: true 8
+4 8.9: true 8
+4 -0.5: RangeError
+4 16: true 16
+4 9007199254740991: RangeError
+4 9007199254740992: RangeError
+4 9223372036854776000: RangeError
+4 18446744073709552000: RangeError
+4 36893488147419103000: RangeError
+4 100000000000000000000: RangeError
+4 Infinity: RangeError
+4 -Infinity: RangeError
+4 -1: RangeError
+4 NaN: RangeError
+4 null: RangeError
+4 true: RangeError
+4 object: RangeError
+4 object: true 12
+symbol: TypeError
+bigint: TypeError

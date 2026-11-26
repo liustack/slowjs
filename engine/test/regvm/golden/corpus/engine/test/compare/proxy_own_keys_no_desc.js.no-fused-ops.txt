@@ -1,0 +1,19 @@
+result not extensible, ["x"]: ["x"]
+result not extensible, []: throws TypeError
+result not extensible, ["x","y"]: throws TypeError
+result not extensible, ["y"]: throws TypeError
+result not extensible, ["z"]: throws TypeError
+result not extensible, two keys, ["x"]: throws TypeError
+result not extensible, two keys, []: throws TypeError
+result not extensible, two keys, ["x","y"]: ["x","y"]
+result not extensible, two keys, ["y"]: throws TypeError
+result not extensible, two keys, ["z"]: throws TypeError
+result extensible, ["x"]: ["x"]
+result extensible, []: []
+result extensible, ["x","y"]: ["x","y"]
+result extensible, ["y"]: ["y"]
+result extensible, ["z"]: ["z"]
+result revoked by the trap: ["x"]
+mem-end obj=197 atom=555 shape=129 prop=980 jsfunc=3 cfunc=130 array=2 fast_array=2 elements=16 binary=0
+mem-gc obj=197 atom=555 shape=129 prop=980 jsfunc=3 cfunc=130 array=2 fast_array=2 elements=16 binary=0
+--- status exit 0

@@ -1,0 +1,20 @@
+result same object: [true,42]
+result primitive result: 5
+result undefined result: undefined
+result string result: abc
+result return result: 7
+result return object: true
+result no return: {"done":true}
+result next throws: throws RangeError
+result helpers over the wrapper: [0,2,4]
+result wrapper in for of: [0,1,2]
+result for of over a primitive result: throws TypeError
+result map over a primitive result: throws TypeError
+result toArray over a primitive result: throws TypeError
+result spread of a primitive result: throws TypeError
+result drop over a primitive result: throws TypeError
+result break closes with a primitive: throws TypeError
+result helper return with a primitive: throws TypeError
+mem-end obj=201 atom=553 shape=130 prop=975 jsfunc=4 cfunc=135 array=2 fast_array=2 elements=17 binary=0
+mem-gc obj=201 atom=553 shape=130 prop=975 jsfunc=4 cfunc=135 array=2 fast_array=2 elements=17 binary=0
+--- status exit 0

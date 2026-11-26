@@ -4,6 +4,37 @@ What changed in `github.com/liustack/beastjs` (its name from v0.33.0, `github.co
 
 ## [Unreleased]
 
+## [v0.33.1] - 2026-11-26
+
+### Fixed
+
+- An arrow function whose parameter default divides after a template or a private name, such as `` (a = `8` / 2) => a ``, compiles, as in Node.
+- `[, 1 2]` and other array literals that miss a comma after a hole or past 32 elements are a `SyntaxError`, as in Node.
+- `with (o) { f?.() }` compiles, where it stopped with `InternalError: inconsistent stack size`.
+- `var {"a" = b} = o` and `var {0 + b} = o` are a `SyntaxError`, as in Node.
+- A function with more than 65533 block scopes fails with `InternalError: too many scopes`, where it was compiled into wrong code before.
+- `Array.prototype.values`, `keys` and `entries` on an array-like, the `ownKeys` result of a Proxy and `RegExp` `replace` with a custom `exec` read a length as the specification does: a length of -1 is 0 (it was 4294967295, so an iterator ran four billion times) and a length above 2^32 is kept. An `ownKeys` list longer than 2^31 - 1 is a `RangeError`.
+- `Iterator.prototype.drop` no longer reads the `value` of the items it throws away.
+- The `next` and `return` of an `Iterator.from` wrapper give back what the method they wrap returned.
+- The `next` of an `Iterator.from` wrapper around another wrapper gives back what the inner `next` returned, instead of throwing a `TypeError` when that is not an object.
+- `Iterator.from` of a string throws a `TypeError` when `String.prototype[Symbol.iterator]` is gone, instead of wrapping the string.
+- `Function.prototype.toString` of a revoked Proxy of a function returns its text instead of throwing, and no longer runs the `get` trap of a live one.
+- `Function.prototype.toString` of a built-in or bound function no longer calls a getter put on its `name`, and no longer throws when that getter throws.
+- `Math.sumPrecise` is exact for long lists: 300 times 2^53 - 1 was wrong, and a negative sum of a few thousand values or more gave `Infinity`.
+- `Array.prototype.sort` calls the comparator for two identical values, as the specification says.
+- `new ArrayBuffer(0, { maxByteLength: 2 ** 64 })` and `maxByteLength: Infinity` throw a `RangeError` where they made a resizable buffer with a maximum of 0.
+- `ArrayBuffer.prototype.transfer` to a length past the `maxByteLength` of a resizable buffer throws a `RangeError` instead of a `TypeError`.
+- `Reflect.ownKeys` and the other readers of the keys of a Proxy follow the specification more closely: they give the keys when the `ownKeys` trap revokes the proxy while it runs, check a key of the target with no descriptor as a configurable one, and read every descriptor of the target before reporting a missing key.
+- `Promise.allSettled` keeps the first result of an element whose thenable calls both of its functions, instead of the last one.
+- `JSON.parse` with a reviver reads the length of an array (also a Proxy of one) as the specification does: a length of -1 is 0 and a length above 2^32 is kept.
+- A template object (the strings array of a tagged template) in bytecode that `EvalBytecode` runs is frozen as when the source is parsed.
+- `Promise.withResolvers` no longer frees a value twice when it runs out of memory.
+- A `for in` loop over a string, a number or a boolean no longer crashes when it runs out of memory.
+- `JSON.parse` with a reviver, and the parser on a very large function or module, no longer run out of memory when one of their arrays passes 2 GiB while memory is left.
+- A string built piece by piece, such as the result of `JSON.stringify`, no longer slows down to a copy of the whole string at every append past about 716 million characters.
+- `toUpperCase` and other builders of a string of about 2^30 characters that turn wide no longer give a string one character longer than the longest the engine allows.
+- The name of a bound function, `Object.prototype.toString` with a `Symbol.toStringTag`, and the other strings the engine builds as prefix + string + suffix throw `InternalError: string too long` past 2^30 - 1 characters, where they gave a longer string or ran out of memory.
+
 ## [v0.33.0] - 2026-11-24
 
 ### Changed
@@ -929,7 +960,8 @@ The first release of the fork, from modernc.org/quickjs v0.25.0 and libquickjs v
 - A VM that runs out of memory inside `JSON.parse`, or anything else that converts a string with non-ASCII characters to UTF-8, no longer leaks that string.
 - `VM.Call` and `VM.CallValue` report the exception thrown while evaluating the function expression instead of `cannot call a non-function`.
 
-[Unreleased]: https://github.com/liustack/beastjs/compare/v0.33.0...main
+[Unreleased]: https://github.com/liustack/beastjs/compare/v0.33.1...main
+[v0.33.1]: https://github.com/liustack/beastjs/compare/v0.33.0...v0.33.1
 [v0.33.0]: https://github.com/liustack/beastjs/compare/v0.32.0...v0.33.0
 [v0.32.0]: https://github.com/liustack/beastjs/compare/v0.31.12...v0.32.0
 [v0.31.12]: https://github.com/liustack/slowjs/compare/v0.31.11...v0.31.12

@@ -119,6 +119,20 @@ function test_function()
     g = constructor1.bind(null, 1);
     r = new g();
     assert(r.x, 1);
+
+    // a callable proxy stays callable after revoke, so toString works
+    var native = "function () {\n    [native code]\n}";
+    g = Proxy.revocable(function f() {}, {});
+    g.revoke();
+    assert(Function.prototype.toString.call(g.proxy), native);
+    // and it does not read "name" through the proxy
+    var keys = [];
+    g = new Proxy(function f() {}, {
+        get(t, k) { keys.push(k); return Reflect.get(t, k); }
+    });
+    assert(Function.prototype.toString.call(g), native);
+    assert(keys.length, 0);
+    assert_throws(TypeError, () => Function.prototype.toString.call(new Proxy({}, {})));
 }
 
 function test()
@@ -234,6 +248,19 @@ function test_array()
     /* sort writes back every element, even those already in place */
     assert_throws(TypeError, () => Array.prototype.sort.call("aa"));
     assert_throws(TypeError, () => Object.freeze([1, 2]).sort());
+
+    test_array_iterator();
+}
+
+function test_array_iterator()
+{
+    var n = 0;
+    for (var x of Array.prototype.values.call({ length: -1, 0: "a" })) { if (++n > 3) break; }
+    assert(n, 0);
+
+    n = 0;
+    for (var k of Array.prototype.keys.call({ length: 2 ** 32 + 1 })) { if (++n > 5) break; }
+    assert(n, 6);
 }
 
 function test_string()
@@ -362,6 +389,7 @@ function test_math()
     assert(Math.hypot(3, 4), 5);
     assert(Math.abs(Math.hypot(3, 4, 5) - 7.0710678118654755) <= 1e-15);
     assert(Math.sumPrecise([1,Number.EPSILON/2,Number.MIN_VALUE]), 1.0000000000000002);
+    assert(Math.sumPrecise(new Array(300).fill(Math.pow(2,53)-1)), 2702159776422297000);
 }
 
 function test_number()

@@ -1,0 +1,19 @@
+result values, length -1: 0
+result keys, length -1: 0
+result entries, length -1: 0
+result keys, length 2**32 + 1: 6
+result values, length 2**32 + 1: 6
+result entries, length 2**32: [[0,null],[1,null],[2,null]]
+result keys, length 2**53: [0,1]
+result values, length 3: ["a",null,"c"]
+result spread of an array: [1,2,3]
+result spread after one step: [2,3]
+result spread of a typed array: [0,1,2]
+result proxy ownKeys, length 2**32 + 1: throws RangeError
+result proxy ownKeys, length -1: 0
+result proxy ownKeys, length 2: ["a","b"]
+result replace, result of length -1: [x]
+result replace, result of length 2: [xy]
+mem-end obj=204 atom=557 shape=135 prop=994 jsfunc=2 cfunc=137 array=2 fast_array=2 elements=16 binary=0
+mem-gc obj=204 atom=557 shape=135 prop=994 jsfunc=2 cfunc=137 array=2 fast_array=2 elements=16 binary=0
+--- status exit 0

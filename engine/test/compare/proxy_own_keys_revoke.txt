@@ -1,0 +1,14 @@
+length revokes, empty: []
+length revokes, keys: ["a","b"]
+element revokes: ["a","b"]
+trap revokes: ["a"]
+non configurable target: ["x"]
+non configurable missing: throws TypeError
+non extensible target: ["a"]
+non extensible extra key: throws TypeError
+getOwnPropertyNames: ["a"]
+getOwnPropertySymbols: []
+keys: []
+keys with a key: throws TypeError
+for in: throws TypeError
+revoked before: throws TypeError

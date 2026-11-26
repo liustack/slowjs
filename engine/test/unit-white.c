@@ -65,6 +65,11 @@ int white_sb_units(const struct StringBuffer *b, uint16_t *out, int cap);
 int white_sb_error(const struct StringBuffer *b);
 void white_sb_fake_length(struct StringBuffer *b, int len, int size);
 int white_string_len_max(void);
+int white_sb_realloc(struct StringBuffer *b, int new_len, int c);
+int white_sb_size(const struct StringBuffer *b);
+int white_sb_wide(const struct StringBuffer *b);
+JSValue white_concat_string3(JSContext *ctx, const char *str1, JSValueConst str2, const char *str3);
+uint32_t white_string_fake_len(JSValueConst v, uint32_t len);
 const uint8_t *white_json_string_run(struct StringBuffer *b, const uint8_t *p, const uint8_t *end, int sep);
 int white_json_quote_run(struct StringBuffer *b, JSValueConst s, int *pi);
 uintptr_t white_json_run_limit(uintptr_t p, uintptr_t end);
@@ -98,6 +103,7 @@ int white_lre_literal(const char *re, int flags, void *opaque, char *out, size_t
 int white_lre_plan_size(const char *re, int flags, void *opaque, int *rest, char *names, size_t n);
 int white_lre_plan(const char *re, int flags, void *opaque, char *out, size_t n);
 int white_lre_split_same(const char *re, int flags, void *opaque, const uint32_t *units, int n, long *calls);
+long white_lre_null_copies(void);
 JSValue white_compile_failing(JSContext *ctx, const char *js, int fail, int mode, int *nallocs);
 JSValue white_read_failing(JSContext *ctx, const uint8_t *buf, size_t len, int fail, int *nallocs);
 int white_op(int i);
@@ -174,6 +180,7 @@ int white_regvm_stack(JSContext *ctx, long out[7]);
 int white_set_code(JSContext *ctx, JSValueConst f, const uint8_t *code, int len, int stack_size, int undo);
 uint32_t white_array_fake_count(JSContext *ctx, JSValueConst a, uint32_t count);
 int64_t white_array_room(JSValueConst a);
+int white_realloc_array(JSContext *ctx, void **parray, int elem_size, int *psize, int req_size);
 int64_t white_shape_fake_count(JSValueConst o, uint32_t count);
 uint32_t white_shape_prop_max(void);
 void white_set_array_from_first(long long k);
@@ -541,6 +548,88 @@ static void test_json_run_too_long(void)
     }
     vm_free(&v);
 }
+/* A string buffer grows half as large again, up to the longest string, also
+   past 715,827,882 characters. It took its room times 3 in an int, which
+   wrapped there: the room then grew only by what each append asked for, and
+   each growth copied the buffer, so that JSON.stringify of a million strings
+   of a thousand characters took minutes. The buffer is made to look that
+   large, with nothing in it, so that the room is asked for and not filled. */
+static void test_sb_room_past_two_thirds(void)
+{
+    VM v = vm_new();
+    struct StringBuffer *b = white_sb_new(v.ctx, 32, 0, 0);
+    int max = white_string_len_max(), size = 800000000;
+
+    white_sb_fake_length(b, 0, size);
+    CHECK(white_sb_realloc(b, size + 1, 'x') == 0, "the room of %d characters did not grow", size);
+    CHECK(white_sb_size(b) == max, "the room of %d characters grew to %d, want %d", size, white_sb_size(b), max);
+    white_sb_free(v.ctx, b);
+    vm_free(&v);
+}
+
+/* A buffer of 8 bits made wide puts the slack of its new block in its room,
+   up to the longest string, as string_buffer_realloc does. Past it the
+   buffer took characters with no check: toUpperCase of 2^30 - 1 characters,
+   the first U+00FF and the last U+00DF, gave a string of 2^30. The buffer is
+   made to look as large as the longest string, with nothing in it. */
+static void test_sb_widen_room(void)
+{
+    VM v = vm_new();
+    struct StringBuffer *b = white_sb_new(v.ctx, 32, 0, 0);
+    int max = white_string_len_max();
+
+    white_sb_fake_length(b, 0, max);
+    CHECK(white_sb_putc16(b, 0x100) == 0, "the buffer of %d characters was not made wide", max);
+    CHECK(white_sb_wide(b) && white_sb_size(b) == max, "the room made wide is %d characters, want %d",
+          white_sb_size(b), max);
+    white_sb_free(v.ctx, b);
+    vm_free(&v);
+}
+
+/* JS_ConcatString3 makes "bound " + name, "[object " + tag + "]" and the
+   like. It did not check the length: a function named with 2^30 - 1
+   characters gave a bound function whose name had 2^30 + 5, longer than the
+   longest string, and for a name of 16 bits the length times 2 wrapped in an
+   int and gave out of memory. It throws "string too long", as a
+   concatenation does. The string is made to look that long
+   (white_string_fake_len): before, the copy read past its block, so each
+   case runs in a process of its own. */
+static void concat3_case(int wide)
+{
+    VM v = vm_new();
+    JSValue s = JS_NewString(v.ctx, wide ? "\xc4\x80" "bc" : "abc"), r;
+    uint32_t old = white_string_fake_len(s, white_string_len_max());
+    char *t;
+
+    r = white_concat_string3(v.ctx, "bound ", s, "");
+    t = exception_text(v.ctx);
+    CHECK(JS_IsException(r) && t && strcmp(t, "InternalError: string too long") == 0,
+          "%s: %s, want InternalError: string too long", wide ? "16 bits" : "8 bits", t ? t : "no exception");
+    free(t);
+    white_string_fake_len(s, old);
+    JS_FreeValue(v.ctx, r);
+    JS_FreeValue(v.ctx, s);
+    vm_free(&v);
+}
+
+static void test_concat3_too_long(void)
+{
+    char wide_arg[4];
+    char *args[4];
+    int wide, st;
+
+    for (wide = 0; wide < 2; wide++) {
+        snprintf(wide_arg, sizeof(wide_arg), "%d", wide);
+        args[1] = "concat3";
+        args[2] = wide_arg;
+        args[3] = NULL;
+        st = run_self(args);
+        CHECK(WIFEXITED(st) && WEXITSTATUS(st) == 0, "a string of three past the longest, %s: %s %d",
+              wide ? "16 bits" : "8 bits", WIFSIGNALED(st) ? "stopped by signal" : "exit status",
+              WIFSIGNALED(st) ? WTERMSIG(st) : WEXITSTATUS(st));
+    }
+}
+
 /* json_plain_run against a loop of one byte at a time: every length up to 40,
    a byte that ends the run at every place or none, and random bytes, in
    blocks of the exact length (so that a read past the end shows under
@@ -841,6 +930,107 @@ static void test_shared_shape_oom(void)
                       "  return [Object.getPrototypeOf(m) === p, m.x, m.size].join() }\n"
                       "f(); f()",
                       "true,1,", 1);
+}
+
+/* Promise.withResolvers defines promise, resolve and reject on a new
+   object. JS_DefinePropertyValue releases the value it was given when it
+   fails, and the call used to release it again (upstream 0943061). */
+static void test_with_resolvers_oom(void)
+{
+    each_call_failing("Promise.withResolvers",
+                      "globalThis.f = () => { const r = Promise.withResolvers()\n"
+                      "  return [typeof r.promise, typeof r.resolve, typeof r.reject].join() }\n"
+                      "f(); f()",
+                      "object,function,function", 1);
+}
+
+/* Promise.allSettled and Promise.any make two functions for each element.
+   When the second one, or the slot of the element in the list of errors
+   of any, runs out of memory, the call used to keep the first function and
+   the promise of the element for ever (upstream dfe36a8). The promises
+   never settle, so no job holds what the call made. */
+static void test_promise_all_elements_oom(void)
+{
+    each_call_failing("Promise.allSettled",
+                      "globalThis.f = () => { const ps = []\n"
+                      "  for (let i = 0; i < 6; i++) ps.push(new Promise(() => {}))\n"
+                      "  return Promise.allSettled(ps) instanceof Promise }\n"
+                      "f(); f()",
+                      "true", 1);
+    each_call_failing("Promise.any",
+                      "globalThis.f = () => { const ps = []\n"
+                      "  for (let i = 0; i < 6; i++) ps.push(new Promise(() => {}))\n"
+                      "  return Promise.any(ps) instanceof Promise }\n"
+                      "f(); f()",
+                      "true", 1);
+}
+
+/* A for in over a string, a number or a boolean makes an object of it
+   first. When that runs out of memory, the loop used to go on with the
+   exception as its object (upstream 3579302). */
+static void test_for_in_primitive_oom(void)
+{
+    each_call_failing("a for in over primitives",
+                      "globalThis.f = () => { let s = ''\n"
+                      "  for (const k in 'abc') s += k\n"
+                      "  for (const k in 7) s += k\n"
+                      "  for (const k in true) s += k\n"
+                      "  return s }\n"
+                      "f(); f()",
+                      "012", 1);
+}
+
+/* A key that converts to a symbol, a symbol of the engine such as
+   Symbol.iterator or one of the script, gives the symbol one reference to
+   the key and takes it back, however often it is used. The atom of a
+   symbol of the engine has no count, so the reference the conversion gave
+   used to stay on its symbol for each use (upstream c530305). Each way of
+   using a key runs 100 times twice, after a first run that fills the
+   caches, and the second run must leave the count of the symbol as the
+   first did. */
+static void test_symbol_key_refs(void)
+{
+    static const char *const syms[] = { "Symbol.iterator", "Symbol.for('wskShared')", "Symbol('wskMine')" };
+    static const char *const uses[] = {
+        "o[k]", "o[k] = 1", "k in o", "delete o[k]", "o.hasOwnProperty(k)",
+        "o.propertyIsEnumerable(k)", "Reflect.get(o, k)", "Reflect.set(o, k, 2)", "Reflect.has(o, k)",
+        "Reflect.deleteProperty(o, k)", "Reflect.getOwnPropertyDescriptor(o, k)",
+        "Object.getOwnPropertyDescriptor(o, k)",
+        "Reflect.defineProperty(o, k, { value: 3, configurable: true })",
+        "Object.defineProperty(o, k, { value: 3, configurable: true })",
+        "({ [k]: 4 })", "(class { static [k] = 5 })",
+    };
+    size_t s, u;
+
+    for (s = 0; s < countof(syms); s++) {
+        for (u = 0; u < countof(uses); u++) {
+            VM v = vm_new();
+            char src[512];
+            JSValue gl, sym;
+            int first, second;
+
+            snprintf(src, sizeof(src),
+                     "globalThis.sym = %s\n"
+                     "globalThis.g = () => { const o = {}, k = { toString() { return sym } }\n"
+                     "  for (let i = 0; i < 100; i++) %s }\n"
+                     "g(); g(); 0",
+                     syms[s], uses[u]);
+            CHECK(eval_ok(v.ctx, src), "%s, %s: the setup threw", syms[s], uses[u]);
+            gl = JS_GetGlobalObject(v.ctx);
+            sym = JS_GetPropertyStr(v.ctx, gl, "sym");
+            JS_FreeValue(v.ctx, gl);
+            CHECK(JS_VALUE_GET_TAG(sym) == JS_TAG_SYMBOL, "%s: no symbol", syms[s]);
+            JS_RunGC(v.rt);
+            first = white_ref_count(sym);
+            CHECK(eval_ok(v.ctx, "g()"), "%s, %s: g threw", syms[s], uses[u]);
+            JS_RunGC(v.rt);
+            second = white_ref_count(sym);
+            CHECK(second == first, "%s, %s: the symbol has %d references after 100 uses, %d before",
+                  syms[s], uses[u], second, first);
+            JS_FreeValue(v.ctx, sym);
+            vm_free(&v);
+        }
+    }
 }
 
 /* JSON.stringify with an array as its replacer copies the names of that
@@ -10626,6 +10816,36 @@ static void test_max_index(void)
     }
 }
 
+/* ---- the growth of an array of js_resize_array ----
+
+   js_realloc_array makes an array of js_resize_array (the labels, constants
+   and variables of a function, the entries of a module, the records of
+   JSON.parse with a reviver) half as large again. It counted the bytes in
+   an int, which wrapped past 2 GiB: to a negative size that the heap
+   refused, out of memory with memory to spare (an array that grows comes
+   there first), or, from a size whose half again passes 4 GiB, to a small
+   block given as the room of the larger count. The array is made up, with
+   no block, so that no gigabyte is needed: 178,956,972 elements of 16
+   bytes, half again 268,435,458 of them, 2^32 + 32 bytes. That is more
+   than the heap gives, and the growth fails. Before, it got a block of 32
+   bytes for them. */
+static void test_realloc_array_size(void)
+{
+    VM v = vm_new();
+    void *a = NULL;
+    int size = 178956972, ret;
+    char *t;
+
+    ret = white_realloc_array(v.ctx, &a, 16, &size, size + 1);
+    t = exception_text(v.ctx);
+    CHECK(ret < 0 && !a && size == 178956972 && t && strcmp(t, "InternalError: out of memory") == 0,
+          "growth past 4 GiB: %d, %s, %d elements in %zu bytes, want the out of memory error", ret,
+          t ? t : "no exception", size, a ? js_malloc_usable_size(v.ctx, a) : 0);
+    free(t);
+    js_free(v.ctx, a);
+    vm_free(&v);
+}
+
 /* ---- a property added to a shape at its limit ----
 
    A shape holds at most 2^26 - 1 properties (JS_SHAPE_PROP_MAX): the index
@@ -11444,6 +11664,38 @@ static void test_module_load_stops(void)
     free(src);
 }
 
+/* ---- the empty strings of a class of the v flag ----
+
+   An empty string of \q{} has no buffer: re_string_copy copied it with
+   memcpy from a null pointer, which C does not allow even for 0 bytes (the
+   memcpy of engine/libc did nothing). memcpy and memcmp of libregexp.c count
+   such calls (white-regexp.c). Each way to put an empty string in a class
+   gives the answer of Node 24, with no such call. */
+static void test_regexp_empty_class_string(void)
+{
+    static const struct { const char *src, *want; } cases[] = {
+        { "/[\\q{}]/v.test('')", "true" },
+        { "/[\\q{|a}]/v.exec('')[0].length", "0" },
+        { "/^[\\q{}x]$/v.test('x')", "true" },
+        { "/^[\\q{}--\\q{}]$/v.test('')", "false" },
+        { "/^[\\q{}&&\\q{}]$/v.test('')", "true" },
+        { "/^[\\q{}]$/vi.test('')", "true" },
+        { "/^[\\q{}\\q{}a]$/v.test('')", "true" },
+        { "/^[[\\q{}]--a]$/v.test('')", "true" },
+    };
+    VM v = vm_new();
+    size_t i;
+
+    for (i = 0; i < countof(cases); i++) {
+        long before = white_lre_null_copies();
+
+        CHECK(eval_is(v.ctx, cases[i].src, cases[i].want), "%s: want %s", cases[i].src, cases[i].want);
+        CHECK(white_lre_null_copies() == before, "%s: %ld calls of memcpy or memcmp with a null pointer",
+              cases[i].src, white_lre_null_copies() - before);
+    }
+    vm_free(&v);
+}
+
 int main(int argc, char **argv)
 {
     /* one case of test_gc_in_free, in a process of its own */
@@ -11467,6 +11719,13 @@ int main(int argc, char **argv)
         fflush(stdout);
         host_leave(failures ? 1 : 0);
     }
+    /* one case of test_concat3_too_long, in a process of its own */
+    if (argc == 3 && strcmp(argv[1], "concat3") == 0) {
+        failures = 0;
+        concat3_case(atoi(argv[2]));
+        fflush(stdout);
+        host_leave(failures ? 1 : 0);
+    }
     /* one case of test_max_props, in a process of its own */
     if (argc == 3 && strcmp(argv[1], "max-props") == 0) {
         failures = 0;
@@ -11479,12 +11738,19 @@ int main(int argc, char **argv)
     test_json_quote_run();
     test_json_runs_oom();
     test_json_run_too_long();
+    test_sb_room_past_two_thirds();
+    test_sb_widen_room();
+    test_concat3_too_long();
     test_json_run_limit();
     test_json_plain_run();
     test_json_count_high_bytes();
     test_json_key_cache();
     test_json_stringify_oom();
     test_shared_shape_oom();
+    test_with_resolvers_oom();
+    test_promise_all_elements_oom();
+    test_for_in_primitive_oom();
+    test_symbol_key_refs();
     test_json_stringify_list_oom();
     test_json_walk();
     test_backtrace_attribute_checks();
@@ -11549,6 +11815,7 @@ int main(int argc, char **argv)
     test_typeof_is();
     test_share_local_slots();
     test_max_index();
+    test_realloc_array_size();
     test_max_props();
     test_array_from_past_32_bits();
     test_define_existing_oom();
@@ -11584,6 +11851,7 @@ int main(int argc, char **argv)
     test_regexp_plan_size();
     test_regexp_first_set();
     test_regexp_split_same();
+    test_regexp_empty_class_string();
     test_compile_one_failure(0);
     test_compile_one_failure(1);
     test_emit_tables();

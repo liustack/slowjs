@@ -1,0 +1,119 @@
+result fill 125 x -1: -125
+result fill 125 x 1: 125
+result fill 126 x -1: -126
+result fill 126 x 1: 126
+result fill 127 x -1: -127
+result fill 127 x 1: 127
+result fill 250 x -1: -250
+result fill 250 x 1: 250
+result fill 251 x -1: -251
+result fill 251 x 1: 251
+result fill 2393 x -1: -2393
+result fill 2393 x 1: 2393
+result fill 2394 x -1: -2394
+result fill 2394 x 1: 2394
+result fill 2395 x -1: -2395
+result fill 2395 x 1: 2395
+result fill 4000 x -1: -4000
+result fill 4000 x 1: 4000
+result fill 4750 x -1: -4750
+result fill 4750 x 1: 4750
+result fill 4751 x -1: -4751
+result fill 4751 x 1: 4751
+result fill 6000 x -1: -6000
+result fill 6000 x 1: 6000
+result fill 100000 x -1: -100000
+result fill 100000 x 1: 100000
+result fill 5000 x 0.1: 500
+result fill 5000 x -0.1: -500
+result fill 5000 x 9007199254740991: 45035996273704950000
+result fill 5000 x -9007199254740991: -45035996273704950000
+result fill 5000 x 1e+300: 5.0000000000000003e+303
+result fill 5000 x -1e+300: -5.0000000000000003e+303
+result fill 5000 x 1e-300: 5e-297
+result fill 5000 x -1e-300: -5e-297
+result fill 5000 x 5e-324: 2.4703e-320
+result fill 5000 x -5e-324: -2.4703e-320
+result fill 5000 x 2.2250738585072014e-308: 1.1125369292536007e-304
+result fill 5000 x -2.2250738585072014e-308: -1.1125369292536007e-304
+result fill 5000 x 3.5e-310: 1.750000000000007e-306
+result fill 5000 x -3.5e-310: -1.750000000000007e-306
+result turns 10000 1 -1: 0
+result turns 10001 1 -1: 1
+result turns 10001 -1 1: -1
+result turns 9999 -1 0.5: -2500.5
+result turns 9999 1e308 -1e308: 1e+308
+result turns 9999 -1e308 1e308: -1e+308
+result turns 6000 -MIN 1e-320: 2.9984844e-317
+result turns 6000 -1 1e-300: -3000
+result -1 then 1e-300: -5000
+result MAX MAX: Infinity
+result -MAX -MAX: -Infinity
+result MAX MAX -MAX: 1.7976931348623157e+308
+result -MAX -MAX MAX: -1.7976931348623157e+308
+result 5000 MAX then 4999 -MAX: 1.7976931348623157e+308
+result 5000 -MAX then 4999 MAX: -1.7976931348623157e+308
+result 5000 -MAX then 5000 MAX: 0
+result 5000 -MAX then 5001 MAX: 1.7976931348623157e+308
+result 5000 -MAX then 5000 MAX then -1: -1
+result -MAX then MAX and half ulp: -Infinity
+result -MAX less than half ulp: -1.7976931348623157e+308
+result -MAX more than half ulp: -Infinity
+result MAX half ulp: Infinity
+result MAX less than half ulp: 1.7976931348623157e+308
+result 1 and a tie: 1
+result -1 and a tie: -1
+result -1 past a tie: -1.0000000000000002
+result -1 and a tie down: -1.0000000000000004
+result empty: -0
+result -0: -0
+result -0 -0: -0
+result -0 0: 0
+result 1 -1: 0
+result -1 1 -0: 0
+result Infinity -Infinity: NaN
+result -Infinity and -MAX: -Infinity
+result NaN: NaN
+result random 10 e 0..2046: 3.442000806534201e+274
+result random 10 e 0..2046 all negative: -3.442000806534201e+274
+result random 127 e 0..2046: 2.918581462321296e+299
+result random 127 e 0..2046 all negative: -2.9273955775631307e+299
+result random 1000 e 0..2046: -1.3486189057388045e+308
+result random 1000 e 0..2046 all negative: -1.3504097294507062e+308
+result random 10000 e 0..2046: -Infinity
+result random 10000 e 0..2046 all negative: -Infinity
+result random 10 e 1000..1046: -4081821.620651489
+result random 10 e 1000..1046 all negative: -4099112.77815054
+result random 127 e 1000..1046: 4624965.834000601
+result random 127 e 1000..1046 all negative: -111891705.0560619
+result random 1000 e 1000..1046: -43116119.38728692
+result random 1000 e 1000..1046 all negative: -530660666.0781172
+result random 10000 e 1000..1046: -12332184.173440998
+result random 10000 e 1000..1046 all negative: -5323408354.81281
+result random 10 e 1..60: -1.3042297153137659e-292
+result random 10 e 1..60 all negative: -1.3099017200820866e-292
+result random 127 e 1..60: -2.9822472304693754e-290
+result random 127 e 1..60 all negative: -4.663180292606514e-290
+result random 1000 e 1..60: 8.3995551621957e-290
+result random 1000 e 1..60 all negative: -6.3554671783839e-289
+result random 10000 e 1..60: 1.4298315226369082e-289
+result random 10000 e 1..60 all negative: -6.570841150636566e-288
+result random 10 e 2000..2046: 1.1750211493654917e+305
+result random 10 e 2000..2046 all negative: -1.1761827251139115e+305
+result random 127 e 2000..2046: 5.900924782939857e+307
+result random 127 e 2000..2046 all negative: -1.735665802157921e+308
+result random 1000 e 2000..2046: -Infinity
+result random 1000 e 2000..2046 all negative: -Infinity
+result random 10000 e 2000..2046: Infinity
+result random 10000 e 2000..2046 all negative: -Infinity
+result random 10 e 0..3: 1.1310299263577115e-307
+result random 10 e 0..3 all negative: -4.773976437273095e-307
+result random 127 e 0..3: -1.0015019644679363e-306
+result random 127 e 0..3 all negative: -7.67421642009881e-306
+result random 1000 e 0..3: 1.1862551960055709e-306
+result random 1000 e 0..3 all negative: -6.161414091657051e-305
+result random 10000 e 0..3: -3.295494262640501e-306
+result random 10000 e 0..3 all negative: -6.192425886632051e-304
+mem-end obj=205 atom=607 shape=123 prop=1030 jsfunc=6 cfunc=133 array=2 fast_array=2 elements=116 binary=0
+mem-gc obj=205 atom=607 shape=123 prop=1030 jsfunc=6 cfunc=133 array=2 fast_array=2 elements=116 binary=0
+--- status exit 0

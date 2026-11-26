@@ -13,7 +13,34 @@
    counted with that of quickjs.c (white.c) */
 void white_lre_work(unsigned long n);
 #define LRE_WORK(n) white_lre_work(n)
+
+/* memcpy and memcmp in libregexp.c count the calls that pass a null
+   pointer, which C does not allow even for 0 bytes: UndefinedBehaviorSanitizer
+   does not see them, as the memcpy of engine/libc is declared without
+   nonnull */
+#include <string.h>
+static long white_lre_null_calls;
+static void *white_lre_memcpy(void *d, const void *s, size_t n)
+{
+    if (!d || !s)
+        white_lre_null_calls++;
+    return memcpy(d, s, n);
+}
+static int white_lre_memcmp(const void *a, const void *b, size_t n)
+{
+    if (!a || !b)
+        white_lre_null_calls++;
+    return memcmp(a, b, n);
+}
+#define memcpy(d, s, n) white_lre_memcpy(d, s, n)
+#define memcmp(a, b, n) white_lre_memcmp(a, b, n)
 #include "../libregexp.c"
+
+/* the calls of memcpy and memcmp with a null pointer so far */
+long white_lre_null_copies(void)
+{
+    return white_lre_null_calls;
+}
 
 /* lre_split on the bytecode of a split op that takes itself, pushes a char
    'z', over a string of 'a' (the bytecode is made by hand: lre_compile never

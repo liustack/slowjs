@@ -1,0 +1,22 @@
+65000 blocks ["first","second","late1","late2"]
+65540 blocks InternalError too many scopes
+65520 blocks ["first","second","late1","late2"]
+65527 blocks ["first","second","late1","late2"]
+65528 blocks InternalError too many scopes
+65529 blocks InternalError too many scopes
+65530 blocks InternalError too many scopes
+inner function InternalError too many scopes
+class and loops InternalError too many scopes
+block [[65522,"ok"],[65531,"InternalError too many scopes"]]
+forof [[65522,"ok"],[65531,"InternalError too many scopes"]]
+forin [[65522,"ok"],[65531,"InternalError too many scopes"]]
+forloop [[65522,"ok"],[65531,"InternalError too many scopes"]]
+ifdecl [[65522,"ok"],[65531,"InternalError too many scopes"]]
+switch_ [[65522,"ok"],[65531,"InternalError too many scopes"]]
+catchvar [[65522,"ok"],[65529,"InternalError too many scopes"]]
+with_ [[65522,"ok"],[65531,"InternalError too many scopes"]]
+class_ [[65522,"ok"],[65530,"InternalError too many scopes"]]
+class_extends [[65522,"ok"],[65530,"InternalError too many scopes"]]
+class_expr [[65522,"ok"],[65530,"InternalError too many scopes"]]
+arrow [[65522,"ok"],[65532,"InternalError too many scopes"]]
+param_expr [[65522,"ok"],[65532,"InternalError too many scopes"]]

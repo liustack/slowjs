@@ -1,0 +1,16 @@
+not extensible, ["x"]: ["x"]
+not extensible, []: throws TypeError
+not extensible, ["x","y"]: throws TypeError
+not extensible, ["y"]: throws TypeError
+not extensible, ["z"]: throws TypeError
+not extensible, two keys, ["x"]: throws TypeError
+not extensible, two keys, []: throws TypeError
+not extensible, two keys, ["x","y"]: ["x","y"]
+not extensible, two keys, ["y"]: throws TypeError
+not extensible, two keys, ["z"]: throws TypeError
+extensible, ["x"]: ["x"]
+extensible, []: []
+extensible, ["x","y"]: ["x","y"]
+extensible, ["y"]: ["y"]
+extensible, ["z"]: ["z"]
+revoked by the trap: ["x"]

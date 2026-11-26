@@ -12,10 +12,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/liustack/beastjs/internal/goversion"
 	"golang.org/x/arch/arm64/arm64asm"
 	"golang.org/x/arch/x86/x86asm"
 )
@@ -190,7 +192,7 @@ func TestEngineAsmDecl(t *testing.T) {
 	}
 	for _, target := range []string{"linux/amd64", "windows/amd64", "darwin/amd64", "linux/arm64", "darwin/arm64", "windows/arm64"} {
 		goos, goarch, _ := strings.Cut(target, "/")
-		cmd := exec.Command("go", "vet", "-asmdecl", "./internal/cengine")
+		cmd := exec.Command("go", slices.Concat([]string{"vet"}, goversion.TagArgs(), []string{"-asmdecl", "./internal/cengine"})...)
 		cmd.Dir = filepath.Join("..", "..", "..")
 		cmd.Env = append(os.Environ(), "GOOS="+goos, "GOARCH="+goarch, "CGO_ENABLED=0", "GOFLAGS=")
 		out, err := cmd.CombinedOutput()

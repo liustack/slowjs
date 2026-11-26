@@ -1,0 +1,14 @@
+result "[1 2]" -> SyntaxError expecting ']'
+result "[, 1 2]" -> SyntaxError expecting ']'
+result "[, 1 2 3]" -> SyntaxError expecting ']'
+result "[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15, -> SyntaxError expecting ']'
+result "[, 1, 2]" -> [null,1,2]
+result "[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15, -> [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39]
+result "[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15, -> [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,null,7]
+result "[,]" -> [null]
+result "[1,,]" -> [1,null]
+result "[,,1 ]" -> [null,null,1]
+result "[1 ,, 2 3]" -> SyntaxError expecting ']'
+mem-end obj=195 atom=546 shape=122 prop=961 jsfunc=1 cfunc=129 array=3 fast_array=3 elements=51 binary=0
+mem-gc obj=195 atom=546 shape=122 prop=961 jsfunc=1 cfunc=129 array=3 fast_array=3 elements=51 binary=0
+--- status exit 0

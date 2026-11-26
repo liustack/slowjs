@@ -1,0 +1,17 @@
+result length revokes, empty: []
+result length revokes, keys: ["a","b"]
+result element revokes: ["a","b"]
+result trap revokes: ["a"]
+result non configurable target: ["x"]
+result non configurable missing: throws TypeError
+result non extensible target: ["a"]
+result non extensible extra key: throws TypeError
+result getOwnPropertyNames: ["a"]
+result getOwnPropertySymbols: []
+result keys: []
+result keys with a key: throws TypeError
+result for in: throws TypeError
+result revoked before: throws TypeError
+mem-end obj=295 atom=560 shape=136 prop=1119 jsfunc=23 cfunc=134 array=2 fast_array=2 elements=14 binary=0
+mem-gc obj=204 atom=558 shape=132 prop=997 jsfunc=10 cfunc=134 array=2 fast_array=2 elements=14 binary=0
+--- status exit 0

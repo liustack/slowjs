@@ -1,0 +1,5 @@
+undefined
+g
+[null,"g",null]
+[5,5,"number"]
+ok

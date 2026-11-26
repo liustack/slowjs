@@ -1,0 +1,16 @@
+values, length -1: 0
+keys, length -1: 0
+entries, length -1: 0
+keys, length 2**32 + 1: 6
+values, length 2**32 + 1: 6
+entries, length 2**32: [[0,null],[1,null],[2,null]]
+keys, length 2**53: [0,1]
+values, length 3: ["a",null,"c"]
+spread of an array: [1,2,3]
+spread after one step: [2,3]
+spread of a typed array: [0,1,2]
+proxy ownKeys, length 2**32 + 1: throws RangeError
+proxy ownKeys, length -1: 0
+proxy ownKeys, length 2: ["a","b"]
+replace, result of length -1: [x]
+replace, result of length 2: [xy]

@@ -1,0 +1,47 @@
+result 0 undefined: false 0
+result 0 0: true 0
+result 0 4: true 4
+result 0 8: true 8
+result 0 8.9: true 8
+result 0 -0.5: true 0
+result 0 16: true 16
+result 0 9007199254740991: RangeError
+result 0 9007199254740992: RangeError
+result 0 9223372036854776000: RangeError
+result 0 18446744073709552000: RangeError
+result 0 36893488147419103000: RangeError
+result 0 100000000000000000000: RangeError
+result 0 Infinity: RangeError
+result 0 -Infinity: RangeError
+result 0 -1: RangeError
+result 0 NaN: true 0
+result 0 null: true 0
+result 0 true: true 1
+result 0 object: true 0
+result 0 object: true 12
+result 4 undefined: false 4
+result 4 0: RangeError
+result 4 4: true 4
+result 4 8: true 8
+result 4 8.9: true 8
+result 4 -0.5: RangeError
+result 4 16: true 16
+result 4 9007199254740991: RangeError
+result 4 9007199254740992: RangeError
+result 4 9223372036854776000: RangeError
+result 4 18446744073709552000: RangeError
+result 4 36893488147419103000: RangeError
+result 4 100000000000000000000: RangeError
+result 4 Infinity: RangeError
+result 4 -Infinity: RangeError
+result 4 -1: RangeError
+result 4 NaN: RangeError
+result 4 null: RangeError
+result 4 true: RangeError
+result 4 object: RangeError
+result 4 object: true 12
+result symbol: TypeError
+result bigint: TypeError
+mem-end obj=191 atom=542 shape=122 prop=949 jsfunc=0 cfunc=128 array=2 fast_array=2 elements=44 binary=0
+mem-gc obj=191 atom=542 shape=122 prop=949 jsfunc=0 cfunc=128 array=2 fast_array=2 elements=44 binary=0
+--- status exit 0

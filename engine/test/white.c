@@ -3259,3 +3259,51 @@ static int white_gc_garbage(JSRuntime *rt)
 {
     return !list_empty(&rt->tmp_obj_list);
 }
+
+/* ---- the growth of the arrays of js_resize_array ---- */
+
+/* js_realloc_array of the array *parray of *psize elements of elem_size
+   bytes, to req_size elements or more. A test gives it a made-up size with
+   no block (*parray NULL), so that it needs no gigabyte. */
+int white_realloc_array(JSContext *ctx, void **parray, int elem_size, int *psize, int req_size)
+{
+    return js_realloc_array(ctx, parray, elem_size, psize, req_size);
+}
+
+/* ---- the room of a string buffer ---- */
+
+/* string_buffer_realloc of b to new_len characters or more, for the
+   character c */
+int white_sb_realloc(StringBuffer *b, int new_len, int c)
+{
+    return string_buffer_realloc(b, new_len, c);
+}
+
+/* the room of b, in characters */
+int white_sb_size(const StringBuffer *b)
+{
+    return b->size;
+}
+
+int white_sb_wide(const StringBuffer *b)
+{
+    return b->is_wide_char;
+}
+
+/* JS_ConcatString3 of str1, str2 and str3. str2 is not freed. */
+JSValue white_concat_string3(JSContext *ctx, const char *str1, JSValueConst str2, const char *str3)
+{
+    return JS_ConcatString3(ctx, str1, JS_DupValue(ctx, str2), str3);
+}
+
+/* white_string_fake_len gives the flat string v the length len and gives
+   back the one it had. Its block stays as it is: a test of a string as long
+   as the longest one puts the length back before anything reads past it. */
+uint32_t white_string_fake_len(JSValueConst v, uint32_t len)
+{
+    JSString *p = JS_VALUE_GET_STRING(v);
+    uint32_t old = p->len;
+
+    p->len = len;
+    return old;
+}

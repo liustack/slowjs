@@ -1,0 +1,25 @@
+result 65000 blocks ["first","second","late1","late2"]
+result 65540 blocks InternalError too many scopes
+result 65520 blocks ["first","second","late1","late2"]
+result 65527 blocks ["first","second","late1","late2"]
+result 65528 blocks InternalError too many scopes
+result 65529 blocks InternalError too many scopes
+result 65530 blocks InternalError too many scopes
+result inner function InternalError too many scopes
+result class and loops InternalError too many scopes
+result block [[65522,"ok"],[65531,"InternalError too many scopes"]]
+result forof [[65522,"ok"],[65531,"InternalError too many scopes"]]
+result forin [[65522,"ok"],[65531,"InternalError too many scopes"]]
+result forloop [[65522,"ok"],[65531,"InternalError too many scopes"]]
+result ifdecl [[65522,"ok"],[65531,"InternalError too many scopes"]]
+result switch_ [[65522,"ok"],[65531,"InternalError too many scopes"]]
+result catchvar [[65522,"ok"],[65529,"InternalError too many scopes"]]
+result with_ [[65522,"ok"],[65531,"InternalError too many scopes"]]
+result class_ [[65522,"ok"],[65530,"InternalError too many scopes"]]
+result class_extends [[65522,"ok"],[65530,"InternalError too many scopes"]]
+result class_expr [[65522,"ok"],[65530,"InternalError too many scopes"]]
+result arrow [[65522,"ok"],[65532,"InternalError too many scopes"]]
+result param_expr [[65522,"ok"],[65532,"InternalError too many scopes"]]
+mem-end obj=197 atom=586 shape=123 prop=981 jsfunc=3 cfunc=129 array=2 fast_array=2 elements=22 binary=0
+mem-gc obj=197 atom=586 shape=123 prop=981 jsfunc=3 cfunc=129 array=2 fast_array=2 elements=22 binary=0
+--- status exit 0

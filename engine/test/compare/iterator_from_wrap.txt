@@ -1,0 +1,17 @@
+same object: [true,42]
+primitive result: 5
+undefined result: undefined
+string result: abc
+return result: 7
+return object: true
+no return: {"done":true}
+next throws: throws RangeError
+helpers over the wrapper: [0,2,4]
+wrapper in for of: [0,1,2]
+for of over a primitive result: throws TypeError
+map over a primitive result: throws TypeError
+toArray over a primitive result: throws TypeError
+spread of a primitive result: throws TypeError
+drop over a primitive result: throws TypeError
+break closes with a primitive: throws TypeError
+helper return with a primitive: throws TypeError

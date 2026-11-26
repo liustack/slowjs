@@ -1,0 +1,19 @@
+result string: ["a","b"]
+result object without Symbol.iterator: [0,1]
+result number: throws TypeError
+result null: throws TypeError
+result Symbol.iterator deleted, string: throws TypeError
+result Symbol.iterator deleted, empty string: throws TypeError
+result Symbol.iterator deleted, String object: object
+result Symbol.iterator null, string: throws TypeError
+result Symbol.iterator null, empty string: throws TypeError
+result Symbol.iterator null, String object: object
+result Symbol.iterator undefined, string: throws TypeError
+result Symbol.iterator undefined, empty string: throws TypeError
+result Symbol.iterator undefined, String object: object
+result Symbol.iterator gives a number: throws TypeError
+result Symbol.iterator gives an object: []
+result restored: ["a","b"]
+mem-end obj=200 atom=552 shape=129 prop=976 jsfunc=1 cfunc=134 array=2 fast_array=2 elements=16 binary=0
+mem-gc obj=200 atom=552 shape=129 prop=976 jsfunc=1 cfunc=134 array=2 fast_array=2 elements=16 binary=0
+--- status exit 0

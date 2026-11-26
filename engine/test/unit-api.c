@@ -3585,6 +3585,265 @@ static void test_stop_async_frees(void)
     }
 }
 
+/* A template object read back from bytecode is sealed as a parsed one is: the
+   strings array and its raw array are frozen, their length is neither
+   writable nor configurable (upstream QuickJS 88130c0). */
+static void test_template_object_sealed(void)
+{
+    static const char src[] =
+        "function tag(s) { return s; }"
+        "var s = tag`a${1}b`;"
+        "[Object.isFrozen(s), Object.isFrozen(s.raw),"
+        " Object.getOwnPropertyDescriptor(s, 'length').writable,"
+        " Object.getOwnPropertyDescriptor(s, 'length').configurable,"
+        " Object.getOwnPropertyDescriptor(s.raw, 'length').writable].join()";
+    static const char want[] = "true,true,false,false,false";
+    VM v = vm_new();
+    JSValue f = JS_Eval(v.ctx, src, strlen(src), "<unit>", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+    JSValue r;
+    const char *s;
+    uint8_t *buf;
+    size_t size;
+
+    CHECK(!JS_IsException(f), "compiled");
+    buf = JS_WriteObject(v.ctx, &size, f, JS_WRITE_OBJ_BYTECODE);
+    JS_FreeValue(v.ctx, f);
+    CHECK(buf != NULL, "written");
+    if (buf) {
+        r = JS_EvalFunction(v.ctx, JS_ReadObject(v.ctx, buf, size, JS_READ_OBJ_BYTECODE));
+        s = JS_IsException(r) ? NULL : JS_ToCString(v.ctx, r);
+        CHECK(s && !strcmp(s, want), "read back: %s, want %s", s ? s : "(exception)", want);
+        JS_FreeCString(v.ctx, s);
+        JS_FreeValue(v.ctx, r);
+        js_free(v.ctx, buf);
+    }
+    vm_free(&v);
+}
+
+/* An object reference to the slot a typed array holds while its buffer is
+   read is refused with a SyntaxError, not followed into a NULL object
+   (upstream QuickJS f68db0e). The bytes are a typed array written with
+   references, whose buffer is replaced by a reference to the typed array
+   itself. */
+static void test_read_null_reference(void)
+{
+    VM v = vm_new();
+    JSValue ta, pair, r;
+    uint8_t *a, *b, bytes[16];
+    size_t asize, bsize;
+    const char *s;
+
+    ta = JS_Eval(v.ctx, "new Uint8Array(1)", 17, "<unit>", JS_EVAL_TYPE_GLOBAL);
+    pair = JS_Eval(v.ctx, "var o = {}; [o, o]", 18, "<unit>", JS_EVAL_TYPE_GLOBAL);
+    a = JS_WriteObject(v.ctx, &asize, ta, JS_WRITE_OBJ_REFERENCE);
+    b = JS_WriteObject(v.ctx, &bsize, pair, JS_WRITE_OBJ_REFERENCE);
+    CHECK(a && b && asize > 8 && bsize > 3, "written");
+    if (a && b && asize > 8 && bsize > 3) {
+        /* header (version, no atoms), tag, element type, length, offset */
+        memcpy(bytes, a, 6);
+        /* the last two bytes of the pair: the tag of a reference and index 0 */
+        bytes[6] = b[bsize - 2];
+        bytes[7] = 0;
+        r = JS_ReadObject(v.ctx, bytes, 8, JS_READ_OBJ_REFERENCE);
+        CHECK(JS_IsException(r), "the reference to the typed array is refused");
+        if (JS_IsException(r)) {
+            JSValue e = JS_GetException(v.ctx);
+            s = JS_ToCString(v.ctx, e);
+            CHECK(s && strstr(s, "invalid object reference"), "error: %s", s ? s : "(none)");
+            JS_FreeCString(v.ctx, s);
+            JS_FreeValue(v.ctx, e);
+        } else {
+            JS_FreeValue(v.ctx, r);
+        }
+    }
+    js_free(v.ctx, a);
+    js_free(v.ctx, b);
+    JS_FreeValue(v.ctx, ta);
+    JS_FreeValue(v.ctx, pair);
+    vm_free(&v);
+}
+
+/* The release callback of an ArrayBuffer made by JS_NewArrayBuffer runs once
+   whichever way the buffer ends: detached by JS_DetachArrayBuffer, or
+   transferred by script to a buffer of the same size (the new buffer keeps the
+   callback) or of another size (the data is copied and released at once)
+   (upstream QuickJS 813636e). */
+static int release_count;
+static void *release_ptr;
+
+static void count_release(JSRuntime *rt, void *opaque, void *ptr)
+{
+    (void)rt;
+    CHECK(opaque == (void *)&release_count, "opaque of the callback");
+    release_count++;
+    release_ptr = ptr;
+    free(ptr);
+}
+
+static void test_array_buffer_release_once(void)
+{
+    static const char *const scripts[] = {
+        NULL,                              /* JS_DetachArrayBuffer */
+        "globalThis.t = ab.transfer()",    /* same size */
+        "globalThis.t = ab.transfer(16)",  /* longer */
+        "globalThis.t = ab.transfer(2)",   /* shorter */
+    };
+    int i;
+
+    for (i = 0; i < (int)countof(scripts); i++) {
+        VM v = vm_new();
+        uint8_t *data = malloc(8);
+        JSValue ab, g;
+
+        memset(data, 7, 8);
+        release_count = 0;
+        ab = JS_NewArrayBuffer(v.ctx, data, 8, count_release, &release_count, FALSE);
+        CHECK(!JS_IsException(ab), "buffer %d", i);
+        g = JS_GetGlobalObject(v.ctx);
+        CHECK(JS_SetPropertyStr(v.ctx, g, "ab", JS_DupValue(v.ctx, ab)) >= 0, "global ab");
+        JS_FreeValue(v.ctx, g);
+        if (scripts[i]) {
+            JSValue r = JS_Eval(v.ctx, scripts[i], strlen(scripts[i]), "<unit>", JS_EVAL_TYPE_GLOBAL);
+
+            CHECK(!JS_IsException(r), "script %d", i);
+            if (JS_IsException(r))
+                JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+            JS_FreeValue(v.ctx, r);
+        } else {
+            JS_DetachArrayBuffer(v.ctx, ab);
+            CHECK(release_count == 1, "detached: released %d times", release_count);
+        }
+        g = JS_GetGlobalObject(v.ctx);
+        eval_ok(v.ctx, "delete globalThis.ab; delete globalThis.t");
+        JS_FreeValue(v.ctx, g);
+        JS_FreeValue(v.ctx, ab);
+        JS_RunGC(v.rt);
+        CHECK(release_count == 1, "case %d: released %d times", i, release_count);
+        vm_free(&v);
+    }
+}
+
+/* An ArrayBuffer of JS_NewArrayBuffer with no release callback keeps memory
+   the host owns. Transferring it copies the bytes, or for the same size keeps
+   the memory, and never calls the missing callback. */
+static void test_array_buffer_no_release(void)
+{
+    static const char *const scripts[] = {
+        "var t = ab.transfer(); [t.byteLength, new Uint8Array(t)[7]].join()",
+        "var t = ab.transfer(16); [t.byteLength, new Uint8Array(t)[7], new Uint8Array(t)[15]].join()",
+        "var t = ab.transfer(2); [t.byteLength, new Uint8Array(t)[1]].join()",
+        "var t = ab.transfer(0); [t.byteLength, ab.detached].join()",
+        "var t = ab.transferToFixedLength(4); [t.byteLength, new Uint8Array(t)[3]].join()",
+    };
+    static const char *const want[] = { "8,7", "16,7,0", "2,7", "0,true", "4,7" };
+    static uint8_t data[8];
+    int i;
+
+    for (i = 0; i < (int)countof(scripts); i++) {
+        VM v = vm_new();
+        JSValue ab, g;
+
+        memset(data, 7, sizeof(data));
+        ab = JS_NewArrayBuffer(v.ctx, data, sizeof(data), NULL, NULL, FALSE);
+        CHECK(!JS_IsException(ab), "buffer %d", i);
+        g = JS_GetGlobalObject(v.ctx);
+        CHECK(JS_SetPropertyStr(v.ctx, g, "ab", ab) >= 0, "global ab");
+        JS_FreeValue(v.ctx, g);
+        CHECK(eval_is(v.ctx, scripts[i], want[i]), "%s: want %s", scripts[i], want[i]);
+        CHECK(eval_is(v.ctx, "ab.detached", "true"), "%s: the buffer is not detached", scripts[i]);
+        CHECK(data[0] == 7 && data[7] == 7, "%s: the memory of the host changed", scripts[i]);
+        vm_free(&v);
+    }
+}
+
+/* JS_WRITE_OBJ_BYTECODE writes a frozen array as a template object, which the
+   reader seals again, and any other array as an array. An array that was only
+   made not extensible, or sealed, keeps a length and elements that can be
+   written: before, the writer took every array that was not extensible for a
+   template object, and it came back with its elements and its length read
+   only. */
+static void test_bytecode_array_round_trip(void)
+{
+    static const struct { const char *make, *check, *want; } cases[] = {
+        { "Object.preventExtensions([])",
+          "(function () { 'use strict'; a.length = 2; return a.length; })()", "2" },
+        { "Object.preventExtensions([1, 2])",
+          "(function () { 'use strict'; a[0] = 5; a.length = 1; return a.join(); })()", "5" },
+        { "Object.seal([1, 2])",
+          "(function () { 'use strict'; a[0] = 5; return a.join(); })()", "5,2" },
+        { "Object.freeze([1, 2])",
+          "[Object.isFrozen(a), a.join(), Object.getOwnPropertyDescriptor(a, 'length').writable].join()",
+          "true,1,2,false" },
+        { "Object.freeze([])", "[Object.isFrozen(a), a.length].join()", "true,0" },
+    };
+    int i;
+
+    for (i = 0; i < (int)countof(cases); i++) {
+        VM v = vm_new();
+        JSValue val = JS_Eval(v.ctx, cases[i].make, strlen(cases[i].make), "<unit>", JS_EVAL_TYPE_GLOBAL);
+        JSValue r, g;
+        uint8_t *buf;
+        size_t size;
+
+        CHECK(!JS_IsException(val), "%s: the eval", cases[i].make);
+        buf = JS_WriteObject(v.ctx, &size, val, JS_WRITE_OBJ_BYTECODE);
+        JS_FreeValue(v.ctx, val);
+        CHECK(buf != NULL, "%s: written", cases[i].make);
+        if (!buf) {
+            vm_free(&v);
+            continue;
+        }
+        r = JS_ReadObject(v.ctx, buf, size, JS_READ_OBJ_BYTECODE);
+        js_free(v.ctx, buf);
+        CHECK(!JS_IsException(r), "%s: read", cases[i].make);
+        g = JS_GetGlobalObject(v.ctx);
+        CHECK(JS_SetPropertyStr(v.ctx, g, "a", r) >= 0, "global a");
+        JS_FreeValue(v.ctx, g);
+        CHECK(eval_is(v.ctx, cases[i].check, cases[i].want), "%s read back: %s, want %s",
+              cases[i].make, cases[i].check, cases[i].want);
+        vm_free(&v);
+    }
+}
+
+/* JS_GetTypedArrayBuffer gives the byte length the typed array has now: a
+   typed array that follows a resizable ArrayBuffer is as long as the buffer
+   lets it be (upstream QuickJS 56d38b8). */
+static void test_typed_array_buffer_length(void)
+{
+    static const struct {
+        const char *make;
+        size_t offset, length_before, length_after;
+    } cases[] = {
+        { "new Uint8Array(ab)", 0, 8, 12 },
+        { "new Uint16Array(ab, 2)", 2, 6, 10 },
+        { "new Uint8Array(ab, 0, 4)", 0, 4, 4 },
+    };
+    int i;
+
+    for (i = 0; i < (int)countof(cases); i++) {
+        VM v = vm_new();
+        char src[200];
+        JSValue r, buffer;
+        size_t off = 99, len = 99, per = 99;
+
+        snprintf(src, sizeof(src),
+                 "var ab = new ArrayBuffer(8, { maxByteLength: 16 }); var ta = %s; ta", cases[i].make);
+        r = JS_Eval(v.ctx, src, strlen(src), "<unit>", JS_EVAL_TYPE_GLOBAL);
+        CHECK(!JS_IsException(r), "case %d", i);
+        buffer = JS_GetTypedArrayBuffer(v.ctx, r, &off, &len, &per);
+        CHECK(!JS_IsException(buffer) && off == cases[i].offset && len == cases[i].length_before,
+              "case %d before: offset %d length %d", i, (int)off, (int)len);
+        JS_FreeValue(v.ctx, buffer);
+        JS_FreeValue(v.ctx, JS_Eval(v.ctx, "ab.resize(12)", 13, "<unit>", JS_EVAL_TYPE_GLOBAL));
+        buffer = JS_GetTypedArrayBuffer(v.ctx, r, &off, &len, &per);
+        CHECK(!JS_IsException(buffer) && len == cases[i].length_after,
+              "case %d after resize: length %d, want %d", i, (int)len, (int)cases[i].length_after);
+        JS_FreeValue(v.ctx, buffer);
+        JS_FreeValue(v.ctx, r);
+        vm_free(&v);
+    }
+}
+
 int main(void)
 {
     test_compile_stops();
@@ -3632,6 +3891,12 @@ int main(void)
     test_rv_new_in_loop();
     test_rv_frame_limits();
     test_rv_nesting_limits();
+    test_template_object_sealed();
+    test_read_null_reference();
+    test_array_buffer_release_once();
+    test_typed_array_buffer_length();
+    test_array_buffer_no_release();
+    test_bytecode_array_round_trip();
     if (failures) {
         printf("unit-api: %d of %ld checks failed\n", failures, checks);
         return 1;

@@ -1,0 +1,14 @@
+result "var {\"a\" = b} = {a:7}; b" -> SyntaxError expecting ':'
+result "var {0 + b} = {0:7}; b" -> SyntaxError expecting ':'
+result "var {[\"a\"] ; b} = {a:7}; b" -> SyntaxError expecting ':'
+result "({\"a\" ! b} = {a:7}); b" -> SyntaxError expecting ':'
+result "var {\"a\" [b]} = {a:[7]}; b" -> SyntaxError expecting ':'
+result "var {a: [b]} = {a:[1]}; b" -> 1
+result "var {\"a\": b} = {a:2}; b" -> 2
+result "var {0: b} = {0:3}; b" -> 3
+result "var {[\"a\"]: b} = {a:4}; b" -> 4
+result "var {a = 5} = {}; a" -> 5
+result "var {\"a\" 1: b} = {a:7}; b" -> SyntaxError expecting ':'
+mem-end obj=192 atom=547 shape=123 prop=957 jsfunc=1 cfunc=127 array=2 fast_array=2 elements=11 binary=0
+mem-gc obj=192 atom=547 shape=123 prop=957 jsfunc=1 cfunc=127 array=2 fast_array=2 elements=11 binary=0
+--- status exit 0

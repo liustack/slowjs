@@ -1,0 +1,6 @@
+drop 2 of 5: [2,false,["next 0","done 0","next 1","done 1","next 2","done 2","value 2"]]
+drop 2 of 1: [null,true,["next 0","done 0","next 1","done 1"]]
+drop 0: [0,false,["next 0","done 0","value 0"]]
+drop, done throws: ["done","stop"]
+drop, a result that is not an object: throws TypeError
+drop on an array iterator: [3,4]
