@@ -27846,6 +27846,9 @@ typedef struct JSToken {
         struct {
             JSValue str;
             int sep;
+            /* an escape strict mode refuses (\1, \08, \8), in a string
+               read in sloppy mode */
+            BOOL strict_escape;
         } str;
         struct {
             JSValue val;
@@ -28174,6 +28177,7 @@ static __exception int js_parse_string(JSParseState *s, int sep,
     StringBuffer b_s, *b = &b_s;
     const uint8_t *p_escape, *p_last;
     JSValue str;
+    BOOL strict_escape = FALSE;
 
     /* string */
     if (string_buffer_init(s->ctx, b, 32))
@@ -28233,8 +28237,12 @@ static __exception int js_parse_string(JSParseState *s, int sep,
                 continue;
             default:
                 if (c >= '0' && c <= '9') {
-                    if (!(s->cur_func->js_mode & JS_MODE_STRICT) && sep != '`')
+                    if (!(s->cur_func->js_mode & JS_MODE_STRICT) && sep != '`') {
+                        /* strict mode takes \0 alone (below) */
+                        if (c != '0' || (p[1] >= '0' && p[1] <= '9'))
+                            strict_escape = TRUE;
                         goto parse_escape;
+                    }
                     if (c == '0' && !(p[1] >= '0' && p[1] <= '9')) {
                         p++;
                         c = '\0';
@@ -28297,6 +28305,7 @@ static __exception int js_parse_string(JSParseState *s, int sep,
     token->val = TOK_STRING;
     token->u.str.sep = c;
     token->u.str.str = str;
+    token->u.str.strict_escape = strict_escape;
     *pp = p;
     return 0;
 
@@ -30972,6 +30981,17 @@ static BOOL has_lf_in_range(const uint8_t *p1, const uint8_t *p2)
 /* The levels of brackets js_parse_skip_parens_token() follows. */
 #define JS_SKIP_LEVELS 256
 
+/* JS_PAREN_GROW(size) is called when the table of JSParenCache gets size
+   entries, and JS_PAREN_WORK(n) for what the lookahead does for its table
+   besides reading tokens: n bytes it looks at again, or n entries it copies.
+   white.c counts them. */
+#ifndef JS_PAREN_GROW
+#define JS_PAREN_GROW(size) ((void)0)
+#endif
+#ifndef JS_PAREN_WORK
+#define JS_PAREN_WORK(n) ((void)0)
+#endif
+
 /* What js_parse_skip_parens_token() answered for the bracket at a position
    of the source. The lookahead from a bracket goes through every bracket
    inside it, and the parse asks again from many of them when it gets there:
@@ -31034,10 +31054,10 @@ static int js_parse_skip_mode(JSParseState *s)
    mode (js_parse_skip_mode): 1 for a name that is a keyword in some modes
    (update_token_ident), which changes what a "/" after it is, 2 for a
    number or a string that strict mode refuses (next_token1,
-   js_parse_string), counting every escape of a digit in a string. */
+   js_parse_string). */
 static int js_parse_skip_mode_dep(JSParseState *s)
 {
-    const uint8_t *p, *end;
+    const uint8_t *p;
 
     switch (s->token.val) {
     case TOK_IDENT:
@@ -31047,14 +31067,7 @@ static int js_parse_skip_mode_dep(JSParseState *s)
         p = s->token.ptr;
         return (p[0] == '0' && is_digit(p[1])) ? 2 : 0;
     case TOK_STRING:
-        p = s->token.ptr;
-        end = s->buf_ptr;
-        while ((p = memchr(p, '\\', end - p)) != NULL) {
-            if (is_digit(p[1]))
-                return 2;
-            p += 2;
-        }
-        return 0;
+        return s->token.u.str.strict_escape ? 2 : 0;
     default:
         return s->token.val >= TOK_IMPLEMENTS && s->token.val <= TOK_AWAIT;
     }
@@ -31082,12 +31095,22 @@ static JSParenEntry *js_paren_find(JSParenCache *pc, uint32_t key)
     }
 }
 
+/* Keeps val for the bracket at key. An answer from the bracket under another
+   mode is replaced in place: the table grows only for a new bracket. The
+   copy of a table that grows reads the interrupt flag every
+   JS_COMPILE_POLL_STEP entries. -1 with the exception pending when it ran
+   out of memory or was interrupted, and the table as it was. */
 static int js_paren_put(JSContext *ctx, JSParenCache *pc, uint32_t key,
                         uint32_t val)
 {
     JSParenEntry *e;
     uint32_t i;
 
+    e = js_paren_find(pc, key);
+    if (e) {
+        e->val = val;
+        return 0;
+    }
     if ((pc->count + 1) * 2 > pc->size) {
         JSParenEntry *tab, *old = pc->tab;
         uint32_t j, size = pc->size ? pc->size * 2 : 1024;
@@ -31101,6 +31124,13 @@ static int js_paren_put(JSContext *ctx, JSParenCache *pc, uint32_t key,
         if (!tab)
             return -1;
         for (j = 0; j < pc->size; j++) {
+            if ((j & (JS_COMPILE_POLL_STEP - 1)) == 0 && j != 0) {
+                JS_PAREN_WORK(JS_COMPILE_POLL_STEP);
+                if (js_poll_interrupts(ctx)) {
+                    js_free(ctx, tab);
+                    return -1;
+                }
+            }
             if (old[j].key == 0)
                 continue;
             for (i = js_paren_hash(old[j].key, size); tab[i].key != 0;
@@ -31108,23 +31138,44 @@ static int js_paren_put(JSContext *ctx, JSParenCache *pc, uint32_t key,
                 continue;
             tab[i] = old[j];
         }
+        if (pc->size)
+            JS_PAREN_WORK(((pc->size - 1) & (JS_COMPILE_POLL_STEP - 1)) + 1);
         js_free(ctx, old);
         pc->tab = tab;
         pc->size = size;
+        JS_PAREN_GROW(size);
     }
-    for (i = js_paren_hash(key, pc->size);; i = (i + 1) & (pc->size - 1)) {
-        e = &pc->tab[i];
-        if (e->key == key)
-            break;
-        if (e->key == 0) {
-            e->key = key;
-            pc->count++;
-            break;
-        }
-    }
-    /* an answer under another mode is replaced */
-    e->val = val;
+    for (i = js_paren_hash(key, pc->size); pc->tab[i].key != 0;
+         i = (i + 1) & (pc->size - 1))
+        continue;
+    pc->tab[i].key = key;
+    pc->tab[i].val = val;
+    pc->count++;
     return 0;
+}
+
+/* has_lf_in_range from p up to end, for the answer of a bracket: the space
+   and the comments before the token after it may be long, and the look reads
+   the interrupt flag where p meets a multiple of JS_ROPE_STEP, as the lexer
+   did in them. 1 for a line feed, 0 for none, -1 with "interrupted" thrown. */
+static int js_paren_has_lf(JSContext *ctx, const uint8_t *p,
+                           const uint8_t *end)
+{
+    const uint8_t *q;
+
+    for (;;) {
+        q = (const uint8_t *)(((uintptr_t)p | (JS_ROPE_STEP - 1)) + 1);
+        if (q > end)
+            q = end;
+        JS_PAREN_WORK(q - p);
+        if (memchr(p, '\n', q - p))
+            return 1;
+        if (q == end)
+            return 0;
+        p = q;
+        if (js_poll_interrupts(ctx))
+            return -1;
+    }
 }
 
 static void js_parse_free_paren_cache(JSParseState *s)
@@ -31351,6 +31402,7 @@ static int js_parse_skip_parens_token(JSParseState *s, int *pbits, BOOL no_line_
             /* the answer of the lookahead from the bracket just closed:
                the token read now, and what it saw inside */
             uint32_t val;
+            int lf;
 
             pc->open_bits[closed - 1] |= pc->open_bits[closed] &
                 (SKIP_HAS_ASSIGNMENT | SKIP_MODE_DEP);
@@ -31359,7 +31411,10 @@ static int js_parse_skip_parens_token(JSParseState *s, int *pbits, BOOL no_line_
                 c = TOK_OF;
             val = (c & JS_PAREN_TOK_MASK) |
                 ((pc->open_bits[closed] & 7) << JS_PAREN_BITS_SHIFT) | mode;
-            if (has_lf_in_range(last_token_ptr, s->token.ptr))
+            lf = js_paren_has_lf(s->ctx, last_token_ptr, s->token.ptr);
+            if (lf < 0)
+                return TOK_ERROR;
+            if (lf)
                 val |= JS_PAREN_LF;
             if (!(pc->open_bits[closed] & SKIP_MODE_DEP) &&
                 !js_parse_skip_mode_dep(s))

@@ -147,6 +147,14 @@ static unsigned long white_module_steps;
 static unsigned long white_skip_tokens;
 #define JS_SKIP_TOKEN() (white_skip_tokens++)
 
+/* JS_PAREN_GROW keeps the size the table of the answers of the lookahead
+   (JSParenCache) last grew to. JS_PAREN_WORK counts the rest of the work
+   the lookahead does for the table, and each reading of the flag closes a
+   stretch of it, as for JS_WORK. */
+static unsigned long white_paren_size, white_paren_work, white_paren_work_max, white_paren_work_total;
+#define JS_PAREN_GROW(size) (white_paren_size = (size))
+#define JS_PAREN_WORK(n) (white_paren_work += (n), white_paren_work_total += (n))
+
 #define host_poll white_host_poll
 
 #include "../quickjs.c"
@@ -154,6 +162,9 @@ static unsigned long white_skip_tokens;
 #undef host_poll
 int white_host_poll(const volatile int *flag)
 {
+    if (white_paren_work > white_paren_work_max)
+        white_paren_work_max = white_paren_work;
+    white_paren_work = 0;
     if (white_work > white_work_max)
         white_work_max = white_work;
     white_work = 0;
@@ -3317,4 +3328,26 @@ uint32_t white_string_fake_len(JSValueConst v, uint32_t len)
 unsigned long white_skip_tokens_read(void)
 {
     return white_skip_tokens;
+}
+
+/* the size the table of the answers of the lookahead last grew to
+   (JS_PAREN_GROW), and 0 again */
+unsigned long white_paren_size_take(void)
+{
+    unsigned long n = white_paren_size;
+
+    white_paren_size = 0;
+    return n;
+}
+
+/* the longest stretch of JS_PAREN_WORK between two readings of the flag,
+   the one going on included, and in *total all of it, and 0 again */
+unsigned long white_paren_work_take(unsigned long *total)
+{
+    unsigned long n = white_paren_work > white_paren_work_max ?
+        white_paren_work : white_paren_work_max;
+
+    *total = white_paren_work_total;
+    white_paren_work = white_paren_work_max = white_paren_work_total = 0;
+    return n;
 }

@@ -194,6 +194,8 @@ int white_sb_putc16(struct StringBuffer *b, uint32_t c);
 unsigned long white_work_longest(void);
 unsigned long white_work_sum(void);
 unsigned long white_skip_tokens_read(void);
+unsigned long white_paren_size_take(void);
+unsigned long white_paren_work_take(unsigned long *total);
 void white_work_add(unsigned long n);
 size_t white_sb_block_usable(const struct StringBuffer *b);
 void white_front_drain(JSContext *ctx);
@@ -5055,6 +5057,85 @@ static void test_parens_lookahead_linear(void)
             free(exception_text(v.ctx));
         JS_FreeValue(v.ctx, r);
         CHECK(read < 2 * len, "%s: the lookahead read %lu tokens for %zu bytes", shapes[i].what, read, len);
+        free(src);
+        vm_free(&v);
+    }
+}
+
+/* The table of the answers of the lookahead (JSParenCache) grows for a new
+   bracket only: an answer kept again from a bracket, under the mode of the
+   function the parse has gone into, takes the place of the one before. The
+   first lookahead keeps 512 brackets, which fill the table of 1024 entries
+   to half, and the parse reads the parameters of the async function again
+   in its mode, as the '\1' in them reads differently in strict mode. */
+static void test_parens_table_replace(void)
+{
+    VM v = vm_new();
+    char *src = malloc(64 + 4 * 509);
+    unsigned long size;
+    size_t len;
+    JSValue r;
+    int i;
+
+    len = sprintf(src, "(async function f(a = '\\1') {");
+    for (i = 0; i < 509; i++)
+        len += sprintf(src + len, "(0);");
+    len += sprintf(src + len, "});");
+    white_paren_size_take();
+    r = JS_Eval(v.ctx, src, len, "replace.js", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+    size = white_paren_size_take();
+    CHECK(!JS_IsException(r), "the source of 512 brackets does not compile");
+    if (JS_IsException(r))
+        free(exception_text(v.ctx));
+    JS_FreeValue(v.ctx, r);
+    CHECK(size == 1024, "the table of the lookahead grew to %lu entries for 512 brackets, want 1024", size);
+    free(src);
+    vm_free(&v);
+}
+
+/* What the lookahead does for its table besides reading tokens
+   (JS_PAREN_WORK) reads the interrupt flag at least every JS_ROPE_STEP bytes
+   or entries: the look for a line feed in the space before the token after
+   a bracket, and the copy of the table when it grows. Whether a string reads
+   differently in strict mode is told by the lexer, not by a second scan of
+   the string. The sources: a string of 131072 escapes, a comment of 200000
+   bytes after a bracket, and 140000 brackets, whose table is copied at
+   262144 entries. */
+static void test_parens_work_gaps(void)
+{
+    static const struct {
+        const char *what, *head, *rep, *tail;
+        int n;
+        unsigned long least;
+    } cases[] = {
+        { "a string of escapes", "[\"", "\\n", "\"]", 131072, 0 },
+        { "a long comment", "((a)/*", "x", "*/, 1)", 200000, 200000 },
+        { "many brackets", "(", "(0),", "0)", 140000, 262144 },
+    };
+    size_t i, len;
+    int k;
+
+    for (i = 0; i < countof(cases); i++) {
+        VM v = vm_new();
+        char *src = malloc(strlen(cases[i].head) + strlen(cases[i].rep) * cases[i].n + strlen(cases[i].tail) + 1);
+        unsigned long total, longest;
+        JSValue r;
+
+        len = sprintf(src, "%s", cases[i].head);
+        for (k = 0; k < cases[i].n; k++)
+            len += sprintf(src + len, "%s", cases[i].rep);
+        len += sprintf(src + len, "%s", cases[i].tail);
+        white_paren_work_take(&total);
+        r = JS_Eval(v.ctx, src, len, "gaps.js", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+        CHECK(!JS_IsException(r), "%s: does not compile", cases[i].what);
+        if (JS_IsException(r))
+            free(exception_text(v.ctx));
+        JS_FreeValue(v.ctx, r);
+        longest = white_paren_work_take(&total);
+        CHECK(total >= cases[i].least, "%s: %lu units of work, want at least %lu",
+              cases[i].what, total, cases[i].least);
+        CHECK(longest <= (1 << 16), "%s: %lu units of work between two readings of the flag",
+              cases[i].what, longest);
         free(src);
         vm_free(&v);
     }
@@ -11859,6 +11940,8 @@ int main(int argc, char **argv)
     test_function_properties_oom();
     test_compile_count();
     test_parens_lookahead_linear();
+    test_parens_table_replace();
+    test_parens_work_gaps();
     test_poll_scan();
     test_poll_insert();
     test_poll_compile();
