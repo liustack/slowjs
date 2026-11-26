@@ -2430,6 +2430,43 @@ static void test_compile_names_linear(void)
     }
 }
 
+/* The blocks a function has left are not on the chain of its names: 8,000
+   names declared after 2,000 blocks, or before them, must not cost each
+   declaration (or each block) a look through all the names before it, which
+   grows as the square, to millions of entries and thousands of readings of
+   the flag. closed_blocks_reads counts the readings of the compile of the
+   names with the blocks before (where 1), after (2) or none (0). Each is a
+   const, as a let statement reads the flag once to see what follows it. */
+static long closed_blocks_reads(int where)
+{
+    static char src[1 << 18];
+    size_t k = 0;
+    int i;
+
+#define ADD(...) (k += (size_t)snprintf(src + k, sizeof(src) - k, __VA_ARGS__))
+    ADD("(function(){");
+    for (i = 0; where == 1 && i < 2000; i++)
+        ADD("{const t=0;}");
+    for (i = 0; i < 8000; i++)
+        ADD(i ? ",v%d=0" : "const v%d=0", i);
+    ADD(";");
+    for (i = 0; where == 2 && i < 2000; i++)
+        ADD("{const t=0;}");
+    ADD("})");
+#undef ADD
+    return names_reads(src, JS_EVAL_TYPE_GLOBAL);
+}
+
+static void test_compile_names_closed_blocks(void)
+{
+    long none = closed_blocks_reads(0), before = closed_blocks_reads(1),
+        after = closed_blocks_reads(2);
+
+    CHECK(before <= 2 * none && after <= 2 * none,
+          "8,000 names with 2,000 closed blocks: the compile read the flag %ld times with the blocks before them, %ld after, %ld with none",
+          before, after, none);
+}
+
 /* A compile stopped at a reading of the interrupt flag frees what it made,
    the code of each pass included, by its opcodes: compile_stops compiles src
    in a VM of its own once to count its readings, then stops it at each of
@@ -3941,6 +3978,7 @@ int main(void)
 {
     test_compile_stops();
     test_compile_names_linear();
+    test_compile_names_closed_blocks();
     test_link_stops();
     test_module_eval_stops();
     test_link_retry();

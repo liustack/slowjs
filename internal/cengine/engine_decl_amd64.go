@@ -405,6 +405,7 @@ func add_import(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 u
 func add_pc2line_info(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
 func add_private_class_field(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr)
 func add_property(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr)
+func add_scope_var(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr)
 func add_shape_property(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr)
 func add_star_export_entry(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
 func add_var(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)

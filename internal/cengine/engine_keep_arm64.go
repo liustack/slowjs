@@ -364,6 +364,7 @@ var goasmKeep = []any{
 	add_pc2line_info,
 	add_private_class_field,
 	add_property,
+	add_scope_var,
 	add_shape_property,
 	add_star_export_entry,
 	add_var,
