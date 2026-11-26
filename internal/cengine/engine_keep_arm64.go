@@ -1135,6 +1135,7 @@ var goasmKeep = []any{
 	js_rest_key,
 	js_rope_child_free,
 	js_rope_to_string_gc,
+	js_scan_grow,
 	js_set_difference,
 	js_set_fast_array_element_out_of_line,
 	js_set_intersection,

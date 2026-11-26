@@ -13288,7 +13288,7 @@ TEXT ·js_atomics_notify(SB), $128-48
 	BYTE $0x83
 	BYTE $0xe1
 	BYTE $0x0f
-	LEAQ ·engine_rodata+56480(SB), AX
+	LEAQ ·engine_rodata+56504(SB), AX
 	QUAD $0x07ebc031c8148b48
 	BYTE $0xba
 	BYTE $0x06
@@ -14773,7 +14773,7 @@ TEXT ·js_uint8array_to_hex(SB), $112-48
 	BYTE $0xc1
 	BYTE $0xe8
 	BYTE $0x04
-	LEAQ ·engine_rodata+125248(SB), CX
+	LEAQ ·engine_rodata+125280(SB), CX
 	QUAD $0x105644880804b60f
 	QUAD $0x0fe0831204b60f41
 	QUAD $0x115644880804b60f
@@ -14787,7 +14787,7 @@ TEXT ·js_uint8array_to_hex(SB), $112-48
 	BYTE $0xfe
 	BYTE $0x31
 	BYTE $0xdb
-	LEAQ ·engine_rodata+125248(SB), R14
+	LEAQ ·engine_rodata+125280(SB), R14
 	QUAD $0x04e9c11a0cb60f41
 	QUAD $0x5e4c88310cb60f42
 	QUAD $0xe1831a0cb60f4110
@@ -14884,7 +14884,7 @@ TEXT ·js_uint8array_to_hex(SB), $112-48
 	BYTE $0x24
 	BYTE $0x24
 	CALL ·host_poll(SB)
-	LEAQ ·engine_rodata+125248(SB), R14
+	LEAQ ·engine_rodata+125280(SB), R14
 	QUAD $0x5c8b4c40245c8b48
 	QUAD $0x4830247c8b483824
 	QUAD $0x24748b484824548b
@@ -20793,12 +20793,12 @@ TEXT ·js_typed_array_sort(SB), $208-48
 	BYTE $0xc1
 	BYTE $0xe1
 	BYTE $0x03
-	LEAQ ·engine_rodata+56288(SB), SI
+	LEAQ ·engine_rodata+56312(SB), SI
 	BYTE $0x48
 	BYTE $0x8b
 	BYTE $0x34
 	BYTE $0x31
-	LEAQ ·engine_rodata+56384(SB), DI
+	LEAQ ·engine_rodata+56408(SB), DI
 	QUAD $0x24748949393c8b48
 	BYTE $0x30
 	LEAQ ·engine_rodata+5321(SB), CX

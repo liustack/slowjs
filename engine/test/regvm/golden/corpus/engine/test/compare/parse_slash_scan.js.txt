@@ -33,6 +33,63 @@ result for head of 4
 result for destructuring 4
 result for let of "[)]"
 result for of of "[)]"
-mem-end obj=204 atom=600 shape=132 prop=1044 jsfunc=4 cfunc=131 array=2 fast_array=2 elements=35 binary=0
-mem-gc obj=200 atom=599 shape=129 prop=1035 jsfunc=2 cfunc=131 array=2 fast_array=2 elements=35 binary=0
+result after if "1"
+result after if plain 1
+result after while 2
+result after for 3
+result after for in 4
+result after for of 5
+result after with 6
+result after do while 7
+result after else 8
+result after block 9
+result after if block 10
+result after else block 11
+result after try 12
+result after catch 13
+result after switch 14
+result after case 15
+result after case block 16
+result after label block 17
+result after function 18
+result after async function 19
+result after generator 20
+result after class 21
+result after class extends 22
+result after arrow body 23
+result after object line 24
+result after function line 25
+result after return line "undefined"
+result after prefix ++ 26
+result after yield "[)]"
+result after await true
+result after static block 27
+result after async line 28
+result after async generator line 29
+result after call line 30
+result after label line 31
+result after class declaration 32
+result after member break line 33
+result after var line 34
+result after labels in ternaries 35
+result yield in an arrow 4
+result await in an arrow "function"
+result await in a function 4
+result yield in a generator method "[)]"
+result await in an async method "function"
+result await in a computed async method "function"
+result await after a concise async arrow "function"
+result await in a template true
+result yield in a block 36
+result async arrow named async "object"
+result async arrow named of "object"
+result async arrow named yield "object"
+result async arrow named async in a for "object"
+result async arrow named async in an async function "function"
+result assignment in a class heritage 1
+result class expression "NaN"
+result nested 300 37
+result nested 255 38
+mem-end obj=229 atom=605 shape=150 prop=1099 jsfunc=17 cfunc=137 array=2 fast_array=2 elements=92 binary=0
+mem-gc obj=208 atom=604 shape=140 prop=1055 jsfunc=6 cfunc=137 array=2 fast_array=2 elements=92 binary=0
 --- status exit 0
