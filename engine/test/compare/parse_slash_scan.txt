@@ -1,0 +1,35 @@
+of in template "4"
+property of 4
+property of /= 4
+optional of 4
+variable of 3
+for of variable 4
+property default 4
+property new 4
+property delete 4
+property in 4
+property typeof 4
+property return 4
+property class 4
+property function 4
+property if 4
+property for 4
+property while 4
+property let 4
+property async 4
+property yield 4
+property await 4
+async arrow "function"
+postfix ++ 4
+object literal [4,null]
+function expression [null,4]
+class expression [null,4]
+ternary object [{},4]
+label and object 4
+call 4
+index 4
+template 4
+for head of 4
+for destructuring 4
+for let of "[)]"
+for of of "[)]"

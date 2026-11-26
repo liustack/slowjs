@@ -1,0 +1,38 @@
+result of in template "4"
+result property of 4
+result property of /= 4
+result optional of 4
+result variable of 3
+result for of variable 4
+result property default 4
+result property new 4
+result property delete 4
+result property in 4
+result property typeof 4
+result property return 4
+result property class 4
+result property function 4
+result property if 4
+result property for 4
+result property while 4
+result property let 4
+result property async 4
+result property yield 4
+result property await 4
+result async arrow "function"
+result postfix ++ 4
+result object literal [4,null]
+result function expression [null,4]
+result class expression [null,4]
+result ternary object [{},4]
+result label and object 4
+result call 4
+result index 4
+result template 4
+result for head of 4
+result for destructuring 4
+result for let of "[)]"
+result for of of "[)]"
+mem-end obj=204 atom=600 shape=132 prop=1044 jsfunc=4 cfunc=131 array=2 fast_array=2 elements=35 binary=0
+mem-gc obj=200 atom=599 shape=129 prop=1035 jsfunc=2 cfunc=131 array=2 fast_array=2 elements=35 binary=0
+--- status exit 0

@@ -31602,6 +31602,10 @@ static BOOL is_regexp_allowed(int tok)
 #define SKIP_HAS_ELLIPSIS   (1 << 1)
 #define SKIP_HAS_ASSIGNMENT (1 << 2)
 
+/* the flags of js_parse_skip_parens_token() */
+#define SKIP_NO_LINE_TERMINATOR (1 << 0) /* a line break before the token after gives '\n' */
+#define SKIP_FOR_HEAD           (1 << 1) /* the parenthesis is the head of a for */
+
 static BOOL has_lf_in_range(const uint8_t *p1, const uint8_t *p2)
 {
     const uint8_t *tmp;
@@ -31655,6 +31659,7 @@ typedef struct JSParenEntry {
 #define JS_PAREN_MODE_SHIFT 20      /* js_parse_skip_mode */
 #define JS_PAREN_MODE_MASK  (7 << JS_PAREN_MODE_SHIFT)
 #define JS_PAREN_ANY_MODE   (1 << 23) /* the same answer in every mode */
+#define JS_PAREN_FOR        (1 << 24) /* the parenthesis is the head of a for */
 
 /* in JSParenCache.open_bits, besides the SKIP_HAS_* bits: a token inside
    the level reads differently in another mode */
@@ -31871,7 +31876,7 @@ static BOOL js_parse_skip_parens_error(JSParseState *s)
 /* XXX: improve speed with early bailout */
 /* XXX: no longer works if regexps are present. Could use previous
    regexp parsing heuristics to handle most cases */
-static int js_parse_skip_parens_token(JSParseState *s, int *pbits, BOOL no_line_terminator)
+static int js_parse_skip_parens_token(JSParseState *s, int *pbits, int flags)
 {
     char state[JS_SKIP_LEVELS];
     size_t level = 0;
@@ -31884,8 +31889,10 @@ static int js_parse_skip_parens_token(JSParseState *s, int *pbits, BOOL no_line_
     const uint8_t *last_token_ptr;
     JSParenCache *pc;
     JSParenEntry *e;
-    uint32_t mode, closed;
+    uint32_t mode, closed, for_bit;
     BOOL fresh, word;
+    /* the token before is "." or "?.", "for" or "for await", "let" */
+    BOOL after_dot = FALSE, after_for = FALSE, after_let = FALSE;
 
     pc = s->paren_cache;
     if (!pc && !s->paren_cache_off) {
@@ -31906,13 +31913,16 @@ static int js_parse_skip_parens_token(JSParseState *s, int *pbits, BOOL no_line_
     /* the answer depends on where the tokens are read from: right after
        the bracket, as next_token leaves them (fresh) */
     fresh = (s->buf_ptr == s->token.ptr + 1);
+    /* the head of a for reads "of" as a separator: its answer is its own */
+    for_bit = (flags & SKIP_FOR_HEAD) ? JS_PAREN_FOR : 0;
     if (pc && fresh) {
         e = js_paren_find(pc, s->token.ptr - s->buf_start + 1);
-        if (e && ((e->val & JS_PAREN_ANY_MODE) ||
-                  (e->val & JS_PAREN_MODE_MASK) == mode)) {
+        if (e && (e->val & JS_PAREN_FOR) == for_bit &&
+            ((e->val & JS_PAREN_ANY_MODE) ||
+             (e->val & JS_PAREN_MODE_MASK) == mode)) {
             tok = (int16_t)(e->val & JS_PAREN_TOK_MASK);
             bits = (e->val >> JS_PAREN_BITS_SHIFT) & 7;
-            if (no_line_terminator && (e->val & JS_PAREN_LF))
+            if ((flags & SKIP_NO_LINE_TERMINATOR) && (e->val & JS_PAREN_LF))
                 tok = '\n';
             js_parse_get_pos(s, &pos);
             goto done;
@@ -31939,10 +31949,16 @@ static int js_parse_skip_parens_token(JSParseState *s, int *pbits, BOOL no_line_
                 pc->open_pos[level] = s->token.ptr - s->buf_start;
                 pc->open_bits[level] = 0;
             }
-            state[level++] = s->token.val;
+            c = s->token.val;
+            /* 'f' is the head of a for, where "of" may separate */
+            if (c == '(' &&
+                (after_for || (level == 1 && (flags & SKIP_FOR_HEAD))))
+                c = 'f';
+            state[level++] = c;
             break;
         case ')':
-            if (state[--level] != '(')
+            c = state[--level];
+            if (c != '(' && c != 'f')
                 goto done;
             closed = level;
             break;
@@ -32027,9 +32043,19 @@ static int js_parse_skip_parens_token(JSParseState *s, int *pbits, BOOL no_line_
             break;
         }
         /* last_tok is only used to recognize regexps */
-        if (s->token.val == TOK_IDENT &&
-            (token_is_pseudo_keyword(s, JS_ATOM_of) ||
-             token_is_pseudo_keyword(s, JS_ATOM_yield))) {
+        if (after_dot && token_is_ident(s->token.val)) {
+            /* a property name, also a keyword: a "/" after it divides */
+            last_tok = TOK_IDENT;
+        } else if (token_is_pseudo_keyword(s, JS_ATOM_of)) {
+            /* "of" separates only in the head of a for, after an operand
+               that is not the "let" of a declaration. Anywhere else it is
+               a name, and a "/" after it divides */
+            if (state[level - 1] == 'f' && !is_regexp_allowed(last_tok) &&
+                !after_let)
+                last_tok = TOK_OF;
+            else
+                last_tok = TOK_IDENT;
+        } else if (token_is_pseudo_keyword(s, JS_ATOM_yield)) {
             last_tok = TOK_OF;
         } else if (s->token.val == TOK_TEMPLATE && s->token.u.str.sep != '`') {
             /* a template part that ends with "${" opens a substitution,
@@ -32046,6 +32072,13 @@ static int js_parse_skip_parens_token(JSParseState *s, int *pbits, BOOL no_line_
             if (c == 2)
                 pc->open_bits[level - 1] |= SKIP_MODE_DEP;
         }
+        after_dot = (s->token.val == '.' ||
+                     s->token.val == TOK_QUESTION_MARK_DOT);
+        after_for = (s->token.val == TOK_FOR ||
+                     (after_for && (s->token.val == TOK_AWAIT ||
+                                    token_is_pseudo_keyword(s, JS_ATOM_await))));
+        after_let = (s->token.val == TOK_LET ||
+                     token_is_pseudo_keyword(s, JS_ATOM_let));
         last_token_ptr = s->token.ptr;
         JS_SKIP_TOKEN();
         if ((unlikely(--left < 0) &&
@@ -32069,6 +32102,8 @@ static int js_parse_skip_parens_token(JSParseState *s, int *pbits, BOOL no_line_
                 c = TOK_OF;
             val = (c & JS_PAREN_TOK_MASK) |
                 ((pc->open_bits[closed] & 7) << JS_PAREN_BITS_SHIFT) | mode;
+            if (state[closed] == 'f')
+                val |= JS_PAREN_FOR;
             lf = js_paren_has_lf(s->ctx, last_token_ptr, s->token.ptr);
             if (lf < 0)
                 return TOK_ERROR;
@@ -32088,7 +32123,8 @@ static int js_parse_skip_parens_token(JSParseState *s, int *pbits, BOOL no_line_
             tok = s->token.val;
             if (token_is_pseudo_keyword(s, JS_ATOM_of))
                 tok = TOK_OF;
-            if (no_line_terminator && has_lf_in_range(last_token_ptr, s->token.ptr))
+            if ((flags & SKIP_NO_LINE_TERMINATOR) &&
+                has_lf_in_range(last_token_ptr, s->token.ptr))
                 tok = '\n';
             break;
         }
@@ -33796,7 +33832,7 @@ static __exception int js_parse_destructuring_element1(JSParseState *s, int tok,
     rk.list = FALSE;
     if (has_ellipsis < 0) {
         /* pre-parse destructuration target for spread detection */
-        if (js_parse_skip_parens_token(s, &skip_bits, FALSE) == TOK_ERROR)
+        if (js_parse_skip_parens_token(s, &skip_bits, 0) == TOK_ERROR)
             return -1;
         has_ellipsis = skip_bits & SKIP_HAS_ELLIPSIS;
     }
@@ -33905,7 +33941,7 @@ static __exception int js_parse_destructuring_element1(JSParseState *s, int tok,
                     goto prop_error;
                 tok1 = 0;
                 if (s->token.val == '[' || s->token.val == '{') {
-                    tok1 = js_parse_skip_parens_token(s, &skip_bits, FALSE);
+                    tok1 = js_parse_skip_parens_token(s, &skip_bits, 0);
                     if (tok1 == TOK_ERROR)
                         goto prop_error;
                 }
@@ -34143,7 +34179,7 @@ static __exception int js_parse_destructuring_element1(JSParseState *s, int tok,
             }
             tok1 = 0;
             if (s->token.val == '[' || s->token.val == '{') {
-                tok1 = js_parse_skip_parens_token(s, &skip_bits, FALSE);
+                tok1 = js_parse_skip_parens_token(s, &skip_bits, 0);
                 if (tok1 == TOK_ERROR)
                     return -1;
             }
@@ -35676,7 +35712,7 @@ static __exception int js_parse_assign_expr21(JSParseState *s, int parse_flags)
         }
         return 0;
     } else if (s->token.val == '(' &&
-               (tok1 = js_parse_skip_parens_token(s, NULL, TRUE)) == TOK_ERROR) {
+               (tok1 = js_parse_skip_parens_token(s, NULL, SKIP_NO_LINE_TERMINATOR)) == TOK_ERROR) {
         return -1;
     } else if (s->token.val == '(' && tok1 == TOK_ARROW) {
         return js_parse_function_decl(s, JS_PARSE_FUNC_ARROW,
@@ -35698,7 +35734,7 @@ static __exception int js_parse_assign_expr21(JSParseState *s, int parse_flags)
             return -1;
         tok1 = 0;
         if (s->token.val == '(') {
-            tok1 = js_parse_skip_parens_token(s, NULL, TRUE);
+            tok1 = js_parse_skip_parens_token(s, NULL, SKIP_NO_LINE_TERMINATOR);
             if (tok1 == TOK_ERROR)
                 return -1;
         }
@@ -35719,7 +35755,7 @@ static __exception int js_parse_assign_expr21(JSParseState *s, int parse_flags)
                                       JS_FUNC_NORMAL, JS_ATOM_NULL,
                                       s->token.ptr);
     } else if ((s->token.val == '{' || s->token.val == '[') &&
-               (tok1 = js_parse_skip_parens_token(s, &skip_bits, FALSE)) == TOK_ERROR) {
+               (tok1 = js_parse_skip_parens_token(s, &skip_bits, 0)) == TOK_ERROR) {
         return -1;
     } else if ((s->token.val == '{' || s->token.val == '[') && tok1 == '=') {
         if (js_parse_destructuring_element(s, 0, 0, FALSE, skip_bits & SKIP_HAS_ELLIPSIS, TRUE, FALSE) < 0)
@@ -36169,7 +36205,7 @@ static __exception int js_parse_var(JSParseState *s, int parse_flags, int tok,
         } else {
             int skip_bits, tok1 = 0;
             if (s->token.val == '[' || s->token.val == '{') {
-                tok1 = js_parse_skip_parens_token(s, &skip_bits, FALSE);
+                tok1 = js_parse_skip_parens_token(s, &skip_bits, 0);
                 if (tok1 == TOK_ERROR)
                     return -1;
             }
@@ -36330,7 +36366,7 @@ static __exception int js_parse_for_in_of(JSParseState *s, int label_name,
         int skip_bits;
         tok1 = 0;
         if (s->token.val == '[' || s->token.val == '{') {
-            tok1 = js_parse_skip_parens_token(s, &skip_bits, FALSE);
+            tok1 = js_parse_skip_parens_token(s, &skip_bits, 0);
             if (tok1 == TOK_ERROR)
                 return -1;
         }
@@ -36733,7 +36769,7 @@ static __exception int js_parse_statement_or_decl1(JSParseState *s,
             bits = 0;
             is_async = FALSE;
             if (s->token.val == '(') {
-                if (js_parse_skip_parens_token(s, &bits, FALSE) == TOK_ERROR)
+                if (js_parse_skip_parens_token(s, &bits, SKIP_FOR_HEAD) == TOK_ERROR)
                     goto fail;
             } else if (s->token.val == TOK_AWAIT) {
                 if (!(s->cur_func->func_kind & JS_FUNC_ASYNC)) {
@@ -47621,7 +47657,7 @@ static __exception int js_parse_function_decl21(JSParseState *s,
             int skip_bits;
             /* if there is an '=' inside the parameter list, we
                consider there is a parameter expression inside */
-            if (js_parse_skip_parens_token(s, &skip_bits, FALSE) == TOK_ERROR)
+            if (js_parse_skip_parens_token(s, &skip_bits, 0) == TOK_ERROR)
                 goto fail;
             if (skip_bits & SKIP_HAS_ASSIGNMENT)
                 fd->has_parameter_expressions = TRUE;
