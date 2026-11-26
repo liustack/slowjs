@@ -6984,6 +6984,51 @@ static void test_names_siblings_work(void)
     vm_free(&v);
 }
 
+/* A function with 36 closed blocks, then 24 blocks inside one another that
+   each declare one name, and references in the innermost to a name of the
+   function, 25 scopes up. A look in the hash costs a few steps of the walk,
+   so a chain of small scopes like this one is walked: the looks of the
+   compile in the index of the names (JS_WORK there, in engine/quickjs.c) do
+   no work for those references, and 20,000 of them cost what none do. */
+static unsigned long small_scopes_work(int refs)
+{
+    static char src[1 << 17];
+    size_t k = 0;
+    VM v = vm_new();
+    JSValue r;
+    int i;
+
+#define ADD(...) (k += (size_t)snprintf(src + k, sizeof(src) - k, __VA_ARGS__))
+    ADD("(function(){");
+    for (i = 0; i < 36; i++)
+        ADD("{let t;}");
+    ADD("let a=1;");
+    for (i = 0; i < 24; i++)
+        ADD("if(a){let t%d=a;", i);
+    ADD("return [");
+    for (i = 0; i < refs; i++)
+        ADD("a,");
+    ADD("];");
+    for (i = 0; i < 25; i++)
+        ADD("}");
+    ADD(")");
+#undef ADD
+    white_work_reset();
+    r = JS_Eval(v.ctx, src, k, "small.js", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+    CHECK(!JS_IsException(r), "the chain of small scopes does not compile");
+    JS_FreeValue(v.ctx, r);
+    vm_free(&v);
+    return white_work_sum();
+}
+
+static void test_names_small_scopes_walked(void)
+{
+    unsigned long none = small_scopes_work(0), many = small_scopes_work(20000);
+
+    printf("unit-white: test_names_small_scopes_walked: %lu units with no reference, %lu with 20,000\n", none, many);
+    CHECK(many - none < 20000, "the chain of small scopes: %lu units for 20,000 references", many - none);
+}
+
 /* capture_by_value gets no memory: the compile, or the read without
    JS_READ_OBJ_POLLS_CHECKED, fails with out of memory, and never gives
    other marks (which a read would refuse as code no compiler makes). Each
@@ -12052,6 +12097,7 @@ int main(int argc, char **argv)
     test_by_value_file();
     test_by_value_oom();
     test_names_siblings_work();
+    test_names_small_scopes_walked();
     test_short_opcode_index();
     test_fused_edges();
     test_added_vars_oom();

@@ -27698,6 +27698,12 @@ typedef enum JSParseExportEnum {
 typedef struct JSVarScope {
     int parent;  /* index into fd->scopes of the enclosing scope */
     int first;   /* index into fd->vars of the last variable in this scope */
+    /* the vars and the scopes with vars on the chain from first, and
+       whether resolve_scope_var looks in the index for it
+       (var_index_scope_find), which link_var_scopes sets */
+    int chain_vars;
+    int chain_scopes;
+    BOOL chain_indexed;
 } JSVarScope;
 
 typedef struct JSVarDef {
@@ -30174,6 +30180,29 @@ static __exception int find_arg(JSContext *ctx, JSFunctionDef *fd, JSAtom name)
 #ifndef JS_VAR_INDEX_MIN
 #define JS_VAR_INDEX_MIN 32
 #endif
+/* A chain of more than JS_VAR_SCOPE_WALK vars whose scopes have
+   JS_VAR_SCOPE_DENSE vars each on average is looked in the index scope by
+   scope, after a walk of the first JS_VAR_SCOPE_STEPS vars of each scope,
+   and any other chain is walked. A look in the hash costs about as much as
+   a few steps of the walk, which a scope of a few vars does not pay back: a
+   chain of small scopes is walked, as a short one is, and in a chain of big
+   ones a name declared near where it is used is found by the walk. */
+#ifndef JS_VAR_SCOPE_WALK
+#define JS_VAR_SCOPE_WALK 32
+#endif
+#ifndef JS_VAR_SCOPE_DENSE
+#define JS_VAR_SCOPE_DENSE 8
+#endif
+#ifndef JS_VAR_SCOPE_STEPS
+#define JS_VAR_SCOPE_STEPS 4
+#endif
+
+/* the vars of the chain from fd->scopes[scope].first, at most: those that
+   link_var_scopes counted, or all the vars of fd when a link changed since */
+static inline int var_chain_len(JSFunctionDef *fd, int scope)
+{
+    return fd->var_linked > 0 ? fd->scopes[scope].chain_vars : fd->var_count;
+}
 
 static inline uint32_t var_index_slot(JSAtom name, int scope, int bits)
 {
@@ -30198,11 +30227,11 @@ static void var_index_free(JSRuntime *rt, JSFunctionDef *fd)
     fd->var_indexed = 0;
 }
 
-/* the units of work of the update: one for each var inserted */
+/* the units of work of the update: one for each slot of the hash read */
 static int var_index_update(JSContext *ctx, JSFunctionDef *fd)
 {
     JSRuntime *rt = ctx->rt;
-    int n = fd->var_count, i, j, bits, start, sc;
+    int n = fd->var_count, i, j, bits, start, sc, work;
     uint32_t h, mask;
     JSAtom name;
 
@@ -30244,6 +30273,7 @@ static int var_index_update(JSContext *ctx, JSFunctionDef *fd)
     }
     mask = (1u << fd->var_hash_bits) - 1;
     start = fd->var_indexed;
+    work = 0;
     for (i = start; i < n; i++) {
         name = fd->vars[i].var_name;
         sc = fd->vars[i].scope_level;
@@ -30256,6 +30286,7 @@ static int var_index_update(JSContext *ctx, JSFunctionDef *fd)
             fd->var_with_first = i + 1;
         h = var_index_slot(name, sc, fd->var_hash_bits);
         for (;;) {
+            work++;
             j = fd->var_hash[h];
             if (j < 0 || (fd->vars[j].var_name == name &&
                           fd->vars[j].scope_level == sc))
@@ -30266,7 +30297,7 @@ static int var_index_update(JSContext *ctx, JSFunctionDef *fd)
         fd->var_hash[h] = i;
     }
     fd->var_indexed = n;
-    return n - start;
+    return work;
  fail:
     var_index_free(rt, fd);
     fd->var_index_failed = TRUE;
@@ -30597,16 +30628,18 @@ static __exception int find_var_in_child_scope(JSContext *ctx, JSFunctionDef *fd
    -1 otherwise. So the chain goes through whole scopes, each from its
    highest linked var down to its lowest, whose scope_next leads to the next
    one: the first var of a name on it is the highest of the first of those
-   scopes that has one. TRUE with *pidx that var, or -1 and *parg_end TRUE
-   when the chain ends at ARG_SCOPE_END. FALSE when the chain is to be
-   walked: fd has no index, a link changed after link_var_scopes
-   (add_arguments_arg of add_eval_variables), or fd has a 'with' scope, whose
-   var the walk has to meet on its way. */
+   scopes that has one. Scope by scope, the first JS_VAR_SCOPE_STEPS vars
+   are walked and the hash is asked for the rest of a scope that has more.
+   TRUE with *pidx that var, or -1 and *parg_end TRUE when the chain ends at
+   ARG_SCOPE_END. FALSE when the chain is to be walked: fd has no index, a
+   link changed after link_var_scopes (add_arguments_arg of
+   add_eval_variables), or fd has a 'with' scope, whose var the walk has to
+   meet on its way. */
 static BOOL var_index_scope_find(JSContext *ctx, JSFunctionDef *fd,
                                  JSAtom name, int scope,
                                  int *pidx, BOOL *parg_end)
 {
-    int i, j, sc, work;
+    int i, j, n, sc, work;
 
     if (fd->var_linked <= 0 || scope < 0 || scope >= fd->scope_count)
         return FALSE;
@@ -30620,14 +30653,29 @@ static BOOL var_index_scope_find(JSContext *ctx, JSFunctionDef *fd,
     j = -1;
     while (i >= 0) {
         sc = fd->vars[i].scope_level;
-        /* the vars of sc added after link_var_scopes are not on the chain */
+        for (n = 0;;) {
+            work++;
+            if (fd->vars[i].var_name == name) {
+                j = i;
+                goto done;
+            }
+            i = fd->vars[i].scope_next;
+            if (i < 0 || fd->vars[i].scope_level != sc)
+                goto next_scope;
+            if (++n == JS_VAR_SCOPE_STEPS)
+                break;
+        }
+        /* the vars of sc above i were compared, and those added after
+           link_var_scopes are not on the chain */
         for (j = var_index_head(fd, name, sc, &work); j >= fd->var_linked;
              j = fd->var_name_prev[j])
             work++;
         if (j >= 0)
             break;
         i = fd->vars[fd->var_scope_low[sc]].scope_next;
+    next_scope: ;
     }
+ done:
     *parg_end = (j < 0 && i == ARG_SCOPE_END);
     js_compile_count(ctx, work);
     JS_WORK(work);
@@ -30685,32 +30733,57 @@ static JSGlobalVar *find_lexical_global_var(JSFunctionDef *fd, JSAtom name)
    leads to the scope around it that has vars (no scope gets vars while one
    inside it is open). A var put on the chain in scope 0 (none is, but the
    walk would meet it where this would not) turns this off for the function.
-   TRUE with *pidx the first var of the chain named name that is lexical, or
-   a catch parameter when check_catch_var, -1 if none; FALSE when the chain is
-   to be walked. */
+   The chain is looked in the index scope by scope as in
+   var_index_scope_find when the function has more than JS_VAR_SCOPE_WALK
+   vars and JS_VAR_SCOPE_DENSE vars for each of its scopes (those of the
+   chain are not counted while it is parsed). TRUE with *pidx the first var of the chain
+   named name that is lexical, or a catch parameter when check_catch_var, -1
+   if none; FALSE when the chain is to be walked. */
 static BOOL var_index_lexical_find(JSContext *ctx, JSFunctionDef *fd,
                                    JSAtom name, BOOL check_catch_var,
                                    int *pidx)
 {
-    int i, x, sc, work;
+    int i, n, x, sc, work;
+    JSVarDef *vd;
 
     if (fd->var_linked != 0 || fd->var_scope0_linked)
         return FALSE;
+    if (fd->var_count <= JS_VAR_SCOPE_WALK ||
+        fd->var_count < JS_VAR_SCOPE_DENSE * fd->scope_count)
+        return FALSE;
     if (!var_index_ready(ctx, fd, &work))
         return FALSE;
-    i = -1;
-    for (x = fd->scope_first; x >= 0;
-         x = fd->vars[fd->var_scope_low[sc]].scope_next) {
+    x = fd->scope_first;
+    while (x >= 0) {
         sc = fd->vars[x].scope_level;
+        for (n = 0;;) {
+            vd = &fd->vars[x];
+            work++;
+            if (vd->var_name == name &&
+                (vd->is_lexical || (vd->var_kind == JS_VAR_CATCH &&
+                                    check_catch_var))) {
+                i = x;
+                goto done;
+            }
+            x = vd->scope_next;
+            if (x < 0 || fd->vars[x].scope_level != sc)
+                goto next_scope;
+            if (++n == JS_VAR_SCOPE_STEPS)
+                break;
+        }
+        /* the vars of sc above x were compared */
         for (i = var_index_head(fd, name, sc, &work); i >= 0;
              i = fd->var_name_prev[i]) {
-            JSVarDef *vd = &fd->vars[i];
+            vd = &fd->vars[i];
             work++;
             if (i <= x && (vd->is_lexical || (vd->var_kind == JS_VAR_CATCH &&
                                               check_catch_var)))
                 goto done;
         }
+        x = fd->vars[fd->var_scope_low[sc]].scope_next;
+    next_scope: ;
     }
+    i = -1;
  done:
     js_compile_count(ctx, work);
     JS_WORK(work);
@@ -30804,6 +30877,7 @@ static int push_scope(JSParseState *s) {
         fd->scope_count++;
         fd->scopes[scope].parent = fd->scope_level;
         fd->scopes[scope].first = fd->scope_first;
+        fd->scopes[scope].chain_indexed = FALSE;
         emit_op(s, OP_enter_scope);
         emit_u16(s, scope);
         return fd->scope_level = scope;
@@ -40074,6 +40148,7 @@ static JSFunctionDef *js_new_function_def(JSContext *ctx,
     fd->scope_count = 1;
     fd->scopes[0].first = -1;
     fd->scopes[0].parent = -1;
+    fd->scopes[0].chain_indexed = FALSE;
     fd->scope_level = 0;  /* 0: var/arg scope */
     fd->scope_first = -1;
     fd->body_scope = -1;
@@ -41015,7 +41090,8 @@ static __exception int resolve_scope_var(JSContext *ctx, JSFunctionDef *s,
 
     /* resolve local scoped variables */
     var_idx = -1;
-    if (var_index_scope_find(ctx, s, var_name, scope_level, &idx, &is_arg_scope)) {
+    if (s->scopes[scope_level].chain_indexed &&
+        var_index_scope_find(ctx, s, var_name, scope_level, &idx, &is_arg_scope)) {
         if (idx >= 0) {
             vd = &s->vars[idx];
             if ((op == OP_scope_put_var || op == OP_scope_make_ref) &&
@@ -41029,8 +41105,7 @@ static __exception int resolve_scope_var(JSContext *ctx, JSFunctionDef *s,
         }
         goto local_found;
     }
-    /* the chains of the scopes are as long as the vars of each function */
-    js_compile_count(ctx, s->var_count);
+    js_compile_count(ctx, var_chain_len(s, scope_level));
     for (idx = s->scopes[scope_level].first; idx >= 0;) {
         vd = &s->vars[idx];
         if (vd->var_name == var_name) {
@@ -41209,7 +41284,8 @@ static __exception int resolve_scope_var(JSContext *ctx, JSFunctionDef *s,
     for (fd = s; fd->parent;) {
         scope_level = fd->parent_scope_level;
         fd = fd->parent;
-        if (var_index_scope_find(ctx, fd, var_name, scope_level, &idx, &is_arg_scope)) {
+        if (fd->scopes[scope_level].chain_indexed &&
+            var_index_scope_find(ctx, fd, var_name, scope_level, &idx, &is_arg_scope)) {
             if (idx >= 0) {
                 vd = &fd->vars[idx];
                 if ((op == OP_scope_put_var || op == OP_scope_make_ref) &&
@@ -41224,7 +41300,7 @@ static __exception int resolve_scope_var(JSContext *ctx, JSFunctionDef *s,
             }
             goto parent_not_found;
         }
-        js_compile_count(ctx, fd->var_count);
+        js_compile_count(ctx, var_chain_len(fd, scope_level));
         for (idx = fd->scopes[scope_level].first; idx >= 0;) {
             vd = &fd->vars[idx];
             if (vd->var_name == var_name) {
@@ -43890,6 +43966,7 @@ static void link_var_scopes(JSFunctionDef *fd)
     fd->var_linked = fd->var_count;
     for (scope = 0; scope < fd->scope_count; scope++) {
         fd->scopes[scope].first = -1;
+        fd->scopes[scope].chain_vars = 0;
     }
     if (fd->has_parameter_expressions) {
         /* special end of variable list marker for the argument scope */
@@ -43899,11 +43976,21 @@ static void link_var_scopes(JSFunctionDef *fd)
         JSVarDef *vd = &fd->vars[idx];
         vd->scope_next = fd->scopes[vd->scope_level].first;
         fd->scopes[vd->scope_level].first = idx;
+        fd->scopes[vd->scope_level].chain_vars++;
     }
-    for (scope = 2; scope < fd->scope_count; scope++) {
+    for (scope = 0; scope < fd->scope_count; scope++) {
         JSVarScope *sd = &fd->scopes[scope];
-        if (sd->first < 0)
-            sd->first = fd->scopes[sd->parent].first;
+        sd->chain_scopes = (sd->chain_vars > 0);
+        if (scope >= 2) {
+            /* the parent of a scope was pushed before it */
+            JSVarScope *pd = &fd->scopes[sd->parent];
+            sd->chain_vars += pd->chain_vars;
+            sd->chain_scopes += pd->chain_scopes;
+            if (sd->first < 0)
+                sd->first = pd->first;
+        }
+        sd->chain_indexed = sd->chain_vars > JS_VAR_SCOPE_WALK &&
+            sd->chain_vars >= JS_VAR_SCOPE_DENSE * sd->chain_scopes;
     }
     for (idx = 0; idx < fd->var_count; idx++) {
         JSVarDef *vd = &fd->vars[idx];
