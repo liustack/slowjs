@@ -34011,15 +34011,15 @@ static BOOL has_with_scope(JSFunctionDef *s, int scope_level)
     int i;
 
     for (;;) {
-        /* no with in strict mode */
-        if (!(s->js_mode & JS_MODE_STRICT)) {
-            int scope_idx = s->scopes[scope_level].first;
-            while (scope_idx >= 0) {
-                JSVarDef *vd = &s->vars[scope_idx];
-                if (vd->var_name == JS_ATOM__with_)
-                    return TRUE;
-                scope_idx = vd->scope_next;
-            }
+        /* strict code has no with of its own, but the function around a
+           class is strict only while the class is parsed (js_parse_class),
+           and may have one: look at every function */
+        int scope_idx = s->scopes[scope_level].first;
+        while (scope_idx >= 0) {
+            JSVarDef *vd = &s->vars[scope_idx];
+            if (vd->var_name == JS_ATOM__with_)
+                return TRUE;
+            scope_idx = vd->scope_next;
         }
         if (!s->parent)
             break;
