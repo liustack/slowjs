@@ -82,6 +82,10 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Every function of the engine whose -1 says an exception is pending is marked `__exception` (`__js_must_check` in quickjs.h), so a call that drops that answer cannot be built (`-Werror=unused-result`). Built-ins that went on after a step that ran out of memory, with the error left pending and an object missing a property, now fail with it: the `prototype` of a function, the `length` of a class and of a `String` object, the seal of a template object, the tag of a module namespace, the `message`, `cause` and `errors` of an error, a descriptor given to a proxy trap, the result of `Proxy.revocable`, the `lastIndex` of a `RegExp` made with a new target, a constructor made by the API and a global variable taken from those not yet declared | v0.31.6 | `__exception` and `js_iterator_close_throw` in [quickjs.c](../../../engine/quickjs.c), `__js_must_check` in [quickjs.h](../../../engine/quickjs.h) |
 | An `await` in an async function whose PromiseResolve throws an error a script can catch, as a getter of `constructor` of the promise awaited that throws or the call depth refusing the call of that getter, throws it at the `await`, as the specification and the async generator do, so a `catch` or `finally` around it runs. The body stayed suspended at the `await` for good and its promise was rejected. A stop there still ends the body | v0.31.10 | `js_async_function_resume` in [quickjs.c](../../../engine/quickjs.c) |
 | The engine runs on windows/arm64, with the arm64 code of linux and darwin and no room check: the state of the CPU that the system writes at a fault there takes 2.5 KiB, which fits the 4 KiB Go keeps below a stack, and `NewVM` refuses a machine whose state may not fit (SME, SVE longer than 256 bits) | v0.31.12 | [c-engine.md](c-engine.md#room-for-a-fault-on-windows) |
+| The `next` of an `Iterator.from` wrapper that wraps another wrapper gives back the result of the inner one as it is, also when it is not an object | Unreleased | [iterator_from_nested.js](../../../engine/test/compare/iterator_from_nested.js) |
+| `Iterator.from` of a string whose `Symbol.iterator` is gone throws a TypeError, as GetIteratorFlattenable does for an iterator that is no object. Upstream wraps the string | Unreleased | [iterator_from_primitive.js](../../../engine/test/compare/iterator_from_primitive.js) |
+| The fulfill and reject functions `Promise.allSettled` gives each element share one flag, so a thenable that calls both counts once and keeps the first result. Upstream gives each a flag of its own | Unreleased | [promise_all_settled_once.js](../../../engine/test/compare/promise_all_settled_once.js) |
+| `Function.prototype.toString` of a function with no source text (a built-in, a bound function) names it by its own `name` property only when that is a string held as a value, and calls no getter. Upstream reads the property with a get. The name a built-in was made with is not kept, so a changed name shows | Unreleased | [function_to_string_name.js](../../../engine/test/compare/function_to_string_name.js) |
 
 ## The generator
 
@@ -310,7 +314,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | replace with a function and match by a regexp that nothing changed find their matches with no calls of exec | v0.31.3 | `js_regexp_replace_fn` and `js_regexp_match_fast` in [quickjs.c](../../../engine/quickjs.c) |
 | A replace or match by a regexp that nothing changed that fails (stopped by the host, out of memory, a throw) leaves lastIndex where the generic path leaves it at the same stage: while it finds the matches, or once it has found them | v0.31.3 | `js_regexp_reset_lastIndex` in [quickjs.c](../../../engine/quickjs.c) |
 | The table of first characters of a regexp knows `\s` and `\S`, so a regexp that starts with one skips to where a match can start | v0.31.3 | `lre_first_set` in [libregexp.c](../../../engine/libregexp.c) |
-| An empty string of `\q{}` is not copied with memcpy from a null pointer, a fault of the kind the 8th point of upstream #610 names | v0.33.1 | [regexp.md](regexp.md) |
+| An empty string of `\q{}` is not copied with memcpy from a null pointer, a fault of the kind the 8th point of upstream #610 names | Unreleased | [regexp.md](regexp.md) |
 
 ## Strings
 
@@ -328,9 +332,9 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A string that is no atom, made a key, keeps the atom it found, with a reference, so later keyed reads by that string skip the hash and the search of the atom table | v0.31.3 | `js_string_to_atom` in [engine/quickjs.c](../../../engine/quickjs.c) |
 | The register loop adds two flat 8-bit strings into a temp (the left one of 1 to 8192 characters, the right one of 1 to 512) itself: it grows the left one in place or copies both, as `JS_ConcatString` does, without its three calls | v0.31.4 | `rv_concat8` in [engine/regvm-ops-basic.h](../../../engine/regvm-ops-basic.h) |
 | A keyed read (`o[k]`) by a string that keeps no atom looks it up in the atom table without making one: found, the string keeps the atom as a key made from it does. Not found, no object has that name, so the read is undefined through a chain of ordinary objects and fast arrays, with no atom made and freed. An exotic object on the chain, an index, a long key and a string that starts with a digit take the generic path | v0.31.4 | `rv_key_lookup` in [engine/regvm-ops-object.h](../../../engine/regvm-ops-object.h) |
-| A string buffer grows half as large again also past 715,827,882 characters, where it grew by each append and copied itself each time | v0.33.1 | [strings.md](strings.md) |
-| A string buffer made wide keeps its room at the longest string (2^30 - 1 characters), so that no string is longer | v0.33.1 | [strings.md](strings.md) |
-| `"bound " + name`, `"[object " + tag + "]"` and the other fixed concatenations of the engine throw "string too long" past the longest string | v0.33.1 | [strings.md](strings.md) |
+| A string buffer grows half as large again also past 715,827,882 characters, where it grew by each append and copied itself each time | Unreleased | [strings.md](strings.md) |
+| A string buffer made wide keeps its room at the longest string (2^30 - 1 characters), so that no string is longer | Unreleased | [strings.md](strings.md) |
+| `"bound " + name`, `"[object " + tag + "]"` and the other fixed concatenations of the engine throw "string too long" past the longest string | Unreleased | [strings.md](strings.md) |
 
 ## JSON
 
@@ -397,6 +401,9 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A closure is one block: the function object, its properties and its closure variables, where it took three | v0.31.3 | `js_new_function_object` in [quickjs.c](../../../engine/quickjs.c) |
 | `set_name` gives a closure with no name of its own the name in place, without the generic define | v0.31.3 | `js_object_name_in_place` in [quickjs.c](../../../engine/quickjs.c) |
 | `Object.getOwnPropertyDescriptor`, Reflect's and `Object.getOwnPropertyDescriptors` make each descriptor at its final shape, which the context keeps for the data form and for the accessor form, and fill its four values, with no define of each key | v0.31.4 | `js_new_desc_object` in [quickjs.c](../../../engine/quickjs.c) |
+| The `ownKeys` of a Proxy finishes against the target it began with when its trap, or the reading of the list the trap returned, revokes the proxy. Upstream throws a TypeError | Unreleased | [proxy_own_keys_revoke.js](../../../engine/test/compare/proxy_own_keys_revoke.js) |
+| The `ownKeys` of a Proxy counts a key of its target whose descriptor is undefined with the configurable keys, as [[OwnPropertyKeys]] says: a target that is not extensible needs it in the trap result. Upstream skips it | Unreleased | [proxy_own_keys_no_desc.js](../../../engine/test/compare/proxy_own_keys_no_desc.js) |
+| The `ownKeys` of a Proxy reads the descriptor of every key of its target before it checks the trap result, so an error from reading one comes before the TypeError of a missing key. Upstream checks each key as it reads it | Unreleased | [proxy_own_keys_order.js](../../../engine/test/compare/proxy_own_keys_order.js) |
 
 ## Memory
 
@@ -409,6 +416,8 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | The shape cache holds the prototype of the shapes it keeps and follows `JS_SetClassProto` of its own context only, so letting kept shapes go runs no finalizer, and it lets them go from a ring taken out first, so a finalizer that sets the cache again finds it whole | v0.31.6 | `js_shape_cache_proto` in [quickjs.c](../../../engine/quickjs.c) |
 | A write of a name that takes the shape its step keeps for an object whose properties must move holds the shape before it asks for the new property array: a refused request let the kept shapes go and the object took a freed shape, which later aborted the engine or corrupted another shape | v0.31.8 | `rv_putf_step` in [regvm-ops-basic.h](../../../engine/regvm-ops-basic.h) |
 | The collection a large block of a built-in runs before it would pass the memory limit makes the next ones wait when it leaves the heap near the limit, for 1, 2, 4 and up to 1024 such blocks, and to the next call of the host at most, so a VM that stays within 8 KiB of its limit no longer collects at every array that grows | v0.31.9 | `js_trigger_gc_block_run` and `JS_StartCall` in [quickjs.c](../../../engine/quickjs.c), `enter` in [entry.go](../../../entry.go) |
+| `transfer()` and `transferToFixedLength()` of an ArrayBuffer made by `JS_NewArrayBuffer` with no release callback copy the bytes and call no null pointer. Upstream calls it | Unreleased | [unit-api.c](../../../engine/test/unit-api.c) (`test_array_buffer_no_release`) |
+| `transfer()` of a resizable ArrayBuffer to a length past its `maxByteLength` throws a `RangeError`, as AllocateArrayBuffer does. Upstream throws a TypeError | Unreleased | [array_buffer_transfer_max.js](../../../engine/test/compare/array_buffer_transfer_max.js) |
 
 ## Young collection
 

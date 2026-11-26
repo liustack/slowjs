@@ -14,10 +14,16 @@ What changed in `github.com/liustack/beastjs` (its name from v0.33.0, `github.co
 - `Array.prototype.values`, `keys` and `entries` on an array-like, the `ownKeys` result of a Proxy and `RegExp` `replace` with a custom `exec` read a length as the specification does: a length of -1 is 0 (it was 4294967295, so an iterator ran four billion times) and a length above 2^32 is kept. An `ownKeys` list longer than 2^31 - 1 is a `RangeError`.
 - `Iterator.prototype.drop` no longer reads the `value` of the items it throws away.
 - The `next` and `return` of an `Iterator.from` wrapper give back what the method they wrap returned.
+- The `next` of an `Iterator.from` wrapper around another wrapper gives back what the inner `next` returned, instead of throwing a `TypeError` when that is not an object.
+- `Iterator.from` of a string throws a `TypeError` when `String.prototype[Symbol.iterator]` is gone, instead of wrapping the string.
 - `Function.prototype.toString` of a revoked Proxy of a function returns its text instead of throwing, and no longer runs the `get` trap of a live one.
-- `Math.sumPrecise` of many large numbers is exact (300 times 2^53 - 1 was wrong).
+- `Function.prototype.toString` of a built-in or bound function no longer calls a getter put on its `name`, and no longer throws when that getter throws.
+- `Math.sumPrecise` is exact for long lists: 300 times 2^53 - 1 was wrong, and a negative sum of a few thousand values or more gave `Infinity`.
 - `Array.prototype.sort` calls the comparator for two identical values, as the specification says.
 - `new ArrayBuffer(0, { maxByteLength: 2 ** 64 })` and `maxByteLength: Infinity` throw a `RangeError` where they made a resizable buffer with a maximum of 0.
+- `ArrayBuffer.prototype.transfer` to a length past the `maxByteLength` of a resizable buffer throws a `RangeError` instead of a `TypeError`.
+- `Reflect.ownKeys` and the other readers of the keys of a Proxy follow the specification more closely: they give the keys when the `ownKeys` trap revokes the proxy while it runs, check a key of the target with no descriptor as a configurable one, and read every descriptor of the target before reporting a missing key.
+- `Promise.allSettled` keeps the first result of an element whose thenable calls both of its functions, instead of the last one.
 - `JSON.parse` with a reviver reads the length of an array (also a Proxy of one) as the specification does: a length of -1 is 0 and a length above 2^32 is kept.
 - A template object (the strings array of a tagged template) in bytecode that `EvalBytecode` runs is frozen as when the source is parsed.
 - `Promise.withResolvers` no longer frees a value twice when it runs out of memory.
