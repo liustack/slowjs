@@ -46444,7 +46444,6 @@ static __exception int capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
                 g.hand_at = js_malloc_rt(rt, sizeof(int) * (g.nb + 3));
                 /* the events, then the block of each */
                 g.ev = js_malloc_rt(rt, sizeof(int) * 2 * (nev + 1));
-                g.ev_blk = g.ev + nev + 1;
                 g.ev_at = js_malloc_rt(rt, sizeof(int) * (g.nb + 3));
                 g.site_blk = js_malloc_rt(rt, sizeof(int) * (ns + 1));
                 g.site_ev = js_malloc_rt(rt, sizeof(int) * (ns + 1));
@@ -46452,6 +46451,7 @@ static __exception int capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
                 if (!g.succ || !g.succ_at || !g.hand || !g.hand_at || !g.ev ||
                     !g.ev_at || !g.site_blk || !g.site_ev || !g.site_child)
                     goto no_mem;
+                g.ev_blk = g.ev + nev + 1;
             }
             nsucc = nhand = nev = ns = 0;
             for (i = 0; i < g.nb; i++) {
