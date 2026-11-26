@@ -34008,7 +34008,9 @@ done:
 /* check if scope chain contains a with statement */
 static BOOL has_with_scope(JSFunctionDef *s, int scope_level)
 {
-    while (s) {
+    int i;
+
+    for (;;) {
         /* no with in strict mode */
         if (!(s->js_mode & JS_MODE_STRICT)) {
             int scope_idx = s->scopes[scope_level].first;
@@ -34019,9 +34021,20 @@ static BOOL has_with_scope(JSFunctionDef *s, int scope_level)
                 scope_idx = vd->scope_next;
             }
         }
+        if (!s->parent)
+            break;
         /* check parent scopes */
         scope_level = s->parent_scope_level;
         s = s->parent;
+    }
+    /* the code of a direct eval, at the top, has the with statements around
+       the call among its closure variables, whatever its mode, as
+       resolve_scope_var() finds them */
+    if (s->is_eval) {
+        for (i = 0; i < s->closure_var_count; i++) {
+            if (s->closure_var[i].var_name == JS_ATOM__with_)
+                return TRUE;
+        }
     }
     return FALSE;
 }

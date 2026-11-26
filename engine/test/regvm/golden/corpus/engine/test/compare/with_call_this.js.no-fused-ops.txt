@@ -1,0 +1,17 @@
+result eval optional true
+result eval plain true
+result eval tagged true
+result eval strict [true,true]
+result eval function [true,true]
+result eval arrow [true,true]
+result eval in eval [true,true]
+result function eval [true,true]
+result eval class [true,true]
+result eval no with [false,false]
+result strict function [true,true]
+result with assign spec: [2,"undefined"]
+result eval assign spec: [2,"undefined"]
+result eval increment 8
+mem-end obj=199 atom=554 shape=127 prop=972 jsfunc=5 cfunc=127 array=2 fast_array=2 elements=14 binary=0
+mem-gc obj=195 atom=552 shape=124 prop=965 jsfunc=3 cfunc=127 array=2 fast_array=2 elements=14 binary=0
+--- status exit 0

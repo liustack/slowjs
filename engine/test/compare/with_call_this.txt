@@ -1,0 +1,14 @@
+eval optional true
+eval plain true
+eval tagged true
+eval strict [true,true]
+eval function [true,true]
+eval arrow [true,true]
+eval in eval [true,true]
+function eval [true,true]
+eval class [true,true]
+eval no with [false,false]
+strict function [true,true]
+with assign spec: [2,"undefined"]
+eval assign spec: [2,"undefined"]
+eval increment 8
