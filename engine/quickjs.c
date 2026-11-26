@@ -27881,6 +27881,9 @@ typedef struct JSParseState {
        NULL outside JS_ParseJSON3 */
     struct JSONKeyCache *json_keys;
     GetLineColCache get_line_col_cache;
+    /* the answers of js_parse_skip_parens_token, NULL until its first
+       call, freed at the end of the parse (js_parse_free_paren_cache) */
+    struct JSParenCache *paren_cache;
 } JSParseState;
 
 typedef struct JSOpCode {
@@ -30966,6 +30969,181 @@ static BOOL has_lf_in_range(const uint8_t *p1, const uint8_t *p2)
     return (memchr(p1, '\n', p2 - p1) != NULL);
 }
 
+/* The levels of brackets js_parse_skip_parens_token() follows. */
+#define JS_SKIP_LEVELS 256
+
+/* What js_parse_skip_parens_token() answered for the bracket at a position
+   of the source. The lookahead from a bracket goes through every bracket
+   inside it, and the parse asks again from many of them when it gets there:
+   without the answers kept, a source with brackets nested n deep is read n
+   times over. The answer from a bracket depends only on the source after it
+   and on how the tokens are read there: strict mode, and whether yield and
+   await are keywords (js_parse_skip_mode). It does not depend on the token
+   before the bracket, as the bracket itself makes a "/" after it a regexp,
+   nor on the brackets around it, which the lookahead from it never closes.
+   So the lookahead keeps the answer of each bracket it went through, under
+   the position and the mode, and a later lookahead from there with the same
+   mode takes it. An answer is the same in every mode when no token from the
+   bracket to the token after its closing one reads differently in another
+   mode (js_parse_skip_mode_dep): then any mode takes it. */
+typedef struct JSParenEntry {
+    uint32_t key;               /* offset of the bracket + 1, 0 when free */
+    uint32_t val;               /* JS_PAREN_* */
+} JSParenEntry;
+
+#define JS_PAREN_TOK_MASK   0xffff  /* the token after, TOK_OF for "of" */
+#define JS_PAREN_BITS_SHIFT 16      /* the SKIP_HAS_* bits */
+#define JS_PAREN_LF         (1 << 19) /* a line feed before the token after */
+#define JS_PAREN_MODE_SHIFT 20      /* js_parse_skip_mode */
+#define JS_PAREN_MODE_MASK  (7 << JS_PAREN_MODE_SHIFT)
+#define JS_PAREN_ANY_MODE   (1 << 23) /* the same answer in every mode */
+
+/* in JSParenCache.open_bits, besides the SKIP_HAS_* bits: a token inside
+   the level reads differently in another mode */
+#define SKIP_MODE_DEP       (1 << 3)
+
+typedef struct JSParenCache {
+    JSParenEntry *tab;          /* open addressing, a power of 2 entries */
+    uint32_t size;
+    uint32_t count;
+    /* the lookahead under way: for each level, the offset of its bracket
+       and the SKIP_HAS_* bits seen at that level (SKIP_HAS_ASSIGNMENT and
+       SKIP_MODE_DEP also inside it, added to the level around it when it
+       closes) */
+    uint32_t open_pos[JS_SKIP_LEVELS];
+    uint8_t open_bits[JS_SKIP_LEVELS];
+} JSParenCache;
+
+/* how next_token reads the tokens in the current function: what the
+   answers of the lookahead depend on besides the source */
+static int js_parse_skip_mode(JSParseState *s)
+{
+    JSFunctionDef *fd = s->cur_func;
+    int mode = 0;
+
+    if (fd->js_mode & JS_MODE_STRICT)
+        mode |= 1;
+    if (func_has_ancestor_kind(fd, -1, JS_FUNC_GENERATOR))
+        mode |= 2;
+    if (s->is_module || func_has_ancestor_kind(fd, -1, JS_FUNC_ASYNC))
+        mode |= 4;
+    return mode;
+}
+
+/* Whether the current token of the lookahead reads differently in another
+   mode (js_parse_skip_mode): 1 for a name that is a keyword in some modes
+   (update_token_ident), which changes what a "/" after it is, 2 for a
+   number or a string that strict mode refuses (next_token1,
+   js_parse_string), counting every escape of a digit in a string. */
+static int js_parse_skip_mode_dep(JSParseState *s)
+{
+    const uint8_t *p, *end;
+
+    switch (s->token.val) {
+    case TOK_IDENT:
+        return s->token.u.ident.atom >= JS_ATOM_implements &&
+            s->token.u.ident.atom <= JS_ATOM_await;
+    case TOK_NUMBER:
+        p = s->token.ptr;
+        return (p[0] == '0' && is_digit(p[1])) ? 2 : 0;
+    case TOK_STRING:
+        p = s->token.ptr;
+        end = s->buf_ptr;
+        while ((p = memchr(p, '\\', end - p)) != NULL) {
+            if (is_digit(p[1]))
+                return 2;
+            p += 2;
+        }
+        return 0;
+    default:
+        return s->token.val >= TOK_IMPLEMENTS && s->token.val <= TOK_AWAIT;
+    }
+}
+
+static inline uint32_t js_paren_hash(uint32_t key, uint32_t size)
+{
+    key *= 0x9e3779b1;
+    return (key ^ (key >> 16)) & (size - 1);
+}
+
+static JSParenEntry *js_paren_find(JSParenCache *pc, uint32_t key)
+{
+    JSParenEntry *e;
+    uint32_t i;
+
+    if (!pc->tab)
+        return NULL;
+    for (i = js_paren_hash(key, pc->size);; i = (i + 1) & (pc->size - 1)) {
+        e = &pc->tab[i];
+        if (e->key == key)
+            return e;
+        if (e->key == 0)
+            return NULL;
+    }
+}
+
+static int js_paren_put(JSContext *ctx, JSParenCache *pc, uint32_t key,
+                        uint32_t val)
+{
+    JSParenEntry *e;
+    uint32_t i;
+
+    if ((pc->count + 1) * 2 > pc->size) {
+        JSParenEntry *tab, *old = pc->tab;
+        uint32_t j, size = pc->size ? pc->size * 2 : 1024;
+
+        /* 2^30 entries are 8 GiB: the size of 32 bits never runs over */
+        if (pc->size >= (1u << 30)) {
+            JS_ThrowOutOfMemory(ctx);
+            return -1;
+        }
+        tab = js_mallocz(ctx, sizeof(tab[0]) * size);
+        if (!tab)
+            return -1;
+        for (j = 0; j < pc->size; j++) {
+            if (old[j].key == 0)
+                continue;
+            for (i = js_paren_hash(old[j].key, size); tab[i].key != 0;
+                 i = (i + 1) & (size - 1))
+                continue;
+            tab[i] = old[j];
+        }
+        js_free(ctx, old);
+        pc->tab = tab;
+        pc->size = size;
+    }
+    for (i = js_paren_hash(key, pc->size);; i = (i + 1) & (pc->size - 1)) {
+        e = &pc->tab[i];
+        if (e->key == key)
+            break;
+        if (e->key == 0) {
+            e->key = key;
+            pc->count++;
+            break;
+        }
+    }
+    /* an answer under another mode is replaced */
+    e->val = val;
+    return 0;
+}
+
+static void js_parse_free_paren_cache(JSParseState *s)
+{
+    JSParenCache *pc = s->paren_cache;
+
+    if (pc) {
+        js_free(s->ctx, pc->tab);
+        js_free(s->ctx, pc);
+        s->paren_cache = NULL;
+    }
+}
+
+/* JS_SKIP_TOKEN() is called for each token the lookahead of
+   js_parse_skip_parens_token() reads: white.c counts them */
+#ifndef JS_SKIP_TOKEN
+#define JS_SKIP_TOKEN() ((void)0)
+#endif
+
 /* The lookahead of js_parse_skip_parens_token() met an error. A syntax error
    is dropped: the lookahead may read what is not a token (a division taken
    for a regexp), and the parse that follows meets the real error, if there is
@@ -30984,13 +31162,14 @@ static BOOL js_parse_skip_parens_error(JSParseState *s)
    the token after, TOK_EOF when the lookahead could not read up to there, or
    TOK_ERROR with the exception pending when it ran out of memory or was
    interrupted: a caller has to check for it. Do not test for a negative
-   value: the tokens have negative values. */
+   value: the tokens have negative values. The answer from every bracket the
+   lookahead closes is kept (JSParenCache), and taken when it is asked again. */
 /* XXX: improve speed with early bailout */
 /* XXX: no longer works if regexps are present. Could use previous
    regexp parsing heuristics to handle most cases */
 static int js_parse_skip_parens_token(JSParseState *s, int *pbits, BOOL no_line_terminator)
 {
-    char state[256];
+    char state[JS_SKIP_LEVELS];
     size_t level = 0;
     JSParsePos pos;
     int last_tok, tok = TOK_EOF;
@@ -30999,9 +31178,44 @@ static int js_parse_skip_parens_token(JSParseState *s, int *pbits, BOOL no_line_
        after it counts them again (next_token) */
     int left = JS_COMPILE_POLL_STEP / JS_TOKEN_WORK;
     const uint8_t *last_token_ptr;
-    
+    JSParenCache *pc;
+    JSParenEntry *e;
+    uint32_t mode, closed;
+    BOOL fresh, word;
+
+    pc = s->paren_cache;
+    if (!pc) {
+        pc = js_mallocz(s->ctx, sizeof(*pc));
+        if (!pc)
+            return TOK_ERROR;
+        s->paren_cache = pc;
+    }
+    mode = js_parse_skip_mode(s) << JS_PAREN_MODE_SHIFT;
+    /* the brackets are kept by an offset of 32 bits */
+    if (unlikely(s->buf_end - s->buf_start >= UINT32_MAX))
+        pc = NULL;
+    /* the answer depends on where the tokens are read from: right after
+       the bracket, as next_token leaves them (fresh) */
+    fresh = (s->buf_ptr == s->token.ptr + 1);
+    if (pc && fresh) {
+        e = js_paren_find(pc, s->token.ptr - s->buf_start + 1);
+        if (e && ((e->val & JS_PAREN_ANY_MODE) ||
+                  (e->val & JS_PAREN_MODE_MASK) == mode)) {
+            tok = (int16_t)(e->val & JS_PAREN_TOK_MASK);
+            bits = (e->val >> JS_PAREN_BITS_SHIFT) & 7;
+            if (no_line_terminator && (e->val & JS_PAREN_LF))
+                tok = '\n';
+            js_parse_get_pos(s, &pos);
+            goto done;
+        }
+    }
+
     /* protect from underflow */
     state[level++] = 0;
+    /* the level of the bracket the last token closed, 0 for none */
+    closed = 0;
+    /* the token before is a name that is a keyword in some modes */
+    word = FALSE;
 
     js_parse_get_pos(s, &pos);
     last_tok = 0;
@@ -31012,19 +31226,28 @@ static int js_parse_skip_parens_token(JSParseState *s, int *pbits, BOOL no_line_
         case '{':
             if (level >= sizeof(state))
                 goto done;
+            if (pc) {
+                pc->open_pos[level] = s->token.ptr - s->buf_start;
+                pc->open_bits[level] = 0;
+            }
             state[level++] = s->token.val;
             break;
         case ')':
             if (state[--level] != '(')
                 goto done;
+            closed = level;
             break;
         case ']':
             if (state[--level] != '[')
                 goto done;
+            closed = level;
             break;
         case '}':
             c = state[--level];
             if (c == '`') {
+                if (pc)
+                    pc->open_bits[level - 1] |= pc->open_bits[level] &
+                        (SKIP_HAS_ASSIGNMENT | SKIP_MODE_DEP);
                 /* continue the parsing of the template */
                 free_token(s, &s->token);
                 /* Resume TOK_TEMPLATE parsing (s->token.line_num and
@@ -31039,6 +31262,7 @@ static int js_parse_skip_parens_token(JSParseState *s, int *pbits, BOOL no_line_
             } else if (c != '{') {
                 goto done;
             }
+            closed = level;
             break;
         case TOK_TEMPLATE:
         handle_template:
@@ -31047,6 +31271,8 @@ static int js_parse_skip_parens_token(JSParseState *s, int *pbits, BOOL no_line_
                    parsing the template */
                 if (level >= sizeof(state))
                     goto done;
+                if (pc)
+                    pc->open_bits[level] = 0;
                 state[level++] = '`';
             }
             break;
@@ -31056,14 +31282,20 @@ static int js_parse_skip_parens_token(JSParseState *s, int *pbits, BOOL no_line_
             if (level == 2) {
                 bits |= SKIP_HAS_SEMI;
             }
+            if (pc)
+                pc->open_bits[level - 1] |= SKIP_HAS_SEMI;
             break;
         case TOK_ELLIPSIS:
             if (level == 2) {
                 bits |= SKIP_HAS_ELLIPSIS;
             }
+            if (pc)
+                pc->open_bits[level - 1] |= SKIP_HAS_ELLIPSIS;
             break;
         case '=':
             bits |= SKIP_HAS_ASSIGNMENT;
+            if (pc)
+                pc->open_bits[level - 1] |= SKIP_HAS_ASSIGNMENT;
             break;
 
         case TOK_DIV_ASSIGN:
@@ -31072,6 +31304,9 @@ static int js_parse_skip_parens_token(JSParseState *s, int *pbits, BOOL no_line_
         case '/':
             tok_len = 1;
         parse_regexp:
+            /* another mode may read it the other way */
+            if (pc && word)
+                pc->open_bits[level - 1] |= SKIP_MODE_DEP;
             if (is_regexp_allowed(last_tok)) {
                 s->buf_ptr -= tok_len;
                 if (js_parse_regexp(s)) {
@@ -31096,7 +31331,14 @@ static int js_parse_skip_parens_token(JSParseState *s, int *pbits, BOOL no_line_
         } else {
             last_tok = s->token.val;
         }
+        if (pc) {
+            c = js_parse_skip_mode_dep(s);
+            word = (c == 1);
+            if (c == 2)
+                pc->open_bits[level - 1] |= SKIP_MODE_DEP;
+        }
         last_token_ptr = s->token.ptr;
+        JS_SKIP_TOKEN();
         if ((unlikely(--left < 0) &&
              (left = JS_COMPILE_POLL_STEP / JS_TOKEN_WORK,
               js_poll_interrupts(s->ctx))) ||
@@ -31105,6 +31347,30 @@ static int js_parse_skip_parens_token(JSParseState *s, int *pbits, BOOL no_line_
                 return TOK_ERROR;
             break;
         }
+        if (closed && pc) {
+            /* the answer of the lookahead from the bracket just closed:
+               the token read now, and what it saw inside */
+            uint32_t val;
+
+            pc->open_bits[closed - 1] |= pc->open_bits[closed] &
+                (SKIP_HAS_ASSIGNMENT | SKIP_MODE_DEP);
+            c = s->token.val;
+            if (token_is_pseudo_keyword(s, JS_ATOM_of))
+                c = TOK_OF;
+            val = (c & JS_PAREN_TOK_MASK) |
+                ((pc->open_bits[closed] & 7) << JS_PAREN_BITS_SHIFT) | mode;
+            if (has_lf_in_range(last_token_ptr, s->token.ptr))
+                val |= JS_PAREN_LF;
+            if (!(pc->open_bits[closed] & SKIP_MODE_DEP) &&
+                !js_parse_skip_mode_dep(s))
+                val |= JS_PAREN_ANY_MODE;
+            /* the bracket the lookahead started at is read from where
+               this call found it (fresh) */
+            if ((closed > 1 || fresh) &&
+                js_paren_put(s->ctx, pc, pc->open_pos[closed] + 1, val))
+                return TOK_ERROR;
+        }
+        closed = 0;
         if (level <= 1) {
             tok = s->token.val;
             if (token_is_pseudo_keyword(s, JS_ATOM_of))
@@ -47064,6 +47330,7 @@ static JSValue __JS_EvalInternal(JSContext *ctx, JSValueConst this_obj,
     fd->body_scope = fd->scope_level;
 
     err = js_parse_program(s);
+    js_parse_free_paren_cache(s);
     if (err) {
     fail:
         free_token(s, &s->token);

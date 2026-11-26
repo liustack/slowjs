@@ -193,6 +193,7 @@ int white_sb_write8(struct StringBuffer *b, const uint8_t *p, int len);
 int white_sb_putc16(struct StringBuffer *b, uint32_t c);
 unsigned long white_work_longest(void);
 unsigned long white_work_sum(void);
+unsigned long white_skip_tokens_read(void);
 void white_work_add(unsigned long n);
 size_t white_sb_block_usable(const struct StringBuffer *b);
 void white_front_drain(JSContext *ctx);
@@ -5003,6 +5004,60 @@ static Code straight(int n)
     op_n(&c, W_PUSH_0, n);
     op_n(&c, W_RETURN_UNDEF, 1);
     return c;
+}
+
+/* The lookahead that tells an arrow function, a destructuring or the head of
+   a for from an expression (js_parse_skip_parens_token) reads from a bracket
+   up to its closing bracket, and the parse asks it again from brackets inside
+   when it gets there. It keeps what it found from each bracket it went
+   through, so a source with brackets nested n deep is not read n times over:
+   for each shape, 40 lines of brackets nested 180 to 240 levels deep, the
+   lookahead reads fewer than twice as many tokens as the source has bytes.
+   Before, it read 30 to 120 times as many. */
+static void test_parens_lookahead_linear(void)
+{
+    static const struct {
+        const char *what, *head, *open, *mid, *close, *tail;
+        int depth;
+    } shapes[] = {
+        { "parentheses", "x = ", "(", "a", ")", ";\n", 240 },
+        { "arrow functions", "x = ", "((a) => ", "a", ")", ";\n", 200 },
+        { "brackets of every kind", "[x] = ", "[{a:(", "a", ")}]", ";\n", 80 },
+        { "templates", "x = ", "`${(", "a", ")}`", ";\n", 120 },
+        { "functions with defaults", "x = ", "(function (a = 1) { return (", "a", "); })", ";\n", 80 },
+        { "strict async functions", "x = ", "(async function (a) { 'use strict'; return (", "await a", "); })", ";\n", 60 },
+        { "for heads", "x = ", "(function () { for (const [b] of (", "a", ")); })", ";\n", 60 },
+    };
+    int i, k, d;
+
+    for (i = 0; i < (int)countof(shapes); i++) {
+        VM v = vm_new();
+        size_t len = 0, cap = 40 * (strlen(shapes[i].head) + strlen(shapes[i].mid) + strlen(shapes[i].tail) +
+                                    shapes[i].depth * (strlen(shapes[i].open) + strlen(shapes[i].close))) + 1;
+        char *src = malloc(cap);
+        unsigned long read;
+        JSValue r;
+
+        for (k = 0; k < 40; k++) {
+            len += sprintf(src + len, "%s", shapes[i].head);
+            for (d = 0; d < shapes[i].depth; d++)
+                len += sprintf(src + len, "%s", shapes[i].open);
+            len += sprintf(src + len, "%s", shapes[i].mid);
+            for (d = 0; d < shapes[i].depth; d++)
+                len += sprintf(src + len, "%s", shapes[i].close);
+            len += sprintf(src + len, "%s", shapes[i].tail);
+        }
+        read = white_skip_tokens_read();
+        r = JS_Eval(v.ctx, src, len, "parens.js", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+        read = white_skip_tokens_read() - read;
+        CHECK(!JS_IsException(r), "%s: does not compile", shapes[i].what);
+        if (JS_IsException(r))
+            free(exception_text(v.ctx));
+        JS_FreeValue(v.ctx, r);
+        CHECK(read < 2 * len, "%s: the lookahead read %lu tokens for %zu bytes", shapes[i].what, read, len);
+        free(src);
+        vm_free(&v);
+    }
 }
 
 /* The count of the work of a compile stays below 0 once it is there, up to
@@ -11803,6 +11858,7 @@ int main(int argc, char **argv)
     test_error_nest();
     test_function_properties_oom();
     test_compile_count();
+    test_parens_lookahead_linear();
     test_poll_scan();
     test_poll_insert();
     test_poll_compile();

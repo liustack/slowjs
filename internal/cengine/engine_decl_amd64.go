@@ -1165,7 +1165,6 @@ func js_resolve_export(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintpt
 func js_resolve_export1(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr)
 func js_resolve_export_throw_error(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr)
 func js_resolve_module(a0 uintptr, a1 uintptr, a2 uintptr)
-func js_resolve_module_top(a0 uintptr, a1 uintptr, a2 uintptr)
 func js_rest_end(a0 uintptr, a1 uintptr, a2 uintptr)
 func js_rest_key(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
 func js_rope_child_free(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)

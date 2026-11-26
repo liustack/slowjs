@@ -142,6 +142,11 @@ static unsigned long white_gc_runs[2];
 static unsigned long white_module_steps;
 #define JS_MODULE_STEP() (white_module_steps++)
 
+/* JS_SKIP_TOKEN counts the tokens the lookahead of the parser reads
+   (js_parse_skip_parens_token) */
+static unsigned long white_skip_tokens;
+#define JS_SKIP_TOKEN() (white_skip_tokens++)
+
 #define host_poll white_host_poll
 
 #include "../quickjs.c"
@@ -3306,4 +3311,10 @@ uint32_t white_string_fake_len(JSValueConst v, uint32_t len)
 
     p->len = len;
     return old;
+}
+
+/* the tokens the lookahead of the parser read so far (JS_SKIP_TOKEN) */
+unsigned long white_skip_tokens_read(void)
+{
+    return white_skip_tokens;
 }
