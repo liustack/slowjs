@@ -6948,6 +6948,42 @@ static void test_by_value_file(void)
     vm_free(&v);
 }
 
+/* A function of 4,000 blocks that each declare x, as the one around them
+   does, then 8 blocks inside one another and 4,000 references to x in the
+   innermost. The look for each name of the compile goes over the scopes
+   around it and the vars of those, never over the blocks before, which are
+   not around it: the units of those looks (JS_WORK in the index of the
+   names, find_var in engine/quickjs.c) are a few for each name, and never
+   many between two readings of the flag. */
+static void test_names_siblings_work(void)
+{
+    static char src[1 << 17];
+    size_t k = 0;
+    VM v = vm_new();
+    JSValue r;
+    int i;
+
+#define ADD(...) (k += (size_t)snprintf(src + k, sizeof(src) - k, __VA_ARGS__))
+    ADD("(function(){let x=7;");
+    for (i = 0; i < 4000; i++)
+        ADD("{let x=%d;}", i);
+    ADD("{{{{{{{{let marker;{let x;}return [");
+    for (i = 0; i < 4000; i++)
+        ADD("x,");
+    ADD("]}}}}}}}}})");
+#undef ADD
+    white_work_reset();
+    r = JS_Eval(v.ctx, src, k, "siblings.js", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+    CHECK(!JS_IsException(r), "the blocks of one name do not compile");
+    JS_FreeValue(v.ctx, r);
+    printf("unit-white: test_names_siblings_work: %lu units, at most %lu between two readings\n", white_work_sum(),
+           white_work_longest());
+    CHECK(white_work_sum() <= 100000, "the blocks of one name: %lu units of work", white_work_sum());
+    CHECK(white_work_longest() <= 2 * 16384, "the blocks of one name: %lu units of work between two readings of the flag",
+          white_work_longest());
+    vm_free(&v);
+}
+
 /* capture_by_value gets no memory: the compile, or the read without
    JS_READ_OBJ_POLLS_CHECKED, fails with out of memory, and never gives
    other marks (which a read would refuse as code no compiler makes). Each
@@ -12015,6 +12051,7 @@ int main(int argc, char **argv)
     test_gc_block_held();
     test_by_value_file();
     test_by_value_oom();
+    test_names_siblings_work();
     test_short_opcode_index();
     test_fused_edges();
     test_added_vars_oom();

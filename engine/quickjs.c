@@ -27765,10 +27765,13 @@ typedef struct JSFunctionDef {
     int var_count;
     /* the index of the names of vars[] (var_index_update), NULL when there
        is none */
-    int *var_hash; /* the highest index of a var of each name, -1 if free */
-    int *var_name_prev; /* the next lower index of a var of the same name */
+    int *var_hash; /* the highest index of a var of each name and scope, -1 if free */
+    int *var_name_prev; /* the next lower index of a var of the same name and scope */
     int var_hash_bits; /* var_hash has 1 << var_hash_bits slots */
     int var_name_prev_size; /* allocated size for var_name_prev[] */
+    int *var_scope_low; /* the lowest index of a var of each scope, -1 if none */
+    int var_scope_low_size; /* allocated size for var_scope_low[] */
+    int var_with_first; /* 1 + the lowest index of a var named _with_, 0 if none */
     int var_indexed; /* vars[0 .. var_indexed) are in the index */
     BOOL var_index_failed; /* no memory for it: vars[] is walked */
     int var_linked; /* the vars link_var_scopes linked, -1 when a link changed since */
@@ -30151,34 +30154,47 @@ static __exception int find_arg(JSContext *ctx, JSFunctionDef *fd, JSAtom name)
    thousands of variables in one function (the scope hoisting of esbuild,
    rollup and webpack), which every reference from the functions inside it
    looks through when it is resolved: the references times the names. A
-   function with JS_VAR_INDEX_MIN vars or more gets an index of their names:
-   a hash from an atom to the highest index of a var of that name, and for
-   each var the next lower index of a var of the same name. It holds
-   vars[0 .. var_indexed) and takes the vars added since at the next look, so
-   that a look meets the vars of a name in decreasing index, as the walk down
-   vars[] does, and tests scope_level and the rest at the time of the look.
-   Only add_var gives a var its name and share_local_slots, which reorders
-   vars[], drops the index. The index is a faster way to the same answer:
-   when it cannot be allocated the look walks vars[] as before, and nothing
-   is thrown. Built with -DJS_VAR_INDEX_MIN=1 -DJS_VAR_INDEX_CHECK, every
-   look an index answers (these and those of the closure vars and the global
-   vars below) also walks, and aborts when the two answers differ. */
+   function with JS_VAR_INDEX_MIN vars or more gets an index of their names
+   by scope: a hash from an atom and a scope to the highest index of a var of
+   that name in that scope, for each var the next lower index of a var of the
+   same name and scope, and for each scope the lowest index of its vars (the
+   last of the scope on a chain of scope_next, from which a look goes on to
+   the scope around it). It holds vars[0 .. var_indexed) and takes the vars
+   added since at the next look. A look goes over the scopes the walk goes
+   over, a step for each that has vars, and over the vars of the name in each,
+   never over the vars of other scopes: the blocks before, which are not
+   around it, cost nothing however many declare the name. Only add_var gives
+   a var its name, only add_scope_var and add_arguments_arg its scope, right
+   after it, and share_local_slots, which reorders vars[], drops the index.
+   The index is a faster way to the same answer: when it cannot be allocated
+   the look walks vars[] as before, and nothing is thrown. Built with
+   -DJS_VAR_INDEX_MIN=1 -DJS_VAR_INDEX_CHECK, every look an index answers
+   (these and those of the closure vars and the global vars below) also
+   walks, and aborts when the two answers differ. */
 #ifndef JS_VAR_INDEX_MIN
 #define JS_VAR_INDEX_MIN 32
 #endif
 
-static inline uint32_t var_index_slot(JSAtom name, int bits)
+static inline uint32_t var_index_slot(JSAtom name, int scope, int bits)
 {
-    return (uint32_t)(name * 0x9e3779b1u) >> (32 - bits);
+    return (uint32_t)((name ^ (uint32_t)scope * 0x85ebca6bu) * 0x9e3779b1u) >> (32 - bits);
+}
+
+static inline uint32_t index_hash_slot(uint32_t key, int bits)
+{
+    return (uint32_t)(key * 0x9e3779b1u) >> (32 - bits);
 }
 
 static void var_index_free(JSRuntime *rt, JSFunctionDef *fd)
 {
     js_free_rt(rt, fd->var_hash);
     js_free_rt(rt, fd->var_name_prev);
+    js_free_rt(rt, fd->var_scope_low);
     fd->var_hash = NULL;
     fd->var_name_prev = NULL;
     fd->var_name_prev_size = 0;
+    fd->var_scope_low = NULL;
+    fd->var_scope_low_size = 0;
     fd->var_indexed = 0;
 }
 
@@ -30186,7 +30202,7 @@ static void var_index_free(JSRuntime *rt, JSFunctionDef *fd)
 static int var_index_update(JSContext *ctx, JSFunctionDef *fd)
 {
     JSRuntime *rt = ctx->rt;
-    int n = fd->var_count, i, j, bits, start;
+    int n = fd->var_count, i, j, bits, start, sc;
     uint32_t h, mask;
     JSAtom name;
 
@@ -30200,6 +30216,16 @@ static int var_index_update(JSContext *ctx, JSFunctionDef *fd)
         fd->var_name_prev = p;
         fd->var_name_prev_size = size;
     }
+    if (fd->scope_count > fd->var_scope_low_size) {
+        int size = max_int(fd->scope_count, fd->var_scope_low_size * 3 / 2);
+        int *p = js_realloc_rt(rt, fd->var_scope_low, size * sizeof(*p));
+        if (!p)
+            goto fail;
+        memset(p + fd->var_scope_low_size, 0xff,
+               (size - fd->var_scope_low_size) * sizeof(*p));
+        fd->var_scope_low = p;
+        fd->var_scope_low_size = size;
+    }
     /* at most half of the slots used: n is at most JS_MAX_LOCAL_VARS */
     if (!fd->var_hash || 2 * n > (1 << fd->var_hash_bits)) {
         bits = 6;
@@ -30210,17 +30236,29 @@ static int var_index_update(JSContext *ctx, JSFunctionDef *fd)
         if (!fd->var_hash)
             goto fail;
         memset(fd->var_hash, 0xff, sizeof(*fd->var_hash) << bits);
+        memset(fd->var_scope_low, 0xff,
+               fd->var_scope_low_size * sizeof(*fd->var_scope_low));
         fd->var_hash_bits = bits;
         fd->var_indexed = 0;
+        fd->var_with_first = 0;
     }
     mask = (1u << fd->var_hash_bits) - 1;
     start = fd->var_indexed;
     for (i = start; i < n; i++) {
         name = fd->vars[i].var_name;
-        h = var_index_slot(name, fd->var_hash_bits);
+        sc = fd->vars[i].scope_level;
+        /* a var is in a scope that push_scope made */
+        if (sc < 0 || sc >= fd->var_scope_low_size)
+            goto fail;
+        if (fd->var_scope_low[sc] < 0)
+            fd->var_scope_low[sc] = i;
+        if (name == JS_ATOM__with_ && !fd->var_with_first)
+            fd->var_with_first = i + 1;
+        h = var_index_slot(name, sc, fd->var_hash_bits);
         for (;;) {
             j = fd->var_hash[h];
-            if (j < 0 || fd->vars[j].var_name == name)
+            if (j < 0 || (fd->vars[j].var_name == name &&
+                          fd->vars[j].scope_level == sc))
                 break;
             h = (h + 1) & mask;
         }
@@ -30235,32 +30273,34 @@ static int var_index_update(JSContext *ctx, JSFunctionDef *fd)
     return 0;
 }
 
-/* TRUE with *pidx the highest index of a var named name (-1 if none) when fd
-   has an index, *pwork the units of work of the look. FALSE when it has
-   none, and the caller walks vars[]. */
-static BOOL var_index_find(JSContext *ctx, JSFunctionDef *fd, JSAtom name,
-                           int *pidx, int *pwork)
+/* TRUE when fd has an index with all its vars in it, *pwork the units of
+   work of the update. FALSE when it has none, and the caller walks vars[]. */
+static BOOL var_index_ready(JSContext *ctx, JSFunctionDef *fd, int *pwork)
 {
-    uint32_t h, mask;
-    int j, work;
-
     if (fd->var_count < JS_VAR_INDEX_MIN || fd->var_index_failed)
         return FALSE;
-    work = var_index_update(ctx, fd);
-    if (!fd->var_hash)
-        return FALSE;
+    *pwork = var_index_update(ctx, fd);
+    return fd->var_hash != NULL;
+}
+
+/* the highest index of a var named name in scope (-1 if none), of an index
+   that var_index_ready made ready; *pwork gets the units of the look */
+static int var_index_head(JSFunctionDef *fd, JSAtom name, int scope,
+                          int *pwork)
+{
+    uint32_t h, mask;
+    int j;
+
     mask = (1u << fd->var_hash_bits) - 1;
-    h = var_index_slot(name, fd->var_hash_bits);
+    h = var_index_slot(name, scope, fd->var_hash_bits);
     for (;;) {
-        work++;
+        (*pwork)++;
         j = fd->var_hash[h];
-        if (j < 0 || fd->vars[j].var_name == name)
-            break;
+        if (j < 0 || (fd->vars[j].var_name == name &&
+                      fd->vars[j].scope_level == scope))
+            return j;
         h = (h + 1) & mask;
     }
-    *pidx = j;
-    *pwork = work;
-    return TRUE;
 }
 
 /* The global vars and the closure vars of a function are looked for the same
@@ -30329,7 +30369,7 @@ static BOOL global_var_index_find(JSFunctionDef *fd, JSAtom name, int *pidx)
     work = n - t->count;
     for (i = t->count; i < n; i++) {
         JSAtom a = fd->global_vars[i].var_name;
-        for (h = var_index_slot(a, t->bits);; h = (h + 1) & mask) {
+        for (h = index_hash_slot(a, t->bits);; h = (h + 1) & mask) {
             j = t->slot[h];
             if (j < 0) {
                 t->slot[h] = i;
@@ -30340,7 +30380,7 @@ static BOOL global_var_index_find(JSFunctionDef *fd, JSAtom name, int *pidx)
         }
     }
     t->count = n;
-    for (h = var_index_slot(name, t->bits);; h = (h + 1) & mask) {
+    for (h = index_hash_slot(name, t->bits);; h = (h + 1) & mask) {
         work++;
         j = t->slot[h];
         if (j < 0 || fd->global_vars[j].var_name == name)
@@ -30366,7 +30406,7 @@ static BOOL closure_var_by_name(JSContext *ctx, JSFunctionDef *fd,
     work = n - t->count;
     for (i = t->count; i < n; i++) {
         JSAtom a = fd->closure_var[i].var_name;
-        for (h = var_index_slot(a, t->bits);; h = (h + 1) & mask) {
+        for (h = index_hash_slot(a, t->bits);; h = (h + 1) & mask) {
             j = t->slot[h];
             if (j < 0) {
                 t->slot[h] = i;
@@ -30377,7 +30417,7 @@ static BOOL closure_var_by_name(JSContext *ctx, JSFunctionDef *fd,
         }
     }
     t->count = n;
-    for (h = var_index_slot(name, t->bits);; h = (h + 1) & mask) {
+    for (h = index_hash_slot(name, t->bits);; h = (h + 1) & mask) {
         work++;
         j = t->slot[h];
         if (j < 0 || fd->closure_var[j].var_name == name)
@@ -30424,7 +30464,7 @@ static BOOL closure_var_by_ref(JSContext *ctx, JSFunctionDef *s, int var_idx,
     for (i = t->count; i < n; i++) {
         JSClosureVar *cv = &s->closure_var[i];
         uint32_t key = closure_var_ref_key(cv->var_idx, cv->closure_type);
-        for (h = var_index_slot(key, t->bits);; h = (h + 1) & mask) {
+        for (h = index_hash_slot(key, t->bits);; h = (h + 1) & mask) {
             j = t->slot[h];
             if (j < 0) {
                 t->slot[h] = i;
@@ -30436,7 +30476,7 @@ static BOOL closure_var_by_ref(JSContext *ctx, JSFunctionDef *s, int var_idx,
         }
     }
     t->count = n;
-    h = var_index_slot(closure_var_ref_key(var_idx, closure_type), t->bits);
+    h = index_hash_slot(closure_var_ref_key(var_idx, closure_type), t->bits);
     for (;; h = (h + 1) & mask) {
         work++;
         j = t->slot[h];
@@ -30464,14 +30504,11 @@ static __exception int find_var(JSContext *ctx, JSFunctionDef *fd, JSAtom name)
 {
     int i, work;
 
-    if (!var_index_find(ctx, fd, name, &i, &work))
+    if (!var_index_ready(ctx, fd, &work))
         return find_var_walk(ctx, fd, name);
-    for (; i >= 0; i = fd->var_name_prev[i]) {
-        work++;
-        if (fd->vars[i].scope_level == 0)
-            break;
-    }
+    i = var_index_head(fd, name, 0, &work);
     js_compile_count(ctx, work);
+    JS_WORK(work);
     if (i < 0)
         i = find_arg(ctx, fd, name);
 #ifdef JS_VAR_INDEX_CHECK
@@ -30532,18 +30569,18 @@ static __exception int find_var_in_child_scope(JSContext *ctx, JSFunctionDef *fd
 {
     int i, work, found;
 
-    if (!var_index_find(ctx, fd, name, &i, &work))
+    if (!var_index_ready(ctx, fd, &work))
         return find_var_in_child_scope_walk(ctx, fd, name, scope_level);
     /* the lowest index that fits: the index goes down */
     found = -1;
-    for (; i >= 0; i = fd->var_name_prev[i]) {
-        JSVarDef *vd = &fd->vars[i];
+    for (i = var_index_head(fd, name, 0, &work); i >= 0;
+         i = fd->var_name_prev[i]) {
         work++;
-        if (vd->scope_level == 0 &&
-            is_child_scope(ctx, fd, vd->scope_next, scope_level))
+        if (is_child_scope(ctx, fd, fd->vars[i].scope_next, scope_level))
             found = i;
     }
     js_compile_count(ctx, work);
+    JS_WORK(work);
 #ifdef JS_VAR_INDEX_CHECK
     if (found != find_var_in_child_scope_walk(ctx, fd, name, scope_level))
         abort();
@@ -30554,79 +30591,55 @@ static __exception int find_var_in_child_scope(JSContext *ctx, JSFunctionDef *fd
 /* The chain of a scope, which resolve_scope_var walks from
    fd->scopes[scope].first, is what link_var_scopes made: the vars of the
    scope in decreasing index, then the chain of its parent while the scope is
-   2 or more. A chain stops after the vars of scope 0 or 1, at ARG_SCOPE_END
-   after those of the argument scope (scope 1 of a function with parameter
-   expressions) and at -1 otherwise. The first var of a name in the chain is
-   therefore, of the vars of that name linked there, the one in the nearest
-   of those scopes, and of two in one scope the higher. TRUE with *pidx that
-   var, or -1 and *parg_end TRUE when the chain ends at ARG_SCOPE_END. FALSE
-   when the chain is to be walked: fd has no index, a link changed after
-   link_var_scopes (add_arguments_arg of add_eval_variables), or fd has a
-   'with' scope, whose var the walk has to meet on its way. */
+   2 or more (the first var of an empty scope is that of its parent). A chain
+   stops after the vars of scope 0 or 1, at ARG_SCOPE_END after those of the
+   argument scope (scope 1 of a function with parameter expressions) and at
+   -1 otherwise. So the chain goes through whole scopes, each from its
+   highest linked var down to its lowest, whose scope_next leads to the next
+   one: the first var of a name on it is the highest of the first of those
+   scopes that has one. TRUE with *pidx that var, or -1 and *parg_end TRUE
+   when the chain ends at ARG_SCOPE_END. FALSE when the chain is to be
+   walked: fd has no index, a link changed after link_var_scopes
+   (add_arguments_arg of add_eval_variables), or fd has a 'with' scope, whose
+   var the walk has to meet on its way. */
 static BOOL var_index_scope_find(JSContext *ctx, JSFunctionDef *fd,
                                  JSAtom name, int scope,
                                  int *pidx, BOOL *parg_end)
 {
-    int i, j, sc, r, best, best_rank, work;
+    int i, j, sc, work;
 
     if (fd->var_linked <= 0 || scope < 0 || scope >= fd->scope_count)
         return FALSE;
-    if (!var_index_find(ctx, fd, JS_ATOM__with_, &j, &work))
+    if (!var_index_ready(ctx, fd, &work))
         return FALSE;
-    for (; j >= 0; j = fd->var_name_prev[j]) {
-        work++;
-        if (j < fd->var_linked)
-            return FALSE;
-    }
-    if (!var_index_find(ctx, fd, name, &i, &r))
+    if (fd->var_with_first && fd->var_with_first - 1 < fd->var_linked)
         return FALSE;
-    work += r;
-    best = -1;
-    best_rank = INT32_MAX;
-    for (; i >= 0; i = fd->var_name_prev[i]) {
-        int level;
-        work++;
-        if (i >= fd->var_linked)
-            continue;
-        level = fd->vars[i].scope_level;
-        /* r: the scopes from scope up to level, -1 when level is not
-           among them or not nearer than the best */
-        sc = scope;
-        r = 0;
-        for (;;) {
+    i = fd->scopes[scope].first;
+    if (i >= fd->var_linked)
+        return FALSE;
+    j = -1;
+    while (i >= 0) {
+        sc = fd->vars[i].scope_level;
+        /* the vars of sc added after link_var_scopes are not on the chain */
+        for (j = var_index_head(fd, name, sc, &work); j >= fd->var_linked;
+             j = fd->var_name_prev[j])
             work++;
-            if (sc == level)
-                break;
-            if (sc < 2 || r + 1 >= best_rank) {
-                r = -1;
-                break;
-            }
-            sc = fd->scopes[sc].parent;
-            r++;
-        }
-        if (r >= 0) {
-            best = i;
-            best_rank = r;
-            if (r == 0)
-                break;
-        }
+        if (j >= 0)
+            break;
+        i = fd->vars[fd->var_scope_low[sc]].scope_next;
     }
-    *parg_end = FALSE;
-    if (best < 0) {
-        for (sc = scope; sc >= 2; sc = fd->scopes[sc].parent)
-            work++;
-        *parg_end = (sc == ARG_SCOPE_INDEX && fd->has_parameter_expressions);
-    }
+    *parg_end = (j < 0 && i == ARG_SCOPE_END);
     js_compile_count(ctx, work);
+    JS_WORK(work);
 #ifdef JS_VAR_INDEX_CHECK
     for (i = fd->scopes[scope].first; i >= 0; i = fd->vars[i].scope_next) {
         if (fd->vars[i].var_name == name)
             break;
     }
-    if (i != (best >= 0 ? best : *parg_end ? ARG_SCOPE_END : -1))
+    if (i != (j >= 0 ? j : *parg_end ? ARG_SCOPE_END : -1))
         abort();
 #endif
-    *pidx = best;
+    *pidx = j;
     return TRUE;
 }
 
@@ -30668,43 +30681,39 @@ static JSGlobalVar *find_lexical_global_var(JSFunctionDef *fd, JSAtom name)
 /* While a function is parsed, the chain from fd->scope_first (add_scope_var
    puts each var in front of it, push_scope and pop_scope move it) holds the
    vars of the scopes open now, each scope with the vars it has so far, in
-   decreasing index: so a var of the name is on it when its index is at most
-   that of fd->scope_first and its scope is the scope of fd->scope_first or
-   one around it. A var put on the chain in scope 0 (none is, but the walk
-   would meet it where this would not) turns this off for the function. TRUE
-   with *pidx the first var of the chain named name for which ok_var is
-   true, -1 if none; FALSE when the chain is to be walked. */
+   decreasing index, from its highest to its lowest var, whose scope_next
+   leads to the scope around it that has vars (no scope gets vars while one
+   inside it is open). A var put on the chain in scope 0 (none is, but the
+   walk would meet it where this would not) turns this off for the function.
+   TRUE with *pidx the first var of the chain named name that is lexical, or
+   a catch parameter when check_catch_var, -1 if none; FALSE when the chain is
+   to be walked. */
 static BOOL var_index_lexical_find(JSContext *ctx, JSFunctionDef *fd,
                                    JSAtom name, BOOL check_catch_var,
                                    int *pidx)
 {
-    int i, x, sc, level, work, r;
+    int i, x, sc, work;
 
     if (fd->var_linked != 0 || fd->var_scope0_linked)
         return FALSE;
-    x = fd->scope_first;
-    if (!var_index_find(ctx, fd, name, &i, &work))
+    if (!var_index_ready(ctx, fd, &work))
         return FALSE;
-    for (; i >= 0; i = fd->var_name_prev[i]) {
-        JSVarDef *vd = &fd->vars[i];
-        work++;
-        if (i > x || vd->scope_level <= 0 ||
-            !(vd->is_lexical || (vd->var_kind == JS_VAR_CATCH &&
-                                 check_catch_var)))
-            continue;
-        level = vd->scope_level;
-        r = 0;
-        for (sc = fd->vars[x].scope_level; sc >= 0; sc = fd->scopes[sc].parent) {
+    i = -1;
+    for (x = fd->scope_first; x >= 0;
+         x = fd->vars[fd->var_scope_low[sc]].scope_next) {
+        sc = fd->vars[x].scope_level;
+        for (i = var_index_head(fd, name, sc, &work); i >= 0;
+             i = fd->var_name_prev[i]) {
+            JSVarDef *vd = &fd->vars[i];
             work++;
-            if (sc == level) {
-                r = 1;
-                break;
-            }
+            if (i <= x && (vd->is_lexical || (vd->var_kind == JS_VAR_CATCH &&
+                                              check_catch_var)))
+                goto done;
         }
-        if (r)
-            break;
     }
+ done:
     js_compile_count(ctx, work);
+    JS_WORK(work);
     *pidx = i;
     return TRUE;
 }
