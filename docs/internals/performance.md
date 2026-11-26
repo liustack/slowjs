@@ -76,6 +76,7 @@ Releases from v0.29.0 run the C engine. Instructions are counted with callgrind 
 | v0.31.11 | Fixes: the Go code of `intl` keeps the eval timeout, `Interrupt` and the memory limit on long inputs of case mapping, locale tags, `Intl.Segmenter`, `Intl.ListFormat` and `Intl.Collator` | Against v0.31.10, counted: 0.04% to 0.24% more instructions a render, with the same HTML, and the engine unchanged. tifa's extreme i18n page, timed on an Apple M4, renders 1.95% faster |
 | v0.31.12 | windows/arm64, a sixth target, with the arm64 code of linux and darwin as it is, and builds for android and ios stopped | No change of speed: the generated engine of every target is the same as v0.31.11's, byte for byte, and the check of `NewVM` runs on windows/arm64 only |
 | v0.32.0, v0.33.0 | The module renamed, to `github.com/liustack/tifajs` and then to `github.com/liustack/beastjs` | No change of speed: the engine is v0.31.12's, byte for byte. tifa v0.4.2 runs on v0.33.0 with its full suite and e2e passing |
+| v0.33.1 | Fixes of upstream QuickJS up to November 2026, and the profile trained again (the C of 33 functions had changed) | Against v0.33.0, timed on 16 layouts: the mean of the layouts is +0.08% to +0.39% on the four kinds of pages, no slowdown beyond 1%. The formal layout of the measuring program is 2.4% slower on mui and react pages, a bad place of the code in that build |
 
 ## Measuring in tifa
 
