@@ -176,11 +176,20 @@ static unsigned long white_ident_copies;
 #define JS_IDENT_COPY() (white_ident_copies++)
 
 /* JS_BYTECODE_REALLOC keeps the requests of buffers of code, up to 4096: the
-   size, negative for a new buffer, 0 for a free */
+   size, negative for a new buffer, 0 for a free. It counts them all, and
+   request number white_bc_fail_at that asks for bytes fails (from 1, since
+   the last take, 0 for none). */
 static long white_bc_req[4096];
-static int white_bc_nreq;
-#define JS_BYTECODE_REALLOC(ptr, size) \
-    (white_bc_nreq < 4096 ? (void)(white_bc_req[white_bc_nreq++] = (ptr) ? (long)(size) : -(long)(size)) : (void)0)
+static int white_bc_nreq, white_bc_fail_at;
+
+static int white_bc_request(const void *ptr, size_t size)
+{
+    if (white_bc_nreq < 4096)
+        white_bc_req[white_bc_nreq] = ptr ? (long)size : -(long)size;
+    white_bc_nreq++;
+    return size != 0 && white_bc_nreq == white_bc_fail_at;
+}
+#define JS_BYTECODE_REALLOC(ptr, size) white_bc_request(ptr, size)
 
 #define host_poll white_host_poll
 
@@ -3362,14 +3371,16 @@ unsigned long white_skip_tokens_read(void)
 
 /* the requests of buffers of code kept since the last call
    (JS_BYTECODE_REALLOC), up to cap of them into out, and how many there
-   were */
-int white_bc_requests_take(long *out, int cap)
+   were. From then on, request number fail_at that asks for bytes fails, 0
+   for none. */
+int white_bc_requests_take(long *out, int cap, int fail_at)
 {
     int i, n = white_bc_nreq;
 
-    for (i = 0; i < n && i < cap; i++)
+    for (i = 0; i < n && i < cap && i < (int)countof(white_bc_req); i++)
         out[i] = white_bc_req[i];
     white_bc_nreq = 0;
+    white_bc_fail_at = fail_at;
     return n;
 }
 

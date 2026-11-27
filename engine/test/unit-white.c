@@ -195,7 +195,7 @@ unsigned long white_work_longest(void);
 unsigned long white_work_sum(void);
 unsigned long white_skip_tokens_read(void);
 unsigned long white_ident_copies_read(void);
-int white_bc_requests_take(long *out, int cap);
+int white_bc_requests_take(long *out, int cap, int fail_at);
 unsigned long white_paren_size_take(void);
 unsigned long white_paren_work_take(unsigned long *total);
 int white_paren_refused_take(void);
@@ -5306,9 +5306,9 @@ static void test_bytecode_pass_room(void)
                 len += blen;
             }
             src[len] = '\0';
-            white_bc_requests_take(req, countof(req));
+            white_bc_requests_take(req, countof(req), 0);
             r = JS_Eval(v.ctx, src, len, "room.js", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
-            n = white_bc_requests_take(req, countof(req));
+            n = white_bc_requests_take(req, countof(req), 0);
             CHECK(!JS_IsException(r), "%d of %s: does not compile", counts[j], bodies[i]);
             if (JS_IsException(r))
                 free(exception_text(v.ctx));
@@ -5331,6 +5331,68 @@ static void test_bytecode_pass_room(void)
         }
     }
     vm_free(&v);
+}
+
+/* the atoms a runtime holds */
+static int64_t vm_atoms(VM *v)
+{
+    JSMemoryUsage u;
+
+    JS_ComputeMemoryUsage(v->rt, &u);
+    return u.atom_count;
+}
+
+/* A new buffer of code that is refused (that of the parse, or the room of
+   resolve_variables or resolve_labels, three to a function here) ends the
+   compile with the out of memory error, and the code of the function, in
+   whatever pass, is freed with its atoms: the runtime holds the atoms it
+   held before the compile. The sources have names new to the runtime in
+   fields, variables, a with statement and a function. */
+static void test_pass_room_refused(void)
+{
+    static const char *const srcs[] = {
+        "var o = {}; o.zqA = o.zqB; o.zqC(o.zqD); zqE = typeof zqF === 'zqG'; for (;;) if (o.zqN) break;",
+        "function zqF(o) { var zqH = o.zqI; with (o) { zqJ = zqK; } return zqH + o.zqL; } zqF({ zqM: 1 });",
+    };
+    static long req[4096];
+    size_t i;
+
+    for (i = 0; i < countof(srcs); i++) {
+        VM v = vm_new();
+        int64_t atoms = vm_atoms(&v);
+        int n, k, refused = 0;
+        JSValue r;
+
+        white_bc_requests_take(req, countof(req), 0);
+        r = JS_Eval(v.ctx, srcs[i], strlen(srcs[i]), "room.js", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+        n = white_bc_requests_take(req, countof(req), 0);
+        CHECK(!JS_IsException(r), "source %zu does not compile", i);
+        JS_FreeValue(v.ctx, r);
+        CHECK(vm_atoms(&v) == atoms, "source %zu: %lld atoms after the compile, %lld before",
+              i, (long long)vm_atoms(&v), (long long)atoms);
+        CHECK(n < (int)countof(req), "source %zu: %d requests", i, n);
+        vm_free(&v);
+        for (k = 0; k < n && k < (int)countof(req); k++) {
+            int oom;
+
+            if (req[k] >= 0)
+                continue;
+            v = vm_new();
+            atoms = vm_atoms(&v);
+            white_bc_requests_take(NULL, 0, k + 1);
+            r = JS_Eval(v.ctx, srcs[i], strlen(srcs[i]), "room.js", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+            white_bc_requests_take(NULL, 0, 0);
+            oom = JS_IsException(r) && JS_HasException(v.ctx) && JS_IsUncatchableException(v.ctx);
+            CHECK(oom, "source %zu, new buffer %d of %ld bytes refused: not the out of memory error", i, k + 1, -req[k]);
+            free(exception_text(v.ctx));
+            JS_FreeValue(v.ctx, r);
+            CHECK(vm_atoms(&v) == atoms, "source %zu, new buffer %d of %ld bytes refused: %lld atoms after the compile, %lld before",
+                  i, k + 1, -req[k], (long long)vm_atoms(&v), (long long)atoms);
+            vm_free(&v);
+            refused++;
+        }
+        CHECK(refused == (i == 0 ? 3 : 6), "source %zu: %d new buffers refused", i, refused);
+    }
 }
 
 /* The table of the answers of the lookahead (JSParenCache) grows for a new
@@ -12724,6 +12786,7 @@ int main(int argc, char **argv)
     test_parens_lookahead_linear();
     test_ident_one_pass();
     test_bytecode_pass_room();
+    test_pass_room_refused();
     test_parens_table_replace();
     test_parens_work_gaps();
     test_parens_alloc_refused();

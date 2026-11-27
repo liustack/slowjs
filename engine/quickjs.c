@@ -3212,15 +3212,17 @@ static inline void js_dbuf_init(JSContext *ctx, DynBuf *s)
 }
 
 /* JS_BYTECODE_REALLOC(ptr, size) is called for each request of a buffer of
-   code (js_dbuf_bytecode_init): white.c keeps them */
+   code (js_dbuf_bytecode_init), and the request fails when it gives 1:
+   white.c keeps the requests and fails one of them */
 #ifndef JS_BYTECODE_REALLOC
-#define JS_BYTECODE_REALLOC(ptr, size) ((void)0)
+#define JS_BYTECODE_REALLOC(ptr, size) 0
 #endif
 
 static void *js_realloc_bytecode_rt(void *opaque, void *ptr, size_t size)
 {
     JSRuntime *rt = opaque;
-    JS_BYTECODE_REALLOC(ptr, size);
+    if (JS_BYTECODE_REALLOC(ptr, size))
+        return NULL;
     if (size > (INT32_MAX / 2)) {
         /* the bytecode cannot be larger than 2G. Leave some slack to 
            avoid some overflows. */
@@ -43631,9 +43633,13 @@ static __exception int resolve_variables(JSContext *ctx, JSFunctionDef *s)
     cc.bc_len = bc_len = s->byte_code.size;
     js_dbuf_bytecode_init(ctx, &bc_out);
     /* the new code is about as long as this one: room for it at once, not
-       grown from nothing. A failure leaves bc_out in error, as its first
-       write would. */
-    dbuf_claim(&bc_out, bc_len);
+       grown from nothing. When the room is refused, the code stays as it
+       is, with its atoms, which the function frees. */
+    if (dbuf_claim(&bc_out, bc_len)) {
+        dbuf_free(&bc_out);
+        JS_ThrowOutOfMemory(ctx);
+        return -1;
+    }
 
     /* first pass for runtime checks (must be done before the
        variables are created) */
@@ -45680,8 +45686,13 @@ static __exception int resolve_labels(JSContext *ctx, JSFunctionDef *s)
         return -1;
     /* the new code is about as long as this one: room for it at once, not
        grown from nothing, after the returns above, which leave bc_out
-       unused. A failure leaves bc_out in error, as its first write would. */
-    dbuf_claim(&bc_out, bc_len);
+       unused. When the room is refused, the code stays as it is, with its
+       atoms, which the function frees with the tables above. */
+    if (dbuf_claim(&bc_out, bc_len)) {
+        dbuf_free(&bc_out);
+        JS_ThrowOutOfMemory(ctx);
+        return -1;
+    }
 
     /* initialize the 'home_object' variable if needed */
     if (s->home_object_var_idx >= 0) {
