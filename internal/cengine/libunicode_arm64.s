@@ -10901,7 +10901,7 @@ TEXT ·unicode_normalize(SB), $200-16
 	WORD $0x2a1f03e9
 	WORD $0x5280788a
 	WORD $0x14000013
-	WORD $0xb940bbe9
+	WORD $0xb940cbe9
 	WORD $0xf94037ee
 	WORD $0x529ff90f
 	WORD $0x529d2970
@@ -10927,7 +10927,7 @@ TEXT ·unicode_normalize(SB), $200-16
 	WORD $0x13017d2a
 	MOVD $·engine_rodata+86442(SB), R9
 	WORD $0x786ad929
-	WORD $0xb900bbea
+	WORD $0xb900cbea
 	WORD $0xd346fd2a
 	WORD $0x12001529
 	WORD $0xb86a796b
@@ -10945,7 +10945,7 @@ TEXT ·unicode_normalize(SB), $200-16
 	WORD $0xf900c148
 	WORD $0x92679aa8
 	WORD $0xb9007be9
-	WORD $0xf90067e8
+	WORD $0xf9005fe8
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
 	BL ·unicode_decomp_entry(SB)
@@ -10954,12 +10954,12 @@ TEXT ·unicode_normalize(SB), $200-16
 	WORD $0xb940a3f6
 	WORD $0x294626a8
 	WORD $0x6b08014a
-	WORD $0xf94067e8
+	WORD $0xf9405fe8
 	WORD $0x4b0902c9
 	WORD $0x1a8a0129
 	WORD $0xf940c108
 	WORD $0x37fff869
-	WORD $0xb940bbea
+	WORD $0xb940cbea
 	WORD $0xf94037ee
 	WORD $0x529ff90f
 	WORD $0x72a01fef
