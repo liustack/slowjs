@@ -7728,6 +7728,108 @@ static void test_string_empty_left(void)
     }
 }
 
+/* An add of two flat strings with an empty side gives the other string
+   itself, as JS_ConcatString gives it, in each form of the register loop's
+   add, into a temp and into a local (rv_concat8 in regvm-ops-basic.h): the
+   left one, of any length and width, when the right is empty, and the right
+   one when the left is empty and the right has at most 512 characters
+   (JS_STRING_ROPE_SHORT_LEN). A longer right one gives what the generic
+   add gives (white_concat). The empty side is the atom's string, a constant
+   or a string made at run time. */
+static void test_string_add_empty_side(void)
+{
+    static const struct {
+        const char *what, *add;
+        int left, right; /* the form takes an empty left, an empty right */
+    } forms[] = {
+        { "ADD", "(a, b) => a + b", 1, 1 },
+        { "ADDL", "(a, b) => { let t = 0; t = a + b; return t }", 1, 1 },
+        { "ADDL into the left local", "(a, b) => { let t = a; t = t + b; return t }", 1, 1 },
+        { "ADD into an argument", "(a, b) => { a = a + b; return a }", 1, 1 },
+        { "ADDK of ''", "(a, b) => a + ''", 0, 1 },
+        { "ADDKL of ''", "(a, b) => { let t = 0; t = a + ''; return t }", 0, 1 },
+        { "KADD of ''", "(a, b) => '' + b", 1, 0 },
+        { "KADD of '' into a local", "(a, b) => { let t = 0; t = '' + b; return t }", 1, 0 },
+    };
+    static const struct { const char *src; int len; } strs[] = {
+        { "'a'", 1 }, { "'ab'.repeat(3)", 6 }, { "'\\u4e2d'.repeat(2)", 2 }, { "'\\u00e9' + 'x'", 2 },
+        { "'q'.repeat(63)", 63 }, { "'q'.repeat(64)", 64 }, { "'r'.repeat(511)", 511 },
+        { "'s'.repeat(512)", 512 }, { "'\\u4e2d'.repeat(512)", 512 }, { "'t'.repeat(513)", 513 },
+        { "'\\u4e2d'.repeat(513)", 513 }, { "'u'.repeat(9000)", 9000 }, { "Object.keys({ keyName: 1 })[0]", 7 },
+    };
+    static const char *const empties[] = { "''", "'abc'.slice(3)", "String.fromCharCode()", "'\\u4e2d'.slice(1)" };
+    size_t f, i, e, side;
+
+    for (f = 0; f < countof(forms); f++) {
+        VM v = vm_new();
+        JSValue add = JS_Eval(v.ctx, forms[f].add, strlen(forms[f].add), "<unit>", JS_EVAL_TYPE_GLOBAL);
+
+        for (side = 0; side < 2; side++) {
+            if (!(side ? forms[f].right : forms[f].left))
+                continue;
+            for (i = 0; i < countof(strs); i++) {
+                for (e = 0; e < countof(empties); e++) {
+                    int k;
+
+                    /* twice: the first call converts the function to
+                       register code, the second runs it there */
+                    for (k = 0; k < 2; k++) {
+                        JSValue s = JS_Eval(v.ctx, strs[i].src, strlen(strs[i].src), "<unit>", JS_EVAL_TYPE_GLOBAL);
+                        JSValue z = JS_Eval(v.ctx, empties[e], strlen(empties[e]), "<unit>", JS_EVAL_TYPE_GLOBAL);
+                        JSValue args[2], res, want;
+                        int shared;
+
+                        CHECK(JS_VALUE_GET_TAG(s) == JS_TAG_STRING && JS_VALUE_GET_TAG(z) == JS_TAG_STRING,
+                              "%s: %s or %s is no flat string", forms[f].what, strs[i].src, empties[e]);
+                        args[0] = side ? s : z;
+                        args[1] = side ? z : s;
+                        res = JS_Call(v.ctx, add, JS_UNDEFINED, 2, args);
+                        want = white_concat(v.ctx, args[0], args[1]);
+                        shared = side || strs[i].len <= 512;
+                        CHECK(JS_VALUE_GET_TAG(res) == JS_VALUE_GET_TAG(want),
+                              "%s of %s, %s on the %s: another tag than the generic add's", forms[f].what,
+                              strs[i].src, empties[e], side ? "right" : "left");
+                        if (shared)
+                            CHECK(JS_VALUE_GET_TAG(res) == JS_TAG_STRING && JS_VALUE_GET_PTR(res) == JS_VALUE_GET_PTR(s),
+                                  "%s of %s, %s on the %s: not the string itself", forms[f].what,
+                                  strs[i].src, empties[e], side ? "right" : "left");
+                        CHECK(white_string_wide(res) == white_string_wide(want) && JS_StrictEq(v.ctx, res, want),
+                              "%s of %s, %s on the %s: not the string of the generic add", forms[f].what,
+                              strs[i].src, empties[e], side ? "right" : "left");
+                        JS_FreeValue(v.ctx, res);
+                        JS_FreeValue(v.ctx, want);
+                        JS_FreeValue(v.ctx, s);
+                        JS_FreeValue(v.ctx, z);
+                    }
+                }
+            }
+        }
+        /* a string as long as the longest one with the empty string on its
+           right: the string itself, its characters not read */
+        if (forms[f].right) {
+            int k;
+
+            for (k = 0; k < 2; k++) {
+                JSValue args[2], res;
+                uint32_t old;
+
+                args[0] = JS_NewString(v.ctx, "a string made to look as long as the longest one");
+                args[1] = JS_Eval(v.ctx, "''", 2, "<unit>", JS_EVAL_TYPE_GLOBAL);
+                old = white_string_fake_len(args[0], (uint32_t)white_string_len_max());
+                res = JS_Call(v.ctx, add, JS_UNDEFINED, 2, args);
+                CHECK(JS_VALUE_GET_TAG(res) == JS_TAG_STRING && JS_VALUE_GET_PTR(res) == JS_VALUE_GET_PTR(args[0]),
+                      "%s of the longest string and '': not the string itself", forms[f].what);
+                white_string_fake_len(args[0], old);
+                JS_FreeValue(v.ctx, res);
+                JS_FreeValue(v.ctx, args[0]);
+                JS_FreeValue(v.ctx, args[1]);
+            }
+        }
+        JS_FreeValue(v.ctx, add);
+        vm_free(&v);
+    }
+}
+
 /* a + b of two strings in each form of the register loop's add (ADD, ADDL,
    ADDK, ADDKL, KADD, rv_add_str in regvm-ops-basic.h) gives the string the
    generic add gives, JS_ConcatString of the two (white_concat): a rope where
@@ -7748,6 +7850,8 @@ static void test_string_add_kinds(void)
     } forms[] = {
         { "ADD", "(a, b) => a + b", NULL, NULL },
         { "ADDL", "(a, b) => { let t = 0; t = a + b; return t }", NULL, NULL },
+        { "ADDL into the left local", "(a, b) => { let t = a; t = t + b; return t }", NULL, NULL },
+        { "ADD into an argument", "(a, b) => { a = a + b; return a }", NULL, NULL },
         { "ADDK", "(a, b) => a + '<k>'", NULL, "'<k>'" },
         { "ADDKL", "(a, b) => { let t = 0; t = a + '\\u4e2d'; return t }", NULL, "'\\u4e2d'" },
         { "KADD", "(a, b) => '<k>' + b", "'<k>'", NULL },
@@ -12402,6 +12506,7 @@ int main(int argc, char **argv)
     test_string_append_flat();
     test_string_append_atom();
     test_string_empty_left();
+    test_string_add_empty_side();
     test_string_add_kinds();
     test_own_keys_flags();
     test_shared_debug_read();

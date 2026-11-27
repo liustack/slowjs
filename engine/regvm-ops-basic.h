@@ -699,17 +699,26 @@ static void rv_call(RVPass *s, int argc, int method, int tail)
         rv_throws(s, rv_owned(s, 0));
         break;
 #elif RV_PART == RV_PART_RUN_FN
-/* a + b into a temp when both are flat strings of 8 bits, a of 1 to
-   JS_STRING_ROPE_SHORT2_LEN characters and b of 1 to
-   JS_STRING_ROPE_SHORT_LEN: what JS_ConcatString does for such a pair
-   (JS_ConcatString2), without its three calls. a grows in place when it has
-   no other holder, is no atom, keeps no key and has the room
-   (js_concat_string_in_place), else a new string of both is made, as
-   JS_ConcatString1 makes it, with the same out of memory error. These are
-   most of the adds of a page: Emotion's class names, i18next's keys, the
-   strings of tags. Takes a and b and gives 0 with the result in *pa, or -1
-   on an exception. Gives 1 with nothing done for any other pair, an empty
-   or a longer string, a wide one or a rope, which go to JS_ConcatString. */
+/* a + b of two flat strings where JS_ConcatString would give a flat string
+   or one of the two, without its calls (JS_ConcatString, then
+   JS_ConcatStringInPlace and JS_ConcatString1 of JS_ConcatString2):
+   - both of 8 bits, a of 1 to JS_STRING_ROPE_SHORT2_LEN characters and b of
+     1 to JS_STRING_ROPE_SHORT_LEN: a grows in place when it has no other
+     holder, is no atom, keeps no key and has the room
+     (js_concat_string_in_place), else a new string of both is made, as
+     JS_ConcatString1 makes it, with the same out of memory error. These are
+     most of the adds of a page: Emotion's class names, i18next's keys, the
+     strings of tags.
+   - b empty: a itself, of any length and width.
+   - a empty and b of 1 to JS_STRING_ROPE_SHORT_LEN characters: b itself.
+   An empty side is about one add in four on MUI's pages. It is checked
+   after the others, so that the copies pay nothing for it. Takes a and b
+   and gives 0 with the result in *pa, or -1 on an exception. Gives 1 with
+   nothing done for any other pair, a longer string, a wide one or a rope,
+   which go to JS_ConcatString. The result goes into a temp, or into a
+   variable whose string JS_ConcatStringAppend would not grow
+   (js_string_appends_into): for such a variable js_add_string_into calls
+   JS_ConcatString too. */
 static force_inline __exception int rv_concat8(JSContext *ctx, JSValue *pa, JSValue b)
 {
     JSValue a = *pa;
@@ -724,8 +733,19 @@ static force_inline __exception int rv_concat8(JSContext *ctx, JSValue *pa, JSVa
     l2 = p2->len;
     if ((p1->is_wide_char | p2->is_wide_char) ||
         l1 - 1u >= (uint32_t)JS_STRING_ROPE_SHORT2_LEN ||
-        l2 - 1u >= (uint32_t)JS_STRING_ROPE_SHORT_LEN)
+        l2 - 1u >= (uint32_t)JS_STRING_ROPE_SHORT_LEN) {
+        /* the order of JS_ConcatString: an empty b first, then an empty a */
+        if (l2 == 0) {
+            JS_FreeValue(ctx, b);
+            return 0;
+        }
+        if (l1 == 0 && l2 <= JS_STRING_ROPE_SHORT_LEN) {
+            JS_FreeValue(ctx, a);
+            *pa = b;
+            return 0;
+        }
         return 1;
+    }
     if (js_concat_string_in_place(ctx, p1, b, 1)) {
         JS_FreeValue(ctx, b);
         return 0;
@@ -774,9 +794,10 @@ static force_inline __exception int rv_add_str_k(JSContext *ctx, JSValue *F, con
         return -1;
     }
     /* into a local or an argument, the string of d grows in place when it
-       is the left operand (js_add_string_into) */
-    if (!rv_is_temp(F, d)) {
-        a = js_add_string_into(ctx, a, b, &F[d]);
+       is the left operand, as js_add_string_into grows it. Every other add
+       goes as an add into a temp. */
+    if (!rv_is_temp(F, d) && js_string_appends_into(a, &F[d])) {
+        a = JS_ConcatStringAppend(ctx, a, b, TRUE);
     } else {
         int n = rv_concat8(ctx, &a, b);
         if (n < 0)

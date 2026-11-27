@@ -3,10 +3,11 @@
 // Use of this source code is governed by the MIT license in LICENSE at the
 // root of this repository.
 
-// a + b of two 8-bit strings into a temp, around the lengths where the
-// register loop copies them or grows the left one in place itself (left 1 to
-// 8192 characters, right 1 to 512) and where it leaves them to the generic
-// concatenation (an empty side, a longer one, a wide one, a rope): every
+// a + b of two strings into a temp, a local or an argument, around the
+// lengths where the register loop copies them, grows the left one in place
+// or gives one of them back itself (8-bit strings, left 1 to 8192
+// characters, right 1 to 512, and an empty side) and where it leaves them to
+// the generic concatenation (a longer one, a wide one, a rope): every
 // result is checked against the same string built by a join, and the
 // operands must keep their characters when the left one has another holder,
 // is a property key, keeps the atom of a key, or is the result of an earlier
@@ -23,6 +24,10 @@ const lefts = [1, 2, 63, 64, 65, 511, 512, 513, 4096, 8191, 8192, 8193]
 const rights = [0, 1, 2, 63, 511, 512, 513]
 const add = (a, b) => a + b
 const add3 = (a, b, c) => a + b + c
+const addl = (a, b) => { let t = 0; t = a + b; return t }
+const addself = (a, b) => { let t = a; t = t + b; return t }
+const addarg = (a, b) => { a = a + b; return a }
+const addl3 = (a, b, c) => { let t = 0; t = a + b; t = t + c; return t }
 let bad = [], h = 0
 for (const l of lefts) {
   for (const r of rights) {
@@ -36,6 +41,21 @@ for (const l of lefts) {
       const t = add3(a, b, b)
       if (t !== [a, b, b].join('') || sum(a) !== sa || sum(b) !== sb || a.length !== l || b.length !== r) bad.push('add3 ' + l + '+' + r + ' ' + ca)
       h = (h * 7 + sum(s) + sum(t) + t.length) | 0
+      // into a local, the local of the left one and an argument, and an add
+      // into the local that holds the result of the add before it
+      for (const f of [addl, addself, addarg]) {
+        if (f(a, b) !== want || sum(a) !== sa || sum(b) !== sb) bad.push(f.name + ' ' + l + '+' + r + ' ' + ca)
+      }
+      if (addl3(a, b, b) !== [a, b, b].join('') || sum(a) !== sa || sum(b) !== sb) bad.push('addl3 ' + l + '+' + r + ' ' + ca)
+    }
+  }
+}
+// an empty left one, the atom's or one made at run time
+for (const r of rights) {
+  for (const cb of [65, 0xe0, 0x4e2d]) {
+    const b = mk(r, cb), e = mk(0, 97)
+    for (const f of [add, addl, addself, addarg]) {
+      if (f(e, b) !== b || f('', b) !== b || sum(f(e, b)) !== sum(b)) bad.push('empty ' + f.name + ' ' + r + ' ' + cb)
     }
   }
 }

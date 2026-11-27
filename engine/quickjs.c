@@ -8146,6 +8146,19 @@ static no_inline JSValue JS_ConcatStringAppend(JSContext *ctx, JSValue op1, JSVa
     return ret;
 }
 
+/* TRUE when 'x = op1 + op2', the result going into the variable x at pv
+   right after, grows the string of x (JS_ConcatStringAppend): op1 is that
+   string, at least JS_STRING_APPEND_MIN characters long, with a reference
+   count of 2 (x's and the caller's). */
+static force_inline BOOL js_string_appends_into(JSValueConst op1, const JSValue *pv)
+{
+    return JS_VALUE_GET_TAG(op1) == JS_TAG_STRING &&
+        js_rc(JS_VALUE_GET_PTR(op1))->ref_count == 2 &&
+        JS_VALUE_GET_STRING(op1)->len >= JS_STRING_APPEND_MIN &&
+        JS_VALUE_GET_TAG(*pv) == JS_TAG_STRING &&
+        JS_VALUE_GET_PTR(*pv) == JS_VALUE_GET_PTR(op1);
+}
+
 /* 'x = op1 + op2' where the result goes into the variable x at pv right
    after, with nothing run between, op1 and op2 strings or ropes: when op1
    is the string of x, at least JS_STRING_APPEND_MIN characters long, with
@@ -8156,11 +8169,7 @@ static no_inline JSValue JS_ConcatStringAppend(JSContext *ctx, JSValue op1, JSVa
 static JSValue js_add_string_into(JSContext *ctx, JSValue op1, JSValue op2,
                                   const JSValue *pv)
 {
-    if (JS_VALUE_GET_TAG(op1) == JS_TAG_STRING &&
-        js_rc(JS_VALUE_GET_PTR(op1))->ref_count == 2 &&
-        JS_VALUE_GET_STRING(op1)->len >= JS_STRING_APPEND_MIN &&
-        JS_VALUE_GET_TAG(*pv) == JS_TAG_STRING &&
-        JS_VALUE_GET_PTR(*pv) == JS_VALUE_GET_PTR(op1))
+    if (js_string_appends_into(op1, pv))
         return JS_ConcatStringAppend(ctx, op1, op2, TRUE);
     return JS_ConcatString(ctx, op1, op2);
 }
