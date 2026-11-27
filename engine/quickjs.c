@@ -31884,11 +31884,15 @@ static int js_paren_has_lf(JSContext *ctx, const uint8_t *p,
                            const uint8_t *end)
 {
     const uint8_t *q, *r;
+    size_t n;
 
     for (;;) {
-        q = (const uint8_t *)(((uintptr_t)p | (JS_ROPE_STEP - 1)) + 1);
-        if (q > end)
-            q = end;
+        /* up to the next multiple of JS_ROPE_STEP or end, counted in bytes:
+           a pointer past the end of the source would be undefined in C */
+        n = JS_ROPE_STEP - ((uintptr_t)p & (JS_ROPE_STEP - 1));
+        if (n > (size_t)(end - p))
+            n = end - p;
+        q = p + n;
         JS_PAREN_WORK(q - p);
         /* mostly no byte or one, which a call costs more than */
         if (q - p <= 8) {
