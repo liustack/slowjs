@@ -74,7 +74,7 @@ TEXT ·js_parse_postfix_expr1(SB), $184-24
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
 	WORD $0xf9000ff6
-	BL ·emit_u32(SB)
+	BL ·emit_atom_ref(SB)
 	WORD $0xf94057f5
 	WORD $0xf94036a8
 	WORD $0x79423116

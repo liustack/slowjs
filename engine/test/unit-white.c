@@ -196,6 +196,7 @@ unsigned long white_work_sum(void);
 unsigned long white_skip_tokens_read(void);
 unsigned long white_ident_copies_read(void);
 int white_bc_requests_take(long *out, int cap, int fail_at);
+void white_pass_no_room_set(int on);
 unsigned long white_paren_size_take(void);
 unsigned long white_paren_work_take(unsigned long *total);
 int white_paren_refused_take(void);
@@ -5393,6 +5394,70 @@ static void test_pass_room_refused(void)
         }
         CHECK(refused == (i == 0 ? 3 : 6), "source %zu: %d new buffers refused", i, refused);
     }
+}
+
+/* Each request of a buffer of code that a compile makes fails in turn, also
+   with the passes starting their new code from nothing (JS_PASS_ROOM), so
+   that the parse, resolve_variables and resolve_labels fail part way
+   through: the compile ends with the out of memory error, and the runtime
+   holds the atoms it held before. The sources have names new to the
+   runtime in the instructions the parse writes, each pass copies, takes
+   over or makes: fields, optional chains, with statements, a const
+   assigned, typeof against a string, a string added to a local, fields
+   counted down, a catch and destructuring. */
+static void test_code_write_refused(void)
+{
+    static const char *const srcs[] = {
+        "var o = {}; o.zqA = o?.zqB; o.zqC++; zqD = typeof o === 'zqE'; with (o) { zqF = zqG; } 'zqH'; for (;;) if (o.zqI) break;",
+        "function f(o) { var s = 'a'; s += 'zqJ'; o.zqK--; with (o) { zqL(); } return typeof s == 'zqM' ? o?.zqN : s; } f({});",
+        "class C { zqO = 1; #zqP = 2; m() { return this.#zqP + this.zqO; } static zqQ() { const k = 1; try { k = 2; } catch (e) { return e.zqR; } } }",
+        "var { zqS, zqT: { zqU } } = {}, o = {}; ({ zqV: o.zqW, zqX: zqY } = {}); [o.zqZ] = [];",
+    };
+    static long req[4096];
+    size_t i;
+    int no_room, grown = 0, cases = 0;
+
+    for (no_room = 0; no_room < 2; no_room++) {
+        white_pass_no_room_set(no_room);
+        for (i = 0; i < countof(srcs); i++) {
+            VM v = vm_new();
+            int64_t atoms = vm_atoms(&v);
+            int n, k;
+            JSValue r;
+
+            white_bc_requests_take(req, countof(req), 0);
+            r = JS_Eval(v.ctx, srcs[i], strlen(srcs[i]), "write.js", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+            n = white_bc_requests_take(req, countof(req), 0);
+            CHECK(!JS_IsException(r), "source %zu does not compile", i);
+            JS_FreeValue(v.ctx, r);
+            CHECK(n < (int)countof(req), "source %zu: %d requests", i, n);
+            vm_free(&v);
+            for (k = 0; k < n && k < (int)countof(req); k++) {
+                int oom;
+
+                if (req[k] == 0)
+                    continue;
+                v = vm_new();
+                atoms = vm_atoms(&v);
+                white_bc_requests_take(NULL, 0, k + 1);
+                r = JS_Eval(v.ctx, srcs[i], strlen(srcs[i]), "write.js", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+                white_bc_requests_take(NULL, 0, 0);
+                oom = JS_IsException(r) && JS_HasException(v.ctx) && JS_IsUncatchableException(v.ctx);
+                CHECK(oom, "source %zu%s, request %d of %ld bytes refused: not the out of memory error",
+                      i, no_room ? " with no room" : "", k + 1, req[k]);
+                free(exception_text(v.ctx));
+                JS_FreeValue(v.ctx, r);
+                CHECK(vm_atoms(&v) == atoms, "source %zu%s, request %d of %ld bytes refused: %lld atoms after the compile, %lld before",
+                      i, no_room ? " with no room" : "", k + 1, req[k], (long long)vm_atoms(&v), (long long)atoms);
+                vm_free(&v);
+                cases++;
+                grown += req[k] > 0;
+            }
+        }
+    }
+    white_pass_no_room_set(0);
+    CHECK(grown >= 100, "%d requests to grow a buffer of code refused", grown);
+    printf("unit-white: test_code_write_refused: %d requests refused, %d of them to grow a buffer\n", cases, grown);
 }
 
 /* The table of the answers of the lookahead (JSParenCache) grows for a new
@@ -12787,6 +12852,7 @@ int main(int argc, char **argv)
     test_ident_one_pass();
     test_bytecode_pass_room();
     test_pass_room_refused();
+    test_code_write_refused();
     test_parens_table_replace();
     test_parens_work_gaps();
     test_parens_alloc_refused();

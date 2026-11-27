@@ -3218,6 +3218,13 @@ static inline void js_dbuf_init(JSContext *ctx, DynBuf *s)
 #define JS_BYTECODE_REALLOC(ptr, size) 0
 #endif
 
+/* JS_PASS_ROOM(len) is the room a pass that rewrites the code of a function
+   starts its new code with, for len bytes of code read: white.c gives none,
+   so that the new code grows on the way and a request can fail part way */
+#ifndef JS_PASS_ROOM
+#define JS_PASS_ROOM(len) (len)
+#endif
+
 static void *js_realloc_bytecode_rt(void *opaque, void *ptr, size_t size)
 {
     JSRuntime *rt = opaque;
@@ -30348,6 +30355,19 @@ static void emit_atom(JSParseState *s, JSAtom name)
     bc->size += 4;
 }
 
+static no_inline void emit_lost_atom(JSContext *ctx, JSAtom name)
+{
+    JS_FreeAtom(ctx, name);
+}
+
+/* emit an atom whose reference the code takes over: when the write fails,
+   the reference is freed, as the code will not free it */
+static void emit_atom_ref(JSParseState *s, JSAtom name)
+{
+    if (unlikely(dbuf_put_u32(&s->cur_func->byte_code, name)))
+        emit_lost_atom(s->ctx, name);
+}
+
 static int update_label(JSFunctionDef *s, int label, int delta)
 {
     LabelSlot *ls;
@@ -30454,7 +30474,7 @@ static __exception int emit_push_const(JSParseState *s, JSValueConst val,
             return -1;
         if (!__JS_AtomIsTaggedInt(atom)) {
             emit_op(s, OP_push_atom_value);
-            emit_u32(s, atom);
+            emit_atom_ref(s, atom);
             return 0;
         }
     }
@@ -34590,16 +34610,16 @@ static void put_lvalue(JSParseState *s, int opcode, int scope,
     switch(opcode) {
     case OP_scope_get_var:  /* val -- */
         emit_op(s, is_let ? OP_scope_put_var_init : OP_scope_put_var);
-        emit_u32(s, name);  /* has refcount */
+        emit_atom_ref(s, name);  /* has refcount */
         emit_u16(s, scope);
         break;
     case OP_get_field:
         emit_op(s, OP_put_field);
-        emit_u32(s, name);  /* name has refcount */
+        emit_atom_ref(s, name);  /* name has refcount */
         break;
     case OP_scope_get_private_field:
         emit_op(s, OP_scope_put_private_field);
-        emit_u32(s, name);  /* name has refcount */
+        emit_atom_ref(s, name);  /* name has refcount */
         emit_u16(s, scope);
         break;
     case OP_get_array_el:
@@ -34976,7 +34996,7 @@ static __exception int js_parse_destructuring_element1(JSParseState *s, int tok,
                             js_rest_key(s, &rk, prop_name);
                         /* get the named property from the source object */
                         emit_op(s, OP_get_field2);
-                        emit_u32(s, prop_name);
+                        emit_atom_ref(s, prop_name);
                     }
                     if (js_parse_destructuring_element(s, tok, is_arg, TRUE, -1, TRUE, export_flag) < 0)
                         return -1;
@@ -35082,7 +35102,7 @@ static __exception int js_parse_destructuring_element1(JSParseState *s, int tok,
                     /* XXX: should have OP_get_field2x with depth */
                     /* source -- val */
                     emit_op(s, OP_get_field);
-                    emit_u32(s, prop_name);
+                    emit_atom_ref(s, prop_name);
                 }
             } else {
                 /* prop_type = PROP_TYPE_VAR, cannot be a computed property */
@@ -35113,7 +35133,7 @@ static __exception int js_parse_destructuring_element1(JSParseState *s, int tok,
                     
                     /* source -- source val */
                     emit_op(s, OP_get_field2);
-                    emit_u32(s, prop_name);
+                    emit_atom_ref(s, prop_name);
                 }
             }
         set_val:
@@ -35523,7 +35543,7 @@ static __exception int js_parse_postfix_expr1(JSParseState *s, int parse_flags)
             do_get_var:
                 emit_source_pos(s, source_ptr);
                 emit_op(s, OP_scope_get_var);
-                emit_u32(s, name);
+                emit_atom_ref(s, name);
                 emit_u16(s, s->cur_func->scope_level);
             }
         }
@@ -38105,7 +38125,7 @@ static __exception int js_parse_statement_or_decl1(JSParseState *s,
                         }
                         /* store the exception value in the catch variable */
                         emit_op(s, OP_scope_put_var);
-                        emit_u32(s, name);
+                        emit_atom_ref(s, name);
                         emit_u16(s, s->cur_func->scope_level);
                     }
                     if (js_parse_expect(s, ')'))
@@ -42159,6 +42179,41 @@ static __exception int resolve_pseudo_var(JSContext *ctx, JSFunctionDef *s,
     return 0;
 }
 
+/* resolve_variables and resolve_labels free the code they read without its
+   atoms: the new code takes them over, or the pass frees them. A write of
+   the new code that fails, in a buffer in error, which takes no more bytes,
+   loses no reference: pass_put_atom_dup takes its new reference only when
+   the write works, and pass_put_atom and pass_put_code free the references
+   of the code read that they could not hand over. The failures are out of
+   line, so that the passes stay as the compiler laid them out. */
+static no_inline void pass_lost_atom(JSContext *ctx, JSAtom atom)
+{
+    JS_FreeAtom(ctx, atom);
+}
+
+static no_inline void pass_lost_code(JSContext *ctx, const uint8_t *code, int len)
+{
+    free_bytecode_atoms(ctx->rt, code, len, FALSE);
+}
+
+static force_inline void pass_put_atom_dup(JSContext *ctx, DynBuf *bc, JSAtom atom)
+{
+    if (likely(!dbuf_put_u32(bc, atom)))
+        JS_DupAtom(ctx, atom);
+}
+
+static force_inline void pass_put_atom(JSContext *ctx, DynBuf *bc, JSAtom atom)
+{
+    if (unlikely(dbuf_put_u32(bc, atom)))
+        pass_lost_atom(ctx, atom);
+}
+
+static force_inline void pass_put_code(JSContext *ctx, DynBuf *bc, const uint8_t *code, int len)
+{
+    if (unlikely(dbuf_put(bc, code, len)))
+        pass_lost_code(ctx, code, len);
+}
+
 /* test if 'var_name' is in the variable object on the stack. If is it
    the case, handle it and jump to 'label_done' */
 static void var_object_test(JSContext *ctx, JSFunctionDef *s,
@@ -42166,7 +42221,7 @@ static void var_object_test(JSContext *ctx, JSFunctionDef *s,
                             int *plabel_done, BOOL is_with)
 {
     dbuf_putc(bc, get_with_scope_opcode(op));
-    dbuf_put_u32(bc, JS_DupAtom(ctx, var_name));
+    pass_put_atom_dup(ctx, bc, var_name);
     if (*plabel_done < 0) {
         *plabel_done = new_label_fd(s);
         if (*plabel_done < 0) {
@@ -42227,7 +42282,7 @@ static __exception int resolve_scope_var(JSContext *ctx, JSFunctionDef *s,
             if ((op == OP_scope_put_var || op == OP_scope_make_ref) &&
                 vd->is_const) {
                 dbuf_putc(bc, OP_throw_error);
-                dbuf_put_u32(bc, JS_DupAtom(ctx, var_name));
+                pass_put_atom_dup(ctx, bc, var_name);
                 dbuf_putc(bc, JS_THROW_VAR_RO);
                 goto done;
             }
@@ -42250,7 +42305,7 @@ static __exception int resolve_scope_var(JSContext *ctx, JSFunctionDef *s,
                 }
                 if (vd->is_const) {
                     dbuf_putc(bc, OP_throw_error);
-                    dbuf_put_u32(bc, JS_DupAtom(ctx, var_name));
+                    pass_put_atom_dup(ctx, bc, var_name);
                     dbuf_putc(bc, JS_THROW_VAR_RO);
                     goto done;
                 }
@@ -42307,7 +42362,7 @@ static __exception int resolve_scope_var(JSContext *ctx, JSFunctionDef *s,
                 goto done;
             }
             dbuf_putc(bc, OP_throw_error);
-            dbuf_put_u32(bc, JS_DupAtom(ctx, var_name));
+            pass_put_atom_dup(ctx, bc, var_name);
             dbuf_putc(bc, JS_THROW_VAR_RO);
             goto done;
         }
@@ -42323,9 +42378,9 @@ static __exception int resolve_scope_var(JSContext *ctx, JSFunctionDef *s,
                 dbuf_putc(bc, OP_get_loc);
                 dbuf_put_u16(bc, var_idx);
                 dbuf_putc(bc, OP_define_field);
-                dbuf_put_u32(bc, JS_DupAtom(ctx, var_name));
+                pass_put_atom_dup(ctx, bc, var_name);
                 dbuf_putc(bc, OP_push_atom_value);
-                dbuf_put_u32(bc, JS_DupAtom(ctx, var_name));
+                pass_put_atom_dup(ctx, bc, var_name);
             } else
             if (label_done == -1 && can_opt_put_ref_value(bc_buf, ls->pos)) {
                 int get_op;
@@ -42346,12 +42401,12 @@ static __exception int resolve_scope_var(JSContext *ctx, JSFunctionDef *s,
                 if (var_idx & ARGUMENT_VAR_OFFSET) {
                     capture_var(s, &s->args[var_idx - ARGUMENT_VAR_OFFSET]);
                     dbuf_putc(bc, OP_make_arg_ref);
-                    dbuf_put_u32(bc, JS_DupAtom(ctx, var_name));
+                    pass_put_atom_dup(ctx, bc, var_name);
                     dbuf_put_u16(bc, var_idx - ARGUMENT_VAR_OFFSET);
                 } else {
                     capture_var(s, &s->vars[var_idx]);
                     dbuf_putc(bc, OP_make_loc_ref);
-                    dbuf_put_u32(bc, JS_DupAtom(ctx, var_name));
+                    pass_put_atom_dup(ctx, bc, var_name);
                     dbuf_put_u16(bc, var_idx);
                 }
             }
@@ -42439,7 +42494,7 @@ static __exception int resolve_scope_var(JSContext *ctx, JSFunctionDef *s,
                     !(op == OP_scope_make_ref && label_done == -1 &&
                       scope_make_ref_put_pos(bc_buf, ls) >= 0)) {
                     dbuf_putc(bc, OP_throw_error);
-                    dbuf_put_u32(bc, JS_DupAtom(ctx, var_name));
+                    pass_put_atom_dup(ctx, bc, var_name);
                     dbuf_putc(bc, JS_THROW_VAR_RO);
                     goto done;
                 }
@@ -42459,7 +42514,7 @@ static __exception int resolve_scope_var(JSContext *ctx, JSFunctionDef *s,
                         !(op == OP_scope_make_ref && label_done == -1 &&
                           scope_make_ref_put_pos(bc_buf, ls) >= 0)) {
                         dbuf_putc(bc, OP_throw_error);
-                        dbuf_put_u32(bc, JS_DupAtom(ctx, var_name));
+                        pass_put_atom_dup(ctx, bc, var_name);
                         dbuf_putc(bc, JS_THROW_VAR_RO);
                         goto done;
                     }
@@ -42638,7 +42693,7 @@ static __exception int resolve_scope_var(JSContext *ctx, JSFunctionDef *s,
                                                    OP_get_var, idx);
             } else {
                 dbuf_putc(bc, OP_make_var_ref);
-                dbuf_put_u32(bc, JS_DupAtom(ctx, var_name));
+                pass_put_atom_dup(ctx, bc, var_name);
             }
             break;
         case OP_scope_get_ref:
@@ -42660,7 +42715,7 @@ static __exception int resolve_scope_var(JSContext *ctx, JSFunctionDef *s,
             break;
         case OP_scope_delete_var:
             dbuf_putc(bc, OP_delete_var);
-            dbuf_put_u32(bc, JS_DupAtom(ctx, var_name));
+            pass_put_atom_dup(ctx, bc, var_name);
             break;
         }
     } else {
@@ -42692,7 +42747,7 @@ static __exception int resolve_scope_var(JSContext *ctx, JSFunctionDef *s,
             if ((op == OP_scope_put_var || op == OP_scope_make_ref) &&
                 s->closure_var[idx].is_const) {
                 dbuf_putc(bc, OP_throw_error);
-                dbuf_put_u32(bc, JS_DupAtom(ctx, var_name));
+                pass_put_atom_dup(ctx, bc, var_name);
                 dbuf_putc(bc, JS_THROW_VAR_RO);
                 goto done;
             }
@@ -42704,9 +42759,9 @@ static __exception int resolve_scope_var(JSContext *ctx, JSFunctionDef *s,
                     dbuf_putc(bc, OP_get_var_ref);
                     dbuf_put_u16(bc, idx);
                     dbuf_putc(bc, OP_define_field);
-                    dbuf_put_u32(bc, JS_DupAtom(ctx, var_name));
+                    pass_put_atom_dup(ctx, bc, var_name);
                     dbuf_putc(bc, OP_push_atom_value);
-                    dbuf_put_u32(bc, JS_DupAtom(ctx, var_name));
+                    pass_put_atom_dup(ctx, bc, var_name);
                 } else
                 if (label_done == -1 &&
                     can_opt_put_ref_value(bc_buf, ls->pos)) {
@@ -42722,7 +42777,7 @@ static __exception int resolve_scope_var(JSContext *ctx, JSFunctionDef *s,
                     /* Create a dummy object with a named slot that is
                        a reference to the closure variable */
                     dbuf_putc(bc, OP_make_var_ref_ref);
-                    dbuf_put_u32(bc, JS_DupAtom(ctx, var_name));
+                    pass_put_atom_dup(ctx, bc, var_name);
                     dbuf_put_u16(bc, idx);
                 }
                 break;
@@ -42915,7 +42970,7 @@ static __exception int resolve_scope_private_field(JSContext *ctx, JSFunctionDef
         case JS_VAR_PRIVATE_SETTER:
             /* XXX: add clearer error message */
             dbuf_putc(bc, OP_throw_error);
-            dbuf_put_u32(bc, JS_DupAtom(ctx, var_name));
+            pass_put_atom_dup(ctx, bc, var_name);
             dbuf_putc(bc, JS_THROW_VAR_RO);
             break;
         default:
@@ -42932,7 +42987,7 @@ static __exception int resolve_scope_private_field(JSContext *ctx, JSFunctionDef
         case JS_VAR_PRIVATE_GETTER:
             /* XXX: add clearer error message */
             dbuf_putc(bc, OP_throw_error);
-            dbuf_put_u32(bc, JS_DupAtom(ctx, var_name));
+            pass_put_atom_dup(ctx, bc, var_name);
             dbuf_putc(bc, JS_THROW_VAR_RO);
             break;
         case JS_VAR_PRIVATE_SETTER:
@@ -43512,7 +43567,7 @@ static __exception int instantiate_hoisted_definitions(JSContext *ctx, JSFunctio
                 if (hf->var_name == JS_ATOM__default_) {
                     /* set default export function name */
                     dbuf_putc(bc, OP_set_name);
-                    dbuf_put_u32(bc, JS_DupAtom(ctx, JS_ATOM_default));
+                    pass_put_atom_dup(ctx, bc, JS_ATOM_default);
                 }
             } else {
                 dbuf_putc(bc, OP_undefined);
@@ -43522,7 +43577,7 @@ static __exception int instantiate_hoisted_definitions(JSContext *ctx, JSFunctio
                 dbuf_put_u16(bc, idx);
             } else {
                 dbuf_putc(bc, OP_define_field);
-                dbuf_put_u32(bc, JS_DupAtom(ctx, hf->var_name));
+                pass_put_atom_dup(ctx, bc, hf->var_name);
                 dbuf_putc(bc, OP_drop);
             }
         }
@@ -43635,7 +43690,7 @@ static __exception int resolve_variables(JSContext *ctx, JSFunctionDef *s)
     /* the new code is about as long as this one: room for it at once, not
        grown from nothing. When the room is refused, the code stays as it
        is, with its atoms, which the function frees. */
-    if (dbuf_claim(&bc_out, bc_len)) {
+    if (dbuf_claim(&bc_out, JS_PASS_ROOM(bc_len))) {
         dbuf_free(&bc_out);
         JS_ThrowOutOfMemory(ctx);
         return -1;
@@ -43671,7 +43726,7 @@ static __exception int resolve_variables(JSContext *ctx, JSFunctionDef *s)
                        with the other checks, we delay the
                        error generation. */
                     dbuf_putc(&bc_out, OP_throw_error);
-                    dbuf_put_u32(&bc_out, JS_DupAtom(ctx, hf->var_name));
+                    pass_put_atom_dup(ctx, &bc_out, hf->var_name);
                     dbuf_putc(&bc_out, JS_THROW_VAR_REDECL);
                 }
                 goto next;
@@ -43827,7 +43882,7 @@ static __exception int resolve_variables(JSContext *ctx, JSFunctionDef *s)
             if (OPTIMIZE) {
                 /* remove dead code */
                 int line = -1;
-                dbuf_put(&bc_out, bc_buf + pos, len);
+                pass_put_code(ctx, &bc_out, bc_buf + pos, len);
                 pos = skip_dead_code(s, bc_buf, bc_len, pos + len, &line);
                 pos_next = pos;
                 if (pos < bc_len && line >= 0 && line_num != line) {
@@ -43964,7 +44019,7 @@ static __exception int resolve_variables(JSContext *ctx, JSFunctionDef *s)
             {
                 JSAtom name = get_u32(bc_buf + pos + 1);
                 dbuf_putc(&bc_out, OP_get_field);
-                dbuf_put_u32(&bc_out, name);
+                pass_put_atom(ctx, &bc_out, name);
             }
             break;
         case OP_get_array_el_opt_chain: /* equivalent to OP_get_array_el */
@@ -43973,7 +44028,7 @@ static __exception int resolve_variables(JSContext *ctx, JSFunctionDef *s)
 
         default:
         no_change:
-            dbuf_put(&bc_out, bc_buf + pos, len);
+            pass_put_code(ctx, &bc_out, bc_buf + pos, len);
             break;
         }
     }
@@ -43990,9 +44045,9 @@ static __exception int resolve_variables(JSContext *ctx, JSFunctionDef *s)
     /* continue the copy to keep the atom refcounts consistent */
     /* XXX: find a better solution ? */
     /* in one copy, which reads no flag: the instructions are whole from
-       pos to the end */
+       pos to the end. When it fails, their atoms are freed. */
     if (pos < bc_len)
-        dbuf_put(&bc_out, bc_buf + pos, bc_len - pos);
+        pass_put_code(ctx, &bc_out, bc_buf + pos, bc_len - pos);
     dbuf_free(&s->byte_code);
     s->byte_code = bc_out;
     return -1;
@@ -44585,7 +44640,7 @@ static __exception int insert_polls(JSContext *ctx, JSFunctionDef *s, DynBuf *bc
     js_dbuf_bytecode_init(ctx, &out);
     /* the new code is npos[len] bytes: room for it at once. A failure
        leaves out in error, as its first write would. */
-    dbuf_claim(&out, npos[len]);
+    dbuf_claim(&out, JS_PASS_ROOM(npos[len]));
     for (pos = 0; pos < len; pos += sz) {
         if (js_compile_poll(ctx, JS_CODE_WORK)) {
             dbuf_free(&out);
@@ -45688,7 +45743,7 @@ static __exception int resolve_labels(JSContext *ctx, JSFunctionDef *s)
        grown from nothing, after the returns above, which leave bc_out
        unused. When the room is refused, the code stays as it is, with its
        atoms, which the function frees with the tables above. */
-    if (dbuf_claim(&bc_out, bc_len)) {
+    if (dbuf_claim(&bc_out, JS_PASS_ROOM(bc_len))) {
         dbuf_free(&bc_out);
         JS_ThrowOutOfMemory(ctx);
         return -1;
@@ -45762,9 +45817,13 @@ static __exception int resolve_labels(JSContext *ctx, JSFunctionDef *s)
 
     for (pos = piece = 0; js_code_more(ctx, pos, bc_len, piece); pos = pos_next) {
         int val;
-        /* a relocation or a jump slot may point after a write that failed */
-        if (dbuf_error(&bc_out))
+        /* a relocation or a jump slot may point after a write that failed.
+           The code from pos on is not copied, and nothing freed one of its
+           atoms: they are freed here. */
+        if (dbuf_error(&bc_out)) {
+            pass_lost_code(ctx, bc_buf + pos, bc_len - pos);
             goto out_of_memory;
+        }
         op = bc_buf[pos];
         len = opcode_info[op].size;
         pos_next = pos + len;
@@ -45931,7 +45990,7 @@ static __exception int resolve_labels(JSContext *ctx, JSFunctionDef *s)
                     dbuf_putc(&bc_out, OP_if_false8 + (op - OP_if_false));
                     dbuf_putc(&bc_out, 0);
                     if (!add_reloc(ctx, ls, bc_out.size - 1, 1))
-                        goto fail;
+                        goto fail_copying;
                     break;
                 }
                 if (diff < 32768 && op == OP_goto) {
@@ -45940,7 +45999,7 @@ static __exception int resolve_labels(JSContext *ctx, JSFunctionDef *s)
                     dbuf_putc(&bc_out, OP_goto16);
                     dbuf_put_u16(&bc_out, 0);
                     if (!add_reloc(ctx, ls, bc_out.size - 2, 2))
-                        goto fail;
+                        goto fail_copying;
                     break;
                 }
             } else {
@@ -45966,7 +46025,7 @@ static __exception int resolve_labels(JSContext *ctx, JSFunctionDef *s)
             if (ls->addr == -1) {
                 /* unresolved yet: create a new relocation entry */
                 if (!add_reloc(ctx, ls, bc_out.size - 4, 4))
-                    goto fail;
+                    goto fail_copying;
             }
             break;
         case OP_with_get_var:
@@ -45995,12 +46054,12 @@ static __exception int resolve_labels(JSContext *ctx, JSFunctionDef *s)
                 jp->label = label;
 #endif
                 dbuf_putc(&bc_out, op);
-                dbuf_put_u32(&bc_out, atom);
+                pass_put_atom(ctx, &bc_out, atom);
                 dbuf_put_u32(&bc_out, ls->addr - bc_out.size);
                 if (ls->addr == -1) {
                     /* unresolved yet: create a new relocation entry */
                     if (!add_reloc(ctx, ls, bc_out.size - 4, 4))
-                        goto fail;
+                        goto fail_copying;
                 }
                 dbuf_putc(&bc_out, is_with);
             }
@@ -46231,7 +46290,7 @@ static __exception int resolve_labels(JSContext *ctx, JSFunctionDef *s)
                     if (cc.line_num >= 0) line_num = cc.line_num;
                     add_pc2line_info(s, bc_out.size, line_num);
                     dbuf_putc(&bc_out, OP_put_field);
-                    dbuf_put_u32(&bc_out, cc.atom);
+                    pass_put_atom(ctx, &bc_out, cc.atom);
                     pos_next = cc.pos;
                     break;
                 }
@@ -46300,7 +46359,7 @@ static __exception int resolve_labels(JSContext *ctx, JSFunctionDef *s)
 #endif
                     {
                         dbuf_putc(&bc_out, OP_push_atom_value);
-                        dbuf_put_u32(&bc_out, cc.atom);
+                        pass_put_atom(ctx, &bc_out, cc.atom);
                     }
                     dbuf_putc(&bc_out, OP_add_loc);
                     dbuf_putc(&bc_out, idx);
@@ -46400,7 +46459,7 @@ static __exception int resolve_labels(JSContext *ctx, JSFunctionDef *s)
                     add_pc2line_info(s, bc_out.size, line_num);
                     dbuf_putc(&bc_out, OP_dec + (op - OP_post_dec));
                     dbuf_putc(&bc_out, OP_put_field);
-                    dbuf_put_u32(&bc_out, cc.atom);
+                    pass_put_atom(ctx, &bc_out, cc.atom);
                     pos_next = cc.pos;
                     break;
                 }
@@ -46466,7 +46525,7 @@ static __exception int resolve_labels(JSContext *ctx, JSFunctionDef *s)
                     add_pc2line_info(s, bc_out.size, line_num);
                     dbuf_putc(&bc_out, op2);
                     if (op2 == OP_typeof_is)
-                        dbuf_put_u32(&bc_out, atom); /* the opcode keeps the atom */
+                        pass_put_atom(ctx, &bc_out, atom); /* the opcode keeps the atom */
                     else
                         JS_FreeAtom(ctx, atom);
                     pos_next = pos_end;
@@ -46493,7 +46552,7 @@ static __exception int resolve_labels(JSContext *ctx, JSFunctionDef *s)
                 (op == OP_special_object && bc_buf[pos + 1] == OP_SPECIAL_OBJECT_NEW_TARGET))
                 s->new_target_read = TRUE;
             add_pc2line_info(s, bc_out.size, line_num);
-            dbuf_put(&bc_out, bc_buf + pos, len);
+            pass_put_code(ctx, &bc_out, bc_buf + pos, len);
             break;
         }
     }
@@ -46630,6 +46689,11 @@ static __exception int resolve_labels(JSContext *ctx, JSFunctionDef *s)
         return -1;
     }
     return ret;
+ fail_copying:
+    /* the instruction at pos is done, its atoms in bc_out or freed. The code
+       after it is not copied, and nothing freed one of its atoms. */
+    pass_lost_code(ctx, bc_buf + pos_next, bc_len - pos_next);
+    goto fail;
  out_of_memory:
     JS_ThrowOutOfMemory(ctx);
  fail:
@@ -46643,9 +46707,8 @@ static __exception int resolve_labels(JSContext *ctx, JSFunctionDef *s)
         ls->first_reloc = NULL;
     }
     /* The atoms of the code copied so far are in bc_out, which uses short
-       opcodes, and the copy freed some of the others: free those of bc_out
-       with the function, and leave the atoms of the code not copied yet to
-       the runtime rather than free one twice. */
+       opcodes, and those of the code not copied are freed: free those of
+       bc_out with the function. */
     dbuf_free(&s->byte_code);
     s->byte_code = bc_out;
     s->use_short_opcodes = TRUE;

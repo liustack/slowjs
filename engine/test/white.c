@@ -190,6 +190,10 @@ static int white_bc_request(const void *ptr, size_t size)
     return size != 0 && white_bc_nreq == white_bc_fail_at;
 }
 #define JS_BYTECODE_REALLOC(ptr, size) white_bc_request(ptr, size)
+/* JS_PASS_ROOM: with white_pass_no_room set, a pass starts its new code with
+   no room, and the code grows from nothing */
+static int white_pass_no_room;
+#define JS_PASS_ROOM(len) (white_pass_no_room ? 0 : (len))
 
 #define host_poll white_host_poll
 
@@ -3382,6 +3386,12 @@ int white_bc_requests_take(long *out, int cap, int fail_at)
     white_bc_nreq = 0;
     white_bc_fail_at = fail_at;
     return n;
+}
+
+/* whether the passes start their new code with no room (JS_PASS_ROOM) */
+void white_pass_no_room_set(int on)
+{
+    white_pass_no_room = on;
 }
 
 /* the characters of names parse_ident copied so far (JS_IDENT_COPY) */
