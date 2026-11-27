@@ -9343,8 +9343,15 @@ struct compile_script {
     int mode;
 };
 
+/* scripts for a failure that once lost or freed twice a reference: a
+   destructuring in a with statement that binds var names (the name freed
+   twice when the label of its reference could not be made) */
+static const char *const compile_failure_scripts[] = {
+    "var o = {}; with (o) { var { a: zqB } = { a: 1 }, { b: zqC } = { b: 2 }, { c: zqD } = { c: 3 }, { d: zqE } = { d: 4 }; } zqB + zqC + zqD + zqE",
+};
+
 #define COMPILE_SCRIPTS \
-    (countof(compile_scripts) + countof(compile_fine_scripts) + countof(compile_alloc_scripts) + countof(compile_module_scripts) + 5)
+    (countof(compile_scripts) + countof(compile_fine_scripts) + countof(compile_alloc_scripts) + countof(compile_module_scripts) + countof(compile_failure_scripts) + 5)
 
 /* compile_sweep_scripts puts the scripts of the sweep in scripts (room for
    COMPILE_SCRIPTS), any call a request when calls is set, and gives their
@@ -9380,6 +9387,8 @@ static size_t compile_sweep_scripts(int calls, struct compile_script *scripts)
         scripts[k++].js = compile_fine_scripts[i];
     for (i = 0; i < countof(compile_alloc_scripts); i++)
         scripts[k++].js = compile_alloc_scripts[i];
+    for (i = 0; i < countof(compile_failure_scripts); i++)
+        scripts[k++].js = compile_failure_scripts[i];
     scripts[k++].js = big_scope;
     scripts[k++].js = deep_scope;
     scripts[k++].js = fields;

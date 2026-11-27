@@ -35044,6 +35044,9 @@ static __exception int js_parse_destructuring_element1(JSParseState *s, int tok,
                         emit_atom(s, var_name);
                         emit_u16(s, s->cur_func->scope_level);
                         JS_FreeAtom(s->ctx, var_name);
+                        /* the reference is the code's now, and get_lvalue
+                           takes it: prop_error must not free it again */
+                        var_name = JS_ATOM_NULL;
                         goto lvalue1;
                     } else {
                         /* no need to make a reference for let/const */
