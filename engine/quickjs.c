@@ -2314,6 +2314,18 @@ static BOOL js_front_drain(JSMallocContext *s)
 #define JS_WORK(n) ((void)0)
 #endif
 
+/* JS_LINE_COL_SCAN(n) says that a lookup of a line and a column in the
+   source (get_line_col, get_line_col_cached) walked n bytes of it, and
+   JS_LINE_COL_REFUSED() that the allocator refused the marks of the lines
+   and columns of a compile (GetLineColCache). They are nothing in the
+   engine. white.c counts them. */
+#ifndef JS_LINE_COL_SCAN
+#define JS_LINE_COL_SCAN(n) ((void)0)
+#endif
+#ifndef JS_LINE_COL_REFUSED
+#define JS_LINE_COL_REFUSED() ((void)0)
+#endif
+
 /* JS_MODULE_STEP() says that a walk over modules took one step: a parent
    module the gathering after an await looked at, a mark it cleared, a
    name a look in the table of the loaded modules went past, a name a grow
@@ -27668,12 +27680,29 @@ typedef struct LineNumberSlot {
     uint32_t source_pos;
 } LineNumberSlot;
 
+/* the line and the column at a multiple of JS_LINE_COL_STEP bytes of the
+   source (GetLineColCache) */
+typedef struct {
+    int line_num;
+    int col_num;
+} LineColMark;
+
 typedef struct {
     /* last source position */
     const uint8_t *ptr;
     int line_num;
     int col_num;
     const uint8_t *buf_start;
+    const uint8_t *buf_end;
+    /* marks[i] is the line and the column at byte i * JS_LINE_COL_STEP of
+       the source, for i < mark_count: a position is counted from the mark
+       before it, or from ptr when ptr lies between the two. Made at the
+       first lookup, which fills it as far as it needs, and freed at the
+       end of the compile (js_parse_free_line_col). NULL with marks_off set
+       when the allocator refused it: each lookup then walks from ptr. */
+    LineColMark *marks;
+    size_t mark_count;
+    BOOL marks_off;
 } GetLineColCache;
 
 typedef enum JSParseFunctionEnum {
@@ -28005,19 +28034,43 @@ static void free_token(JSParseState *s, JSToken *token)
 static __exception int get_line_col(JSContext *ctx, int *pcol_num, const uint8_t *buf, size_t len)
 {
     int line_num, col_num, c;
-    size_t i, end;
+    size_t i, end, stop;
+    uint64_t w, x;
     
     line_num = 0;
     col_num = 0;
     for(i = 0; i < len; i = end) {
         end = len - i > JS_POLL_SHORT_STEP ? i + JS_POLL_SHORT_STEP : len;
-        for(; i < end; i++) {
-            c = buf[i];
-            if (c == '\n') {
-                line_num++;
-                col_num = 0;
-            } else if (c < 0x80 || c >= 0xc0) {
-                col_num++;
+        JS_LINE_COL_SCAN(end - i);
+        while (i < end) {
+            stop = end;
+            if (end - i >= 8) {
+                /* eight bytes at once when none of them is a line feed: x
+                   has the high bit of each byte that is not one (that byte
+                   of w ^ '\n' is not 0), and the column counts the bytes
+                   that do not continue a character, those not 10xxxxxx
+                   (bit 7 set and bit 6, which the shift moves to bit 7,
+                   clear), summed into the top byte by the multiplication.
+                   Eight with a line feed go one at a time. */
+                w = get_u64(buf + i);
+                x = w ^ 0x0a0a0a0a0a0a0a0aULL;
+                x = ((x & 0x7f7f7f7f7f7f7f7fULL) + 0x7f7f7f7f7f7f7f7fULL) | x;
+                if ((x & 0x8080808080808080ULL) == 0x8080808080808080ULL) {
+                    w = (w & ~(w << 1) & 0x8080808080808080ULL) >> 7;
+                    col_num += 8 - (int)((w * 0x0101010101010101ULL) >> 56);
+                    i += 8;
+                    continue;
+                }
+                stop = i + 8;
+            }
+            for(; i < stop; i++) {
+                c = buf[i];
+                if (c == '\n') {
+                    line_num++;
+                    col_num = 0;
+                } else if (c < 0x80 || c >= 0xc0) {
+                    col_num++;
+                }
             }
         }
         if (end < len && js_poll_interrupts(ctx))
@@ -28027,10 +28080,80 @@ static __exception int get_line_col(JSContext *ctx, int *pcol_num, const uint8_t
     return line_num;
 }
 
-/* -1 with "interrupted" thrown when the flag is set on a long way */
+/* the step of the marks of GetLineColCache, a power of 2 that divides
+   JS_POLL_SHORT_STEP: a lookup walks fewer bytes than this, and the marks
+   take sizeof(LineColMark) bytes for each step of the source */
+#define JS_LINE_COL_STEP 128
+
+/* the marks of s up to number idx, after the mark_count it has. The walk
+   reads the interrupt flag after each JS_POLL_SHORT_STEP bytes, as
+   get_line_col does, and gives -1 with "interrupted" thrown when it is set:
+   the marks made before stay. */
+static __exception int line_col_fill(JSContext *ctx, GetLineColCache *s, size_t idx)
+{
+    const uint8_t *p;
+    int line_num, col_num, n, c;
+    size_t i;
+
+    i = s->mark_count;
+    p = s->buf_start + (i - 1) * JS_LINE_COL_STEP;
+    line_num = s->marks[i - 1].line_num;
+    col_num = s->marks[i - 1].col_num;
+    for(; i <= idx; i++) {
+        if ((i & (JS_POLL_SHORT_STEP / JS_LINE_COL_STEP - 1)) == 0 &&
+            js_poll_interrupts(ctx))
+            return -1;
+        /* shorter than JS_POLL_SHORT_STEP: reads no flag */
+        n = get_line_col(ctx, &c, p, JS_LINE_COL_STEP);
+        if (n == 0) {
+            col_num += c;
+        } else {
+            line_num += n;
+            col_num = c;
+        }
+        p += JS_LINE_COL_STEP;
+        s->marks[i].line_num = line_num;
+        s->marks[i].col_num = col_num;
+        s->mark_count = i + 1;
+    }
+    return 0;
+}
+
+/* The line and the column of ptr, counted from the mark before ptr, which
+   the lookup makes when it has none yet, or from the position of the
+   lookup before (s->ptr) when that lies between the mark and ptr: fewer
+   than JS_LINE_COL_STEP bytes either way. Without the marks (the allocator
+   refused them), from s->ptr however far, back or forth. -1 with
+   "interrupted" thrown when the flag is set on a long way. */
 static __exception int get_line_col_cached(JSContext *ctx, GetLineColCache *s, int *pcol_num, const uint8_t *ptr)
 {
     int line_num, col_num;
+
+    if (!s->marks && !s->marks_off) {
+        size_t n = (s->buf_end - s->buf_start) / JS_LINE_COL_STEP + 1;
+
+        s->marks = js_malloc_rt(ctx->rt, n * sizeof(s->marks[0]));
+        if (!s->marks) {
+            JS_LINE_COL_REFUSED();
+            s->marks_off = TRUE;
+        } else {
+            s->marks[0].line_num = 0;
+            s->marks[0].col_num = 0;
+            s->mark_count = 1;
+        }
+    }
+    if (s->marks) {
+        size_t idx = (ptr - s->buf_start) / JS_LINE_COL_STEP;
+        const uint8_t *mark = s->buf_start + idx * JS_LINE_COL_STEP;
+
+        if (idx >= s->mark_count && line_col_fill(ctx, s, idx))
+            return -1;
+        if (s->ptr < mark || s->ptr > ptr) {
+            s->ptr = mark;
+            s->line_num = s->marks[idx].line_num;
+            s->col_num = s->marks[idx].col_num;
+        }
+    }
     if (ptr >= s->ptr) {
         line_num = get_line_col(ctx, &col_num, s->ptr, ptr - s->ptr);
         if (line_num < 0)
@@ -28053,6 +28176,7 @@ static __exception int get_line_col_cached(JSContext *ctx, GetLineColCache *s, i
             /* find the absolute column position */
             col_num = 0;
             for(p = ptr - 1; p >= s->buf_start; p--) {
+                JS_LINE_COL_SCAN(1);
                 if (*p == '\n') {
                     break;
                 } else if (*p < 0x80 || *p >= 0xc0) {
@@ -48978,8 +49102,16 @@ static void js_parse_init(JSContext *ctx, JSParseState *s,
 
     s->get_line_col_cache.ptr = s->buf_start;
     s->get_line_col_cache.buf_start = s->buf_start;
+    s->get_line_col_cache.buf_end = s->buf_end;
     s->get_line_col_cache.line_num = 0;
     s->get_line_col_cache.col_num = 0;
+}
+
+/* the end of the compile: the marks of the lines and columns go */
+static void js_parse_free_line_col(JSParseState *s)
+{
+    js_free_rt(s->ctx->rt, s->get_line_col_cache.marks);
+    s->get_line_col_cache.marks = NULL;
 }
 
 static JSValue JS_EvalFunctionInternal(JSContext *ctx, JSValue fun_obj,
@@ -49145,6 +49277,7 @@ static JSValue __JS_EvalInternal(JSContext *ctx, JSValueConst this_obj,
 
     /* create the function object and all the enclosed functions */
     fun_obj = js_create_function(ctx, fd);
+    js_parse_free_line_col(s);
     if (JS_IsException(fun_obj))
         goto fail1;
     js_compile_end(ctx->rt, was_compiling);

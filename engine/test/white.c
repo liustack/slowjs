@@ -158,6 +158,15 @@ static unsigned long white_paren_size, white_paren_work, white_paren_work_max, w
 static int white_paren_refused;
 #define JS_PAREN_REFUSED() (white_paren_refused++)
 
+/* JS_LINE_COL_SCAN counts the bytes the lookups of lines and columns walk
+   (get_line_col, get_line_col_cached): all of them, and the most between two
+   readings of the flag, as for JS_WORK. JS_LINE_COL_REFUSED counts the marks
+   of the lines and columns the allocator refused. */
+static unsigned long white_line_col, white_line_col_max, white_line_col_total;
+#define JS_LINE_COL_SCAN(n) (white_line_col += (n), white_line_col_total += (n))
+static int white_line_col_refused;
+#define JS_LINE_COL_REFUSED() (white_line_col_refused++)
+
 #define host_poll white_host_poll
 
 #include "../quickjs.c"
@@ -165,6 +174,9 @@ static int white_paren_refused;
 #undef host_poll
 int white_host_poll(const volatile int *flag)
 {
+    if (white_line_col > white_line_col_max)
+        white_line_col_max = white_line_col;
+    white_line_col = 0;
     if (white_paren_work > white_paren_work_max)
         white_paren_work_max = white_paren_work;
     white_paren_work = 0;
@@ -3340,6 +3352,34 @@ unsigned long white_paren_size_take(void)
     unsigned long n = white_paren_size;
 
     white_paren_size = 0;
+    return n;
+}
+
+/* the bytes the lookups of lines and columns walked since the last call
+   (JS_LINE_COL_SCAN), and in *longest the most of them between two readings
+   of the flag, the stretch going on included. The counts start again. */
+unsigned long white_line_col_take(unsigned long *longest)
+{
+    unsigned long n = white_line_col_total;
+
+    *longest = white_line_col > white_line_col_max ? white_line_col : white_line_col_max;
+    white_line_col = white_line_col_max = white_line_col_total = 0;
+    return n;
+}
+
+/* get_line_col over buf[0..len): the lines, and the column in *col */
+int white_get_line_col(JSContext *ctx, const uint8_t *buf, size_t len, int *col)
+{
+    return get_line_col(ctx, col, buf, len);
+}
+
+/* the marks of the lines and columns the allocator refused
+   (JS_LINE_COL_REFUSED), and 0 again */
+int white_line_col_refused_take(void)
+{
+    int n = white_line_col_refused;
+
+    white_line_col_refused = 0;
     return n;
 }
 

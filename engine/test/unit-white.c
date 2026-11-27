@@ -197,6 +197,9 @@ unsigned long white_skip_tokens_read(void);
 unsigned long white_paren_size_take(void);
 unsigned long white_paren_work_take(unsigned long *total);
 int white_paren_refused_take(void);
+unsigned long white_line_col_take(unsigned long *longest);
+int white_line_col_refused_take(void);
+int white_get_line_col(JSContext *ctx, const uint8_t *buf, size_t len, int *col);
 void white_work_add(unsigned long n);
 size_t white_sb_block_usable(const struct StringBuffer *b);
 void white_front_drain(JSContext *ctx);
@@ -8905,6 +8908,212 @@ static void test_parens_alloc_refused(void)
     free(many);
 }
 
+/* get_line_col reads eight bytes at once when none of them is a line feed.
+   Over bytes of every kind (line feeds, ASCII, bytes that continue a
+   character, bytes that start one, and bytes one bit from a line feed),
+   with line feeds dense and sparse, at every length to 300 from 8 offsets,
+   it gives the lines and the column a loop over the bytes one at a time
+   gives. */
+static void test_line_col_bytes(void)
+{
+    static const uint8_t kinds[] = { 'a', ' ', '\r', 0x7f, 0x00, 0x80, 0xbf, 0x8a, 0xc0, 0xc3, 0xe4, 0xf0, 0xff, 0x0b, 0x08, 0x4a, 0x1a };
+    VM v = vm_new();
+    uint8_t buf[320];
+    unsigned seed = 7;
+    int fill, len, off, i, line, col, l, c, bad = 0;
+    long cases = 0;
+
+    for (fill = 0; fill < 60; fill++) {
+        for (i = 0; i < (int)sizeof(buf); i++) {
+            seed = seed * 1103515245 + 12345;
+            buf[i] = (seed >> 16) % (fill % 6 == 0 ? 4 : 40) == 0 ? '\n' : kinds[(seed >> 8) % countof(kinds)];
+        }
+        for (off = 0; off < 8; off++) {
+            for (len = 0; off + len <= 300; len++) {
+                line = col = 0;
+                for (i = off; i < off + len; i++) {
+                    if (buf[i] == '\n') {
+                        line++;
+                        col = 0;
+                    } else if ((buf[i] & 0xc0) != 0x80) {
+                        col++;
+                    }
+                }
+                l = white_get_line_col(v.ctx, buf + off, len, &c);
+                bad += l != line || c != col;
+                cases++;
+            }
+        }
+    }
+    CHECK(bad == 0, "get_line_col: %d of %ld spans differ from a loop over the bytes", bad, cases);
+    vm_free(&v);
+}
+
+/* The lines and columns of the code of a compile (compute_pc2line_info) are
+   counted from marks the compile makes every 128 bytes of the source, or
+   from the lookup before when it is nearer, so the lookups walk the source
+   about once, however deep the functions nest. Each function looks its
+   lines up after the functions in it, and before the marks it walked back
+   to its start and over the functions in it again: a byte was walked about
+   as many times as there are functions around it. For each shape, 20 copies
+   of functions nested 40 to 150 deep, with code after the function in
+   each, the lookups walk fewer than 3 times as many bytes as the source
+   has, and 512 for each function, whose lookups start from a mark a few
+   times. Before the marks, they walked 15 to 150 times as many. */
+static void test_line_col_linear(void)
+{
+    static const struct {
+        const char *what, *head, *open, *mid, *close, *tail;
+        int depth;
+    } shapes[] = {
+        { "functions", "", "function f() {\n  var a = 1;\n  ", "return a;\n", "  return f;\n}\n", "", 60 },
+        { "arrow functions on one line", "x = ", "(a) => { let b = a + 1; return [", "b", "].length + b; }", ";", 150 },
+        { "methods with CRLF and characters of several bytes", "x = ",
+          "{ m(a) {\r\n  const s = \"\xc3\xa9\xe4\xb8\xad\xf0\x9f\x98\x80\";\r\n  return [", "s", "].length + s.length; } }", ";\r\n", 60 },
+        { "templates across lines", "x = ", "function () { return `\n${", "1", "}\n` + 1; }", ";\n", 60 },
+        { "classes with comments", "x = ", "class { /* a\n b */ static m() { // c\n return [", "1", "].length + 1; } }", ";\n", 40 },
+    };
+    int i, k, d;
+
+    for (i = 0; i < (int)countof(shapes); i++) {
+        VM v = vm_new();
+        size_t len = 0, cap = 20 * (strlen(shapes[i].head) + strlen(shapes[i].mid) + strlen(shapes[i].tail) +
+                                    shapes[i].depth * (strlen(shapes[i].open) + strlen(shapes[i].close))) + 1;
+        char *src = malloc(cap);
+        unsigned long walked, longest, funcs = 20 * shapes[i].depth;
+        JSValue r;
+
+        for (k = 0; k < 20; k++) {
+            len += sprintf(src + len, "%s", shapes[i].head);
+            for (d = 0; d < shapes[i].depth; d++)
+                len += sprintf(src + len, "%s", shapes[i].open);
+            len += sprintf(src + len, "%s", shapes[i].mid);
+            for (d = 0; d < shapes[i].depth; d++)
+                len += sprintf(src + len, "%s", shapes[i].close);
+            len += sprintf(src + len, "%s", shapes[i].tail);
+        }
+        white_line_col_take(&longest);
+        r = JS_Eval(v.ctx, src, len, "linecol.js", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+        walked = white_line_col_take(&longest);
+        CHECK(!JS_IsException(r), "%s: does not compile", shapes[i].what);
+        if (JS_IsException(r))
+            free(exception_text(v.ctx));
+        JS_FreeValue(v.ctx, r);
+        CHECK(walked < 3 * len + 512 * funcs, "%s: the lookups walked %lu bytes for %zu bytes and %lu functions",
+              shapes[i].what, walked, len, funcs);
+        printf("unit-white: test_line_col_linear: %s: %lu bytes walked for %zu bytes and %lu functions\n",
+               shapes[i].what, walked, len, funcs);
+        free(src);
+        vm_free(&v);
+    }
+}
+
+/* A lookup of a line far into the source makes the marks up to it, and
+   reads the interrupt flag on the way as the walk before the marks did:
+   a function whose code is 2 MB of comment apart, or 2 MB apart on one
+   line, walks no more than 8192 bytes between two readings of the flag. */
+static void test_line_col_flag(void)
+{
+    static const char *const fills[] = { "/* a\n */", "/* a */" };
+    static const char *const names[] = { "comments over many lines", "comments on one line" };
+    size_t i;
+
+    for (i = 0; i < countof(fills); i++) {
+        VM v = vm_new();
+        size_t len = 0, n = strlen(fills[i]), cap = 2 * 1024 * 1024 + 256;
+        char *src = malloc(cap);
+        unsigned long walked, longest;
+        JSValue r;
+
+        len += sprintf(src + len, "function f() {\n  var a = 1;\n");
+        while (len + n < cap - 64)
+            len += sprintf(src + len, "%s", fills[i]);
+        len += sprintf(src + len, "\n  return a;\n}\nf()");
+        white_line_col_take(&longest);
+        r = JS_Eval(v.ctx, src, len, "linecol.js", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+        walked = white_line_col_take(&longest);
+        CHECK(!JS_IsException(r), "%s: does not compile", names[i]);
+        if (JS_IsException(r))
+            free(exception_text(v.ctx));
+        JS_FreeValue(v.ctx, r);
+        CHECK(walked >= len - 64, "%s: the lookups walked %lu bytes of %zu", names[i], walked, len);
+        CHECK(longest <= 8192, "%s: the lookups walked %lu bytes between two readings of the flag", names[i], longest);
+        printf("unit-white: test_line_col_flag: %s: %lu bytes walked, at most %lu between two readings\n",
+               names[i], walked, longest);
+        free(src);
+        vm_free(&v);
+    }
+}
+
+/* the code compile_line_col compiled, as JS_WriteObject writes it with its
+   lines and columns, in *out (malloc'd), or NULL when the compile failed */
+static uint8_t *compile_line_col(const char *js, int fail, int *n, size_t *len)
+{
+    VM v = vm_new();
+    JSValue c = white_compile_failing(v.ctx, js, fail, MODE_CALLS, n);
+    uint8_t *b, *out = NULL;
+
+    if (JS_IsException(c)) {
+        free(exception_text(v.ctx));
+    } else {
+        b = JS_WriteObject(v.ctx, len, c, JS_WRITE_OBJ_BYTECODE);
+        if (b) {
+            out = malloc(*len);
+            memcpy(out, b, *len);
+            js_free(v.ctx, b);
+        }
+        JS_FreeValue(v.ctx, c);
+    }
+    CHECK(!JS_HasException(v.ctx), "call %d failing: an exception is pending", fail);
+    vm_free(&v);
+    return out;
+}
+
+/* The marks of the lines and columns of a compile that the allocator
+   refuses change nothing the compile gives: the lookups walk from the one
+   before, as they did before the marks. Each call of the allocator of a
+   compile fails in turn, and when it was the marks (JS_LINE_COL_REFUSED),
+   the compile works and writes the same code, with the same lines and
+   columns, as with every call working. */
+static void test_line_col_alloc_refused(void)
+{
+    char *deep = malloc(64 * 1024);
+    const char *srcs[3];
+    size_t i, len = 0;
+    int k;
+
+    for (k = 0; k < 30; k++)
+        len += sprintf(deep + len, "function f%d(a) {\r\n  const s = \"\xc3\xa9\xf0\x9f\x98\x80 %d\"; /* \n */ var b = a + %d;\n", k, k, k);
+    len += sprintf(deep + len, "  return b;\n");
+    for (k = 0; k < 30; k++)
+        len += sprintf(deep + len, "  return f%d(b) + `\n${b}`;\n}\n", k);
+    srcs[0] = "function f() {\n  return 1;\n}\nf()";
+    srcs[1] = "var x = 1; function g() { var a = x + 1; return () => a + x + 2 + 3 + 4 + 5 + 6 + 7 + 8 + 9 + 10 + 11 + 12 + 13 + 14 + 15 + 16 + 17 + 18 + 19 + 20 + 21 + 22 + 23 + 24 + 25; }\ng()()";
+    srcs[2] = deep;
+    for (i = 0; i < countof(srcs); i++) {
+        uint8_t *want, *got;
+        size_t want_len, got_len;
+        int n, m, fail, refused = 0;
+
+        want = compile_line_col(srcs[i], 0, &n, &want_len);
+        CHECK(want != NULL, "line col %zu does not compile", i);
+        for (fail = 1; want && fail <= n; fail++) {
+            white_line_col_refused_take();
+            got = compile_line_col(srcs[i], fail, &m, &got_len);
+            if (white_line_col_refused_take()) {
+                refused++;
+                CHECK(got && got_len == want_len && memcmp(got, want, want_len) == 0,
+                      "line col %zu, call %d refused for the marks: %s", i, fail,
+                      got ? "the code differs" : "the compile failed");
+            }
+            free(got);
+        }
+        CHECK(refused == 1, "line col %zu: %d calls of the marks refused", i, refused);
+        free(want);
+    }
+    free(deep);
+}
+
 static void test_compile_one_failure(int calls)
 {
     struct compile_script scripts[COMPILE_SCRIPTS];
@@ -12134,6 +12343,10 @@ int main(int argc, char **argv)
     test_parens_table_replace();
     test_parens_work_gaps();
     test_parens_alloc_refused();
+    test_line_col_bytes();
+    test_line_col_linear();
+    test_line_col_flag();
+    test_line_col_alloc_refused();
     test_poll_scan();
     test_poll_insert();
     test_poll_compile();
