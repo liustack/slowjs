@@ -7476,6 +7476,11 @@ static force_inline BOOL js_concat_string_in_place(JSContext *ctx, JSString *p1,
 
         if (p2->len == 0)
             return TRUE;
+        /* past the longest string the caller copies, which throws "string
+           too long". The lengths are bit fields that an int holds: their
+           sum times 2 would not fit one for a wide p1 of 2^30 - 1. */
+        if (p2->len > JS_STRING_LEN_MAX - p1->len)
+            return FALSE;
         if (js_rc(p1)->ref_count != owners || js_string_fixed(p1))
             return FALSE;
         size1 = js_malloc_usable_size(ctx, p1);

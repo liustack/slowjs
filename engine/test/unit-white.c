@@ -638,6 +638,89 @@ static void test_concat3_too_long(void)
     }
 }
 
+static int regvm_op(const char *name);
+
+/* The string longest(wide) gives, its length made to look as long as the
+   longest string (white_string_fake_len), and the length it had. It holds no
+   reference: the local of the script is the string's only holder. */
+static JSValue longest_str;
+static uint32_t longest_len;
+
+static JSValue longest_new(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+    (void)this_val;
+    (void)argc;
+    longest_str = JS_NewString(ctx, JS_ToBool(ctx, argv[0]) ? "\xe4\xb8\xad\xe6\x96\x87" : "abcdef");
+    longest_len = white_string_fake_len(longest_str, (uint32_t)white_string_len_max());
+    return longest_str;
+}
+
+/* puts the length of the string of longest back */
+static JSValue longest_back(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+    (void)ctx;
+    (void)this_val;
+    (void)argc;
+    (void)argv;
+    white_string_fake_len(longest_str, longest_len);
+    return JS_UNDEFINED;
+}
+
+/* t = t + c, with t a local that is the only holder of a string as long as
+   the longest one, takes the append in place (js_concat_string_in_place),
+   which must leave it to the copy that throws "string too long". For a wide
+   string it took the two lengths, 2^30 in an int, times 2: an overflow of a
+   signed int, which UndefinedBehaviorSanitizer stops at. The string only
+   looks that long, so no gigabyte is made, and its length is put back while
+   the local still holds it. t = t + id(c): t = t + c is ADDLOC, not ADDL. */
+static void test_string_append_longest(void)
+{
+    static const char setup[] =
+        "function id(x) { return x }\n"
+        "function grow(wide, c) {\n"
+        "  let t = longest(wide)\n"
+        "  try { t = t + id(c) } catch (e) { back(); return String(e) }\n"
+        "  back()\n"
+        "  return 'grew to ' + t.length\n"
+        "}\n";
+    static const struct { int wide; const char *c; } cases[] = {
+        { 1, "'x'" }, { 1, "'\\u4e2d'" }, { 1, "'x'.repeat(100)" }, { 0, "'x'" }, { 0, "'x'.repeat(100)" },
+    };
+    VM v = vm_new();
+    JSValue g = JS_GetGlobalObject(v.ctx), grow;
+    const uint8_t *code;
+    int i, k, len, addl = regvm_op("ADDL"), found = 0;
+    char src[128];
+
+    CHECK(JS_SetPropertyStr(v.ctx, g, "longest", JS_NewCFunction(v.ctx, longest_new, "longest", 1)) >= 0 &&
+          JS_SetPropertyStr(v.ctx, g, "back", JS_NewCFunction(v.ctx, longest_back, "back", 0)) >= 0,
+          "the functions of the host");
+    CHECK(eval_ok(v.ctx, setup), "the setup threw");
+    for (i = 0; i < (int)countof(cases); i++) {
+        /* twice: the first call converts grow to register code, the second
+           runs it there */
+        for (k = 0; k < 2; k++) {
+            char *t;
+
+            snprintf(src, sizeof(src), "grow(%d, %s)", cases[i].wide, cases[i].c);
+            t = eval_text(v.ctx, src);
+            CHECK(t && strcmp(t, "InternalError: string too long") == 0, "%s: %s, want InternalError: string too long",
+                  src, t ? t : "(exception)");
+            free(t);
+        }
+    }
+    grow = JS_GetPropertyStr(v.ctx, g, "grow");
+    code = white_regvm_code(grow, &len);
+    CHECK(code != NULL, "grow has no register code");
+    for (i = 0; code && i + 2 < len; i++)
+        if (code[i] == addl && code[i + 1] == code[i + 2])
+            found = 1;
+    CHECK(found, "grow has no ADDL into its left operand");
+    JS_FreeValue(v.ctx, grow);
+    JS_FreeValue(v.ctx, g);
+    vm_free(&v);
+}
+
 /* json_plain_run against a loop of one byte at a time: every length up to 40,
    a byte that ends the run at every place or none, and random bytes, in
    blocks of the exact length (so that a read past the end shows under
@@ -12397,6 +12480,7 @@ int main(int argc, char **argv)
     test_sb_room_past_two_thirds();
     test_sb_widen_room();
     test_concat3_too_long();
+    test_string_append_longest();
     test_json_run_limit();
     test_json_plain_run();
     test_json_count_high_bytes();
