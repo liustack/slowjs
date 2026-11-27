@@ -9349,11 +9349,13 @@ struct compile_script {
    name (the name of the first kept without its scope, which the check of the
    second read past the end of its block), and a regexp whose atom is
    repeated (the code read back when its first write had failed, and it had
-   no buffer) */
+   no buffer), and a function whose positions are read (the table of
+   positions cut short when a write of it failed, and the compile working) */
 static const char *const compile_failure_scripts[] = {
     "var o = {}; with (o) { var { a: zqB } = { a: 1 }, { b: zqC } = { b: 2 }, { c: zqD } = { c: 3 }, { d: zqE } = { d: 4 }; } zqB + zqC + zqD + zqE",
     "/(?<zqF>x)|(?<zqF>y)/.exec('y').groups.zqF",
     "/zqG+/.test('zqGG')",
+    "function f(o) {\n  var a = o.zqH;\n  var b = a + 1;\n  return new Error('zqI').stack + b;\n}\nf({ zqH: 1 })",
 };
 
 #define COMPILE_SCRIPTS \

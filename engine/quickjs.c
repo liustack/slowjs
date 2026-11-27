@@ -44144,6 +44144,12 @@ static int compute_pc2line_info(JSFunctionDef *s)
         }
         if (end < 0)
             return -1;
+        /* a write that failed leaves the table cut short, and the
+           function would give wrong positions */
+        if (dbuf_error(&s->pc2line)) {
+            JS_ThrowOutOfMemory(s->ctx);
+            return -1;
+        }
     }
     return 0;
 }
