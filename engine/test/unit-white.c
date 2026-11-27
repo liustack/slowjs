@@ -5187,6 +5187,7 @@ static void test_ident_one_pass(void)
     static const struct {
         const char *src;
         unsigned long copies;
+        int error; /* a syntax error */
     } cases[] = {
         { "var abc = 1, $_9 = abc; abc += $_9; L: for (;;) break L; ({ abc, get x() { return abc; } }).abc;", 0 },
         { "class A { #abc = 1; static #s; m(o) { return this.#abc + (#abc in o) + A.#s; } }", 0 },
@@ -5200,7 +5201,7 @@ static void test_ident_one_pass(void)
         { "class B { #\\u0061b = 1; }", 2 },
         { "class B { #\xc3\xa9t = 1; }", 2 },
         { "class B { #t\xc3\xa9 = 1; }", 2 },
-        { "a\\x;", 1 },
+        { "a\\x;", 1, 1 },
     };
     VM v = vm_new();
     char *src, *t;
@@ -5213,6 +5214,8 @@ static void test_ident_one_pass(void)
         r = JS_Eval(v.ctx, cases[i].src, strlen(cases[i].src), "ident.js",
                     JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
         copies = white_ident_copies_read() - copies;
+        CHECK(JS_IsException(r) == cases[i].error, "%s: %s", cases[i].src,
+              cases[i].error ? "compiles, not a syntax error" : "does not compile");
         if (JS_IsException(r))
             free(exception_text(v.ctx));
         JS_FreeValue(v.ctx, r);
@@ -5227,6 +5230,10 @@ static void test_ident_one_pass(void)
 
         for (priv = 0; priv < 2; priv++) {
             src = malloc(n + len);
+            if (!src) {
+                fprintf(stderr, "no memory\n");
+                exit(2);
+            }
             if (priv)
                 sprintf(src, "class C { #q%0*d = 1; }", (int)len - 2, 0);
             else
@@ -5302,6 +5309,10 @@ static void test_bytecode_pass_room(void)
             int n, k, chain = -1, grows = 0, worst = 0;
             JSValue r;
 
+            if (!src) {
+                fprintf(stderr, "no memory\n");
+                exit(2);
+            }
             for (k = 0; k < counts[j]; k++) {
                 memcpy(src + len, bodies[i], blen);
                 len += blen;
