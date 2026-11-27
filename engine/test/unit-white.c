@@ -193,6 +193,10 @@ int white_sb_write8(struct StringBuffer *b, const uint8_t *p, int len);
 int white_sb_putc16(struct StringBuffer *b, uint32_t c);
 unsigned long white_work_longest(void);
 unsigned long white_work_sum(void);
+unsigned long white_skip_tokens_read(void);
+unsigned long white_paren_size_take(void);
+unsigned long white_paren_work_take(unsigned long *total);
+int white_paren_refused_take(void);
 void white_work_add(unsigned long n);
 size_t white_sb_block_usable(const struct StringBuffer *b);
 void white_front_drain(JSContext *ctx);
@@ -5005,6 +5009,139 @@ static Code straight(int n)
     return c;
 }
 
+/* The lookahead that tells an arrow function, a destructuring or the head of
+   a for from an expression (js_parse_skip_parens_token) reads from a bracket
+   up to its closing bracket, and the parse asks it again from brackets inside
+   when it gets there. It keeps what it found from each bracket it went
+   through, so a source with brackets nested n deep is not read n times over:
+   for each shape, 40 lines of brackets nested 180 to 240 levels deep, the
+   lookahead reads fewer than twice as many tokens as the source has bytes.
+   Before, it read 30 to 120 times as many. */
+static void test_parens_lookahead_linear(void)
+{
+    static const struct {
+        const char *what, *head, *open, *mid, *close, *tail;
+        int depth;
+    } shapes[] = {
+        { "parentheses", "x = ", "(", "a", ")", ";\n", 240 },
+        { "arrow functions", "x = ", "((a) => ", "a", ")", ";\n", 200 },
+        { "brackets of every kind", "[x] = ", "[{a:(", "a", ")}]", ";\n", 80 },
+        { "templates", "x = ", "`${(", "a", ")}`", ";\n", 120 },
+        { "functions with defaults", "x = ", "(function (a = 1) { return (", "a", "); })", ";\n", 80 },
+        { "strict async functions", "x = ", "(async function (a) { 'use strict'; return (", "await a", "); })", ";\n", 60 },
+        { "for heads", "x = ", "(function () { for (const [b] of (", "a", ")); })", ";\n", 60 },
+    };
+    int i, k, d;
+
+    for (i = 0; i < (int)countof(shapes); i++) {
+        VM v = vm_new();
+        size_t len = 0, cap = 40 * (strlen(shapes[i].head) + strlen(shapes[i].mid) + strlen(shapes[i].tail) +
+                                    shapes[i].depth * (strlen(shapes[i].open) + strlen(shapes[i].close))) + 1;
+        char *src = malloc(cap);
+        unsigned long read;
+        JSValue r;
+
+        for (k = 0; k < 40; k++) {
+            len += sprintf(src + len, "%s", shapes[i].head);
+            for (d = 0; d < shapes[i].depth; d++)
+                len += sprintf(src + len, "%s", shapes[i].open);
+            len += sprintf(src + len, "%s", shapes[i].mid);
+            for (d = 0; d < shapes[i].depth; d++)
+                len += sprintf(src + len, "%s", shapes[i].close);
+            len += sprintf(src + len, "%s", shapes[i].tail);
+        }
+        read = white_skip_tokens_read();
+        r = JS_Eval(v.ctx, src, len, "parens.js", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+        read = white_skip_tokens_read() - read;
+        CHECK(!JS_IsException(r), "%s: does not compile", shapes[i].what);
+        if (JS_IsException(r))
+            free(exception_text(v.ctx));
+        JS_FreeValue(v.ctx, r);
+        CHECK(read < 2 * len, "%s: the lookahead read %lu tokens for %zu bytes", shapes[i].what, read, len);
+        free(src);
+        vm_free(&v);
+    }
+}
+
+/* The table of the answers of the lookahead (JSParenCache) grows for a new
+   bracket only: an answer kept again from a bracket, under the mode of the
+   function the parse has gone into, takes the place of the one before. The
+   first lookahead keeps 512 brackets, which fill the table of 1024 entries
+   to half, and the parse reads the parameters of the async function again
+   in its mode, as the '\1' in them reads differently in strict mode. */
+static void test_parens_table_replace(void)
+{
+    VM v = vm_new();
+    char *src = malloc(64 + 4 * 509);
+    unsigned long size;
+    size_t len;
+    JSValue r;
+    int i;
+
+    len = sprintf(src, "(async function f(a = '\\1') {");
+    for (i = 0; i < 509; i++)
+        len += sprintf(src + len, "(0);");
+    len += sprintf(src + len, "});");
+    white_paren_size_take();
+    r = JS_Eval(v.ctx, src, len, "replace.js", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+    size = white_paren_size_take();
+    CHECK(!JS_IsException(r), "the source of 512 brackets does not compile");
+    if (JS_IsException(r))
+        free(exception_text(v.ctx));
+    JS_FreeValue(v.ctx, r);
+    CHECK(size == 1024, "the table of the lookahead grew to %lu entries for 512 brackets, want 1024", size);
+    free(src);
+    vm_free(&v);
+}
+
+/* What the lookahead does for its table besides reading tokens
+   (JS_PAREN_WORK) reads the interrupt flag at least every JS_ROPE_STEP bytes
+   or entries: the look for a line feed in the space before the token after
+   a bracket, and the clearing of a new table and the copy of the old one
+   into it when the table grows. Whether a string reads differently in
+   strict mode is told by the lexer, not by a second scan of the string. The sources: a string of 131072 escapes, a comment of 200000
+   bytes after a bracket, and 140000 brackets, whose table grows to 524288
+   entries. */
+static void test_parens_work_gaps(void)
+{
+    static const struct {
+        const char *what, *head, *rep, *tail;
+        int n;
+        unsigned long least;
+    } cases[] = {
+        { "a string of escapes", "[\"", "\\n", "\"]", 131072, 0 },
+        { "a long comment", "((a)/*", "x", "*/, 1)", 200000, 200000 },
+        { "many brackets", "(", "(0),", "0)", 140000, 262144 },
+    };
+    size_t i, len;
+    int k;
+
+    for (i = 0; i < countof(cases); i++) {
+        VM v = vm_new();
+        char *src = malloc(strlen(cases[i].head) + strlen(cases[i].rep) * cases[i].n + strlen(cases[i].tail) + 1);
+        unsigned long total, longest;
+        JSValue r;
+
+        len = sprintf(src, "%s", cases[i].head);
+        for (k = 0; k < cases[i].n; k++)
+            len += sprintf(src + len, "%s", cases[i].rep);
+        len += sprintf(src + len, "%s", cases[i].tail);
+        white_paren_work_take(&total);
+        r = JS_Eval(v.ctx, src, len, "gaps.js", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+        CHECK(!JS_IsException(r), "%s: does not compile", cases[i].what);
+        if (JS_IsException(r))
+            free(exception_text(v.ctx));
+        JS_FreeValue(v.ctx, r);
+        longest = white_paren_work_take(&total);
+        CHECK(total >= cases[i].least, "%s: %lu units of work, want at least %lu",
+              cases[i].what, total, cases[i].least);
+        CHECK(longest <= (1 << 16), "%s: %lu units of work between two readings of the flag",
+              cases[i].what, longest);
+        free(src);
+        vm_free(&v);
+    }
+}
+
 /* The count of the work of a compile stays below 0 once it is there, up to
    the next reading of the flag (js_compile_count): counts that add up past an
    int took it around to a large number, and the reading came that much
@@ -6082,6 +6219,54 @@ static void test_capture_by_value(void)
     vm_free(&v);
 }
 
+/* The work of capture_by_value (its readings of the flag count it, JS_WORK)
+   grows with the code, not with the places closures are made times the
+   writes after them: a function of n classes in a row, and one of n arrows
+   that each capture a let, then n writes of the lets, in one block. Four
+   times the code is at most six times the work (it was 62 times). */
+static void test_by_value_work(void)
+{
+    static const char *const shapes[] = { "classes", "arrows then writes" };
+    static char src[1 << 18];
+    unsigned long work[2];
+    int shape, size, n, i;
+    size_t k;
+    JSValue r;
+    VM v;
+
+    for (shape = 0; shape < 2; shape++) {
+        for (size = 0; size < 2; size++) {
+            n = size ? 4000 : 1000;
+            k = 0;
+#define ADD(...) (k += (size_t)snprintf(src + k, sizeof(src) - k, __VA_ARGS__))
+            ADD("(function(){");
+            if (shape == 0) {
+                for (i = 0; i < n; i++)
+                    ADD("class C%d{m(){return C%d}}", i, i);
+            } else {
+                for (i = 0; i < n; i++)
+                    ADD("let v%d=0;", i);
+                for (i = 0; i < n; i++)
+                    ADD("let g%d=()=>v%d;", i, i);
+                for (i = 0; i < n; i++)
+                    ADD("v%d=1;", i);
+            }
+            ADD("})");
+#undef ADD
+            v = vm_new();
+            white_work_reset();
+            r = JS_Eval(v.ctx, src, k, "by-value-work.js", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+            CHECK(!JS_IsException(r), "%s, %d: the function does not compile", shapes[shape], n);
+            work[size] = white_work_sum();
+            JS_FreeValue(v.ctx, r);
+            vm_free(&v);
+        }
+        printf("unit-white: test_by_value_work: %s: %lu units for 1000, %lu for 4000\n", shapes[shape], work[0],
+               work[1]);
+        CHECK(work[1] <= 6 * work[0], "%s: %lu units of work for 1000, %lu for 4000", shapes[shape], work[0], work[1]);
+    }
+}
+
 /* JS_ReadObject reads a function of as many closure variables as the
    compiler makes, 65534, and refuses more: by_value_count, 16 bits, counts
    the cells of a closure, one for each closure variable that holds its
@@ -6809,6 +6994,87 @@ static void test_by_value_file(void)
     CHECK(!strcmp(got, marks), "the marks put back: \"%s\"", got);
     JS_FreeValue(v.ctx, c);
     vm_free(&v);
+}
+
+/* A function of 4,000 blocks that each declare x, as the one around them
+   does, then 8 blocks inside one another and 4,000 references to x in the
+   innermost. The look for each name of the compile goes over the scopes
+   around it and the vars of those, never over the blocks before, which are
+   not around it: the units of those looks (JS_WORK in the index of the
+   names, find_var in engine/quickjs.c) are a few for each name, and never
+   many between two readings of the flag. */
+static void test_names_siblings_work(void)
+{
+    static char src[1 << 17];
+    size_t k = 0;
+    VM v = vm_new();
+    JSValue r;
+    int i;
+
+#define ADD(...) (k += (size_t)snprintf(src + k, sizeof(src) - k, __VA_ARGS__))
+    ADD("(function(){let x=7;");
+    for (i = 0; i < 4000; i++)
+        ADD("{let x=%d;}", i);
+    ADD("{{{{{{{{let marker;{let x;}return [");
+    for (i = 0; i < 4000; i++)
+        ADD("x,");
+    ADD("]}}}}}}}}})");
+#undef ADD
+    white_work_reset();
+    r = JS_Eval(v.ctx, src, k, "siblings.js", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+    CHECK(!JS_IsException(r), "the blocks of one name do not compile");
+    JS_FreeValue(v.ctx, r);
+    printf("unit-white: test_names_siblings_work: %lu units, at most %lu between two readings\n", white_work_sum(),
+           white_work_longest());
+    CHECK(white_work_sum() <= 100000, "the blocks of one name: %lu units of work", white_work_sum());
+    CHECK(white_work_longest() <= 2 * 16384, "the blocks of one name: %lu units of work between two readings of the flag",
+          white_work_longest());
+    vm_free(&v);
+}
+
+/* A function with 36 closed blocks, then 24 blocks inside one another that
+   each declare one name, and references in the innermost to a name of the
+   function, 25 scopes up. A look in the hash costs a few steps of the walk,
+   so a chain of small scopes like this one is walked: the looks of the
+   compile in the index of the names (JS_WORK there, in engine/quickjs.c) do
+   no work for those references, and 20,000 of them cost what none do. */
+static unsigned long small_scopes_work(int refs)
+{
+    static char src[1 << 17];
+    size_t k = 0;
+    VM v = vm_new();
+    JSValue r;
+    int i;
+
+#define ADD(...) (k += (size_t)snprintf(src + k, sizeof(src) - k, __VA_ARGS__))
+    ADD("(function(){");
+    for (i = 0; i < 36; i++)
+        ADD("{let t;}");
+    ADD("let a=1;");
+    for (i = 0; i < 24; i++)
+        ADD("if(a){let t%d=a;", i);
+    ADD("return [");
+    for (i = 0; i < refs; i++)
+        ADD("a,");
+    ADD("];");
+    for (i = 0; i < 25; i++)
+        ADD("}");
+    ADD(")");
+#undef ADD
+    white_work_reset();
+    r = JS_Eval(v.ctx, src, k, "small.js", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+    CHECK(!JS_IsException(r), "the chain of small scopes does not compile");
+    JS_FreeValue(v.ctx, r);
+    vm_free(&v);
+    return white_work_sum();
+}
+
+static void test_names_small_scopes_walked(void)
+{
+    unsigned long none = small_scopes_work(0), many = small_scopes_work(20000);
+
+    printf("unit-white: test_names_small_scopes_walked: %lu units with no reference, %lu with 20,000\n", none, many);
+    CHECK(many - none < 20000, "the chain of small scopes: %lu units for 20,000 references", many - none);
 }
 
 /* capture_by_value gets no memory: the compile, or the read without
@@ -8576,6 +8842,47 @@ static void compile_one(int calls, size_t script, int fail, const char *want)
         CHECK(strcmp(got, want) == 0, "%s, request %d failing: the code compiled gives %s, want %s", what, fail, got, want);
     fflush(stdout);
     host_leave(failures ? 1 : failed ? 10 : 0);
+}
+
+/* An allocation of the table of the lookahead (JSParenCache) that the
+   allocator refuses changes nothing the compile gives: the parse goes on
+   without the table, or with the table it has, keeping no more answers, as
+   the parse before the table did. Each call of the allocator of a compile
+   fails in turn, and when it was one of the table (JS_PAREN_REFUSED), the
+   compile works and its code gives what it gives with every call working.
+   The sources take the table at its first allocation and, with 600
+   brackets, when it grows. */
+static void test_parens_alloc_refused(void)
+{
+    char *many = malloc(16 + 8 * 600), *srcs[3];
+    size_t i, len;
+    int k;
+
+    len = sprintf(many, "var t = (");
+    for (k = 0; k < 600; k++)
+        len += sprintf(many + len, "(%d),", k);
+    sprintf(many + len, "0); t");
+    srcs[0] = "(0)";
+    srcs[1] = "((a) => ((b) => (c) => a + b + c))(1)(2)(3)";
+    srcs[2] = many;
+    for (i = 0; i < countof(srcs); i++) {
+        char what[32], want[256], got[256];
+        int n, m, fail, failed, refused = 0;
+
+        snprintf(what, sizeof(what), "parens %zu", i);
+        CHECK(!compile_failing(what, srcs[i], 0, MODE_CALLS, &n, want, sizeof(want)), "%s does not compile", what);
+        for (fail = 1; fail <= n; fail++) {
+            white_paren_refused_take();
+            failed = compile_failing(what, srcs[i], fail, MODE_CALLS, &m, got, sizeof(got));
+            if (!white_paren_refused_take())
+                continue;
+            refused++;
+            CHECK(!failed && strcmp(got, want) == 0, "%s, call %d refused for the table: %s, want %s",
+                  what, fail, failed ? "the compile failed" : got, want);
+        }
+        CHECK(refused >= (i == 2 ? 3 : 2), "%s: %d calls of the table refused", what, refused);
+    }
+    free(many);
 }
 
 static void test_compile_one_failure(int calls)
@@ -11803,6 +12110,10 @@ int main(int argc, char **argv)
     test_error_nest();
     test_function_properties_oom();
     test_compile_count();
+    test_parens_lookahead_linear();
+    test_parens_table_replace();
+    test_parens_work_gaps();
+    test_parens_alloc_refused();
     test_poll_scan();
     test_poll_insert();
     test_poll_compile();
@@ -11822,6 +12133,7 @@ int main(int argc, char **argv)
     test_iterator_close_oom();
     test_tdz_checks();
     test_capture_by_value();
+    test_by_value_work();
     test_closure_var_limit();
     test_closure_gc_in_build();
     test_gc_block();
@@ -11833,6 +12145,8 @@ int main(int argc, char **argv)
     test_gc_block_held();
     test_by_value_file();
     test_by_value_oom();
+    test_names_siblings_work();
+    test_names_small_scopes_walked();
     test_short_opcode_index();
     test_fused_edges();
     test_added_vars_oom();

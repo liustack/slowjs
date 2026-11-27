@@ -2362,6 +2362,111 @@ static void test_rv_nesting_limits(void)
     }
 }
 
+/* names_src writes in buf a source of n names declared by decl ("var" or
+   "const"), ten to a statement, then an array of n / 10 functions that each
+   refer to 100 of them from a function inside, around body:
+   "(function(){%s})" for a function, "%s" for a script or a module. The
+   functions come last, so that the pass that captures by value
+   (capture_by_value in engine/quickjs.c), which goes over the code after
+   each function made, has little to go over. */
+static void names_src(char *buf, size_t size, const char *body, const char *decl, int n)
+{
+    static char s[1 << 22];
+    size_t k = 0;
+    int i, j, r = 1;
+
+#define ADD(...) (k += (size_t)snprintf(s + k, sizeof(s) - k, __VA_ARGS__))
+    for (i = 0; i < n; i++)
+        ADD("%s%sn%d=%d%s", i % 10 ? "" : decl, i % 10 ? "" : " ", i, i, i % 10 == 9 ? ";" : ",");
+    ADD("[");
+    for (i = 0; i < n / 10; i++) {
+        ADD("function(a){return function(){return 0");
+        for (j = 0; j < 100; j++) {
+            r = r * 1103515245 + 12345;
+            ADD("+n%d", (int)((unsigned)r >> 8) % n);
+        }
+        ADD("}},");
+    }
+    ADD("];");
+#undef ADD
+    snprintf(buf, size, body, s);
+}
+
+/* names_reads returns how many times the compile of src reads the interrupt
+   flag, which it does after a count of its work (rt->compile_left): one unit
+   for each entry a look for a name goes over. */
+static long names_reads(const char *src, int flags)
+{
+    VM v = vm_new();
+    long reads = host_poll_reads;
+    JSValue r = JS_Eval(v.ctx, src, strlen(src), "names.js", flags | JS_EVAL_FLAG_COMPILE_ONLY);
+
+    reads = host_poll_reads - reads;
+    CHECK(!JS_IsException(r), "the source of names does not compile");
+    JS_FreeValue(v.ctx, r);
+    vm_free(&v);
+    return reads;
+}
+
+/* A bundle puts thousands of names in one function, and the functions in it
+   refer to them: the compile of each reference must not look through all the
+   names around it, or the compile grows as the square of the bundle. Eight
+   times the names and the references must cost at most twelve times the
+   work, where the square makes it sixty-four. */
+static void test_compile_names_linear(void)
+{
+    static const char *decls[] = { "var", "const" };
+    static char src[1 << 22];
+    long small, large;
+    size_t i;
+
+    for (i = 0; i < countof(decls); i++) {
+        names_src(src, sizeof(src), "(function(){%s})", decls[i], 500);
+        small = names_reads(src, JS_EVAL_TYPE_GLOBAL);
+        names_src(src, sizeof(src), "(function(){%s})", decls[i], 4000);
+        large = names_reads(src, JS_EVAL_TYPE_GLOBAL);
+        CHECK(large <= 12 * small, "%ss in a function: the compile of 4,000 names read the flag %ld times, of 500 %ld",
+              decls[i], large, small);
+    }
+}
+
+/* The blocks a function has left are not on the chain of its names: 8,000
+   names declared after 2,000 blocks, or before them, must not cost each
+   declaration (or each block) a look through all the names before it, which
+   grows as the square, to millions of entries and thousands of readings of
+   the flag. closed_blocks_reads counts the readings of the compile of the
+   names with the blocks before (where 1), after (2) or none (0). Each is a
+   const, as a let statement reads the flag once to see what follows it. */
+static long closed_blocks_reads(int where)
+{
+    static char src[1 << 18];
+    size_t k = 0;
+    int i;
+
+#define ADD(...) (k += (size_t)snprintf(src + k, sizeof(src) - k, __VA_ARGS__))
+    ADD("(function(){");
+    for (i = 0; where == 1 && i < 2000; i++)
+        ADD("{const t=0;}");
+    for (i = 0; i < 8000; i++)
+        ADD(i ? ",v%d=0" : "const v%d=0", i);
+    ADD(";");
+    for (i = 0; where == 2 && i < 2000; i++)
+        ADD("{const t=0;}");
+    ADD("})");
+#undef ADD
+    return names_reads(src, JS_EVAL_TYPE_GLOBAL);
+}
+
+static void test_compile_names_closed_blocks(void)
+{
+    long none = closed_blocks_reads(0), before = closed_blocks_reads(1),
+        after = closed_blocks_reads(2);
+
+    CHECK(before <= 2 * none && after <= 2 * none,
+          "8,000 names with 2,000 closed blocks: the compile read the flag %ld times with the blocks before them, %ld after, %ld with none",
+          before, after, none);
+}
+
 /* A compile stopped at a reading of the interrupt flag frees what it made,
    the code of each pass included, by its opcodes: compile_stops compiles src
    in a VM of its own once to count its readings, then stops it at each of
@@ -2371,7 +2476,25 @@ static void test_rv_nesting_limits(void)
    the flag is 0 again (the mark of a stopped compile, JS_GetInterruptFlag in
    engine/quickjs.h). Run under AddressSanitizer, it shows that no stop leaves
    code that the freeing reads past its opcodes, and the VM, freed at the end,
-   that no stop leaks. */
+   that no stop leaks. The count of the work goes on from one compile to the
+   next (rt->compile_left in engine/quickjs.c), which moves the readings of a
+   compile by one either way: each compile starts where a stop at the first
+   reading leaves the count (compile_stop_first), so that each reads the flag
+   where the one that counted did. */
+static void compile_stop_first(VM *v, const char *src, int flags)
+{
+    volatile int *flag = JS_GetInterruptFlag(v->rt);
+    JSValue r;
+
+    host_poll_stop_after(1);
+    r = JS_Eval(v->ctx, src, strlen(src), "stops.js", flags | JS_EVAL_FLAG_COMPILE_ONLY);
+    host_poll_stop_after(0);
+    *flag = 0;
+    if (JS_IsException(r))
+        r = JS_GetException(v->ctx);
+    JS_FreeValue(v->ctx, r);
+}
+
 static void compile_stops(const char *what, const char *src, int flags)
 {
     VM v = vm_new();
@@ -2381,12 +2504,14 @@ static void compile_stops(const char *what, const char *src, int flags)
     char *t;
     int set;
 
+    compile_stop_first(&v, src, flags);
     reads = host_poll_reads;
     r = JS_Eval(v.ctx, src, strlen(src), "stops.js", flags | JS_EVAL_FLAG_COMPILE_ONLY);
     reads = host_poll_reads - reads;
     CHECK(!JS_IsException(r), "%s does not compile", what);
     JS_FreeValue(v.ctx, r);
     for (k = 1; k <= reads && !failures; k++) {
+        compile_stop_first(&v, src, flags);
         host_poll_stop_after(k);
         r = JS_Eval(v.ctx, src, strlen(src), "stops.js", flags | JS_EVAL_FLAG_COMPILE_ONLY);
         host_poll_stop_after(0);
@@ -2455,6 +2580,11 @@ static void test_compile_stops(void)
     ADD("}");
     compile_stops("a module of 2,000 exports", src, JS_EVAL_TYPE_MODULE);
 #undef ADD
+    /* the indexes of the names (find_var in engine/quickjs.c) */
+    names_src(src, sizeof(src), "(function(){%s})", "var", 400);
+    compile_stops("400 vars in a function", src, JS_EVAL_TYPE_GLOBAL);
+    names_src(src, sizeof(src), "%s", "const", 400);
+    compile_stops("400 consts of a script", src, JS_EVAL_TYPE_GLOBAL);
 }
 
 /* A module that imports each of 300 names of another one, then all of them
@@ -2587,6 +2717,75 @@ static void test_module_eval_stops(void)
     }
     CHECK(reads > 10, "the module read the flag %ld times", reads);
     CHECK(rejected > 10, "%ld imports after a stop rejected with the error the module recorded", rejected);
+}
+
+/* A function whose captures need the flow of capture_by_value: 70 lets,
+   two groups of 64 slots, each captured by an arrow, then 6,000 increments
+   of them. The compile reads the flag in that pass too. It is stopped at
+   each of its readings in turn: each stop ends with the error interrupted,
+   or, in the conversion to the register code, with the compile done and the
+   flag still set, as in compile_stops (AddressSanitizer and the leak check
+   of vm_free see what it frees). Each compile starts after one stopped at
+   its first reading, so that all of them start from the same count of work
+   (it goes on from one compile to the next) and read the flag as often.
+   Statements that start with no name keep the parse from reading the flag
+   at each (peek_token). */
+static void test_by_value_stops(void)
+{
+    static char src[1 << 16];
+    size_t n = 0;
+    long reads = 0, k;
+    JSValue r;
+    char *t;
+    int i, set;
+    VM v = vm_new();
+    volatile int *flag = JS_GetInterruptFlag(v.rt);
+
+#define ADD(...) (n += (size_t)snprintf(src + n, sizeof(src) - n, __VA_ARGS__))
+    ADD("(function(){let v0=0");
+    for (i = 1; i < 70; i++)
+        ADD(",v%d=0", i);
+    ADD(";void[");
+    for (i = 0; i < 70; i++)
+        ADD("()=>v%d,", i);
+    ADD("];");
+    for (i = 0; i < 6000; i++)
+        ADD("++v%d;", i % 70);
+    ADD("})");
+#undef ADD
+    for (k = 0; k <= reads && !failures; k++) {
+        host_poll_stop_after(1);
+        r = JS_Eval(v.ctx, src, n, "stops.js", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+        host_poll_stop_after(0);
+        *flag = 0;
+        CHECK(JS_IsException(r), "the compile stopped at its first reading went on");
+        free(exception_text(v.ctx));
+        if (k == 0) {
+            reads = host_poll_reads;
+            r = JS_Eval(v.ctx, src, n, "stops.js", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+            reads = host_poll_reads - reads;
+            CHECK(!JS_IsException(r), "the function does not compile");
+            CHECK(reads > 100, "the function read the flag %ld times", reads);
+            JS_FreeValue(v.ctx, r);
+            continue;
+        }
+        host_poll_stop_after(k);
+        r = JS_Eval(v.ctx, src, n, "stops.js", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+        host_poll_stop_after(0);
+        set = *flag;
+        *flag = 0;
+        if (JS_IsException(r)) {
+            t = exception_text(v.ctx);
+            CHECK(t && strcmp(t, "InternalError: interrupted") == 0, "the stop at reading %ld of %ld: %s", k, reads,
+                  t ? t : "no exception");
+            free(t);
+        } else {
+            CHECK(set, "the stop at reading %ld of %ld did not stop the compile", k, reads);
+            JS_FreeValue(v.ctx, r);
+        }
+        CHECK(flag[1] == 0, "the stop at reading %ld of %ld left the mark at %d", k, reads, flag[1]);
+    }
+    vm_free(&v);
 }
 
 /* A stop at each reading of the flag in an import of module b.js, which
@@ -3847,8 +4046,11 @@ static void test_typed_array_buffer_length(void)
 int main(void)
 {
     test_compile_stops();
+    test_compile_names_linear();
+    test_compile_names_closed_blocks();
     test_link_stops();
     test_module_eval_stops();
+    test_by_value_stops();
     test_link_retry();
     test_module_await_stops();
     test_module_await_species();

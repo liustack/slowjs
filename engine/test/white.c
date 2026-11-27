@@ -142,6 +142,22 @@ static unsigned long white_gc_runs[2];
 static unsigned long white_module_steps;
 #define JS_MODULE_STEP() (white_module_steps++)
 
+/* JS_SKIP_TOKEN counts the tokens the lookahead of the parser reads
+   (js_parse_skip_parens_token) */
+static unsigned long white_skip_tokens;
+#define JS_SKIP_TOKEN() (white_skip_tokens++)
+
+/* JS_PAREN_GROW keeps the size the table of the answers of the lookahead
+   (JSParenCache) last grew to. JS_PAREN_WORK counts the rest of the work
+   the lookahead does for the table, and each reading of the flag closes a
+   stretch of it, as for JS_WORK. */
+static unsigned long white_paren_size, white_paren_work, white_paren_work_max, white_paren_work_total;
+#define JS_PAREN_GROW(size) (white_paren_size = (size))
+#define JS_PAREN_WORK(n) (white_paren_work += (n), white_paren_work_total += (n))
+/* JS_PAREN_REFUSED counts the allocations of the table the allocator refused */
+static int white_paren_refused;
+#define JS_PAREN_REFUSED() (white_paren_refused++)
+
 #define host_poll white_host_poll
 
 #include "../quickjs.c"
@@ -149,6 +165,9 @@ static unsigned long white_module_steps;
 #undef host_poll
 int white_host_poll(const volatile int *flag)
 {
+    if (white_paren_work > white_paren_work_max)
+        white_paren_work_max = white_paren_work;
+    white_paren_work = 0;
     if (white_work > white_work_max)
         white_work_max = white_work;
     white_work = 0;
@@ -3306,4 +3325,42 @@ uint32_t white_string_fake_len(JSValueConst v, uint32_t len)
 
     p->len = len;
     return old;
+}
+
+/* the tokens the lookahead of the parser read so far (JS_SKIP_TOKEN) */
+unsigned long white_skip_tokens_read(void)
+{
+    return white_skip_tokens;
+}
+
+/* the size the table of the answers of the lookahead last grew to
+   (JS_PAREN_GROW), and 0 again */
+unsigned long white_paren_size_take(void)
+{
+    unsigned long n = white_paren_size;
+
+    white_paren_size = 0;
+    return n;
+}
+
+/* the allocations of the table of the lookahead the allocator refused
+   (JS_PAREN_REFUSED), and 0 again */
+int white_paren_refused_take(void)
+{
+    int n = white_paren_refused;
+
+    white_paren_refused = 0;
+    return n;
+}
+
+/* the longest stretch of JS_PAREN_WORK between two readings of the flag,
+   the one going on included, and in *total all of it, and 0 again */
+unsigned long white_paren_work_take(unsigned long *total)
+{
+    unsigned long n = white_paren_work > white_paren_work_max ?
+        white_paren_work : white_paren_work_max;
+
+    *total = white_paren_work_total;
+    white_paren_work = white_paren_work_max = white_paren_work_total = 0;
+    return n;
 }

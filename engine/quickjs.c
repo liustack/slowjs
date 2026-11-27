@@ -27633,6 +27633,15 @@ typedef struct JSGlobalVar {
     JSAtom var_name;  /* variable name */
 } JSGlobalVar;
 
+/* An open hash of the entries of an array that only grows, each slot the
+   lowest index of an entry of its key, -1 when free (see index_hash_reserve) */
+typedef struct JSIndexHash {
+    int *slot;
+    int bits; /* slot has 1 << bits entries */
+    int count; /* the entries [0 .. count) are in it */
+    BOOL failed; /* no memory for it: the array is walked */
+} JSIndexHash;
+
 typedef struct RelocEntry {
     struct RelocEntry *next;
     uint32_t addr; /* address to patch */
@@ -27689,6 +27698,15 @@ typedef enum JSParseExportEnum {
 typedef struct JSVarScope {
     int parent;  /* index into fd->scopes of the enclosing scope */
     int first;   /* index into fd->vars of the last variable in this scope */
+    /* the vars and the scopes with vars on the chain from first, and
+       whether resolve_scope_var looks in the index for it
+       (var_index_scope_find), which link_var_scopes sets. While the
+       function is parsed, chain_vars and chain_scopes are those of the
+       chain of the scope from the vars put on it so far (push_scope,
+       add_scope_var), for var_index_lexical_find */
+    int chain_vars;
+    int chain_scopes;
+    BOOL chain_indexed;
 } JSVarScope;
 
 typedef struct JSVarDef {
@@ -27754,6 +27772,19 @@ typedef struct JSFunctionDef {
     JSVarDef *vars;
     int var_size; /* allocated size for vars[] */
     int var_count;
+    /* the index of the names of vars[] (var_index_update), NULL when there
+       is none */
+    int *var_hash; /* the highest index of a var of each name and scope, -1 if free */
+    int *var_name_prev; /* the next lower index of a var of the same name and scope */
+    int var_hash_bits; /* var_hash has 1 << var_hash_bits slots */
+    int var_name_prev_size; /* allocated size for var_name_prev[] */
+    int *var_scope_low; /* the lowest index of a var of each scope, -1 if none */
+    int var_scope_low_size; /* allocated size for var_scope_low[] */
+    int var_with_first; /* 1 + the lowest index of a var named _with_, 0 if none */
+    int var_indexed; /* vars[0 .. var_indexed) are in the index */
+    BOOL var_index_failed; /* no memory for it: vars[] is walked */
+    int var_linked; /* the vars link_var_scopes linked, -1 when a link changed since */
+    BOOL var_scope0_linked; /* add_scope_var put a var in scope 0 */
     JSVarDef *args;
     int arg_size; /* allocated size for args[] */
     int arg_count; /* number of arguments */
@@ -27785,6 +27816,7 @@ typedef struct JSFunctionDef {
     int global_var_count;
     int global_var_size;
     JSGlobalVar *global_vars;
+    JSIndexHash global_var_names; /* find_global_var */
 
     DynBuf byte_code;
     int last_opcode_pos; /* -1 if no last opcode */
@@ -27813,6 +27845,8 @@ typedef struct JSFunctionDef {
     int closure_var_count;
     int closure_var_size;
     JSClosureVar *closure_var;
+    JSIndexHash closure_var_names; /* closure_var_by_name */
+    JSIndexHash closure_var_refs; /* get_closure_var1 */
 
     JumpSlot *jump_slots;
     int jump_size;
@@ -27846,6 +27880,9 @@ typedef struct JSToken {
         struct {
             JSValue str;
             int sep;
+            /* an escape strict mode refuses (\1, \08, \8), in a string
+               read in sloppy mode */
+            BOOL strict_escape;
         } str;
         struct {
             JSValue val;
@@ -27881,6 +27918,12 @@ typedef struct JSParseState {
        NULL outside JS_ParseJSON3 */
     struct JSONKeyCache *json_keys;
     GetLineColCache get_line_col_cache;
+    /* the answers of js_parse_skip_parens_token, NULL until its first
+       call, freed at the end of the parse (js_parse_free_paren_cache) */
+    struct JSParenCache *paren_cache;
+    /* the allocator refused the room for paren_cache: the parse goes on
+       without it */
+    BOOL paren_cache_off;
 } JSParseState;
 
 typedef struct JSOpCode {
@@ -28171,6 +28214,7 @@ static __exception int js_parse_string(JSParseState *s, int sep,
     StringBuffer b_s, *b = &b_s;
     const uint8_t *p_escape, *p_last;
     JSValue str;
+    BOOL strict_escape = FALSE;
 
     /* string */
     if (string_buffer_init(s->ctx, b, 32))
@@ -28230,8 +28274,12 @@ static __exception int js_parse_string(JSParseState *s, int sep,
                 continue;
             default:
                 if (c >= '0' && c <= '9') {
-                    if (!(s->cur_func->js_mode & JS_MODE_STRICT) && sep != '`')
+                    if (!(s->cur_func->js_mode & JS_MODE_STRICT) && sep != '`') {
+                        /* strict mode takes \0 alone (below) */
+                        if (c != '0' || (p[1] >= '0' && p[1] <= '9'))
+                            strict_escape = TRUE;
                         goto parse_escape;
+                    }
                     if (c == '0' && !(p[1] >= '0' && p[1] <= '9')) {
                         p++;
                         c = '\0';
@@ -28294,6 +28342,7 @@ static __exception int js_parse_string(JSParseState *s, int sep,
     token->val = TOK_STRING;
     token->u.str.sep = c;
     token->u.str.str = str;
+    token->u.str.strict_escape = strict_escape;
     *pp = p;
     return 0;
 
@@ -30110,7 +30159,371 @@ static __exception int find_arg(JSContext *ctx, JSFunctionDef *fd, JSAtom name)
     return -1;
 }
 
-static __exception int find_var(JSContext *ctx, JSFunctionDef *fd, JSAtom name)
+/* A look for a name in fd->vars went over all of it, and a bundle puts
+   thousands of variables in one function (the scope hoisting of esbuild,
+   rollup and webpack), which every reference from the functions inside it
+   looks through when it is resolved: the references times the names. A
+   function with JS_VAR_INDEX_MIN vars or more gets an index of their names
+   by scope: a hash from an atom and a scope to the highest index of a var of
+   that name in that scope, for each var the next lower index of a var of the
+   same name and scope, and for each scope the lowest index of its vars (the
+   last of the scope on a chain of scope_next, from which a look goes on to
+   the scope around it). It holds vars[0 .. var_indexed) and takes the vars
+   added since at the next look. A look goes over the scopes the walk goes
+   over, a step for each that has vars, and over the vars of the name in each,
+   never over the vars of other scopes: the blocks before, which are not
+   around it, cost nothing however many declare the name. Only add_var gives
+   a var its name, only add_scope_var and add_arguments_arg its scope, right
+   after it, and share_local_slots, which reorders vars[], drops the index.
+   The index is a faster way to the same answer: when it cannot be allocated
+   the look walks vars[] as before, and nothing is thrown. Built with
+   -DJS_VAR_INDEX_MIN=1 -DJS_VAR_INDEX_CHECK, every look an index answers
+   (these and those of the closure vars and the global vars below) also
+   walks, and aborts when the two answers differ. */
+#ifndef JS_VAR_INDEX_MIN
+#define JS_VAR_INDEX_MIN 32
+#endif
+/* A chain of more than JS_VAR_SCOPE_WALK vars whose scopes have
+   JS_VAR_SCOPE_DENSE vars each on average is looked in the index scope by
+   scope, after a walk of the first JS_VAR_SCOPE_STEPS vars of each scope,
+   and any other chain is walked. A look in the hash costs about as much as
+   a few steps of the walk, which a scope of a few vars does not pay back: a
+   chain of small scopes is walked, as a short one is, and in a chain of big
+   ones a name declared near where it is used is found by the walk. */
+#ifndef JS_VAR_SCOPE_WALK
+#define JS_VAR_SCOPE_WALK 32
+#endif
+#ifndef JS_VAR_SCOPE_DENSE
+#define JS_VAR_SCOPE_DENSE 8
+#endif
+#ifndef JS_VAR_SCOPE_STEPS
+#define JS_VAR_SCOPE_STEPS 4
+#endif
+
+/* the vars of the chain from fd->scopes[scope].first, at most: those that
+   link_var_scopes counted, or all the vars of fd when a link changed since */
+static inline int var_chain_len(JSFunctionDef *fd, int scope)
+{
+    return fd->var_linked > 0 ? fd->scopes[scope].chain_vars : fd->var_count;
+}
+
+static inline uint32_t var_index_slot(JSAtom name, int scope, int bits)
+{
+    return (uint32_t)((name ^ (uint32_t)scope * 0x85ebca6bu) * 0x9e3779b1u) >> (32 - bits);
+}
+
+static inline uint32_t index_hash_slot(uint32_t key, int bits)
+{
+    return (uint32_t)(key * 0x9e3779b1u) >> (32 - bits);
+}
+
+static void var_index_free(JSRuntime *rt, JSFunctionDef *fd)
+{
+    js_free_rt(rt, fd->var_hash);
+    js_free_rt(rt, fd->var_name_prev);
+    js_free_rt(rt, fd->var_scope_low);
+    fd->var_hash = NULL;
+    fd->var_name_prev = NULL;
+    fd->var_name_prev_size = 0;
+    fd->var_scope_low = NULL;
+    fd->var_scope_low_size = 0;
+    fd->var_indexed = 0;
+}
+
+/* the units of work of the update: one for each slot of the hash read */
+static int var_index_update(JSContext *ctx, JSFunctionDef *fd)
+{
+    JSRuntime *rt = ctx->rt;
+    int n = fd->var_count, i, j, bits, start, sc, work;
+    uint32_t h, mask;
+    JSAtom name;
+
+    if (fd->var_indexed == n)
+        return 0;
+    if (n > fd->var_name_prev_size) {
+        int size = max_int(n, fd->var_name_prev_size * 3 / 2);
+        int *p = js_realloc_rt(rt, fd->var_name_prev, size * sizeof(*p));
+        if (!p)
+            goto fail;
+        fd->var_name_prev = p;
+        fd->var_name_prev_size = size;
+    }
+    if (fd->scope_count > fd->var_scope_low_size) {
+        int size = max_int(fd->scope_count, fd->var_scope_low_size * 3 / 2);
+        int *p = js_realloc_rt(rt, fd->var_scope_low, size * sizeof(*p));
+        if (!p)
+            goto fail;
+        memset(p + fd->var_scope_low_size, 0xff,
+               (size - fd->var_scope_low_size) * sizeof(*p));
+        fd->var_scope_low = p;
+        fd->var_scope_low_size = size;
+    }
+    /* at most half of the slots used: n is at most JS_MAX_LOCAL_VARS */
+    if (!fd->var_hash || 2 * n > (1 << fd->var_hash_bits)) {
+        bits = 6;
+        while ((1 << bits) < 2 * n)
+            bits++;
+        js_free_rt(rt, fd->var_hash);
+        fd->var_hash = js_malloc_rt(rt, sizeof(*fd->var_hash) << bits);
+        if (!fd->var_hash)
+            goto fail;
+        memset(fd->var_hash, 0xff, sizeof(*fd->var_hash) << bits);
+        memset(fd->var_scope_low, 0xff,
+               fd->var_scope_low_size * sizeof(*fd->var_scope_low));
+        fd->var_hash_bits = bits;
+        fd->var_indexed = 0;
+        fd->var_with_first = 0;
+    }
+    mask = (1u << fd->var_hash_bits) - 1;
+    start = fd->var_indexed;
+    work = 0;
+    for (i = start; i < n; i++) {
+        name = fd->vars[i].var_name;
+        sc = fd->vars[i].scope_level;
+        /* a var is in a scope that push_scope made */
+        if (sc < 0 || sc >= fd->var_scope_low_size)
+            goto fail;
+        if (fd->var_scope_low[sc] < 0)
+            fd->var_scope_low[sc] = i;
+        if (name == JS_ATOM__with_ && !fd->var_with_first)
+            fd->var_with_first = i + 1;
+        h = var_index_slot(name, sc, fd->var_hash_bits);
+        for (;;) {
+            work++;
+            j = fd->var_hash[h];
+            if (j < 0 || (fd->vars[j].var_name == name &&
+                          fd->vars[j].scope_level == sc))
+                break;
+            h = (h + 1) & mask;
+        }
+        fd->var_name_prev[i] = j;
+        fd->var_hash[h] = i;
+    }
+    fd->var_indexed = n;
+    return work;
+ fail:
+    var_index_free(rt, fd);
+    fd->var_index_failed = TRUE;
+    return 0;
+}
+
+/* TRUE when fd has an index with all its vars in it, *pwork the units of
+   work of the update. FALSE when it has none, and the caller walks vars[]. */
+static BOOL var_index_ready(JSContext *ctx, JSFunctionDef *fd, int *pwork)
+{
+    if (fd->var_count < JS_VAR_INDEX_MIN || fd->var_index_failed)
+        return FALSE;
+    *pwork = var_index_update(ctx, fd);
+    return fd->var_hash != NULL;
+}
+
+/* the highest index of a var named name in scope (-1 if none), of an index
+   that var_index_ready made ready; *pwork gets the units of the look */
+static int var_index_head(JSFunctionDef *fd, JSAtom name, int scope,
+                          int *pwork)
+{
+    uint32_t h, mask;
+    int j;
+
+    mask = (1u << fd->var_hash_bits) - 1;
+    h = var_index_slot(name, scope, fd->var_hash_bits);
+    for (;;) {
+        (*pwork)++;
+        j = fd->var_hash[h];
+        if (j < 0 || (fd->vars[j].var_name == name &&
+                      fd->vars[j].scope_level == scope))
+            return j;
+        h = (h + 1) & mask;
+    }
+}
+
+/* The global vars and the closure vars of a function are looked for the same
+   way, by a walk from the first, in a function of many: the global vars of a
+   script or a module (define_var, instantiate_hoisted_definitions), the
+   closure vars of the function at the top, where every name of a script or a
+   module that is not in a function ends (resolve_scope_var), and those of a
+   function that refers to many names around it (get_closure_var1). Those
+   arrays only grow while they are looked in, so a JSIndexHash of the lowest
+   index of each key gives the entry the walk finds first, and takes the
+   entries added since at the next look. Here too a look with no memory for
+   the index walks the array, and nothing is thrown. */
+static void index_hash_free(JSRuntime *rt, JSIndexHash *t)
+{
+    js_free_rt(rt, t->slot);
+    t->slot = NULL;
+    t->count = 0;
+}
+
+/* TRUE when t has room for n entries (at most half of its slots used); when
+   it grew, it is empty (t->count is 0). FALSE when n is below
+   JS_VAR_INDEX_MIN or no memory, and the caller walks the array. */
+static BOOL index_hash_reserve(JSRuntime *rt, JSIndexHash *t, int n)
+{
+    int bits;
+
+    if (n < JS_VAR_INDEX_MIN || t->failed)
+        return FALSE;
+    if (t->slot && 2 * n <= (1 << t->bits))
+        return TRUE;
+    /* n is at most JS_MAX_LOCAL_VARS or the number of global vars, which
+       memory bounds */
+    bits = 6;
+    while ((1 << bits) < 2 * n)
+        bits++;
+    index_hash_free(rt, t);
+    t->slot = js_malloc_rt(rt, sizeof(*t->slot) << bits);
+    if (!t->slot) {
+        t->failed = TRUE;
+        return FALSE;
+    }
+    memset(t->slot, 0xff, sizeof(*t->slot) << bits);
+    t->bits = bits;
+    return TRUE;
+}
+
+static void index_hash_free_all(JSRuntime *rt, JSFunctionDef *fd)
+{
+    var_index_free(rt, fd);
+    index_hash_free(rt, &fd->global_var_names);
+    index_hash_free(rt, &fd->closure_var_names);
+    index_hash_free(rt, &fd->closure_var_refs);
+}
+
+/* the lowest index of a global var of fd named name, -1 if none: FALSE when
+   fd has no index of them */
+static BOOL global_var_index_find(JSFunctionDef *fd, JSAtom name, int *pidx)
+{
+    JSIndexHash *t = &fd->global_var_names;
+    int n = fd->global_var_count, i, j, work;
+    uint32_t h, mask;
+
+    if (!index_hash_reserve(fd->ctx->rt, t, n))
+        return FALSE;
+    mask = (1u << t->bits) - 1;
+    work = n - t->count;
+    for (i = t->count; i < n; i++) {
+        JSAtom a = fd->global_vars[i].var_name;
+        for (h = index_hash_slot(a, t->bits);; h = (h + 1) & mask) {
+            j = t->slot[h];
+            if (j < 0) {
+                t->slot[h] = i;
+                break;
+            }
+            if (fd->global_vars[j].var_name == a)
+                break;
+        }
+    }
+    t->count = n;
+    for (h = index_hash_slot(name, t->bits);; h = (h + 1) & mask) {
+        work++;
+        j = t->slot[h];
+        if (j < 0 || fd->global_vars[j].var_name == name)
+            break;
+    }
+    js_compile_count(fd->ctx, work);
+    *pidx = j;
+    return TRUE;
+}
+
+/* the lowest index of a closure var of fd named name, -1 if none: FALSE when
+   fd has no index of them */
+static BOOL closure_var_by_name(JSContext *ctx, JSFunctionDef *fd,
+                                JSAtom name, int *pidx)
+{
+    JSIndexHash *t = &fd->closure_var_names;
+    int n = fd->closure_var_count, i, j, work;
+    uint32_t h, mask;
+
+    if (!index_hash_reserve(ctx->rt, t, n))
+        return FALSE;
+    mask = (1u << t->bits) - 1;
+    work = n - t->count;
+    for (i = t->count; i < n; i++) {
+        JSAtom a = fd->closure_var[i].var_name;
+        for (h = index_hash_slot(a, t->bits);; h = (h + 1) & mask) {
+            j = t->slot[h];
+            if (j < 0) {
+                t->slot[h] = i;
+                break;
+            }
+            if (fd->closure_var[j].var_name == a)
+                break;
+        }
+    }
+    t->count = n;
+    for (h = index_hash_slot(name, t->bits);; h = (h + 1) & mask) {
+        work++;
+        j = t->slot[h];
+        if (j < 0 || fd->closure_var[j].var_name == name)
+            break;
+    }
+    js_compile_count(ctx, work);
+    *pidx = j;
+    return TRUE;
+}
+
+/* closure_var_by_name for a walk of the closure vars of fd that stops at
+   the first of a name, which meets no var object or with object on its way:
+   FALSE also when fd has one (the closure vars of a direct eval) */
+static BOOL closure_var_by_name_plain(JSContext *ctx, JSFunctionDef *fd,
+                                      JSAtom name, int *pidx)
+{
+    int i;
+
+    if (!closure_var_by_name(ctx, fd, JS_ATOM__var_, &i) || i >= 0 ||
+        !closure_var_by_name(ctx, fd, JS_ATOM__arg_var_, &i) || i >= 0 ||
+        !closure_var_by_name(ctx, fd, JS_ATOM__with_, &i) || i >= 0)
+        return FALSE;
+    return closure_var_by_name(ctx, fd, name, pidx);
+}
+
+static inline uint32_t closure_var_ref_key(int var_idx, int closure_type)
+{
+    return (uint32_t)var_idx * 8 + closure_type;
+}
+
+/* the lowest index of a closure var of s for var_idx of closure_type, -1 if
+   none: FALSE when s has no index of them, *pwork the units of work */
+static BOOL closure_var_by_ref(JSContext *ctx, JSFunctionDef *s, int var_idx,
+                               int closure_type, int *pidx, int *pwork)
+{
+    JSIndexHash *t = &s->closure_var_refs;
+    int n = s->closure_var_count, i, j, work;
+    uint32_t h, mask;
+
+    if (!index_hash_reserve(ctx->rt, t, n))
+        return FALSE;
+    mask = (1u << t->bits) - 1;
+    work = n - t->count;
+    for (i = t->count; i < n; i++) {
+        JSClosureVar *cv = &s->closure_var[i];
+        uint32_t key = closure_var_ref_key(cv->var_idx, cv->closure_type);
+        for (h = index_hash_slot(key, t->bits);; h = (h + 1) & mask) {
+            j = t->slot[h];
+            if (j < 0) {
+                t->slot[h] = i;
+                break;
+            }
+            if (s->closure_var[j].var_idx == cv->var_idx &&
+                s->closure_var[j].closure_type == cv->closure_type)
+                break;
+        }
+    }
+    t->count = n;
+    h = index_hash_slot(closure_var_ref_key(var_idx, closure_type), t->bits);
+    for (;; h = (h + 1) & mask) {
+        work++;
+        j = t->slot[h];
+        if (j < 0 || (s->closure_var[j].var_idx == var_idx &&
+                      s->closure_var[j].closure_type == closure_type))
+            break;
+    }
+    *pidx = j;
+    *pwork = work;
+    return TRUE;
+}
+
+static __exception int find_var_walk(JSContext *ctx, JSFunctionDef *fd, JSAtom name)
 {
     int i;
     js_compile_count(ctx, fd->var_count);
@@ -30119,6 +30532,24 @@ static __exception int find_var(JSContext *ctx, JSFunctionDef *fd, JSAtom name)
             return i;
     }
     return find_arg(ctx, fd, name);
+}
+
+static __exception int find_var(JSContext *ctx, JSFunctionDef *fd, JSAtom name)
+{
+    int i, work;
+
+    if (!var_index_ready(ctx, fd, &work))
+        return find_var_walk(ctx, fd, name);
+    i = var_index_head(fd, name, 0, &work);
+    js_compile_count(ctx, work);
+    JS_WORK(work);
+    if (i < 0)
+        i = find_arg(ctx, fd, name);
+#ifdef JS_VAR_INDEX_CHECK
+    if (i != find_var_walk(ctx, fd, name))
+        abort();
+#endif
+    return i;
 }
 
 /* find a variable declaration in a given scope */
@@ -30151,8 +30582,8 @@ static BOOL is_child_scope(JSContext *ctx, JSFunctionDef *fd,
 }
 
 /* find a 'var' declaration in the same scope or a child scope */
-static __exception int find_var_in_child_scope(JSContext *ctx, JSFunctionDef *fd,
-                                   JSAtom name, int scope_level)
+static __exception int find_var_in_child_scope_walk(JSContext *ctx, JSFunctionDef *fd,
+                                        JSAtom name, int scope_level)
 {
     int i;
     js_compile_count(ctx, fd->var_count);
@@ -30167,10 +30598,118 @@ static __exception int find_var_in_child_scope(JSContext *ctx, JSFunctionDef *fd
     return -1;
 }
 
+static __exception int find_var_in_child_scope(JSContext *ctx, JSFunctionDef *fd,
+                                   JSAtom name, int scope_level)
+{
+    int i, work, found;
+
+    if (!var_index_ready(ctx, fd, &work))
+        return find_var_in_child_scope_walk(ctx, fd, name, scope_level);
+    /* the lowest index that fits: the index goes down */
+    found = -1;
+    for (i = var_index_head(fd, name, 0, &work); i >= 0;
+         i = fd->var_name_prev[i]) {
+        work++;
+        if (is_child_scope(ctx, fd, fd->vars[i].scope_next, scope_level))
+            found = i;
+    }
+    js_compile_count(ctx, work);
+    JS_WORK(work);
+#ifdef JS_VAR_INDEX_CHECK
+    if (found != find_var_in_child_scope_walk(ctx, fd, name, scope_level))
+        abort();
+#endif
+    return found;
+}
+
+/* The chain of a scope, which resolve_scope_var walks from
+   fd->scopes[scope].first, is what link_var_scopes made: the vars of the
+   scope in decreasing index, then the chain of its parent while the scope is
+   2 or more (the first var of an empty scope is that of its parent). A chain
+   stops after the vars of scope 0 or 1, at ARG_SCOPE_END after those of the
+   argument scope (scope 1 of a function with parameter expressions) and at
+   -1 otherwise. So the chain goes through whole scopes, each from its
+   highest linked var down to its lowest, whose scope_next leads to the next
+   one: the first var of a name on it is the highest of the first of those
+   scopes that has one. Scope by scope, the first JS_VAR_SCOPE_STEPS vars
+   are walked and the hash is asked for the rest of a scope that has more.
+   TRUE with *pidx that var, or -1 and *parg_end TRUE when the chain ends at
+   ARG_SCOPE_END. FALSE when the chain is to be walked: fd has no index, a
+   link changed after link_var_scopes (add_arguments_arg of
+   add_eval_variables), or fd has a 'with' scope, whose var the walk has to
+   meet on its way. */
+static BOOL var_index_scope_find(JSContext *ctx, JSFunctionDef *fd,
+                                 JSAtom name, int scope,
+                                 int *pidx, BOOL *parg_end)
+{
+    int i, j, n, sc, work;
+
+    if (fd->var_linked <= 0 || scope < 0 || scope >= fd->scope_count)
+        return FALSE;
+    if (!var_index_ready(ctx, fd, &work))
+        return FALSE;
+    if (fd->var_with_first && fd->var_with_first - 1 < fd->var_linked)
+        return FALSE;
+    i = fd->scopes[scope].first;
+    if (i >= fd->var_linked)
+        return FALSE;
+    j = -1;
+    while (i >= 0) {
+        sc = fd->vars[i].scope_level;
+        for (n = 0;;) {
+            work++;
+            if (fd->vars[i].var_name == name) {
+                j = i;
+                goto done;
+            }
+            i = fd->vars[i].scope_next;
+            if (i < 0 || fd->vars[i].scope_level != sc)
+                goto next_scope;
+            if (++n == JS_VAR_SCOPE_STEPS)
+                break;
+        }
+        /* the vars of sc above i were compared, and those added after
+           link_var_scopes are not on the chain */
+        for (j = var_index_head(fd, name, sc, &work); j >= fd->var_linked;
+             j = fd->var_name_prev[j])
+            work++;
+        if (j >= 0)
+            break;
+        i = fd->vars[fd->var_scope_low[sc]].scope_next;
+    next_scope: ;
+    }
+ done:
+    *parg_end = (j < 0 && i == ARG_SCOPE_END);
+    js_compile_count(ctx, work);
+    JS_WORK(work);
+#ifdef JS_VAR_INDEX_CHECK
+    for (i = fd->scopes[scope].first; i >= 0; i = fd->vars[i].scope_next) {
+        if (fd->vars[i].var_name == name)
+            break;
+    }
+    if (i != (j >= 0 ? j : *parg_end ? ARG_SCOPE_END : -1))
+        abort();
+#endif
+    *pidx = j;
+    return TRUE;
+}
+
 
 static JSGlobalVar *find_global_var(JSFunctionDef *fd, JSAtom name)
 {
     int i;
+    if (global_var_index_find(fd, name, &i)) {
+#ifdef JS_VAR_INDEX_CHECK
+        int k;
+        for (k = 0; k < fd->global_var_count; k++) {
+            if (fd->global_vars[k].var_name == name)
+                break;
+        }
+        if (k != (i >= 0 ? i : fd->global_var_count))
+            abort();
+#endif
+        return i >= 0 ? &fd->global_vars[i] : NULL;
+    }
     js_compile_count(fd->ctx, fd->global_var_count);
     for(i = 0; i < fd->global_var_count; i++) {
         JSGlobalVar *hf = &fd->global_vars[i];
@@ -30190,18 +30729,110 @@ static JSGlobalVar *find_lexical_global_var(JSFunctionDef *fd, JSAtom name)
         return NULL;
 }
 
+/* While a function is parsed, the chain from fd->scope_first (add_scope_var
+   puts each var in front of it, push_scope and pop_scope move it) holds the
+   vars of the scopes open now, each scope with the vars it has so far, in
+   decreasing index, from its highest to its lowest var, whose scope_next
+   leads to the scope around it that has vars (no scope gets vars while one
+   inside it is open). A var put on the chain in scope 0 (none is, but the
+   walk would meet it where this would not) turns this off for the function.
+   The chain is looked in the index scope by scope as in
+   var_index_scope_find when it has more than JS_VAR_SCOPE_WALK vars and
+   JS_VAR_SCOPE_DENSE vars for each of its scopes with vars (chain_vars and
+   chain_scopes of the scope open now, so that the blocks the function has
+   left do not count). TRUE with *pidx the first var of the chain
+   named name that is lexical, or a catch parameter when check_catch_var, -1
+   if none; FALSE when the chain is to be walked. */
+static BOOL var_index_lexical_find(JSContext *ctx, JSFunctionDef *fd,
+                                   JSAtom name, BOOL check_catch_var,
+                                   int *pidx)
+{
+    int i, n, x, sc, work;
+    JSVarDef *vd;
+    JSVarScope *sd;
+
+    if (fd->var_linked != 0 || fd->var_scope0_linked)
+        return FALSE;
+    sd = &fd->scopes[fd->scope_level];
+    if (sd->chain_vars <= JS_VAR_SCOPE_WALK ||
+        sd->chain_vars < JS_VAR_SCOPE_DENSE * sd->chain_scopes)
+        return FALSE;
+    if (!var_index_ready(ctx, fd, &work))
+        return FALSE;
+    x = fd->scope_first;
+    while (x >= 0) {
+        sc = fd->vars[x].scope_level;
+        for (n = 0;;) {
+            vd = &fd->vars[x];
+            work++;
+            if (vd->var_name == name &&
+                (vd->is_lexical || (vd->var_kind == JS_VAR_CATCH &&
+                                    check_catch_var))) {
+                i = x;
+                goto done;
+            }
+            x = vd->scope_next;
+            if (x < 0 || fd->vars[x].scope_level != sc)
+                goto next_scope;
+            if (++n == JS_VAR_SCOPE_STEPS)
+                break;
+        }
+        /* the vars of sc above x were compared */
+        for (i = var_index_head(fd, name, sc, &work); i >= 0;
+             i = fd->var_name_prev[i]) {
+            vd = &fd->vars[i];
+            work++;
+            if (i <= x && (vd->is_lexical || (vd->var_kind == JS_VAR_CATCH &&
+                                              check_catch_var)))
+                goto done;
+        }
+        x = fd->vars[fd->var_scope_low[sc]].scope_next;
+    next_scope: ;
+    }
+    i = -1;
+ done:
+    js_compile_count(ctx, work);
+    JS_WORK(work);
+    *pidx = i;
+    return TRUE;
+}
+
 static __exception int find_lexical_decl(JSContext *ctx, JSFunctionDef *fd, JSAtom name,
                              int scope_idx, BOOL check_catch_var)
 {
-    js_compile_count(ctx, fd->var_count);
-    while (scope_idx >= 0) {
+    int i;
+
+    if (scope_idx >= 0 && scope_idx == fd->scope_first &&
+        var_index_lexical_find(ctx, fd, name, check_catch_var, &i)) {
+#ifdef JS_VAR_INDEX_CHECK
+        int k;
+        for (k = scope_idx; k >= 0; k = fd->vars[k].scope_next) {
+            JSVarDef *vd = &fd->vars[k];
+            if (vd->var_name == name &&
+                (vd->is_lexical || (vd->var_kind == JS_VAR_CATCH &&
+                                    check_catch_var)))
+                break;
+        }
+        if (k != (i >= 0 ? i : -1))
+            abort();
+#endif
+        if (i >= 0)
+            return i;
+        scope_idx = -1;
+    }
+    /* the count is that of the vars the walk goes over, which is none for
+       the 'var' of a function with no lexical var yet */
+    for (i = 1; scope_idx >= 0; i++) {
         JSVarDef *vd = &fd->vars[scope_idx];
         if (vd->var_name == name &&
             (vd->is_lexical || (vd->var_kind == JS_VAR_CATCH &&
-                                check_catch_var)))
+                                check_catch_var))) {
+            js_compile_count(ctx, i);
             return scope_idx;
+        }
         scope_idx = vd->scope_next;
     }
+    js_compile_count(ctx, i);
 
     if (fd->is_eval && fd->eval_type == JS_EVAL_TYPE_GLOBAL) {
         if (find_lexical_global_var(fd, name))
@@ -30252,6 +30883,14 @@ static int push_scope(JSParseState *s) {
         fd->scope_count++;
         fd->scopes[scope].parent = fd->scope_level;
         fd->scopes[scope].first = fd->scope_first;
+        if (fd->scope_level >= 0) {
+            fd->scopes[scope].chain_vars = fd->scopes[fd->scope_level].chain_vars;
+            fd->scopes[scope].chain_scopes = fd->scopes[fd->scope_level].chain_scopes;
+        } else {
+            fd->scopes[scope].chain_vars = 0;
+            fd->scopes[scope].chain_scopes = 0;
+        }
+        fd->scopes[scope].chain_indexed = FALSE;
         emit_op(s, OP_enter_scope);
         emit_u16(s, scope);
         return fd->scope_level = scope;
@@ -30327,7 +30966,14 @@ static int add_scope_var(JSContext *ctx, JSFunctionDef *fd, JSAtom name,
     int idx = add_var(ctx, fd, name);
     if (idx >= 0) {
         JSVarDef *vd = &fd->vars[idx];
+        JSVarScope *sd = &fd->scopes[fd->scope_level];
+        if (fd->scope_first < 0 ||
+            fd->vars[fd->scope_first].scope_level != fd->scope_level)
+            sd->chain_scopes++;
+        sd->chain_vars++;
         vd->var_kind = var_kind;
+        if (fd->scope_level <= 0)
+            fd->var_scope0_linked = TRUE; /* see var_index_lexical_find */
         vd->scope_level = fd->scope_level;
         vd->scope_next = fd->scope_first;
         fd->scopes[fd->scope_level].first = idx;
@@ -30373,6 +31019,7 @@ static __exception int add_arguments_arg(JSContext *ctx, JSFunctionDef *fd)
                 return -1;
             fd->vars[idx].scope_next = fd->scopes[ARG_SCOPE_INDEX].first;
             fd->scopes[ARG_SCOPE_INDEX].first = idx;
+            fd->var_linked = -1; /* the chains are not those of link_var_scopes */
             fd->vars[idx].scope_level = ARG_SCOPE_INDEX;
             fd->vars[idx].is_lexical = TRUE;
 
@@ -30966,6 +31613,241 @@ static BOOL has_lf_in_range(const uint8_t *p1, const uint8_t *p2)
     return (memchr(p1, '\n', p2 - p1) != NULL);
 }
 
+/* The levels of brackets js_parse_skip_parens_token() follows. */
+#define JS_SKIP_LEVELS 256
+
+/* JS_PAREN_GROW(size) is called when the table of JSParenCache gets size
+   entries, and JS_PAREN_WORK(n) for what the lookahead does for its table
+   besides reading tokens: n bytes it looks at again, or n entries it copies.
+   white.c counts them. */
+#ifndef JS_PAREN_GROW
+#define JS_PAREN_GROW(size) ((void)0)
+#endif
+#ifndef JS_PAREN_WORK
+#define JS_PAREN_WORK(n) ((void)0)
+#endif
+#ifndef JS_PAREN_REFUSED
+#define JS_PAREN_REFUSED() ((void)0)
+#endif
+
+/* What js_parse_skip_parens_token() answered for the bracket at a position
+   of the source. The lookahead from a bracket goes through every bracket
+   inside it, and the parse asks again from many of them when it gets there:
+   without the answers kept, a source with brackets nested n deep is read n
+   times over. The answer from a bracket depends only on the source after it
+   and on how the tokens are read there: strict mode, and whether yield and
+   await are keywords (js_parse_skip_mode). It does not depend on the token
+   before the bracket, as the bracket itself makes a "/" after it a regexp,
+   nor on the brackets around it, which the lookahead from it never closes.
+   So the lookahead keeps the answer of each bracket it went through, under
+   the position and the mode, and a later lookahead from there with the same
+   mode takes it. An answer is the same in every mode when no token from the
+   bracket to the token after its closing one reads differently in another
+   mode (js_parse_skip_mode_dep): then any mode takes it. */
+typedef struct JSParenEntry {
+    uint32_t key;               /* offset of the bracket + 1, 0 when free */
+    uint32_t val;               /* JS_PAREN_* */
+} JSParenEntry;
+
+#define JS_PAREN_TOK_MASK   0xffff  /* the token after, TOK_OF for "of" */
+#define JS_PAREN_BITS_SHIFT 16      /* the SKIP_HAS_* bits */
+#define JS_PAREN_LF         (1 << 19) /* a line feed before the token after */
+#define JS_PAREN_MODE_SHIFT 20      /* js_parse_skip_mode */
+#define JS_PAREN_MODE_MASK  (7 << JS_PAREN_MODE_SHIFT)
+#define JS_PAREN_ANY_MODE   (1 << 23) /* the same answer in every mode */
+
+/* in JSParenCache.open_bits, besides the SKIP_HAS_* bits: a token inside
+   the level reads differently in another mode */
+#define SKIP_MODE_DEP       (1 << 3)
+
+typedef struct JSParenCache {
+    JSParenEntry *tab;          /* open addressing, a power of 2 entries */
+    uint32_t size;
+    uint32_t count;
+    BOOL full;                  /* the table could not grow (js_paren_put) */
+    /* the lookahead under way: for each level, the offset of its bracket
+       and the SKIP_HAS_* bits seen at that level (SKIP_HAS_ASSIGNMENT and
+       SKIP_MODE_DEP also inside it, added to the level around it when it
+       closes) */
+    uint32_t open_pos[JS_SKIP_LEVELS];
+    uint8_t open_bits[JS_SKIP_LEVELS];
+} JSParenCache;
+
+/* how next_token reads the tokens in the current function: what the
+   answers of the lookahead depend on besides the source */
+static int js_parse_skip_mode(JSParseState *s)
+{
+    JSFunctionDef *fd = s->cur_func;
+    int mode = 0;
+
+    if (fd->js_mode & JS_MODE_STRICT)
+        mode |= 1;
+    if (func_has_ancestor_kind(fd, -1, JS_FUNC_GENERATOR))
+        mode |= 2;
+    if (s->is_module || func_has_ancestor_kind(fd, -1, JS_FUNC_ASYNC))
+        mode |= 4;
+    return mode;
+}
+
+/* Whether the current token of the lookahead reads differently in another
+   mode (js_parse_skip_mode): 1 for a name that is a keyword in some modes
+   (update_token_ident), which changes what a "/" after it is, 2 for a
+   number or a string that strict mode refuses (next_token1,
+   js_parse_string). */
+static int js_parse_skip_mode_dep(JSParseState *s)
+{
+    const uint8_t *p;
+
+    switch (s->token.val) {
+    case TOK_IDENT:
+        return s->token.u.ident.atom >= JS_ATOM_implements &&
+            s->token.u.ident.atom <= JS_ATOM_await;
+    case TOK_NUMBER:
+        p = s->token.ptr;
+        return (p[0] == '0' && is_digit(p[1])) ? 2 : 0;
+    case TOK_STRING:
+        return s->token.u.str.strict_escape ? 2 : 0;
+    default:
+        return s->token.val >= TOK_IMPLEMENTS && s->token.val <= TOK_AWAIT;
+    }
+}
+
+static inline uint32_t js_paren_hash(uint32_t key, uint32_t size)
+{
+    key *= 0x9e3779b1;
+    return (key ^ (key >> 16)) & (size - 1);
+}
+
+static JSParenEntry *js_paren_find(JSParenCache *pc, uint32_t key)
+{
+    JSParenEntry *e;
+    uint32_t i;
+
+    if (!pc->tab)
+        return NULL;
+    for (i = js_paren_hash(key, pc->size);; i = (i + 1) & (pc->size - 1)) {
+        e = &pc->tab[i];
+        if (e->key == key)
+            return e;
+        if (e->key == 0)
+            return NULL;
+    }
+}
+
+/* Keeps val for the bracket at key. An answer from the bracket under another
+   mode is replaced in place: the table grows only for a new bracket. A table
+   the allocator does not let grow stays as it is and keeps no new answer
+   (full), so that the lookahead reads on as it did before the table: the
+   table changes what a parse costs, never whether it works. Clearing the new
+   table and copying the old one into it read the interrupt flag every
+   JS_COMPILE_POLL_STEP entries. -1 with "interrupted" thrown, and the table
+   as it was. */
+static int js_paren_put(JSContext *ctx, JSParenCache *pc, uint32_t key,
+                        uint32_t val)
+{
+    JSParenEntry *e;
+    uint32_t i;
+
+    e = js_paren_find(pc, key);
+    if (e) {
+        e->val = val;
+        return 0;
+    }
+    if (pc->full)
+        return 0;
+    if ((pc->count + 1) * 2 > pc->size) {
+        JSParenEntry *tab = NULL, *old = pc->tab;
+        uint32_t j, k, n, size = pc->size ? pc->size * 2 : 1024;
+
+        /* 2^30 entries are 8 GiB: the size of 32 bits never runs over.
+           js_malloc_rt does not throw */
+        if (pc->size < (1u << 30))
+            tab = js_malloc_rt(ctx->rt, sizeof(tab[0]) * size);
+        if (!tab) {
+            JS_PAREN_REFUSED();
+            pc->full = TRUE;
+            return 0;
+        }
+        for (j = 0; j < size; j += n) {
+            n = min_uint32(size - j, JS_COMPILE_POLL_STEP);
+            if (j != 0 && js_poll_interrupts(ctx)) {
+                js_free_rt(ctx->rt, tab);
+                return -1;
+            }
+            memset(tab + j, 0, sizeof(tab[0]) * n);
+            JS_PAREN_WORK(n);
+        }
+        for (j = 0; j < pc->size; j += n) {
+            n = min_uint32(pc->size - j, JS_COMPILE_POLL_STEP);
+            if (js_poll_interrupts(ctx)) {
+                js_free_rt(ctx->rt, tab);
+                return -1;
+            }
+            for (k = j; k < j + n; k++) {
+                if (old[k].key == 0)
+                    continue;
+                for (i = js_paren_hash(old[k].key, size); tab[i].key != 0;
+                     i = (i + 1) & (size - 1))
+                    continue;
+                tab[i] = old[k];
+            }
+            JS_PAREN_WORK(n);
+        }
+        js_free_rt(ctx->rt, old);
+        pc->tab = tab;
+        pc->size = size;
+        JS_PAREN_GROW(size);
+    }
+    for (i = js_paren_hash(key, pc->size); pc->tab[i].key != 0;
+         i = (i + 1) & (pc->size - 1))
+        continue;
+    pc->tab[i].key = key;
+    pc->tab[i].val = val;
+    pc->count++;
+    return 0;
+}
+
+/* has_lf_in_range from p up to end, for the answer of a bracket: the space
+   and the comments before the token after it may be long, and the look reads
+   the interrupt flag where p meets a multiple of JS_ROPE_STEP, as the lexer
+   did in them. 1 for a line feed, 0 for none, -1 with "interrupted" thrown. */
+static int js_paren_has_lf(JSContext *ctx, const uint8_t *p,
+                           const uint8_t *end)
+{
+    const uint8_t *q;
+
+    for (;;) {
+        q = (const uint8_t *)(((uintptr_t)p | (JS_ROPE_STEP - 1)) + 1);
+        if (q > end)
+            q = end;
+        JS_PAREN_WORK(q - p);
+        if (memchr(p, '\n', q - p))
+            return 1;
+        if (q == end)
+            return 0;
+        p = q;
+        if (js_poll_interrupts(ctx))
+            return -1;
+    }
+}
+
+static void js_parse_free_paren_cache(JSParseState *s)
+{
+    JSParenCache *pc = s->paren_cache;
+
+    if (pc) {
+        js_free(s->ctx, pc->tab);
+        js_free(s->ctx, pc);
+        s->paren_cache = NULL;
+    }
+}
+
+/* JS_SKIP_TOKEN() is called for each token the lookahead of
+   js_parse_skip_parens_token() reads: white.c counts them */
+#ifndef JS_SKIP_TOKEN
+#define JS_SKIP_TOKEN() ((void)0)
+#endif
+
 /* The lookahead of js_parse_skip_parens_token() met an error. A syntax error
    is dropped: the lookahead may read what is not a token (a division taken
    for a regexp), and the parse that follows meets the real error, if there is
@@ -30984,13 +31866,14 @@ static BOOL js_parse_skip_parens_error(JSParseState *s)
    the token after, TOK_EOF when the lookahead could not read up to there, or
    TOK_ERROR with the exception pending when it ran out of memory or was
    interrupted: a caller has to check for it. Do not test for a negative
-   value: the tokens have negative values. */
+   value: the tokens have negative values. The answer from every bracket the
+   lookahead closes is kept (JSParenCache), and taken when it is asked again. */
 /* XXX: improve speed with early bailout */
 /* XXX: no longer works if regexps are present. Could use previous
    regexp parsing heuristics to handle most cases */
 static int js_parse_skip_parens_token(JSParseState *s, int *pbits, BOOL no_line_terminator)
 {
-    char state[256];
+    char state[JS_SKIP_LEVELS];
     size_t level = 0;
     JSParsePos pos;
     int last_tok, tok = TOK_EOF;
@@ -30999,9 +31882,49 @@ static int js_parse_skip_parens_token(JSParseState *s, int *pbits, BOOL no_line_
        after it counts them again (next_token) */
     int left = JS_COMPILE_POLL_STEP / JS_TOKEN_WORK;
     const uint8_t *last_token_ptr;
-    
+    JSParenCache *pc;
+    JSParenEntry *e;
+    uint32_t mode, closed;
+    BOOL fresh, word;
+
+    pc = s->paren_cache;
+    if (!pc && !s->paren_cache_off) {
+        /* js_mallocz_rt does not throw: without the room, the lookahead
+           reads as it did before the table */
+        pc = js_mallocz_rt(s->ctx->rt, sizeof(*pc));
+        if (pc) {
+            s->paren_cache = pc;
+        } else {
+            JS_PAREN_REFUSED();
+            s->paren_cache_off = TRUE;
+        }
+    }
+    mode = js_parse_skip_mode(s) << JS_PAREN_MODE_SHIFT;
+    /* the brackets are kept by an offset of 32 bits */
+    if (unlikely(s->buf_end - s->buf_start >= UINT32_MAX))
+        pc = NULL;
+    /* the answer depends on where the tokens are read from: right after
+       the bracket, as next_token leaves them (fresh) */
+    fresh = (s->buf_ptr == s->token.ptr + 1);
+    if (pc && fresh) {
+        e = js_paren_find(pc, s->token.ptr - s->buf_start + 1);
+        if (e && ((e->val & JS_PAREN_ANY_MODE) ||
+                  (e->val & JS_PAREN_MODE_MASK) == mode)) {
+            tok = (int16_t)(e->val & JS_PAREN_TOK_MASK);
+            bits = (e->val >> JS_PAREN_BITS_SHIFT) & 7;
+            if (no_line_terminator && (e->val & JS_PAREN_LF))
+                tok = '\n';
+            js_parse_get_pos(s, &pos);
+            goto done;
+        }
+    }
+
     /* protect from underflow */
     state[level++] = 0;
+    /* the level of the bracket the last token closed, 0 for none */
+    closed = 0;
+    /* the token before is a name that is a keyword in some modes */
+    word = FALSE;
 
     js_parse_get_pos(s, &pos);
     last_tok = 0;
@@ -31012,19 +31935,28 @@ static int js_parse_skip_parens_token(JSParseState *s, int *pbits, BOOL no_line_
         case '{':
             if (level >= sizeof(state))
                 goto done;
+            if (pc) {
+                pc->open_pos[level] = s->token.ptr - s->buf_start;
+                pc->open_bits[level] = 0;
+            }
             state[level++] = s->token.val;
             break;
         case ')':
             if (state[--level] != '(')
                 goto done;
+            closed = level;
             break;
         case ']':
             if (state[--level] != '[')
                 goto done;
+            closed = level;
             break;
         case '}':
             c = state[--level];
             if (c == '`') {
+                if (pc)
+                    pc->open_bits[level - 1] |= pc->open_bits[level] &
+                        (SKIP_HAS_ASSIGNMENT | SKIP_MODE_DEP);
                 /* continue the parsing of the template */
                 free_token(s, &s->token);
                 /* Resume TOK_TEMPLATE parsing (s->token.line_num and
@@ -31039,6 +31971,7 @@ static int js_parse_skip_parens_token(JSParseState *s, int *pbits, BOOL no_line_
             } else if (c != '{') {
                 goto done;
             }
+            closed = level;
             break;
         case TOK_TEMPLATE:
         handle_template:
@@ -31047,6 +31980,8 @@ static int js_parse_skip_parens_token(JSParseState *s, int *pbits, BOOL no_line_
                    parsing the template */
                 if (level >= sizeof(state))
                     goto done;
+                if (pc)
+                    pc->open_bits[level] = 0;
                 state[level++] = '`';
             }
             break;
@@ -31056,14 +31991,20 @@ static int js_parse_skip_parens_token(JSParseState *s, int *pbits, BOOL no_line_
             if (level == 2) {
                 bits |= SKIP_HAS_SEMI;
             }
+            if (pc)
+                pc->open_bits[level - 1] |= SKIP_HAS_SEMI;
             break;
         case TOK_ELLIPSIS:
             if (level == 2) {
                 bits |= SKIP_HAS_ELLIPSIS;
             }
+            if (pc)
+                pc->open_bits[level - 1] |= SKIP_HAS_ELLIPSIS;
             break;
         case '=':
             bits |= SKIP_HAS_ASSIGNMENT;
+            if (pc)
+                pc->open_bits[level - 1] |= SKIP_HAS_ASSIGNMENT;
             break;
 
         case TOK_DIV_ASSIGN:
@@ -31072,6 +32013,9 @@ static int js_parse_skip_parens_token(JSParseState *s, int *pbits, BOOL no_line_
         case '/':
             tok_len = 1;
         parse_regexp:
+            /* another mode may read it the other way */
+            if (pc && word)
+                pc->open_bits[level - 1] |= SKIP_MODE_DEP;
             if (is_regexp_allowed(last_tok)) {
                 s->buf_ptr -= tok_len;
                 if (js_parse_regexp(s)) {
@@ -31096,7 +32040,14 @@ static int js_parse_skip_parens_token(JSParseState *s, int *pbits, BOOL no_line_
         } else {
             last_tok = s->token.val;
         }
+        if (pc) {
+            c = js_parse_skip_mode_dep(s);
+            word = (c == 1);
+            if (c == 2)
+                pc->open_bits[level - 1] |= SKIP_MODE_DEP;
+        }
         last_token_ptr = s->token.ptr;
+        JS_SKIP_TOKEN();
         if ((unlikely(--left < 0) &&
              (left = JS_COMPILE_POLL_STEP / JS_TOKEN_WORK,
               js_poll_interrupts(s->ctx))) ||
@@ -31105,6 +32056,34 @@ static int js_parse_skip_parens_token(JSParseState *s, int *pbits, BOOL no_line_
                 return TOK_ERROR;
             break;
         }
+        if (closed && pc) {
+            /* the answer of the lookahead from the bracket just closed:
+               the token read now, and what it saw inside */
+            uint32_t val;
+            int lf;
+
+            pc->open_bits[closed - 1] |= pc->open_bits[closed] &
+                (SKIP_HAS_ASSIGNMENT | SKIP_MODE_DEP);
+            c = s->token.val;
+            if (token_is_pseudo_keyword(s, JS_ATOM_of))
+                c = TOK_OF;
+            val = (c & JS_PAREN_TOK_MASK) |
+                ((pc->open_bits[closed] & 7) << JS_PAREN_BITS_SHIFT) | mode;
+            lf = js_paren_has_lf(s->ctx, last_token_ptr, s->token.ptr);
+            if (lf < 0)
+                return TOK_ERROR;
+            if (lf)
+                val |= JS_PAREN_LF;
+            if (!(pc->open_bits[closed] & SKIP_MODE_DEP) &&
+                !js_parse_skip_mode_dep(s))
+                val |= JS_PAREN_ANY_MODE;
+            /* the bracket the lookahead started at is read from where
+               this call found it (fresh) */
+            if ((closed > 1 || fresh) &&
+                js_paren_put(s->ctx, pc, pc->open_pos[closed] + 1, val))
+                return TOK_ERROR;
+        }
+        closed = 0;
         if (level <= 1) {
             tok = s->token.val;
             if (token_is_pseudo_keyword(s, JS_ATOM_of))
@@ -39187,6 +40166,9 @@ static JSFunctionDef *js_new_function_def(JSContext *ctx,
     fd->scope_count = 1;
     fd->scopes[0].first = -1;
     fd->scopes[0].parent = -1;
+    fd->scopes[0].chain_vars = 0;
+    fd->scopes[0].chain_scopes = 0;
+    fd->scopes[0].chain_indexed = FALSE;
     fd->scope_level = 0;  /* 0: var/arg scope */
     fd->scope_first = -1;
     fd->body_scope = -1;
@@ -39280,6 +40262,7 @@ static void js_free_function_def1(JSContext *ctx, JSFunctionDef *fd)
         JS_FreeAtom(ctx, fd->vars[i].var_name);
     }
     js_free(ctx, fd->vars);
+    index_hash_free_all(ctx->rt, fd);
     for(i = 0; i < fd->arg_count; i++) {
         JS_FreeAtom(ctx, fd->args[i].var_name);
     }
@@ -39884,7 +40867,7 @@ static __exception int get_closure_var1(JSContext *ctx, JSFunctionDef *s,
                             BOOL is_const, BOOL is_lexical,
                             JSVarKindEnum var_kind)
 {
-    int i;
+    int i, work;
 
     if (fd != s->parent) {
         var_idx = get_closure_var(ctx, s->parent, fd, closure_type,
@@ -39899,12 +40882,29 @@ static __exception int get_closure_var1(JSContext *ctx, JSFunctionDef *s,
        many as the variables of the functions around it, each looked for at
        every level: the flag is read here, where a failure leaves the
        closure variables of s and of its parents whole */
-    if (js_compile_poll(ctx, s->closure_var_count))
-        return -1;
-    for(i = 0; i < s->closure_var_count; i++) {
-        JSClosureVar *cv = &s->closure_var[i];
-        if (cv->var_idx == var_idx && cv->closure_type == closure_type)
+    if (closure_var_by_ref(ctx, s, var_idx, closure_type, &i, &work)) {
+#ifdef JS_VAR_INDEX_CHECK
+        int k;
+        for (k = 0; k < s->closure_var_count; k++) {
+            if (s->closure_var[k].var_idx == var_idx &&
+                s->closure_var[k].closure_type == closure_type)
+                break;
+        }
+        if (k != (i >= 0 ? i : s->closure_var_count))
+            abort();
+#endif
+        if (js_compile_poll(ctx, work))
+            return -1;
+        if (i >= 0)
             return i;
+    } else {
+        if (js_compile_poll(ctx, s->closure_var_count))
+            return -1;
+        for(i = 0; i < s->closure_var_count; i++) {
+            JSClosureVar *cv = &s->closure_var[i];
+            if (cv->var_idx == var_idx && cv->closure_type == closure_type)
+                return i;
+        }
     }
     return add_closure_var(ctx, s, closure_type, var_idx, var_name,
                            is_const, is_lexical, var_kind);
@@ -40108,10 +41108,24 @@ static __exception int resolve_scope_var(JSContext *ctx, JSFunctionDef *s,
                      var_name == JS_ATOM_new_target ||
                      var_name == JS_ATOM_this);
 
-    /* the chains of the scopes are as long as the vars of each function */
-    js_compile_count(ctx, s->var_count);
     /* resolve local scoped variables */
     var_idx = -1;
+    if (s->scopes[scope_level].chain_indexed &&
+        var_index_scope_find(ctx, s, var_name, scope_level, &idx, &is_arg_scope)) {
+        if (idx >= 0) {
+            vd = &s->vars[idx];
+            if ((op == OP_scope_put_var || op == OP_scope_make_ref) &&
+                vd->is_const) {
+                dbuf_putc(bc, OP_throw_error);
+                dbuf_put_u32(bc, JS_DupAtom(ctx, var_name));
+                dbuf_putc(bc, JS_THROW_VAR_RO);
+                goto done;
+            }
+            var_idx = idx;
+        }
+        goto local_found;
+    }
+    js_compile_count(ctx, var_chain_len(s, scope_level));
     for (idx = s->scopes[scope_level].first; idx >= 0;) {
         vd = &s->vars[idx];
         if (vd->var_name == var_name) {
@@ -40134,6 +41148,7 @@ static __exception int resolve_scope_var(JSContext *ctx, JSFunctionDef *s,
         idx = vd->scope_next;
     }
     is_arg_scope = (idx == ARG_SCOPE_END);
+ local_found:
     if (var_idx < 0) {
         /* argument scope: variables are not visible but pseudo
            variables are visible */
@@ -40289,7 +41304,23 @@ static __exception int resolve_scope_var(JSContext *ctx, JSFunctionDef *s,
     for (fd = s; fd->parent;) {
         scope_level = fd->parent_scope_level;
         fd = fd->parent;
-        js_compile_count(ctx, fd->var_count);
+        if (fd->scopes[scope_level].chain_indexed &&
+            var_index_scope_find(ctx, fd, var_name, scope_level, &idx, &is_arg_scope)) {
+            if (idx >= 0) {
+                vd = &fd->vars[idx];
+                if ((op == OP_scope_put_var || op == OP_scope_make_ref) &&
+                    vd->is_const) {
+                    dbuf_putc(bc, OP_throw_error);
+                    dbuf_put_u32(bc, JS_DupAtom(ctx, var_name));
+                    dbuf_putc(bc, JS_THROW_VAR_RO);
+                    goto done;
+                }
+                var_idx = idx;
+                break;
+            }
+            goto parent_not_found;
+        }
+        js_compile_count(ctx, var_chain_len(fd, scope_level));
         for (idx = fd->scopes[scope_level].first; idx >= 0;) {
             vd = &fd->vars[idx];
             if (vd->var_name == var_name) {
@@ -40317,6 +41348,7 @@ static __exception int resolve_scope_var(JSContext *ctx, JSFunctionDef *s,
         is_arg_scope = (idx == ARG_SCOPE_END);
         if (var_idx >= 0)
             break;
+    parent_not_found:
 
         if (!is_arg_scope) {
             var_idx = find_var(ctx, fd, var_name);
@@ -40380,53 +41412,72 @@ static __exception int resolve_scope_var(JSContext *ctx, JSFunctionDef *s,
     if (!fd)
         fd = s;
     if (var_idx < 0 && fd->is_eval) {
-        int idx1;
-        for (idx1 = 0; idx1 < fd->closure_var_count; idx1++) {
-            JSClosureVar *cv = &fd->closure_var[idx1];
-            if (var_name == cv->var_name) {
-                if (fd != s) {
-                    JSClosureTypeEnum closure_type;
-                    if (cv->closure_type == JS_CLOSURE_GLOBAL ||
-                        cv->closure_type == JS_CLOSURE_GLOBAL_DECL ||
-                        cv->closure_type == JS_CLOSURE_GLOBAL_REF)
-                        closure_type = JS_CLOSURE_GLOBAL_REF;
-                    else
-                        closure_type = JS_CLOSURE_REF;
-                    idx = get_closure_var(ctx, s, fd,
-                                          closure_type,
-                                          idx1,
-                                          cv->var_name, cv->is_const,
-                                          cv->is_lexical, cv->var_kind);
-                    if (idx < 0)
-                        return -1;
-                } else {
-                    idx = idx1;
+        int idx1, found;
+        JSClosureVar *cv;
+        if (closure_var_by_name_plain(ctx, fd, var_name, &found)) {
+#ifdef JS_VAR_INDEX_CHECK
+            for (idx1 = 0; idx1 < fd->closure_var_count; idx1++) {
+                if (fd->closure_var[idx1].var_name == var_name)
+                    break;
+            }
+            if (idx1 != (found >= 0 ? found : fd->closure_var_count))
+                abort();
+#endif
+        } else {
+            found = -1;
+            for (idx1 = 0; idx1 < fd->closure_var_count; idx1++) {
+                cv = &fd->closure_var[idx1];
+                if (var_name == cv->var_name) {
+                    found = idx1;
+                    break;
+                } else if ((cv->var_name == JS_ATOM__var_ ||
+                            cv->var_name == JS_ATOM__arg_var_ ||
+                            cv->var_name == JS_ATOM__with_) && !is_pseudo_var) {
+                    int is_with = (cv->var_name == JS_ATOM__with_);
+                    if (fd != s) {
+                        idx = get_closure_var(ctx, s, fd,
+                                              JS_CLOSURE_REF,
+                                              idx1,
+                                              cv->var_name, FALSE, FALSE,
+                                              JS_VAR_NORMAL);
+                        if (idx < 0)
+                            return -1;
+                    } else {
+                        idx = idx1;
+                    }
+                    dbuf_putc(bc, OP_get_var_ref);
+                    dbuf_put_u16(bc, idx);
+                    var_object_test(ctx, s, var_name, op, bc, &label_done, is_with);
                 }
+            }
+        }
+        if (found >= 0) {
+            idx1 = found;
+            cv = &fd->closure_var[idx1];
+            if (fd != s) {
+                JSClosureTypeEnum closure_type;
                 if (cv->closure_type == JS_CLOSURE_GLOBAL ||
                     cv->closure_type == JS_CLOSURE_GLOBAL_DECL ||
                     cv->closure_type == JS_CLOSURE_GLOBAL_REF)
-                    goto has_global_idx;
+                    closure_type = JS_CLOSURE_GLOBAL_REF;
                 else
-                    goto has_idx;
-            } else if ((cv->var_name == JS_ATOM__var_ ||
-                        cv->var_name == JS_ATOM__arg_var_ ||
-                        cv->var_name == JS_ATOM__with_) && !is_pseudo_var) {
-                int is_with = (cv->var_name == JS_ATOM__with_);
-                if (fd != s) {
-                    idx = get_closure_var(ctx, s, fd,
-                                          JS_CLOSURE_REF,
-                                          idx1,
-                                          cv->var_name, FALSE, FALSE,
-                                          JS_VAR_NORMAL);
-                    if (idx < 0)
-                        return -1;
-                } else {
-                    idx = idx1;
-                }
-                dbuf_putc(bc, OP_get_var_ref);
-                dbuf_put_u16(bc, idx);
-                var_object_test(ctx, s, var_name, op, bc, &label_done, is_with);
+                    closure_type = JS_CLOSURE_REF;
+                idx = get_closure_var(ctx, s, fd,
+                                      closure_type,
+                                      idx1,
+                                      cv->var_name, cv->is_const,
+                                      cv->is_lexical, cv->var_kind);
+                if (idx < 0)
+                    return -1;
+            } else {
+                idx = idx1;
             }
+            if (cv->closure_type == JS_CLOSURE_GLOBAL ||
+                cv->closure_type == JS_CLOSURE_GLOBAL_DECL ||
+                cv->closure_type == JS_CLOSURE_GLOBAL_REF)
+                goto has_global_idx;
+            else
+                goto has_idx;
         }
 
         /* not found: add a closure for a global variable access */
@@ -41283,6 +42334,7 @@ static __exception int instantiate_hoisted_definitions(JSContext *ctx, JSFunctio
         /* the global vars times the closure vars, as in resolve_variables:
            the names of those done are freed */
         if (js_compile_poll(ctx, s->closure_var_count)) {
+            index_hash_free(ctx->rt, &s->global_var_names);
             s->global_var_count -= i;
             memmove(s->global_vars, s->global_vars + i,
                     sizeof(s->global_vars[0]) * s->global_var_count);
@@ -41292,6 +42344,10 @@ static __exception int instantiate_hoisted_definitions(JSContext *ctx, JSFunctio
            enclosing variables */
         /* If the outer function has a variable environment,
            create a property for the variable there */
+        if (closure_var_by_name_plain(ctx, s, hf->var_name, &idx) && idx >= 0) {
+            force_init = FALSE;
+            goto closure_found;
+        }
         for(idx = 0; idx < s->closure_var_count; idx++) {
             JSClosureVar *cv = &s->closure_var[idx];
             if (cv->var_name == hf->var_name) {
@@ -41341,6 +42397,7 @@ static __exception int instantiate_hoisted_definitions(JSContext *ctx, JSFunctio
         s->label_slots[label_next].pos2 = bc->size;
     }
 
+    index_hash_free(ctx->rt, &s->global_var_names);
     js_free(ctx, s->global_vars);
     s->global_vars = NULL;
     s->global_var_count = 0;
@@ -42926,8 +43983,10 @@ static void link_var_scopes(JSFunctionDef *fd)
 {
     int scope, idx;
 
+    fd->var_linked = fd->var_count;
     for (scope = 0; scope < fd->scope_count; scope++) {
         fd->scopes[scope].first = -1;
+        fd->scopes[scope].chain_vars = 0;
     }
     if (fd->has_parameter_expressions) {
         /* special end of variable list marker for the argument scope */
@@ -42937,11 +43996,21 @@ static void link_var_scopes(JSFunctionDef *fd)
         JSVarDef *vd = &fd->vars[idx];
         vd->scope_next = fd->scopes[vd->scope_level].first;
         fd->scopes[vd->scope_level].first = idx;
+        fd->scopes[vd->scope_level].chain_vars++;
     }
-    for (scope = 2; scope < fd->scope_count; scope++) {
+    for (scope = 0; scope < fd->scope_count; scope++) {
         JSVarScope *sd = &fd->scopes[scope];
-        if (sd->first < 0)
-            sd->first = fd->scopes[sd->parent].first;
+        sd->chain_scopes = (sd->chain_vars > 0);
+        if (scope >= 2) {
+            /* the parent of a scope was pushed before it */
+            JSVarScope *pd = &fd->scopes[sd->parent];
+            sd->chain_vars += pd->chain_vars;
+            sd->chain_scopes += pd->chain_scopes;
+            if (sd->first < 0)
+                sd->first = pd->first;
+        }
+        sd->chain_indexed = sd->chain_vars > JS_VAR_SCOPE_WALK &&
+            sd->chain_vars >= JS_VAR_SCOPE_DENSE * sd->chain_scopes;
     }
     for (idx = 0; idx < fd->var_count; idx++) {
         JSVarDef *vd = &fd->vars[idx];
@@ -43395,6 +44464,8 @@ static no_inline __exception int share_local_slots(JSContext *ctx, JSFunctionDef
         }
     }
     s->var_count = ncolors;
+    /* the index names the vars as they were */
+    var_index_free(ctx->rt, s);
     link_var_scopes(s);
  done:
     if (!ret)
@@ -45067,8 +46138,19 @@ typedef struct {
     int *succ, *succ_at;   /* normal successors, by block */
     int *hand, *hand_at;   /* the handlers of the try bodies a block is in */
     int *ev, *ev_at;       /* events: var_ref_idx << 1 | close, in order */
+    int *ev_blk;           /* the block of each event */
     int *site_blk, *site_ev, *site_child; /* the places closures are made */
     int nsite;
+    /* by group of 64 slots, those of group q from at[q] to at[q + 1]: the
+       events of its slots (their indexes in ev, in order), and the
+       captures of its slots by a closure made at a site (the index of the
+       site, and the slot less the first of the group), in the order of the
+       sites */
+    int *gev, *gev_at;
+    int *cap_site, *cap_at;
+    uint64_t *cap_mask;
+    uint64_t *gmask;       /* while the sites are put by group: the slots of each group */
+    int *touched;          /* and the groups with some */
 } CBVGraph;
 
 static __exception int capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
@@ -45090,8 +46172,9 @@ static __exception int capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
     CBVGraph g;
 
     /* the flag is read as the walks and the flow go (js_compile_poll): -1
-       with "interrupted" thrown when it was stopped, as with no memory */
-#define CBV_POLL(n) do { if (js_compile_poll(ctx, (n))) { stopped = TRUE; goto bad; } } while (0)
+       with "interrupted" thrown when it was stopped, as with no memory. n is
+       the work done since the last one (JS_WORK) */
+#define CBV_POLL(n) do { JS_WORK(n); if (js_compile_poll(ctx, (n))) { stopped = TRUE; goto bad; } } while (0)
     memset(&g, 0, sizeof(g));
     if (len < 0 || len > INT32_MAX / 8)
         goto bad;
@@ -45359,7 +46442,8 @@ static __exception int capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
                 g.succ_at = js_malloc_rt(rt, sizeof(int) * (g.nb + 3));
                 g.hand = js_malloc_rt(rt, sizeof(int) * (nhand + 1));
                 g.hand_at = js_malloc_rt(rt, sizeof(int) * (g.nb + 3));
-                g.ev = js_malloc_rt(rt, sizeof(int) * (nev + 1));
+                /* the events, then the block of each */
+                g.ev = js_malloc_rt(rt, sizeof(int) * 2 * (nev + 1));
                 g.ev_at = js_malloc_rt(rt, sizeof(int) * (g.nb + 3));
                 g.site_blk = js_malloc_rt(rt, sizeof(int) * (ns + 1));
                 g.site_ev = js_malloc_rt(rt, sizeof(int) * (ns + 1));
@@ -45367,6 +46451,7 @@ static __exception int capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
                 if (!g.succ || !g.succ_at || !g.hand || !g.hand_at || !g.ev ||
                     !g.ev_at || !g.site_blk || !g.site_ev || !g.site_child)
                     goto no_mem;
+                g.ev_blk = g.ev + nev + 1;
             }
             nsucc = nhand = nev = ns = 0;
             for (i = 0; i < g.nb; i++) {
@@ -45384,8 +46469,10 @@ static __exception int capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
                     if ((kind == CBV_WRITE || kind == CBV_CLOSE) && space != 2) {
                         r = ref_of[space ? idx : idx + b->arg_count];
                         if (r >= 0 && ok[r] && writes[r]) {
-                            if (s == 1)
+                            if (s == 1) {
                                 g.ev[nev] = r << 1 | (kind == CBV_CLOSE);
+                                g.ev_blk[nev] = i;
+                            }
                             nev++;
                         }
                     }
@@ -45456,101 +46543,188 @@ static __exception int capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
         }
     }
 
-    /* 64 slots at a time: in[b] has the slots a write of which a path from
-       the start of block b reaches, with no close_loc of it before: the
-       blocks, vret (g.nb) and vexc (g.nb + 1). The passes have a budget,
-       past which every slot keeps its JSVarRef. */
-    in = js_malloc_rt(rt, sizeof(uint64_t) * (g.nb + 2));
-    gen = js_malloc_rt(rt, sizeof(uint64_t) * (g.nb + 2));
-    kill = js_malloc_rt(rt, sizeof(uint64_t) * (g.nb + 2));
-    if (!in || !gen || !kill)
-        goto no_mem;
-    budget = ((int64_t)1 << 22) + (int64_t)64 * len;
-    for (base = 0; base < n; base += 64) {
-        uint64_t want = 0, seen, out, fail;
-        for (r = base; r < n && r < base + 64; r++) {
-            if (ok[r] && writes[r])
-                want |= (uint64_t)1 << (r - base);
+    /* 64 slots at a time, a group: in[b] has the slots a write of which a
+       path from the start of block b reaches, with no close_loc of it
+       before: the blocks, vret (g.nb) and vexc (g.nb + 1). The passes have
+       a budget, past which every slot keeps its JSVarRef. A group goes over
+       its own events and the sites that capture its slots only, each site
+       once (g.gev, g.cap_site), so that the work is the code and the flow,
+       not the groups times the sites, nor the sites times the events after
+       them in their block. */
+    {
+        int ngroup = (n + 63) / 64, nev = g.ev_at[g.nb + 2], q, e, lo, hi, cur, nt;
+        int64_t ncap;
+
+        /* in, gen, kill and gmask in one block, gev_at, cap_at, touched
+           and gev in another */
+        in = js_malloc_rt(rt, sizeof(uint64_t) * (3 * (g.nb + 2) + ngroup));
+        g.gev_at = js_malloc_rt(rt, sizeof(int) * (2 * (ngroup + 2) + ngroup + nev + 1));
+        if (!in || !g.gev_at)
+            goto no_mem;
+        gen = in + g.nb + 2;
+        kill = gen + g.nb + 2;
+        g.gmask = kill + g.nb + 2;
+        memset(g.gmask, 0, sizeof(uint64_t) * ngroup);
+        g.cap_at = g.gev_at + ngroup + 2;
+        g.touched = g.cap_at + ngroup + 2;
+        g.gev = g.touched + ngroup;
+        memset(g.gev_at, 0, sizeof(int) * 2 * (ngroup + 2));
+        /* the events by group, in order: counted at gev_at[q + 2], then
+           gev_at[q + 1] is where those of q go, and once they are in,
+           gev_at[q] where they start */
+        for (k = 0; k < nev; k++) {
+            CBV_POLL(1);
+            g.gev_at[(g.ev[k] >> 1) / 64 + 2]++;
         }
-        if (!want)
-            continue;
-        for (i = 0; i <= g.nb + 1; i++) {
-            CBV_POLL(JS_CODE_WORK + g.ev_at[i + 1] - g.ev_at[i]);
-            gen[i] = kill[i] = seen = 0;
-            for (k = g.ev_at[i]; k < g.ev_at[i + 1]; k++) {
-                r = g.ev[k] >> 1;
-                if (r < base || r >= base + 64)
-                    continue;
-                if (!(seen & ((uint64_t)1 << (r - base)))) {
-                    seen |= (uint64_t)1 << (r - base);
-                    if (g.ev[k] & 1)
-                        kill[i] |= (uint64_t)1 << (r - base);
-                    else
-                        gen[i] |= (uint64_t)1 << (r - base);
+        for (q = 2; q <= ngroup; q++)
+            g.gev_at[q] += g.gev_at[q - 1];
+        CBV_POLL(ngroup);
+        for (k = 0; k < nev; k++) {
+            CBV_POLL(1);
+            g.gev[g.gev_at[(g.ev[k] >> 1) / 64 + 1]++] = k;
+        }
+        /* the sites by group, in order, with the slots of the group the
+           closure made there captures that may need the flow: the same
+           count, then fill */
+        ncap = 0;
+        for (s = 0; s < 2; s++) {
+            if (s == 1) {
+                for (q = 2; q <= ngroup; q++)
+                    g.cap_at[q] += g.cap_at[q - 1];
+                /* cap_mask, then cap_site */
+                g.cap_mask = js_malloc_rt(rt, (sizeof(uint64_t) + sizeof(int)) * (ncap + 1));
+                if (!g.cap_mask)
+                    goto no_mem;
+                g.cap_site = (int *)(g.cap_mask + ncap + 1);
+            }
+            for (j = 0; j < g.nsite; j++) {
+                JSFunctionBytecode *c = cbv_child(b, g.site_child[j]);
+                CBV_POLL(JS_CODE_WORK + c->closure_var_count);
+                nt = 0;
+                for (k = 0; k < c->closure_var_count; k++) {
+                    JSClosureVar *cv = &c->closure_var[k];
+                    if (cv->closure_type == JS_CLOSURE_LOCAL || cv->closure_type == JS_CLOSURE_ARG) {
+                        r = ref_of[cv->closure_type == JS_CLOSURE_LOCAL ? cv->var_idx + b->arg_count : cv->var_idx];
+                        if (!ok[r] || !writes[r])
+                            continue;
+                        q = r / 64;
+                        if (!g.gmask[q])
+                            g.touched[nt++] = q;
+                        g.gmask[q] |= (uint64_t)1 << (r - q * 64);
+                    }
+                }
+                for (k = 0; k < nt; k++) {
+                    q = g.touched[k];
+                    if (s == 0) {
+                        g.cap_at[q + 2]++;
+                        /* past what an int counts, there is no memory for it */
+                        if (++ncap > INT32_MAX / (int)(sizeof(uint64_t) + sizeof(int)))
+                            goto no_mem;
+                    } else {
+                        g.cap_site[g.cap_at[q + 1]] = j;
+                        g.cap_mask[g.cap_at[q + 1]++] = g.gmask[q];
+                    }
+                    g.gmask[q] = 0;
                 }
             }
-            in[i] = gen[i];
         }
-        do {
-            changed = 0;
-            for (i = g.nb + 1; i >= 0; i--) {
-                uint64_t v;
-                budget -= 1 + (g.succ_at[i + 1] - g.succ_at[i]) + (g.hand_at[i + 1] - g.hand_at[i]);
-                if (budget < 0)
-                    goto bad;
-                CBV_POLL(1 + (g.succ_at[i + 1] - g.succ_at[i]) + (g.hand_at[i + 1] - g.hand_at[i]));
+        budget = ((int64_t)1 << 22) + (int64_t)64 * len;
+        for (q = 0; q < ngroup; q++) {
+            uint64_t want = 0, seen, out, fail, bit, f;
+            base = q * 64;
+            for (r = base; r < n && r < base + 64; r++) {
+                if (ok[r] && writes[r])
+                    want |= (uint64_t)1 << (r - base);
+            }
+            if (!want)
+                continue;
+            /* gen and kill: the first event of each slot in the block. The
+               events of the group from the last, so that the first one of
+               each block is the one that stays */
+            for (i = 0; i <= g.nb + 1; i++) {
+                CBV_POLL(1);
+                gen[i] = kill[i] = 0;
+            }
+            for (e = g.gev_at[q + 1] - 1; e >= g.gev_at[q]; e--) {
+                CBV_POLL(1);
+                k = g.gev[e];
+                i = g.ev_blk[k];
+                bit = (uint64_t)1 << ((g.ev[k] >> 1) - base);
+                if (g.ev[k] & 1) {
+                    kill[i] |= bit;
+                    gen[i] &= ~bit;
+                } else {
+                    gen[i] |= bit;
+                    kill[i] &= ~bit;
+                }
+            }
+            memcpy(in, gen, sizeof(uint64_t) * (g.nb + 2));
+            do {
+                changed = 0;
+                for (i = g.nb + 1; i >= 0; i--) {
+                    uint64_t v;
+                    budget -= 1 + (g.succ_at[i + 1] - g.succ_at[i]) + (g.hand_at[i + 1] - g.hand_at[i]);
+                    if (budget < 0)
+                        goto bad;
+                    CBV_POLL(1 + (g.succ_at[i + 1] - g.succ_at[i]) + (g.hand_at[i + 1] - g.hand_at[i]));
+                    out = 0;
+                    for (k = g.succ_at[i]; k < g.succ_at[i + 1]; k++)
+                        out |= in[g.succ[k]];
+                    v = gen[i] | (out & ~kill[i]);
+                    for (k = g.hand_at[i]; k < g.hand_at[i + 1]; k++)
+                        v |= in[g.hand[k]];
+                    if (v != in[i]) {
+                        in[i] = v;
+                        changed = 1;
+                    }
+                }
+            } while (changed);
+            /* each place a closure is made, from the last: a write its
+               slots can reach after it. seen has the slots with an event
+               after the site in its block, fail those whose first such
+               event is a write, as the events of the block from the last
+               go past the sites */
+            lo = g.cap_at[q];
+            e = g.gev_at[q + 1];
+            cur = -1;
+            seen = fail = 0;
+            for (hi = g.cap_at[q + 1]; hi > lo; hi--) {
+                int w = 0;
+                j = g.cap_site[hi - 1];
+                i = g.site_blk[j];
+                if (i != cur) {
+                    cur = i;
+                    seen = fail = 0;
+                }
+                /* an event of a block after this one was gone past for the
+                   sites there, or comes after all of them */
+                while (e > g.gev_at[q] && g.gev[e - 1] >= g.site_ev[j]) {
+                    k = g.gev[--e];
+                    w++;
+                    if (k >= g.ev_at[i + 1])
+                        continue;
+                    bit = (uint64_t)1 << ((g.ev[k] >> 1) - base);
+                    seen |= bit;
+                    if (g.ev[k] & 1)
+                        fail &= ~bit;
+                    else
+                        fail |= bit;
+                }
+                CBV_POLL(JS_CODE_WORK + w);
+                f = g.cap_mask[hi - 1] & want;
+                if (!f)
+                    continue;
                 out = 0;
                 for (k = g.succ_at[i]; k < g.succ_at[i + 1]; k++)
                     out |= in[g.succ[k]];
-                v = gen[i] | (out & ~kill[i]);
+                out = fail | (out & ~seen);
                 for (k = g.hand_at[i]; k < g.hand_at[i + 1]; k++)
-                    v |= in[g.hand[k]];
-                if (v != in[i]) {
-                    in[i] = v;
-                    changed = 1;
+                    out |= in[g.hand[k]];
+                f &= out;
+                while (f) {
+                    ok[base + ctz64(f)] = 0;
+                    f &= f - 1;
                 }
-            }
-        } while (changed);
-        /* each place a closure is made: a write its slots can reach after it */
-        for (j = 0; j < g.nsite; j++) {
-            JSFunctionBytecode *c = cbv_child(b, g.site_child[j]);
-            uint64_t alias = 0;
-            i = g.site_blk[j];
-            CBV_POLL(JS_CODE_WORK + c->closure_var_count + g.ev_at[i + 1] - g.site_ev[j]);
-            for (k = 0; k < c->closure_var_count; k++) {
-                JSClosureVar *cv = &c->closure_var[k];
-                if (cv->closure_type == JS_CLOSURE_LOCAL || cv->closure_type == JS_CLOSURE_ARG) {
-                    r = ref_of[cv->closure_type == JS_CLOSURE_LOCAL ? cv->var_idx + b->arg_count : cv->var_idx];
-                    if (r >= base && r < base + 64)
-                        alias |= (uint64_t)1 << (r - base);
-                }
-            }
-            alias &= want;
-            if (!alias)
-                continue;
-            out = 0;
-            for (k = g.succ_at[i]; k < g.succ_at[i + 1]; k++)
-                out |= in[g.succ[k]];
-            seen = fail = 0;
-            for (k = g.site_ev[j]; k < g.ev_at[i + 1]; k++) {
-                uint64_t bit;
-                r = g.ev[k] >> 1;
-                if (r < base || r >= base + 64)
-                    continue;
-                bit = (uint64_t)1 << (r - base);
-                if (!(seen & bit)) {
-                    seen |= bit;
-                    if (!(g.ev[k] & 1))
-                        fail |= bit;
-                }
-            }
-            fail |= out & ~seen;
-            for (k = g.hand_at[i]; k < g.hand_at[i + 1]; k++)
-                fail |= in[g.hand[k]];
-            fail &= alias;
-            for (r = base; r < n && r < base + 64; r++) {
-                if (fail & ((uint64_t)1 << (r - base)))
-                    ok[r] = 0;
             }
         }
     }
@@ -45601,8 +46775,6 @@ static __exception int capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
     js_free_rt(rt, lead);
     js_free_rt(rt, catch_blk);
     js_free_rt(rt, in);
-    js_free_rt(rt, gen);
-    js_free_rt(rt, kill);
     js_free_rt(rt, g.blk);
     js_free_rt(rt, g.start);
     js_free_rt(rt, g.succ);
@@ -45611,6 +46783,8 @@ static __exception int capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
     js_free_rt(rt, g.hand_at);
     js_free_rt(rt, g.ev);
     js_free_rt(rt, g.ev_at);
+    js_free_rt(rt, g.gev_at);
+    js_free_rt(rt, g.cap_mask);
     js_free_rt(rt, g.site_blk);
     js_free_rt(rt, g.site_ev);
     js_free_rt(rt, g.site_child);
@@ -45879,6 +47053,7 @@ static JSValue js_create_function1(JSContext *ctx, JSFunctionDef *fd)
         js_free(ctx, fd->args);
         js_free(ctx, fd->vars);
     }
+    index_hash_free_all(ctx->rt, fd);
     b->cpool_count = fd->cpool_count;
     if (b->cpool_count) {
         b->cpool = (void *)((uint8_t*)b + cpool_offset);
@@ -47064,6 +48239,7 @@ static JSValue __JS_EvalInternal(JSContext *ctx, JSValueConst this_obj,
     fd->body_scope = fd->scope_level;
 
     err = js_parse_program(s);
+    js_parse_free_paren_cache(s);
     if (err) {
     fail:
         free_token(s, &s->token);
