@@ -199,6 +199,7 @@ unsigned long white_paren_work_take(unsigned long *total);
 int white_paren_refused_take(void);
 unsigned long white_line_col_take(unsigned long *longest);
 int white_line_col_refused_take(void);
+int white_line_col_first_line_take(int at_start);
 int white_get_line_col(JSContext *ctx, const uint8_t *buf, size_t len, int *col);
 void white_work_add(unsigned long n);
 size_t white_sb_block_usable(const struct StringBuffer *b);
@@ -9074,11 +9075,16 @@ static uint8_t *compile_line_col(const char *js, int fail, int *n, size_t *len)
    before, as they did before the marks. Each call of the allocator of a
    compile fails in turn, and when it was the marks (JS_LINE_COL_REFUSED),
    the compile works and writes the same code, with the same lines and
-   columns, as with every call working. */
+   columns, as with every call working. Without the marks a lookup goes
+   back over a line feed to the first line of the source, to its first byte
+   (the code of the script, after f on the second line) and inside it (g,
+   after the function in it on the second line): the walk to the start of
+   the line stops at the start of the source. */
 static void test_line_col_alloc_refused(void)
 {
     char *deep = malloc(64 * 1024);
-    const char *srcs[3];
+    const char *srcs[5];
+    int first_at_start = 0, first_inside = 0;
     size_t i, len = 0;
     int k;
 
@@ -9090,6 +9096,8 @@ static void test_line_col_alloc_refused(void)
     srcs[0] = "function f() {\n  return 1;\n}\nf()";
     srcs[1] = "var x = 1; function g() { var a = x + 1; return () => a + x + 2 + 3 + 4 + 5 + 6 + 7 + 8 + 9 + 10 + 11 + 12 + 13 + 14 + 15 + 16 + 17 + 18 + 19 + 20 + 21 + 22 + 23 + 24 + 25; }\ng()()";
     srcs[2] = deep;
+    srcs[3] = "var a = 1;\nfunction f() { return a }\nf()";
+    srcs[4] = "x = 1; (function g() { return function () {\n  return 1;\n} })()";
     for (i = 0; i < countof(srcs); i++) {
         uint8_t *want, *got;
         size_t want_len, got_len;
@@ -9099,9 +9107,13 @@ static void test_line_col_alloc_refused(void)
         CHECK(want != NULL, "line col %zu does not compile", i);
         for (fail = 1; want && fail <= n; fail++) {
             white_line_col_refused_take();
+            white_line_col_first_line_take(1);
+            white_line_col_first_line_take(0);
             got = compile_line_col(srcs[i], fail, &m, &got_len);
             if (white_line_col_refused_take()) {
                 refused++;
+                first_at_start += white_line_col_first_line_take(1);
+                first_inside += white_line_col_first_line_take(0);
                 CHECK(got && got_len == want_len && memcmp(got, want, want_len) == 0,
                       "line col %zu, call %d refused for the marks: %s", i, fail,
                       got ? "the code differs" : "the compile failed");
@@ -9111,6 +9123,10 @@ static void test_line_col_alloc_refused(void)
         CHECK(refused == 1, "line col %zu: %d calls of the marks refused", i, refused);
         free(want);
     }
+    CHECK(first_at_start > 0 && first_inside > 0, "without the marks, %d lookups went back to the start of the source and %d inside the first line",
+          first_at_start, first_inside);
+    printf("unit-white: test_line_col_alloc_refused: without the marks, %d lookups back to the start of the source, %d inside the first line\n",
+           first_at_start, first_inside);
     free(deep);
 }
 

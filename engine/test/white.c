@@ -166,6 +166,10 @@ static unsigned long white_line_col, white_line_col_max, white_line_col_total;
 #define JS_LINE_COL_SCAN(n) (white_line_col += (n), white_line_col_total += (n))
 static int white_line_col_refused;
 #define JS_LINE_COL_REFUSED() (white_line_col_refused++)
+/* JS_LINE_COL_FIRST_LINE counts the lookups without the marks that went back
+   to the first line: [1] to its first byte, [0] inside it */
+static int white_line_col_first[2];
+#define JS_LINE_COL_FIRST_LINE(at_start) (white_line_col_first[(at_start) ? 1 : 0]++)
 
 #define host_poll white_host_poll
 
@@ -3364,6 +3368,17 @@ unsigned long white_line_col_take(unsigned long *longest)
 
     *longest = white_line_col > white_line_col_max ? white_line_col : white_line_col_max;
     white_line_col = white_line_col_max = white_line_col_total = 0;
+    return n;
+}
+
+/* the lookups without the marks that went back to the first line
+   (JS_LINE_COL_FIRST_LINE), to its first byte when at_start is set, else
+   inside it, and 0 again */
+int white_line_col_first_line_take(int at_start)
+{
+    int n = white_line_col_first[at_start ? 1 : 0];
+
+    white_line_col_first[at_start ? 1 : 0] = 0;
     return n;
 }
 

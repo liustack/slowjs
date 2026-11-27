@@ -2317,13 +2317,18 @@ static BOOL js_front_drain(JSMallocContext *s)
 /* JS_LINE_COL_SCAN(n) says that a lookup of a line and a column in the
    source (get_line_col, get_line_col_cached) walked n bytes of it, and
    JS_LINE_COL_REFUSED() that the allocator refused the marks of the lines
-   and columns of a compile (GetLineColCache). They are nothing in the
-   engine. white.c counts them. */
+   and columns of a compile (GetLineColCache), and
+   JS_LINE_COL_FIRST_LINE(at_start) that a lookup without them went back
+   over a line feed to a place on the first line (at_start: its first byte).
+   They are nothing in the engine. white.c counts them. */
 #ifndef JS_LINE_COL_SCAN
 #define JS_LINE_COL_SCAN(n) ((void)0)
 #endif
 #ifndef JS_LINE_COL_REFUSED
 #define JS_LINE_COL_REFUSED() ((void)0)
+#endif
+#ifndef JS_LINE_COL_FIRST_LINE
+#define JS_LINE_COL_FIRST_LINE(at_start) ((void)0)
 #endif
 
 /* JS_MODULE_STEP() says that a walk over modules took one step: a parent
@@ -28052,7 +28057,7 @@ static __exception int get_line_col(JSContext *ctx, int *pcol_num, const uint8_t
                    (bit 7 set and bit 6, which the shift moves to bit 7,
                    clear), summed into the top byte by the multiplication.
                    Eight with a line feed go one at a time. */
-                w = get_u64(buf + i);
+                __builtin_memcpy(&w, buf + i, sizeof(w));
                 x = w ^ 0x0a0a0a0a0a0a0a0aULL;
                 x = ((x & 0x7f7f7f7f7f7f7f7fULL) + 0x7f7f7f7f7f7f7f7fULL) | x;
                 if ((x & 0x8080808080808080ULL) == 0x8080808080808080ULL) {
@@ -28173,9 +28178,15 @@ static __exception int get_line_col_cached(JSContext *ctx, GetLineColCache *s, i
         } else {
             const uint8_t *p;
             s->line_num -= line_num;
-            /* find the absolute column position */
+            /* find the absolute column position, walking back from
+               ptr to the line feed before it or to the start of the
+               source (a pointer before buf_start is never made) */
+            if (s->line_num == 0)
+                JS_LINE_COL_FIRST_LINE(ptr == s->buf_start);
             col_num = 0;
-            for(p = ptr - 1; p >= s->buf_start; p--) {
+            p = ptr;
+            while (p > s->buf_start) {
+                p--;
                 JS_LINE_COL_SCAN(1);
                 if (*p == '\n') {
                     break;
