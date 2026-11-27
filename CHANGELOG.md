@@ -4,6 +4,13 @@ What changed in `github.com/liustack/beastjs` (its name from v0.33.0, `github.co
 
 ## [Unreleased]
 
+## [v0.33.2] - 2026-11-27
+
+### Changed
+
+- Compiling is faster: the lookahead for arrow functions keeps what it found for each bracket, and a name is found through an index of the names of its function, so tifa's shop bundle compiles in 37% less time and the mui bundle in 21% less, with the same bytecode.
+- A function with thousands of closures and writes after them, such as thousands of classes in a row, compiles in time that grows with its length, where it grew with its square.
+
 ## [v0.33.1] - 2026-11-26
 
 ### Fixed
@@ -960,7 +967,8 @@ The first release of the fork, from modernc.org/quickjs v0.25.0 and libquickjs v
 - A VM that runs out of memory inside `JSON.parse`, or anything else that converts a string with non-ASCII characters to UTF-8, no longer leaks that string.
 - `VM.Call` and `VM.CallValue` report the exception thrown while evaluating the function expression instead of `cannot call a non-function`.
 
-[Unreleased]: https://github.com/liustack/beastjs/compare/v0.33.1...main
+[Unreleased]: https://github.com/liustack/beastjs/compare/v0.33.2...main
+[v0.33.2]: https://github.com/liustack/beastjs/compare/v0.33.1...v0.33.2
 [v0.33.1]: https://github.com/liustack/beastjs/compare/v0.33.0...v0.33.1
 [v0.33.0]: https://github.com/liustack/beastjs/compare/v0.32.0...v0.33.0
 [v0.32.0]: https://github.com/liustack/beastjs/compare/v0.31.12...v0.32.0
