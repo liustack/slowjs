@@ -7,7 +7,7 @@ read_when:
   - 为某件事挑选 Go 的 JavaScript 引擎
   - 项目所有者要求重跑对比（重跑并更新这一页）
   - 修改 compare/engines
-translatedFrom: 3606a888b44d
+translatedFrom: aa0bb730e96d
 ---
 
 # JavaScript 引擎对比
@@ -88,4 +88,4 @@ be4fe9d65453a8628a09b2edc7d712fc5684d86e59722377523ecb137576f517  bench.js
 见 [`compare/engines/README.md`](../../compare/engines/README.md)：命令、需要的机器、怎么重新生成打包文件，以及它怎么测量。重跑了对比的版本在打标签之前，按 [releasing.md](../internals/releasing.md#the-comparison-with-the-other-engines) 里「The comparison with the other engines」一节去做。
 
 
-test262 只在 liustack/beastjs 上跑，由仓库自己的检查来跑（[testing.md](../internals/testing.md#test262)）：跑了 83426 个测试，有 33 个已知错误，每次运行都一样。
+test262 只在 liustack/beastjs 上跑，由仓库自己的检查来跑（[testing.md](../internals/testing.md#test262)）：跑了 83426 个测试，有 32 个已知错误，每次运行都一样。
