@@ -4,6 +4,16 @@ What changed in `github.com/liustack/beastjs` (its name from v0.33.0, `github.co
 
 ## [Unreleased]
 
+## [v0.33.3] - 2026-11-27
+
+### Fixed
+
+- An arrow function whose parameter default divides a property named `of` or like a keyword, such as `(a = o.of / 2) => a` or `(a = o.default / 2) => a`, compiles, as in Node.
+- An arrow function parameter default, a destructuring default or the head of a for that holds a regexp after `if (...)`, a block, a declaration, a line without a semicolon or a `yield`, such as `` (a = (() => { if (x) /[)]/.test(s) })()) => a ``, or parentheses nested more than 256 deep, compiles, as in Node.
+- `with (o) { eval("f()") }` and a call of `f` in a class inside `with (o)` pass `o` as `this`, as in Node, also for `f?.()` and tagged templates.
+- A function declared by a direct eval inside a `with` statement and called by its name gets `undefined` as `this`, as in Node, where it got an internal object.
+- In a `with` statement, `x ||= 2` on a `const x` declared inside it returns the value, and `x = f()` calls `f` before the TypeError, as in Node, where the assignment threw at once.
+
 ## [v0.33.2] - 2026-11-27
 
 ### Changed
@@ -967,7 +977,8 @@ The first release of the fork, from modernc.org/quickjs v0.25.0 and libquickjs v
 - A VM that runs out of memory inside `JSON.parse`, or anything else that converts a string with non-ASCII characters to UTF-8, no longer leaks that string.
 - `VM.Call` and `VM.CallValue` report the exception thrown while evaluating the function expression instead of `cannot call a non-function`.
 
-[Unreleased]: https://github.com/liustack/beastjs/compare/v0.33.2...main
+[Unreleased]: https://github.com/liustack/beastjs/compare/v0.33.3...main
+[v0.33.3]: https://github.com/liustack/beastjs/compare/v0.33.2...v0.33.3
 [v0.33.2]: https://github.com/liustack/beastjs/compare/v0.33.1...v0.33.2
 [v0.33.1]: https://github.com/liustack/beastjs/compare/v0.33.0...v0.33.1
 [v0.33.0]: https://github.com/liustack/beastjs/compare/v0.32.0...v0.33.0

@@ -14360,7 +14360,7 @@ TEXT ·rv_read_check(SB), $88-24
 	WORD $0xb909dd28
 	WORD $0x39672128
 	WORD $0x350007a8
-	MOVD $·engine_rodata+56141(SB), R22
+	MOVD $·engine_rodata+56165(SB), R22
 	WORD $0x910082f4
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
@@ -14394,7 +14394,7 @@ TEXT ·rv_read_check(SB), $88-24
 	WORD $0x7103fd1f
 	WORD $0x54fffe08
 	WORD $0x32180108
-	MOVD $·engine_rodata+57197(SB), R22
+	MOVD $·engine_rodata+57221(SB), R22
 	WORD $0x910082f4
 	WORD $0x79139128
 	WORD $0xf90027e9

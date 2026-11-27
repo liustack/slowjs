@@ -1,0 +1,29 @@
+result eval optional true
+result eval plain true
+result eval tagged true
+result eval strict [true,true]
+result eval function [true,true]
+result eval arrow [true,true]
+result eval in eval [true,true]
+result function eval [true,true]
+result eval class [true,true]
+result eval no with [false,false]
+result strict function [true,true]
+result class static [true,true,true]
+result class method [true,true]
+result class arrow [true,true]
+result class field [[true,true],[true,true]]
+result class static block [true,true]
+result class key [true,true]
+result class extends [true,true]
+result class expression [true,true]
+result after class [true,true]
+result class no with [false,false]
+result with assign spec: [2,"undefined"]
+result eval assign spec: [2,"undefined"]
+result eval increment 8
+result class assign ReferenceError
+result class increment 8
+mem-end obj=237 atom=559 shape=135 prop=1055 jsfunc=27 cfunc=127 array=5 fast_array=3 elements=28 binary=0
+mem-gc obj=195 atom=552 shape=123 prop=965 jsfunc=3 cfunc=127 array=2 fast_array=2 elements=26 binary=0
+--- status exit 0

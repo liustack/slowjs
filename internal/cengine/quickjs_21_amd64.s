@@ -15978,7 +15978,7 @@ TEXT ·rv_run_seg(SB), $176-16
 	QUAD $0xbc8b4c000009c886
 	QUAD $0xc783490000009824
 	BYTE $0x50
-	LEAQ ·engine_rodata+57725(SB), R14
+	LEAQ ·engine_rodata+57757(SB), R14
 	QUAD $0xa824b48948cc8949
 	QUAD $0x4c2424894c000000
 	QUAD $0x2474894c08246c89
@@ -16653,7 +16653,7 @@ TEXT ·JS_NewCFunction3(SB), $160-16
 	QUAD $0x9024a48b4c0400b8
 	QUAD $0x8024b48b4c000000
 	QUAD $0xfffffcc7e9000000
-	LEAQ ·engine_rodata+125214(SB), R14
+	LEAQ ·engine_rodata+125246(SB), R14
 	QUAD $0x00b866fffffce5e9
 	QUAD $0xb866fffffcb2e902
 	QUAD $0x66fffffca9e90a00
@@ -19891,7 +19891,7 @@ TEXT ·JS_SetPropertyInternal_block(SB), $192-24
 	BYTE $0xff
 	BYTE $0x89
 	BYTE $0xc8
-	LEAQ ·engine_rodata+55968(SB), CX
+	LEAQ ·engine_rodata+55992(SB), CX
 	QUAD $0xa8888b49c1048b48
 	QUAD $0x45012c8b4c000002
 	QUAD $0x6d850fed854df631

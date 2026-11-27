@@ -5014,9 +5014,13 @@ static Code straight(int n)
    up to its closing bracket, and the parse asks it again from brackets inside
    when it gets there. It keeps what it found from each bracket it went
    through, so a source with brackets nested n deep is not read n times over:
-   for each shape, 40 lines of brackets nested 180 to 240 levels deep, the
+   for each shape, 40 lines of brackets nested 30 to 240 levels deep, the
    lookahead reads fewer than twice as many tokens as the source has bytes.
-   Before, it read 30 to 120 times as many. */
+   Before, it read 30 to 120 times as many. The shapes go into functions,
+   arrow functions, methods and classes, whose yield and await the lookahead
+   reads as their own, and nest deeper than the 256 levels it once gave up
+   at. A lookahead that misreads a token stops before the brackets around it
+   keep their answers, which the last shape would show. */
 static void test_parens_lookahead_linear(void)
 {
     static const struct {
@@ -5030,6 +5034,14 @@ static void test_parens_lookahead_linear(void)
         { "functions with defaults", "x = ", "(function (a = 1) { return (", "a", "); })", ";\n", 80 },
         { "strict async functions", "x = ", "(async function (a) { 'use strict'; return (", "await a", "); })", ";\n", 60 },
         { "for heads", "x = ", "(function () { for (const [b] of (", "a", ")); })", ";\n", 60 },
+        { "deep parentheses", "x = ", "(", "a", ")", ";\n", 400 },
+        { "arrow functions with defaults", "x = ", "((a = ", "1", ") => a)", ";\n", 120 },
+        { "object literals", "x = ", "({a: ", "1", "})", ";\n", 150 },
+        { "object patterns", "x = ({b: ", "{a: ", "b", "}", "}) => b;\n", 200 },
+        { "async arrow functions", "x = ", "(async (a) => (", "await a", "))", ";\n", 100 },
+        { "generator methods", "x = ", "({ *m() { yield (", "a", "); } })", ";\n", 40 },
+        { "classes", "x = ", "(class { static m(a = (", "a", ")) { return a / 2; } })", ";\n", 40 },
+        { "objects around an async arrow named async", "x = async function () { return ", "{c: ", "async async => await /[)]/", "}", "; };\n", 100 },
     };
     int i, k, d;
 
@@ -5058,6 +5070,7 @@ static void test_parens_lookahead_linear(void)
             free(exception_text(v.ctx));
         JS_FreeValue(v.ctx, r);
         CHECK(read < 2 * len, "%s: the lookahead read %lu tokens for %zu bytes", shapes[i].what, read, len);
+        printf("unit-white: test_parens_lookahead_linear: %s: %lu tokens read for %zu bytes\n", shapes[i].what, read, len);
         free(src);
         vm_free(&v);
     }
@@ -5101,28 +5114,35 @@ static void test_parens_table_replace(void)
    into it when the table grows. Whether a string reads differently in
    strict mode is told by the lexer, not by a second scan of the string. The sources: a string of 131072 escapes, a comment of 200000
    bytes after a bracket, and 140000 brackets, whose table grows to 524288
-   entries. */
+   entries. The comment starts at 128 places 512 bytes apart, one of them
+   just after a multiple of JS_ROPE_STEP, where the look for a line feed
+   reads nearly JS_ROPE_STEP bytes before the table is made for the bracket:
+   the table reads the flag before it clears its entries. */
 static void test_parens_work_gaps(void)
 {
     static const struct {
         const char *what, *head, *rep, *tail;
         int n;
         unsigned long least;
+        int shifts;
     } cases[] = {
-        { "a string of escapes", "[\"", "\\n", "\"]", 131072, 0 },
-        { "a long comment", "((a)/*", "x", "*/, 1)", 200000, 200000 },
-        { "many brackets", "(", "(0),", "0)", 140000, 262144 },
+        { "a string of escapes", "[\"", "\\n", "\"]", 131072, 0, 1 },
+        { "a long comment", "((a)/*", "x", "*/, 1)", 200000, 200000, 128 },
+        { "many brackets", "(", "(0),", "0)", 140000, 262144, 1 },
     };
     size_t i, len;
-    int k;
+    int k, sh;
 
-    for (i = 0; i < countof(cases); i++) {
+    for (i = 0; i < countof(cases); i++)
+    for (sh = 0; sh < cases[i].shifts; sh++) {
         VM v = vm_new();
-        char *src = malloc(strlen(cases[i].head) + strlen(cases[i].rep) * cases[i].n + strlen(cases[i].tail) + 1);
+        char *src = malloc(512 * sh + strlen(cases[i].head) + strlen(cases[i].rep) * cases[i].n + strlen(cases[i].tail) + 1);
         unsigned long total, longest;
         JSValue r;
 
-        len = sprintf(src, "%s", cases[i].head);
+        memset(src, ' ', 512 * sh);
+        len = 512 * sh;
+        len += sprintf(src + len, "%s", cases[i].head);
         for (k = 0; k < cases[i].n; k++)
             len += sprintf(src + len, "%s", cases[i].rep);
         len += sprintf(src + len, "%s", cases[i].tail);
@@ -5135,8 +5155,8 @@ static void test_parens_work_gaps(void)
         longest = white_paren_work_take(&total);
         CHECK(total >= cases[i].least, "%s: %lu units of work, want at least %lu",
               cases[i].what, total, cases[i].least);
-        CHECK(longest <= (1 << 16), "%s: %lu units of work between two readings of the flag",
-              cases[i].what, longest);
+        CHECK(longest <= (1 << 16), "%s, %d spaces before: %lu units of work between two readings of the flag",
+              cases[i].what, 512 * sh, longest);
         free(src);
         vm_free(&v);
     }

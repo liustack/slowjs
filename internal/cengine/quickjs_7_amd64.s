@@ -2797,12 +2797,12 @@ TEXT ·JS_GetPrototypeFree(SB), $80-32
 	BYTE $0xff
 	BYTE $0x89
 	BYTE $0xc8
-	LEAQ ·engine_rodata+55968(SB), CX
+	LEAQ ·engine_rodata+55992(SB), CX
 	BYTE $0x48
 	BYTE $0x8b
 	BYTE $0x0c
 	BYTE $0xc1
-	LEAQ ·engine_rodata+56112(SB), DX
+	LEAQ ·engine_rodata+56136(SB), DX
 	QUAD $0x24548b48c2048b48
 	QUAD $0x000002a8928b4840
 	QUAD $0x02048b480a0c8b48
@@ -18602,7 +18602,7 @@ TEXT ·JS_NewContextRaw(SB), $192-16
 	BYTE $0x89
 	BYTE $0x4a
 	BYTE $0x08
-	LEAQ ·engine_rodata+125214(SB), CX
+	LEAQ ·engine_rodata+125246(SB), CX
 	QUAD $0x001842c7104a8948
 	QUAD $0x00002042c7000000
 	QUAD $0x0000002842c70000

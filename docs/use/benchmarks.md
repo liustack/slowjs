@@ -87,4 +87,4 @@ Each page is rendered as tifa renders it: `startRender(json)` with the input eac
 See [`compare/engines/README.md`](../../compare/engines/README.md): the commands, the machine it needs, how the bundles are made again and how it measures. Before a release that runs it again is tagged, follow "The comparison with the other engines" in [releasing.md](../internals/releasing.md#the-comparison-with-the-other-engines).
 
 
-test262 is run on liustack/beastjs only, by the repository's own check ([testing.md](../internals/testing.md#test262)): 83426 tests run and 33 known errors, the same on every run.
+test262 is run on liustack/beastjs only, by the repository's own check ([testing.md](../internals/testing.md#test262)): 83426 tests run and 32 known errors, the same on every run.

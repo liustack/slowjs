@@ -7234,9 +7234,9 @@ TEXT ·JS_GetPrototype(SB), $72-48
 	WORD $0x72a00069
 	WORD $0x1ac82529
 	WORD $0x360001e9
-	MOVD $·engine_rodata+55600(SB), R9
+	MOVD $·engine_rodata+55624(SB), R9
 	WORD $0xf94156aa
-	MOVD $·engine_rodata+55456(SB), R11
+	MOVD $·engine_rodata+55480(SB), R11
 	WORD $0xf8685929
 	WORD $0xf8685968
 	WORD $0xf8696941

@@ -35,7 +35,7 @@ Go 1.26.6 or later. Making the engine again from the C of `engine/` (`make gen`)
 
 - New behavior starts with a failing test, and a bug fix comes with a test that shows the bug.
 - A change to the C of `engine/` comes with the generated files of `internal/cengine` made again, in the same commit. `make check-gen` fails when they differ.
-- test262 keeps its 33 known errors (`engine/test/test262_errors.txt`).
+- test262 keeps its 32 known errors (`engine/test/test262_errors.txt`).
 
 ## Commits
 

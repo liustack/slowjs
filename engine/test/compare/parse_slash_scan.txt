@@ -1,0 +1,92 @@
+of in template "4"
+property of 4
+property of /= 4
+optional of 4
+variable of 3
+for of variable 4
+property default 4
+property new 4
+property delete 4
+property in 4
+property typeof 4
+property return 4
+property class 4
+property function 4
+property if 4
+property for 4
+property while 4
+property let 4
+property async 4
+property yield 4
+property await 4
+async arrow "function"
+postfix ++ 4
+object literal [4,null]
+function expression [null,4]
+class expression [null,4]
+ternary object [{},4]
+label and object 4
+call 4
+index 4
+template 4
+for head of 4
+for destructuring 4
+for let of "[)]"
+for of of "[)]"
+after if "1"
+after if plain 1
+after while 2
+after for 3
+after for in 4
+after for of 5
+after with 6
+after do while 7
+after else 8
+after block 9
+after if block 10
+after else block 11
+after try 12
+after catch 13
+after switch 14
+after case 15
+after case block 16
+after label block 17
+after function 18
+after async function 19
+after generator 20
+after class 21
+after class extends 22
+after arrow body 23
+after object line 24
+after function line 25
+after return line "undefined"
+after prefix ++ 26
+after yield "[)]"
+after await true
+after static block 27
+after async line 28
+after async generator line 29
+after call line 30
+after label line 31
+after class declaration 32
+after member break line 33
+after var line 34
+after labels in ternaries 35
+yield in an arrow 4
+await in an arrow "function"
+await in a function 4
+yield in a generator method "[)]"
+await in an async method "function"
+await in a computed async method "function"
+await after a concise async arrow "function"
+await in a template true
+yield in a block 36
+async arrow named async "object"
+async arrow named of "object"
+async arrow named yield "object"
+async arrow named async in a for "object"
+async arrow named async in an async function "function"
+assignment in a class heritage 1
+class expression "NaN"
+nested 300 37
+nested 255 38

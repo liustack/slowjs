@@ -27924,6 +27924,11 @@ typedef struct JSParseState {
     /* the allocator refused the room for paren_cache: the parse goes on
        without it */
     BOOL paren_cache_off;
+#ifdef JS_SCAN_CHECK
+    /* the marks of js_scan_mark, NULL until the first one */
+    uint8_t *scan_marks;
+    BOOL scan_marks_off;
+#endif
 } JSParseState;
 
 typedef struct JSOpCode {
@@ -29142,6 +29147,67 @@ static no_inline __exception int next_token1(JSParseState *s)
     return -1;
 }
 
+#ifdef JS_SCAN_CHECK
+/* A check of the lookahead, in a build with -DJS_SCAN_CHECK, for tests. The
+   lookahead and the parser mark each "/" they read, by its offset, as a
+   division (1) or the start of a regexp (2): the lookahead in the low four
+   bits, adding its marks, the parser in the high four, its last read. At
+   the end of a parse that worked, every mark of the lookahead must be the
+   parser's, and an answer taken from JSParenCache must be the one the
+   lookahead gives again without it. Else the parse fails with a SyntaxError
+   that says so. */
+static void js_scan_mark(JSParseState *s, const uint8_t *p, int mark,
+                         BOOL scan)
+{
+    uint8_t *m;
+
+    if (s->scan_marks_off)
+        return;
+    if (!s->scan_marks) {
+        s->scan_marks = js_mallocz_rt(s->ctx->rt, s->buf_end - s->buf_start + 1);
+        if (!s->scan_marks) {
+            s->scan_marks_off = TRUE;
+            return;
+        }
+    }
+    m = &s->scan_marks[p - s->buf_start];
+    if (scan)
+        *m |= mark;
+    else
+        *m = (*m & 0x0f) | (mark << 4);
+}
+
+/* at the end of a parse that worked: -1 with a SyntaxError when a "/" the
+   lookahead read is not what the parser read */
+static int js_scan_check_end(JSParseState *s)
+{
+    size_t i, n = s->buf_end - s->buf_start;
+    uint8_t *m = s->scan_marks;
+
+    if (!m)
+        return 0;
+    for (i = 0; i < n; i++) {
+        if ((m[i] & 0x0f) && (m[i] & 0x0f) != (m[i] >> 4)) {
+            JS_ThrowSyntaxError(s->ctx, "scan check: the lookahead read %d and the parser %d at offset %zu",
+                                m[i] & 0x0f, m[i] >> 4, i);
+            return -1;
+        }
+    }
+    return 0;
+}
+
+static void js_scan_check_free(JSParseState *s)
+{
+    js_free_rt(s->ctx->rt, s->scan_marks);
+    s->scan_marks = NULL;
+}
+#define JS_SCAN_MARK(s, p, mark) js_scan_mark(s, p, mark, TRUE)
+#define JS_PARSE_MARK(s, p, mark) js_scan_mark(s, p, mark, FALSE)
+#else
+#define JS_SCAN_MARK(s, p, mark) ((void)0)
+#define JS_PARSE_MARK(s, p, mark) ((void)0)
+#endif
+
 /* The scans of a long token read the flag where their pointer meets a
    multiple of JS_ROPE_STEP, which a source of short tokens may never do,
    and the parse and the code of each token are work of their own, counted
@@ -29152,7 +29218,15 @@ static inline __exception int next_token(JSParseState *s)
 {
     if (js_compile_poll(s->ctx, JS_TOKEN_WORK))
         return -1;
+#ifdef JS_SCAN_CHECK
+    if (next_token1(s))
+        return -1;
+    if (s->token.val == '/' || s->token.val == TOK_DIV_ASSIGN)
+        JS_PARSE_MARK(s, s->token.ptr, 1);
+    return 0;
+#else
     return next_token1(s);
+#endif
 }
 
 /* 'c' is the first character. Return JS_ATOM_NULL in case of error */
@@ -31573,34 +31647,14 @@ static __exception int js_parse_seek_token(JSParseState *s, const JSParsePos *sp
     return next_token(s);
 }
 
-/* return TRUE if a regexp literal is allowed after this token */
-static BOOL is_regexp_allowed(int tok)
-{
-    switch (tok) {
-    case TOK_NUMBER:
-    case TOK_STRING:
-    case TOK_REGEXP:
-    case TOK_DEC:
-    case TOK_INC:
-    case TOK_NULL:
-    case TOK_FALSE:
-    case TOK_TRUE:
-    case TOK_THIS:
-    case TOK_PRIVATE_NAME:
-    case ')':
-    case ']':
-    case '}': /* XXX: regexp may occur after */
-    case TOK_TEMPLATE: /* complete template literal; "${" is handled by the caller */
-    case TOK_IDENT:
-        return FALSE;
-    default:
-        return TRUE;
-    }
-}
-
 #define SKIP_HAS_SEMI       (1 << 0)
 #define SKIP_HAS_ELLIPSIS   (1 << 1)
 #define SKIP_HAS_ASSIGNMENT (1 << 2)
+
+/* the flags of js_parse_skip_parens_token() */
+#define SKIP_NO_LINE_TERMINATOR (1 << 0) /* a line break before the token after gives '\n' */
+#define SKIP_FOR_HEAD           (1 << 1) /* the parenthesis is the head of a for */
+#define SKIP_NO_TABLE           (1 << 2) /* read again without the answers kept (JS_SCAN_CHECK) */
 
 static BOOL has_lf_in_range(const uint8_t *p1, const uint8_t *p2)
 {
@@ -31613,8 +31667,9 @@ static BOOL has_lf_in_range(const uint8_t *p1, const uint8_t *p2)
     return (memchr(p1, '\n', p2 - p1) != NULL);
 }
 
-/* The levels of brackets js_parse_skip_parens_token() follows. */
-#define JS_SKIP_LEVELS 256
+/* The levels js_parse_skip_parens_token() follows at most: beyond them it
+   gives up, and the parse, which nests far less deep, has failed before. */
+#define JS_SKIP_LEVELS 4096
 
 /* JS_PAREN_GROW(size) is called when the table of JSParenCache gets size
    entries, and JS_PAREN_WORK(n) for what the lookahead does for its table
@@ -31634,16 +31689,19 @@ static BOOL has_lf_in_range(const uint8_t *p1, const uint8_t *p2)
    of the source. The lookahead from a bracket goes through every bracket
    inside it, and the parse asks again from many of them when it gets there:
    without the answers kept, a source with brackets nested n deep is read n
-   times over. The answer from a bracket depends only on the source after it
-   and on how the tokens are read there: strict mode, and whether yield and
-   await are keywords (js_parse_skip_mode). It does not depend on the token
-   before the bracket, as the bracket itself makes a "/" after it a regexp,
-   nor on the brackets around it, which the lookahead from it never closes.
-   So the lookahead keeps the answer of each bracket it went through, under
-   the position and the mode, and a later lookahead from there with the same
-   mode takes it. An answer is the same in every mode when no token from the
-   bracket to the token after its closing one reads differently in another
-   mode (js_parse_skip_mode_dep): then any mode takes it. */
+   times over. The answer from a bracket depends on the source after it, on
+   what the bracket is (a parenthesis or a bracket of an expression, the head
+   of a for, an object), and on how the tokens are read there: strict mode,
+   and whether yield and await are keywords (js_parse_skip_mode). The
+   lookahead knows what each bracket it goes through is and where yield and
+   await are keywords, as it follows the functions the source goes into. The
+   answer does not depend on the brackets around, which the lookahead from
+   the bracket never closes. So the lookahead keeps the answer of each
+   bracket the parse may ask about, under the position, what the bracket is
+   and the mode, and a later lookahead from there with the same takes it. An
+   answer is the same in every mode when no token from the bracket to the
+   token after its closing one reads differently in another mode
+   (SKIP_MODE_DEP): then any mode takes it. */
 typedef struct JSParenEntry {
     uint32_t key;               /* offset of the bracket + 1, 0 when free */
     uint32_t val;               /* JS_PAREN_* */
@@ -31655,9 +31713,16 @@ typedef struct JSParenEntry {
 #define JS_PAREN_MODE_SHIFT 20      /* js_parse_skip_mode */
 #define JS_PAREN_MODE_MASK  (7 << JS_PAREN_MODE_SHIFT)
 #define JS_PAREN_ANY_MODE   (1 << 23) /* the same answer in every mode */
+/* what the bracket is */
+#define JS_PAREN_CLASS_MASK   (3 << 24)
+#define JS_PAREN_CLASS_EXPR   (0 << 24) /* "(" or "[" of an expression, "(" of parameters */
+#define JS_PAREN_CLASS_FOR    (1 << 24) /* "(" of the head of a for, where "of" may separate */
+#define JS_PAREN_CLASS_OBJECT (2 << 24) /* "{" of an object literal or an object pattern */
 
-/* in JSParenCache.open_bits, besides the SKIP_HAS_* bits: a token inside
-   the level reads differently in another mode */
+/* in JSScanLevel.bits, besides the SKIP_HAS_* bits: a token inside the level
+   reads differently in another mode: a number or a string that strict mode
+   refuses, or yield or await where they read as in the code the lookahead
+   started in */
 #define SKIP_MODE_DEP       (1 << 3)
 
 typedef struct JSParenCache {
@@ -31665,12 +31730,6 @@ typedef struct JSParenCache {
     uint32_t size;
     uint32_t count;
     BOOL full;                  /* the table could not grow (js_paren_put) */
-    /* the lookahead under way: for each level, the offset of its bracket
-       and the SKIP_HAS_* bits seen at that level (SKIP_HAS_ASSIGNMENT and
-       SKIP_MODE_DEP also inside it, added to the level around it when it
-       closes) */
-    uint32_t open_pos[JS_SKIP_LEVELS];
-    uint8_t open_bits[JS_SKIP_LEVELS];
 } JSParenCache;
 
 /* how next_token reads the tokens in the current function: what the
@@ -31691,7 +31750,7 @@ static int js_parse_skip_mode(JSParseState *s)
 
 /* Whether the current token of the lookahead reads differently in another
    mode (js_parse_skip_mode): 1 for a name that is a keyword in some modes
-   (update_token_ident), which changes what a "/" after it is, 2 for a
+   (update_token_ident), whose token is not the same, 2 for a
    number or a string that strict mode refuses (next_token1,
    js_parse_string). */
 static int js_parse_skip_mode_dep(JSParseState *s)
@@ -31740,18 +31799,24 @@ static JSParenEntry *js_paren_find(JSParenCache *pc, uint32_t key)
    (full), so that the lookahead reads on as it did before the table: the
    table changes what a parse costs, never whether it works. Clearing the new
    table and copying the old one into it read the interrupt flag every
-   JS_COMPILE_POLL_STEP entries. -1 with "interrupted" thrown, and the table
+   JS_COMPILE_POLL_STEP entries, and before and after them, so that their
+   work and the look for a line feed (js_paren_has_lf) before and after the
+   growth are stretches of their own. -1 with "interrupted" thrown, and the table
    as it was. */
 static int js_paren_put(JSContext *ctx, JSParenCache *pc, uint32_t key,
                         uint32_t val)
 {
-    JSParenEntry *e;
-    uint32_t i;
+    uint32_t i = 0;
 
-    e = js_paren_find(pc, key);
-    if (e) {
-        e->val = val;
-        return 0;
+    /* the probe that finds the bracket, or else the free entry it ends at */
+    if (pc->tab) {
+        for (i = js_paren_hash(key, pc->size); pc->tab[i].key != 0;
+             i = (i + 1) & (pc->size - 1)) {
+            if (pc->tab[i].key == key) {
+                pc->tab[i].val = val;
+                return 0;
+            }
+        }
     }
     if (pc->full)
         return 0;
@@ -31770,7 +31835,7 @@ static int js_paren_put(JSContext *ctx, JSParenCache *pc, uint32_t key,
         }
         for (j = 0; j < size; j += n) {
             n = min_uint32(size - j, JS_COMPILE_POLL_STEP);
-            if (j != 0 && js_poll_interrupts(ctx)) {
+            if (js_poll_interrupts(ctx)) {
                 js_free_rt(ctx->rt, tab);
                 return -1;
             }
@@ -31793,14 +31858,18 @@ static int js_paren_put(JSContext *ctx, JSParenCache *pc, uint32_t key,
             }
             JS_PAREN_WORK(n);
         }
+        if (js_poll_interrupts(ctx)) {
+            js_free_rt(ctx->rt, tab);
+            return -1;
+        }
         js_free_rt(ctx->rt, old);
         pc->tab = tab;
         pc->size = size;
         JS_PAREN_GROW(size);
+        for (i = js_paren_hash(key, pc->size); pc->tab[i].key != 0;
+             i = (i + 1) & (pc->size - 1))
+            continue;
     }
-    for (i = js_paren_hash(key, pc->size); pc->tab[i].key != 0;
-         i = (i + 1) & (pc->size - 1))
-        continue;
     pc->tab[i].key = key;
     pc->tab[i].val = val;
     pc->count++;
@@ -31814,15 +31883,26 @@ static int js_paren_put(JSContext *ctx, JSParenCache *pc, uint32_t key,
 static int js_paren_has_lf(JSContext *ctx, const uint8_t *p,
                            const uint8_t *end)
 {
-    const uint8_t *q;
+    const uint8_t *q, *r;
+    size_t n;
 
     for (;;) {
-        q = (const uint8_t *)(((uintptr_t)p | (JS_ROPE_STEP - 1)) + 1);
-        if (q > end)
-            q = end;
+        /* up to the next multiple of JS_ROPE_STEP or end, counted in bytes:
+           a pointer past the end of the source would be undefined in C */
+        n = JS_ROPE_STEP - ((uintptr_t)p & (JS_ROPE_STEP - 1));
+        if (n > (size_t)(end - p))
+            n = end - p;
+        q = p + n;
         JS_PAREN_WORK(q - p);
-        if (memchr(p, '\n', q - p))
+        /* mostly no byte or one, which a call costs more than */
+        if (q - p <= 8) {
+            for (r = p; r < q; r++) {
+                if (*r == '\n')
+                    return 1;
+            }
+        } else if (memchr(p, '\n', q - p)) {
             return 1;
+        }
         if (q == end)
             return 0;
         p = q;
@@ -31861,31 +31941,230 @@ static BOOL js_parse_skip_parens_error(JSParseState *s)
     return FALSE;
 }
 
+/* The lookahead of js_parse_skip_parens_token() reads the tokens as the
+   parser reads them, without the code it makes. Before each token it knows
+   which of these places it is at, from the tokens before it and the levels
+   open around it (JSScanLevel): that is what tells a "/" that divides from
+   one that starts a regexp, and a "{" of a block from one of an object
+   literal. */
+#define SCAN_STMT   0 /* a statement may start: "/" starts a regexp, "{" a block */
+#define SCAN_EXPR   1 /* an operand must come: "/" starts a regexp, "{" an object literal */
+#define SCAN_END    2 /* an operand ended: "/" divides, and a token that cannot go on
+                         with it starts the next statement (js_scan_goes_on) */
+#define SCAN_BIND   3 /* the name a declaration binds ended: only "=", ",", ";", in, of
+                         and a closing bracket go on with it */
+#define SCAN_AEND   4 /* the body in braces of an arrow function ended: only ",", ";",
+                         ":" and a closing bracket go on with it */
+#define SCAN_MEMBER 5 /* a property of an object literal or a member of a class may start */
+
+/* What a level of the lookahead is. The first ones open with a bracket and
+   end with the one that closes it. The last three have no bracket: they end
+   where the code in them must end. */
+#define SK_BASE      0  /* below the bracket the lookahead starts at */
+#define SK_PAREN     1  /* "(" of an expression, of arguments, of the parameters of an arrow function */
+#define SK_PARAMS    2  /* "(" of the parameters of a function, a method or an accessor */
+#define SK_HEAD      3  /* "(" after if, while, with, switch or catch */
+#define SK_FOR       4  /* "(" after for, where "of" may separate */
+#define SK_BRACKET   5  /* "[" */
+#define SK_OBJECT    6  /* "{" of an object literal or of an object pattern */
+#define SK_BLOCK     7  /* "{" of statements: a block, a body of a function, a switch, a static block */
+#define SK_CLASS     8  /* "{" of the body of a class */
+#define SK_TEMPLATE  9  /* "${" of a template */
+#define SK_CONCISE   10 /* the body without braces of an arrow function, where yield and
+                           await read otherwise than around it */
+#define SK_FIELD     11 /* the initializer of a field of a class */
+#define SK_CLASSHEAD 12 /* from "class" up to the "{" of its body */
+
+/* JSScanLevel.ctx: how yield and await read at the level, as
+   update_token_ident() reads them in the function the parse is in there */
+#define SCAN_GEN   1 /* yield is an operator */
+#define SCAN_ASYNC 2 /* await is an operator */
+#define SCAN_INH   4 /* the two as in the code the lookahead started in */
+
+/* JSScanLevel.mh of an SK_OBJECT or SK_CLASS: the head of the property or
+   the member under way, up to the "(" of a method, the ":" or "=" of a
+   value, or its end (js_parse_property_name, js_parse_class) */
+#define MH_IN     0x01 /* in the head */
+#define MH_NAME   0x02 /* its name is read */
+#define MH_ASYNC  0x04 /* async before the name */
+#define MH_GEN    0x08 /* "*" before the name */
+#define MH_ACC    0x10 /* get or set before the name */
+#define MH_STAT   0x20 /* static before the name */
+#define MH_WORD   0x40 /* the token before is async, get, set or static, which the token
+                          after tells a modifier from the name */
+#define MH_WASYNC 0x80 /* that token is async */
+/* JSScanLevel.mh of an SK_PAREN: async came right before it, on its line */
+#define MH_ASYNC_PAREN 0x01
+
+/* JSScanLevel.flags: a var, let or const declaration lists its names at
+   the level */
+#define SL_DECL 1
+
+typedef struct JSScanLevel {
+    uint32_t pos;       /* offset of the bracket in the source */
+    uint32_t tern;      /* the "?" at the level that wait for their ":" */
+    uint8_t kind;       /* SK_* */
+    uint8_t ctx;        /* SCAN_GEN, SCAN_ASYNC, SCAN_INH */
+    uint8_t close;      /* the place after the level ends; of an SK_PARAMS, after
+                           the body that follows */
+    uint8_t mh;         /* MH_* */
+    uint8_t bits;       /* SKIP_HAS_* and SKIP_MODE_DEP seen at the level */
+    uint8_t flags;      /* SL_DECL */
+} JSScanLevel;
+
+/* the levels a lookahead keeps without allocating */
+#define JS_SCAN_LOCAL_LEVELS 32
+
+/* js_parse_skip_parens_token(): what the token before tells of the token
+   after, besides the place */
+#define SP_DOT         (1 << 0)  /* "." or "?.": a name after it is a property */
+#define SP_RESTRICTED  (1 << 1)  /* return, throw, a yield operator, break or continue,
+                                    which a line break ends */
+#define SP_BREAK       (1 << 2)  /* break or continue, which a label may follow */
+#define SP_ASYNC       (1 << 3)  /* the name async */
+#define SP_ASYNC_NAME  (1 << 4)  /* a name after async on its line */
+#define SP_ASYNC_PAREN (1 << 5)  /* ")" of a parenthesis after async on its line */
+#define SP_LET         (1 << 6)  /* let where a declaration may start (is_let) */
+#define SP_LET_SUB     (1 << 7)  /* that let is a substatement, which a line break
+                                    after it leaves a name */
+#define SP_FOR_START   (1 << 8)  /* the "(" of the head of a for */
+#define SP_DECL        (1 << 9)  /* a declaration binds the name that follows */
+#define SP_SUBSTMT     (1 << 10) /* a substatement follows */
+#define SP_FOR         (1 << 11) /* for, which await may follow */
+
+/* js_parse_skip_parens_token(): nx, what the token before opens, at most
+   one at a time. NX_FN after function and up to its "(", with SCAN_GEN,
+   SCAN_ASYNC and SCAN_FN_DECL in the low bits. NX_BODY after the
+   parameters of a function and NX_ARROW after "=>": a body in braces may
+   follow, with its ctx in the low bits and, for NX_BODY, the place after
+   it from bit 8. NX_HEAD after if, for...: the kind of the "(" that
+   follows in the low bits. */
+#define SCAN_FN_DECL 0x20 /* a declaration, after which a statement starts */
+#define NX_FN    0x1000
+#define NX_BODY  0x2000
+#define NX_ARROW 0x4000
+#define NX_HEAD  0x8000
+
+/* Whether a token goes on with the operand before it (SCAN_END), so that no
+   statement ends there: an operator, a call, a member, a template that
+   tags, a separator or a closing bracket, and a postfix ++ or -- on the
+   line of the operand. Any other token after an operand starts the next
+   statement (automatic semicolon insertion), or is an error. "of" is the
+   caller's. */
+static BOOL js_scan_goes_on(int val, BOOL lf)
+{
+    if (val >= 0)
+        return val != '{' && val != '!' && val != '~';
+    switch(val) {
+    case TOK_INC:
+    case TOK_DEC:
+        return !lf;
+    case TOK_ELLIPSIS:
+        return FALSE;
+    case TOK_TEMPLATE:
+    case TOK_IN:
+    case TOK_INSTANCEOF:
+        return TRUE;
+    default:
+        return val >= TOK_MUL_ASSIGN && val <= TOK_QUESTION_MARK_DOT;
+    }
+}
+
+/* A name: an identifier, or one of the words that are keywords only in
+   strict mode, in generators or in async functions, which the lookahead
+   reads by their atom as their mode is not that of the parse */
+static inline BOOL js_scan_is_name(int val)
+{
+    return val == TOK_IDENT || (val >= TOK_IMPLEMENTS && val <= TOK_AWAIT);
+}
+
+/* Ends the levels without a bracket on top of lv[level - 1], which end with
+   the level around them, and returns the level after. */
+static size_t js_scan_end_open(JSScanLevel *lv, size_t level)
+{
+    while (lv[level - 1].kind >= SK_CONCISE) {
+        lv[level - 2].bits |= lv[level - 1].bits &
+            (SKIP_HAS_ASSIGNMENT | SKIP_MODE_DEP);
+        level--;
+    }
+    return level;
+}
+
+/* A new level: field by field, which costs less than clearing it whole on
+   each bracket */
+static inline void js_scan_level_init(JSScanLevel *L, int kind, int ctx,
+                                      int close, uint32_t pos)
+{
+    L->pos = pos;
+    L->tern = 0;
+    L->kind = kind;
+    L->ctx = ctx;
+    L->close = close;
+    L->mh = 0;
+    L->bits = 0;
+    L->flags = 0;
+}
+
+/* Room for one more level after *psize of them: 0, 1 when the lookahead
+   has as many levels as it follows, -1 with the exception pending when the
+   room cannot be allocated. */
+static int js_scan_grow(JSContext *ctx, JSScanLevel **plv,
+                        JSScanLevel *lv_local, size_t *psize)
+{
+    JSScanLevel *lv;
+    size_t size = *psize;
+
+    if (size >= JS_SKIP_LEVELS)
+        return 1;
+    lv = js_malloc(ctx, sizeof(lv[0]) * size * 2);
+    if (!lv)
+        return -1;
+    memcpy(lv, *plv, sizeof(lv[0]) * size);
+    if (*plv != lv_local)
+        js_free(ctx, *plv);
+    *plv = lv;
+    *psize = size * 2;
+    return 0;
+}
+
 /* Skip the tokens up to the one after the closing parenthesis (or bracket or
    brace) the current token opens, and come back to the current token. Returns
    the token after, TOK_EOF when the lookahead could not read up to there, or
    TOK_ERROR with the exception pending when it ran out of memory or was
    interrupted: a caller has to check for it. Do not test for a negative
-   value: the tokens have negative values. The answer from every bracket the
-   lookahead closes is kept (JSParenCache), and taken when it is asked again. */
-/* XXX: improve speed with early bailout */
-/* XXX: no longer works if regexps are present. Could use previous
-   regexp parsing heuristics to handle most cases */
-static int js_parse_skip_parens_token(JSParseState *s, int *pbits, BOOL no_line_terminator)
+   value: the tokens have negative values. flags: SKIP_FOR_HEAD when the
+   bracket is the "(" after for, SKIP_NO_LINE_TERMINATOR to have '\n' when a
+   line break comes before the token after.
+
+   The lookahead reads the tokens as the parser would (SCAN_STMT and the
+   ones after it say how), so that it finds the same closing bracket: what
+   a "/" is, what a "{" opens, and so what a "}" ends and what may follow
+   it, the heads of the members of object literals and classes, the
+   functions the source goes into and how yield and await read in each, the
+   statements a line break ends and the names a declaration binds. A source
+   that is not valid may read otherwise, and the parse after meets the
+   error. The answer from every bracket the parse may ask about is kept
+   (JSParenCache), and taken when it is asked again. */
+static int js_parse_skip_parens_token(JSParseState *s, int *pbits, int flags)
 {
-    char state[JS_SKIP_LEVELS];
-    size_t level = 0;
+    JSScanLevel lv_local[JS_SCAN_LOCAL_LEVELS], *lv = lv_local, *L;
+    size_t level = 0, lv_size = JS_SCAN_LOCAL_LEVELS, closed;
     JSParsePos pos;
-    int last_tok, tok = TOK_EOF;
-    int c, tok_len, bits = 0;
+    int tok = TOK_EOF, val, k, tok_len, bits = 0, ret;
+    /* the place before the token and the one after it, and what the
+       token before tells (SP_*) and opens (NX_*) */
+    int st, next_st, pend, new_pend, nx, new_nx;
+    /* the place before the last async */
+    int async_st = SCAN_EXPR;
+    BOOL lf, end_stmt;
     /* the tokens of the lookahead are counted here, in a local, as the parse
        after it counts them again (next_token) */
     int left = JS_COMPILE_POLL_STEP / JS_TOKEN_WORK;
     const uint8_t *last_token_ptr;
     JSParenCache *pc;
     JSParenEntry *e;
-    uint32_t mode, closed;
-    BOOL fresh, word;
+    uint32_t mode, cls;
+    BOOL fresh;
 
     pc = s->paren_cache;
     if (!pc && !s->paren_cache_off) {
@@ -31899,64 +32178,333 @@ static int js_parse_skip_parens_token(JSParseState *s, int *pbits, BOOL no_line_
             s->paren_cache_off = TRUE;
         }
     }
-    mode = js_parse_skip_mode(s) << JS_PAREN_MODE_SHIFT;
+    mode = js_parse_skip_mode(s);
     /* the brackets are kept by an offset of 32 bits */
     if (unlikely(s->buf_end - s->buf_start >= UINT32_MAX))
         pc = NULL;
     /* the answer depends on where the tokens are read from: right after
        the bracket, as next_token leaves them (fresh) */
     fresh = (s->buf_ptr == s->token.ptr + 1);
-    if (pc && fresh) {
+    if (s->token.val == '{')
+        cls = JS_PAREN_CLASS_OBJECT;
+    else if (flags & SKIP_FOR_HEAD)
+        cls = JS_PAREN_CLASS_FOR;
+    else
+        cls = JS_PAREN_CLASS_EXPR;
+    if (pc && fresh && !(flags & SKIP_NO_TABLE)) {
         e = js_paren_find(pc, s->token.ptr - s->buf_start + 1);
-        if (e && ((e->val & JS_PAREN_ANY_MODE) ||
-                  (e->val & JS_PAREN_MODE_MASK) == mode)) {
+        if (e && (e->val & JS_PAREN_CLASS_MASK) == cls &&
+            ((e->val & JS_PAREN_ANY_MODE) ||
+             (e->val & JS_PAREN_MODE_MASK) == mode << JS_PAREN_MODE_SHIFT)) {
             tok = (int16_t)(e->val & JS_PAREN_TOK_MASK);
             bits = (e->val >> JS_PAREN_BITS_SHIFT) & 7;
-            if (no_line_terminator && (e->val & JS_PAREN_LF))
+            if ((flags & SKIP_NO_LINE_TERMINATOR) && (e->val & JS_PAREN_LF))
                 tok = '\n';
+#ifdef JS_SCAN_CHECK
+            {
+                int tok1, bits1 = 0;
+
+                tok1 = js_parse_skip_parens_token(s, &bits1, flags | SKIP_NO_TABLE);
+                if (tok1 == TOK_ERROR)
+                    return TOK_ERROR;
+                if (tok1 != tok || bits1 != bits) {
+                    js_parse_error(s, "scan check: the table answers %d %d, the lookahead %d %d",
+                                   tok, bits, tok1, bits1);
+                    return TOK_ERROR;
+                }
+            }
+#endif
             js_parse_get_pos(s, &pos);
             goto done;
         }
     }
 
-    /* protect from underflow */
-    state[level++] = 0;
+    /* the level below the bracket, which protects from underflow */
+    js_scan_level_init(&lv[level++], SK_BASE,
+                       SCAN_INH | ((mode & 2) ? SCAN_GEN : 0) |
+                       ((mode & 4) ? SCAN_ASYNC : 0), 0, 0);
     /* the level of the bracket the last token closed, 0 for none */
     closed = 0;
-    /* the token before is a name that is a keyword in some modes */
-    word = FALSE;
+    st = SCAN_EXPR;
+    pend = 0;
+    nx = (flags & SKIP_FOR_HEAD) ? NX_HEAD | SK_FOR : 0;
 
     js_parse_get_pos(s, &pos);
-    last_tok = 0;
     for (;;) {
-        switch(s->token.val) {
-        case '(':
-        case '[':
-        case '{':
-            if (level >= sizeof(state))
-                goto done;
-            if (pc) {
-                pc->open_pos[level] = s->token.ptr - s->buf_start;
-                pc->open_bits[level] = 0;
+        /* a level the token opens: its kind, its ctx (-1 for the one of
+           the level around) and the place after it */
+        int push = -1, push_ctx = -1, push_close = SCAN_END;
+
+        val = s->token.val;
+        lf = s->got_lf;
+        L = &lv[level - 1];
+        next_st = SCAN_EXPR;
+        new_pend = 0;
+        new_nx = 0;
+
+        /* the body without braces of an arrow function: yield and await
+           read in it as in the arrow function, which is no generator */
+        if (unlikely(nx & NX_ARROW) && val != '{' &&
+            L->ctx != (nx & (SCAN_GEN | SCAN_ASYNC))) {
+            if (level >= lv_size) {
+                ret = js_scan_grow(s->ctx, &lv, lv_local, &lv_size);
+                if (ret < 0)
+                    goto fail;
+                if (ret > 0)
+                    goto done;
             }
-            state[level++] = s->token.val;
+            L = &lv[level++];
+            js_scan_level_init(L, SK_CONCISE, nx & (SCAN_GEN | SCAN_ASYNC),
+                               0, 0);
+        }
+
+        /* the end of a statement: a line break after return, throw, a
+           yield operator, break and continue (restricted productions), or
+           a token that cannot go on with what is before it (automatic
+           semicolon insertion) */
+        end_stmt = FALSE;
+        if (unlikely(pend & (SP_RESTRICTED | SP_LET))) {
+            end_stmt = (pend & SP_RESTRICTED) && lf;
+            if (pend & SP_LET) {
+                /* let starts a declaration when a name or a pattern
+                   follows, on its line in a substatement (is_let) */
+                if (val == '[' ||
+                    ((val == '{' || (js_scan_is_name(val) &&
+                                     !(val == TOK_IDENT && s->token.u.ident.is_reserved))) &&
+                     !(lf && (pend & SP_LET_SUB)))) {
+                    L->flags |= SL_DECL;
+                    pend |= SP_DECL;
+                    st = SCAN_EXPR;
+                }
+            }
+        }
+        if (!end_stmt && (st == SCAN_END || st == SCAN_BIND || st == SCAN_AEND)) {
+            BOOL goes_on;
+
+            /* the token first, which most often goes on */
+            if (st == SCAN_END)
+                goes_on = js_scan_goes_on(val, lf);
+            else if (st == SCAN_BIND)
+                goes_on = (val == '=' || val == ',' || val == ';' || val == ')' ||
+                           val == ']' || val == '}' || val == TOK_IN);
+            else
+                goes_on = (val == ',' || val == ';' || val == ':' || val == ')' ||
+                           val == ']' || val == '}');
+            end_stmt = !goes_on && !(L->kind == SK_FOR &&
+                                     token_is_pseudo_keyword(s, JS_ATOM_of)) &&
+                !(nx & NX_BODY) && !((pend & SP_ASYNC) && !lf) &&
+                L->kind != SK_CLASSHEAD;
+        }
+        if (end_stmt) {
+            level = js_scan_end_open(lv, level);
+            L = &lv[level - 1];
+            L->flags &= ~SL_DECL;
+            L->mh = 0;
+            if (L->kind == SK_BLOCK)
+                st = SCAN_STMT;
+            else if (L->kind == SK_CLASS)
+                st = SCAN_MEMBER;
+            pend &= ~SP_DECL;
+        }
+
+        if ((pend & SP_DOT) && token_is_ident(val)) {
+            /* a property name, also a keyword */
+            next_st = SCAN_END;
+            goto next;
+        }
+
+        /* the head of a property of an object literal or of a member of a
+           class (js_parse_property_name, js_parse_class) */
+        if ((st == SCAN_MEMBER || (L->mh & MH_IN)) &&
+            (L->kind == SK_OBJECT || L->kind == SK_CLASS)) {
+            BOOL is_class = (L->kind == SK_CLASS);
+            int mh = (L->mh & MH_IN) ? L->mh : MH_IN;
+
+            /* async with a line break after it is a name */
+            if (lf && (mh & MH_WASYNC))
+                mh = (mh & ~(MH_ASYNC | MH_WORD | MH_WASYNC)) | MH_NAME;
+            /* a field without an initializer ends at a line break */
+            if (is_class && lf && (mh & MH_NAME) &&
+                val != '(' && val != '=' && val != ';' && val != '}')
+                mh = MH_IN;
+            if (mh & MH_WORD) {
+                /* the word before is a modifier when a name or "*"
+                   follows, static also when "{" follows */
+                if (!(val == '*' || val == '[' || token_is_ident(val) ||
+                      val == TOK_STRING || val == TOK_NUMBER ||
+                      val == TOK_PRIVATE_NAME ||
+                      (val == '{' && (mh & MH_STAT)))) {
+                    if (mh & MH_WASYNC)
+                        mh &= ~MH_ASYNC;
+                    mh = (mh & ~(MH_WORD | MH_WASYNC)) | MH_NAME;
+                }
+            }
+            switch(val) {
+            case '(':
+                /* a method: its parameters, then its body */
+                L->mh = 0;
+                push = SK_PARAMS;
+                push_ctx = ((mh & MH_GEN) ? SCAN_GEN : 0) |
+                    ((mh & MH_ASYNC) || s->is_module ? SCAN_ASYNC : 0);
+                push_close = is_class ? SCAN_MEMBER : SCAN_END;
+                goto next;
+            case ':':
+                if (is_class)
+                    break;
+                L->mh = 0;
+                goto next;
+            case '=':
+                bits |= SKIP_HAS_ASSIGNMENT;
+                L->bits |= SKIP_HAS_ASSIGNMENT;
+                L->mh = 0;
+                if (is_class) {
+                    /* the initializer is the code of a function of the
+                       class (emit_class_init_start) */
+                    push = SK_FIELD;
+                    push_ctx = s->is_module ? SCAN_ASYNC : 0;
+                }
+                goto next;
+            case ',':
+                if (is_class)
+                    break;
+                L->mh = 0;
+                next_st = SCAN_MEMBER;
+                goto next;
+            case ';':
+                if (!is_class)
+                    break;
+                L->mh = 0;
+                next_st = SCAN_MEMBER;
+                goto next;
+            case '*':
+                L->mh = (mh | MH_GEN) & ~(MH_WORD | MH_WASYNC);
+                next_st = SCAN_MEMBER;
+                goto next;
+            case '[':
+                /* a computed name: the head goes on after its "]" */
+                L->mh = (mh | MH_NAME) & ~(MH_WORD | MH_WASYNC);
+                push = SK_BRACKET;
+                goto next;
+            case '{':
+                if (is_class && (mh & MH_STAT) && !(mh & MH_NAME)) {
+                    /* a static block (JS_PARSE_FUNC_CLASS_STATIC_INIT) */
+                    L->mh = 0;
+                    push = SK_BLOCK;
+                    push_ctx = SCAN_ASYNC;
+                    push_close = SCAN_MEMBER;
+                    next_st = SCAN_STMT;
+                    goto next;
+                }
+                break;
+            default:
+                if ((token_is_ident(val) || val == TOK_STRING ||
+                     val == TOK_NUMBER || val == TOK_PRIVATE_NAME) &&
+                    !(mh & MH_NAME)) {
+                    JSAtom atom = JS_ATOM_NULL;
+
+                    if (token_is_ident(val) &&
+                        !(val == TOK_IDENT && s->token.u.ident.has_escape))
+                        atom = s->token.u.ident.atom;
+                    mh &= ~(MH_WORD | MH_WASYNC);
+                    if (atom == JS_ATOM_static && is_class &&
+                        !(mh & (MH_STAT | MH_ACC | MH_ASYNC | MH_GEN))) {
+                        mh |= MH_STAT | MH_WORD;
+                    } else if (atom == JS_ATOM_async &&
+                               !(mh & (MH_ACC | MH_ASYNC | MH_GEN))) {
+                        mh |= MH_ASYNC | MH_WORD | MH_WASYNC;
+                    } else if ((atom == JS_ATOM_get || atom == JS_ATOM_set) &&
+                               !(mh & (MH_ACC | MH_ASYNC | MH_GEN))) {
+                        mh |= MH_ACC | MH_WORD;
+                    } else {
+                        mh |= MH_NAME;
+                    }
+                    L->mh = mh;
+                    if ((val == TOK_NUMBER || val == TOK_STRING) &&
+                        js_parse_skip_mode_dep(s) == 2)
+                        L->bits |= SKIP_MODE_DEP;
+                    next_st = SCAN_MEMBER;
+                    goto next;
+                }
+                break;
+            }
+            /* anything else ends the head */
+            L->mh = 0;
+            if (st == SCAN_MEMBER)
+                st = SCAN_EXPR;
+        }
+
+        switch(val) {
+        case '(':
+            if (nx & NX_HEAD) {
+                push = nx & 0xff;
+                if (push == SK_FOR)
+                    new_pend |= SP_FOR_START;
+            } else if (nx & NX_FN) {
+                push = SK_PARAMS;
+                push_ctx = nx & (SCAN_GEN | SCAN_ASYNC);
+                if (s->is_module)
+                    push_ctx |= SCAN_ASYNC;
+                push_close = (nx & SCAN_FN_DECL) ? SCAN_STMT : SCAN_END;
+            } else {
+                push = SK_PAREN;
+            }
+            break;
+        case '[':
+            push = SK_BRACKET;
+            break;
+        case '{':
+            if (nx & NX_BODY) {
+                /* the body of a function or a method */
+                push = SK_BLOCK;
+                push_ctx = nx & (SCAN_GEN | SCAN_ASYNC);
+                push_close = (nx >> 8) & 0xf;
+                next_st = SCAN_STMT;
+            } else if (nx & NX_ARROW) {
+                /* the body in braces of an arrow function, which nothing
+                   but a separator or a closing bracket follows */
+                push = SK_BLOCK;
+                push_ctx = nx & (SCAN_GEN | SCAN_ASYNC);
+                push_close = SCAN_AEND;
+                next_st = SCAN_STMT;
+            } else if (L->kind == SK_CLASSHEAD && st != SCAN_EXPR) {
+                /* the body of a class, in place of its head, whose
+                   assignments in the heritage count for the level around */
+                push_ctx = L->ctx;
+                push_close = L->close;
+                level--;
+                lv[level - 1].bits |= L->bits & (SKIP_HAS_ASSIGNMENT | SKIP_MODE_DEP);
+                push = SK_CLASS;
+                next_st = SCAN_MEMBER;
+            } else if (st == SCAN_STMT) {
+                push = SK_BLOCK;
+                push_close = SCAN_STMT;
+                next_st = SCAN_STMT;
+            } else {
+                push = SK_OBJECT;
+                next_st = SCAN_MEMBER;
+            }
             break;
         case ')':
-            if (state[--level] != '(')
-                goto done;
-            closed = level;
-            break;
         case ']':
-            if (state[--level] != '[')
-                goto done;
-            closed = level;
-            break;
         case '}':
-            c = state[--level];
-            if (c == '`') {
-                if (pc)
-                    pc->open_bits[level - 1] |= pc->open_bits[level] &
-                        (SKIP_HAS_ASSIGNMENT | SKIP_MODE_DEP);
+            level = js_scan_end_open(lv, level);
+            L = &lv[level - 1];
+            k = L->kind;
+            if (val == ')') {
+                if (k != SK_PAREN && k != SK_PARAMS && k != SK_HEAD &&
+                    k != SK_FOR)
+                    goto done;
+            } else if (val == ']') {
+                if (k != SK_BRACKET)
+                    goto done;
+            } else {
+                if (k != SK_OBJECT && k != SK_BLOCK && k != SK_CLASS &&
+                    k != SK_TEMPLATE)
+                    goto done;
+            }
+            level--;
+            lv[level - 1].bits |= L->bits & (SKIP_HAS_ASSIGNMENT | SKIP_MODE_DEP);
+            if (k == SK_TEMPLATE) {
                 /* continue the parsing of the template */
                 free_token(s, &s->token);
                 /* Resume TOK_TEMPLATE parsing (s->token.line_num and
@@ -31964,88 +32512,294 @@ static int js_parse_skip_parens_token(JSParseState *s, int *pbits, BOOL no_line_
                 s->got_lf = FALSE;
                 if (js_parse_template_part(s, s->buf_ptr)) {
                     if (js_parse_skip_parens_error(s))
-                        return TOK_ERROR;
+                        goto fail;
                     goto done;
                 }
-                goto handle_template;
-            } else if (c != '{') {
-                goto done;
+                val = s->token.val;
+                goto template;
             }
             closed = level;
+            switch(k) {
+            case SK_PAREN:
+                if (L->mh & MH_ASYNC_PAREN)
+                    new_pend |= SP_ASYNC_PAREN;
+                next_st = SCAN_END;
+                break;
+            case SK_PARAMS:
+                new_nx = NX_BODY | L->ctx | (L->close << 8);
+                next_st = SCAN_END;
+                break;
+            case SK_HEAD:
+            case SK_FOR:
+                new_pend |= SP_SUBSTMT;
+                next_st = SCAN_STMT;
+                break;
+            case SK_BRACKET:
+                next_st = SCAN_END;
+                break;
+            default:
+                next_st = L->close;
+                break;
+            }
             break;
         case TOK_TEMPLATE:
-        handle_template:
+        template:
             if (s->token.u.str.sep != '`') {
                 /* '${' inside the template : closing '}' and continue
                    parsing the template */
-                if (level >= sizeof(state))
-                    goto done;
-                if (pc)
-                    pc->open_bits[level] = 0;
-                state[level++] = '`';
+                push = SK_TEMPLATE;
+            } else {
+                next_st = SCAN_END;
             }
             break;
         case TOK_EOF:
             goto done;
         case ';':
+            level = js_scan_end_open(lv, level);
+            L = &lv[level - 1];
             if (level == 2) {
                 bits |= SKIP_HAS_SEMI;
             }
-            if (pc)
-                pc->open_bits[level - 1] |= SKIP_HAS_SEMI;
+            L->bits |= SKIP_HAS_SEMI;
+            L->flags &= ~SL_DECL;
+            if (L->kind == SK_BLOCK)
+                next_st = SCAN_STMT;
+            else if (L->kind == SK_CLASS)
+                next_st = SCAN_MEMBER;
+            break;
+        case ',':
+            level = js_scan_end_open(lv, level);
+            L = &lv[level - 1];
+            if (L->kind == SK_OBJECT)
+                next_st = SCAN_MEMBER;
+            else if (L->flags & SL_DECL)
+                new_pend |= SP_DECL;
+            break;
+        case '?':
+            L->tern++;
+            break;
+        case ':':
+            while (L->tern == 0 && L->kind >= SK_CONCISE) {
+                lv[level - 2].bits |= L->bits & (SKIP_HAS_ASSIGNMENT | SKIP_MODE_DEP);
+                level--;
+                L = &lv[level - 1];
+            }
+            if (L->tern != 0) {
+                L->tern--;
+            } else if (L->kind == SK_BLOCK) {
+                /* the ":" of a label, a case or a default */
+                new_pend |= SP_SUBSTMT;
+                next_st = SCAN_STMT;
+            }
             break;
         case TOK_ELLIPSIS:
             if (level == 2) {
                 bits |= SKIP_HAS_ELLIPSIS;
             }
-            if (pc)
-                pc->open_bits[level - 1] |= SKIP_HAS_ELLIPSIS;
+            L->bits |= SKIP_HAS_ELLIPSIS;
             break;
         case '=':
             bits |= SKIP_HAS_ASSIGNMENT;
-            if (pc)
-                pc->open_bits[level - 1] |= SKIP_HAS_ASSIGNMENT;
+            L->bits |= SKIP_HAS_ASSIGNMENT;
             break;
-
+        case TOK_ARROW:
+            /* the body of an async arrow function when async came before
+               its parameters on their line: only a ")" leaves
+               SP_ASYNC_PAREN, and only a name SP_ASYNC_NAME */
+            k = pend & (SP_ASYNC_PAREN | SP_ASYNC_NAME);
+            new_nx = NX_ARROW | (k || s->is_module ? SCAN_ASYNC : 0);
+            break;
         case TOK_DIV_ASSIGN:
             tok_len = 2;
             goto parse_regexp;
         case '/':
             tok_len = 1;
         parse_regexp:
-            /* another mode may read it the other way */
-            if (pc && word)
-                pc->open_bits[level - 1] |= SKIP_MODE_DEP;
-            if (is_regexp_allowed(last_tok)) {
+            if (st != SCAN_END) {
+                JS_SCAN_MARK(s, s->token.ptr, 2);
                 s->buf_ptr -= tok_len;
                 if (js_parse_regexp(s)) {
                     if (js_parse_skip_parens_error(s))
-                        return TOK_ERROR;
+                        goto fail;
                     goto done;
                 }
+                next_st = SCAN_END;
+            } else {
+                JS_SCAN_MARK(s, s->token.ptr, 1);
             }
             break;
+        case TOK_INC:
+        case TOK_DEC:
+            /* postfix after an operand on its line */
+            if (st == SCAN_END)
+                next_st = SCAN_END;
+            break;
+        case '.':
+        case TOK_QUESTION_MARK_DOT:
+            new_pend |= SP_DOT;
+            break;
+        case '*':
+            if (nx & NX_FN)
+                new_nx = nx | SCAN_GEN;
+            break;
+        case TOK_NUMBER:
+        case TOK_STRING:
+            /* a number or a string that strict mode refuses reads
+               otherwise in another mode (js_parse_skip_mode_dep) */
+            if (js_parse_skip_mode_dep(s) == 2)
+                L->bits |= SKIP_MODE_DEP;
+            next_st = SCAN_END;
+            break;
+        case TOK_PRIVATE_NAME:
+        case TOK_NULL:
+        case TOK_FALSE:
+        case TOK_TRUE:
+        case TOK_THIS:
+        case TOK_SUPER:
+        case TOK_IMPORT:
+            next_st = SCAN_END;
+            break;
+        case TOK_IF:
+        case TOK_WHILE:
+        case TOK_WITH:
+        case TOK_SWITCH:
+            new_nx = NX_HEAD | SK_HEAD;
+            break;
+        case TOK_CATCH:
+            /* a catch without its parameter is followed by its block */
+            new_nx = NX_HEAD | SK_HEAD;
+            next_st = SCAN_STMT;
+            break;
+        case TOK_FOR:
+            new_nx = NX_HEAD | SK_FOR;
+            new_pend |= SP_FOR;
+            break;
+        case TOK_ELSE:
+        case TOK_DO:
+            new_pend |= SP_SUBSTMT;
+            next_st = SCAN_STMT;
+            break;
+        case TOK_TRY:
+        case TOK_FINALLY:
+        case TOK_DEBUGGER:
+            next_st = SCAN_STMT;
+            break;
+        case TOK_BREAK:
+        case TOK_CONTINUE:
+            new_pend |= SP_RESTRICTED | SP_BREAK;
+            next_st = SCAN_STMT;
+            break;
+        case TOK_RETURN:
+        case TOK_THROW:
+            new_pend |= SP_RESTRICTED;
+            break;
+        case TOK_VAR:
+        case TOK_CONST:
+            L->flags |= SL_DECL;
+            new_pend |= SP_DECL;
+            break;
+        case TOK_FUNCTION:
+            /* an async function when async came before it on its line, a
+               declaration where a statement starts */
+            k = st;
+            new_nx = NX_FN;
+            if ((pend & SP_ASYNC) && !lf) {
+                k = async_st;
+                new_nx |= SCAN_ASYNC;
+            }
+            if (k == SCAN_STMT)
+                new_nx |= SCAN_FN_DECL;
+            break;
+        case TOK_CLASS:
+            push = SK_CLASSHEAD;
+            push_close = (st == SCAN_STMT) ? SCAN_STMT : SCAN_END;
+            next_st = SCAN_END;
+            break;
+        default:
+            if (js_scan_is_name(val)) {
+                /* let, yield, await, async and of are read by their atom */
+                JSAtom atom = s->token.u.ident.atom;
+
+                next_st = SCAN_END;
+                /* most names are none of these, after none of the tokens
+                   below (let, yield and await are among the atoms from
+                   let to await in quickjs-atom.h) */
+                if (likely(!(pend & (SP_DECL | SP_BREAK | SP_ASYNC)) &&
+                           !(nx & NX_FN) && atom != JS_ATOM_of &&
+                           atom != JS_ATOM_async &&
+                           (atom < JS_ATOM_let || atom > JS_ATOM_await)))
+                    break;
+                if (val == TOK_IDENT && s->token.u.ident.has_escape)
+                    atom = JS_ATOM_NULL;
+                if (pend & SP_DECL) {
+                    next_st = SCAN_BIND;
+                } else if (nx & NX_FN) {
+                    /* the name of a function */
+                    new_nx = nx;
+                    next_st = SCAN_EXPR;
+                } else if ((pend & SP_BREAK) && !lf) {
+                    /* the label of a break or a continue */
+                    next_st = SCAN_STMT;
+                } else if ((pend & SP_ASYNC) && !lf) {
+                    /* the parameter of an async arrow function, when "=>"
+                       follows, whatever name it has: async, of, let, yield
+                       or await (where they are names) */
+                    if ((atom == JS_ATOM_yield || atom == JS_ATOM_await) &&
+                        (L->ctx & SCAN_INH))
+                        L->bits |= SKIP_MODE_DEP;
+                    new_pend |= SP_ASYNC_NAME;
+                } else if (atom == JS_ATOM_of && L->kind == SK_FOR &&
+                           (st == SCAN_END || st == SCAN_BIND)) {
+                    /* the "of" of a for of */
+                    L->flags &= ~SL_DECL;
+                    next_st = SCAN_EXPR;
+                } else if (atom == JS_ATOM_let &&
+                           (st == SCAN_STMT || (pend & SP_FOR_START))) {
+                    new_pend |= SP_LET;
+                    if (pend & SP_SUBSTMT)
+                        new_pend |= SP_LET_SUB;
+                } else if (atom == JS_ATOM_yield) {
+                    if (L->ctx & SCAN_INH)
+                        L->bits |= SKIP_MODE_DEP;
+                    if (L->ctx & SCAN_GEN) {
+                        new_pend |= SP_RESTRICTED;
+                        next_st = SCAN_EXPR;
+                    }
+                } else if (atom == JS_ATOM_await) {
+                    if (L->ctx & SCAN_INH)
+                        L->bits |= SKIP_MODE_DEP;
+                    if (L->ctx & SCAN_ASYNC)
+                        next_st = SCAN_EXPR;
+                    if (pend & SP_FOR)
+                        new_nx = nx; /* for await */
+                } else if (atom == JS_ATOM_async) {
+                    new_pend |= SP_ASYNC;
+                    async_st = st;
+                }
+            }
+            /* any other operator or keyword: an operand must come */
+            break;
         }
-        /* last_tok is only used to recognize regexps */
-        if (s->token.val == TOK_IDENT &&
-            (token_is_pseudo_keyword(s, JS_ATOM_of) ||
-             token_is_pseudo_keyword(s, JS_ATOM_yield))) {
-            last_tok = TOK_OF;
-        } else if (s->token.val == TOK_TEMPLATE && s->token.u.str.sep != '`') {
-            /* a template part that ends with "${" opens a substitution,
-               which may start with a regexp. Setting last_tok in the
-               switch above is lost here. Only a complete template makes
-               the "/" after it a division (is_regexp_allowed) */
-            last_tok = '(';
-        } else {
-            last_tok = s->token.val;
+    next:
+        if (push >= 0) {
+            if (level >= lv_size) {
+                ret = js_scan_grow(s->ctx, &lv, lv_local, &lv_size);
+                if (ret < 0)
+                    goto fail;
+                if (ret > 0)
+                    goto done;
+            }
+            L = &lv[level];
+            js_scan_level_init(L, push,
+                               push_ctx >= 0 ? push_ctx : lv[level - 1].ctx,
+                               push_close, s->token.ptr - s->buf_start);
+            if (push == SK_PAREN && (pend & SP_ASYNC) && !lf)
+                L->mh = MH_ASYNC_PAREN;
+            level++;
         }
-        if (pc) {
-            c = js_parse_skip_mode_dep(s);
-            word = (c == 1);
-            if (c == 2)
-                pc->open_bits[level - 1] |= SKIP_MODE_DEP;
-        }
+        st = next_st;
+        pend = new_pend;
+        nx = new_nx;
         last_token_ptr = s->token.ptr;
         JS_SKIP_TOKEN();
         if ((unlikely(--left < 0) &&
@@ -32053,53 +32807,86 @@ static int js_parse_skip_parens_token(JSParseState *s, int *pbits, BOOL no_line_
               js_poll_interrupts(s->ctx))) ||
             next_token1(s)) {
             if (js_parse_skip_parens_error(s))
-                return TOK_ERROR;
+                goto fail;
             break;
         }
         if (closed && pc) {
             /* the answer of the lookahead from the bracket just closed:
                the token read now, and what it saw inside */
-            uint32_t val;
-            int lf;
+            JSScanLevel *C = &lv[closed];
+            uint32_t v, c_mode;
+            int c;
 
-            pc->open_bits[closed - 1] |= pc->open_bits[closed] &
-                (SKIP_HAS_ASSIGNMENT | SKIP_MODE_DEP);
-            c = s->token.val;
-            if (token_is_pseudo_keyword(s, JS_ATOM_of))
-                c = TOK_OF;
-            val = (c & JS_PAREN_TOK_MASK) |
-                ((pc->open_bits[closed] & 7) << JS_PAREN_BITS_SHIFT) | mode;
-            lf = js_paren_has_lf(s->ctx, last_token_ptr, s->token.ptr);
-            if (lf < 0)
-                return TOK_ERROR;
-            if (lf)
-                val |= JS_PAREN_LF;
-            if (!(pc->open_bits[closed] & SKIP_MODE_DEP) &&
-                !js_parse_skip_mode_dep(s))
-                val |= JS_PAREN_ANY_MODE;
-            /* the bracket the lookahead started at is read from where
-               this call found it (fresh) */
-            if ((closed > 1 || fresh) &&
-                js_paren_put(s->ctx, pc, pc->open_pos[closed] + 1, val))
-                return TOK_ERROR;
+            switch(C->kind) {
+            case SK_PAREN:
+            case SK_PARAMS:
+            case SK_BRACKET:
+                c = JS_PAREN_CLASS_EXPR;
+                break;
+            case SK_FOR:
+                c = JS_PAREN_CLASS_FOR;
+                break;
+            case SK_OBJECT:
+                c = JS_PAREN_CLASS_OBJECT;
+                break;
+            default:
+                /* the parse never asks from the others */
+                c = -1;
+                break;
+            }
+            if (c >= 0) {
+                /* the mode of the level, but for a token after that reads
+                   otherwise in another mode: the lookahead reads it, as
+                   every token, in the mode it started in */
+                if (js_parse_skip_mode_dep(s))
+                    c_mode = mode;
+                else
+                    c_mode = (mode & 1) | ((C->ctx & SCAN_GEN) ? 2 : 0) |
+                        ((C->ctx & SCAN_ASYNC) ? 4 : 0);
+                k = s->token.val;
+                if (token_is_pseudo_keyword(s, JS_ATOM_of))
+                    k = TOK_OF;
+                v = (k & JS_PAREN_TOK_MASK) |
+                    ((C->bits & 7) << JS_PAREN_BITS_SHIFT) |
+                    (c_mode << JS_PAREN_MODE_SHIFT) | c;
+                ret = js_paren_has_lf(s->ctx, last_token_ptr, s->token.ptr);
+                if (ret < 0)
+                    goto fail;
+                if (ret)
+                    v |= JS_PAREN_LF;
+                if (!(C->bits & SKIP_MODE_DEP) && !js_parse_skip_mode_dep(s))
+                    v |= JS_PAREN_ANY_MODE;
+                /* the bracket the lookahead started at is read from where
+                   this call found it (fresh) */
+                if ((closed > 1 || fresh) &&
+                    js_paren_put(s->ctx, pc, C->pos + 1, v))
+                    goto fail;
+            }
         }
         closed = 0;
         if (level <= 1) {
             tok = s->token.val;
             if (token_is_pseudo_keyword(s, JS_ATOM_of))
                 tok = TOK_OF;
-            if (no_line_terminator && has_lf_in_range(last_token_ptr, s->token.ptr))
+            if ((flags & SKIP_NO_LINE_TERMINATOR) &&
+                has_lf_in_range(last_token_ptr, s->token.ptr))
                 tok = '\n';
             break;
         }
     }
  done:
+    if (lv != lv_local)
+        js_free(s->ctx, lv);
     if (pbits) {
         *pbits = bits;
     }
     if (js_parse_seek_token(s, &pos))
         return TOK_ERROR;
     return tok;
+ fail:
+    if (lv != lv_local)
+        js_free(s->ctx, lv);
+    return TOK_ERROR;
 }
 
 static void set_object_name(JSParseState *s, JSAtom name)
@@ -33269,20 +34056,33 @@ done:
 /* check if scope chain contains a with statement */
 static BOOL has_with_scope(JSFunctionDef *s, int scope_level)
 {
-    while (s) {
-        /* no with in strict mode */
-        if (!(s->js_mode & JS_MODE_STRICT)) {
-            int scope_idx = s->scopes[scope_level].first;
-            while (scope_idx >= 0) {
-                JSVarDef *vd = &s->vars[scope_idx];
-                if (vd->var_name == JS_ATOM__with_)
-                    return TRUE;
-                scope_idx = vd->scope_next;
-            }
+    int i;
+
+    for (;;) {
+        /* strict code has no with of its own, but the function around a
+           class is strict only while the class is parsed (js_parse_class),
+           and may have one: look at every function */
+        int scope_idx = s->scopes[scope_level].first;
+        while (scope_idx >= 0) {
+            JSVarDef *vd = &s->vars[scope_idx];
+            if (vd->var_name == JS_ATOM__with_)
+                return TRUE;
+            scope_idx = vd->scope_next;
         }
+        if (!s->parent)
+            break;
         /* check parent scopes */
         scope_level = s->parent_scope_level;
         s = s->parent;
+    }
+    /* the code of a direct eval, at the top, has the with statements around
+       the call among its closure variables, whatever its mode, as
+       resolve_scope_var() finds them */
+    if (s->is_eval) {
+        for (i = 0; i < s->closure_var_count; i++) {
+            if (s->closure_var[i].var_name == JS_ATOM__with_)
+                return TRUE;
+        }
     }
     return FALSE;
 }
@@ -33796,7 +34596,7 @@ static __exception int js_parse_destructuring_element1(JSParseState *s, int tok,
     rk.list = FALSE;
     if (has_ellipsis < 0) {
         /* pre-parse destructuration target for spread detection */
-        if (js_parse_skip_parens_token(s, &skip_bits, FALSE) == TOK_ERROR)
+        if (js_parse_skip_parens_token(s, &skip_bits, 0) == TOK_ERROR)
             return -1;
         has_ellipsis = skip_bits & SKIP_HAS_ELLIPSIS;
     }
@@ -33905,7 +34705,7 @@ static __exception int js_parse_destructuring_element1(JSParseState *s, int tok,
                     goto prop_error;
                 tok1 = 0;
                 if (s->token.val == '[' || s->token.val == '{') {
-                    tok1 = js_parse_skip_parens_token(s, &skip_bits, FALSE);
+                    tok1 = js_parse_skip_parens_token(s, &skip_bits, 0);
                     if (tok1 == TOK_ERROR)
                         goto prop_error;
                 }
@@ -34143,7 +34943,7 @@ static __exception int js_parse_destructuring_element1(JSParseState *s, int tok,
             }
             tok1 = 0;
             if (s->token.val == '[' || s->token.val == '{') {
-                tok1 = js_parse_skip_parens_token(s, &skip_bits, FALSE);
+                tok1 = js_parse_skip_parens_token(s, &skip_bits, 0);
                 if (tok1 == TOK_ERROR)
                     return -1;
             }
@@ -34377,6 +35177,7 @@ static __exception int js_parse_postfix_expr1(JSParseState *s, int parse_flags)
             /* the previous token is '/' or '/=', so no need to free */
             if (js_parse_regexp(s))
                 return -1;
+            JS_PARSE_MARK(s, s->token.ptr, 2);
             ret = emit_push_const(s, s->token.u.regexp.body, 0);
             if (ret)
                 return -1;
@@ -35676,7 +36477,7 @@ static __exception int js_parse_assign_expr21(JSParseState *s, int parse_flags)
         }
         return 0;
     } else if (s->token.val == '(' &&
-               (tok1 = js_parse_skip_parens_token(s, NULL, TRUE)) == TOK_ERROR) {
+               (tok1 = js_parse_skip_parens_token(s, NULL, SKIP_NO_LINE_TERMINATOR)) == TOK_ERROR) {
         return -1;
     } else if (s->token.val == '(' && tok1 == TOK_ARROW) {
         return js_parse_function_decl(s, JS_PARSE_FUNC_ARROW,
@@ -35698,7 +36499,7 @@ static __exception int js_parse_assign_expr21(JSParseState *s, int parse_flags)
             return -1;
         tok1 = 0;
         if (s->token.val == '(') {
-            tok1 = js_parse_skip_parens_token(s, NULL, TRUE);
+            tok1 = js_parse_skip_parens_token(s, NULL, SKIP_NO_LINE_TERMINATOR);
             if (tok1 == TOK_ERROR)
                 return -1;
         }
@@ -35719,7 +36520,7 @@ static __exception int js_parse_assign_expr21(JSParseState *s, int parse_flags)
                                       JS_FUNC_NORMAL, JS_ATOM_NULL,
                                       s->token.ptr);
     } else if ((s->token.val == '{' || s->token.val == '[') &&
-               (tok1 = js_parse_skip_parens_token(s, &skip_bits, FALSE)) == TOK_ERROR) {
+               (tok1 = js_parse_skip_parens_token(s, &skip_bits, 0)) == TOK_ERROR) {
         return -1;
     } else if ((s->token.val == '{' || s->token.val == '[') && tok1 == '=') {
         if (js_parse_destructuring_element(s, 0, 0, FALSE, skip_bits & SKIP_HAS_ELLIPSIS, TRUE, FALSE) < 0)
@@ -36169,7 +36970,7 @@ static __exception int js_parse_var(JSParseState *s, int parse_flags, int tok,
         } else {
             int skip_bits, tok1 = 0;
             if (s->token.val == '[' || s->token.val == '{') {
-                tok1 = js_parse_skip_parens_token(s, &skip_bits, FALSE);
+                tok1 = js_parse_skip_parens_token(s, &skip_bits, 0);
                 if (tok1 == TOK_ERROR)
                     return -1;
             }
@@ -36330,7 +37131,7 @@ static __exception int js_parse_for_in_of(JSParseState *s, int label_name,
         int skip_bits;
         tok1 = 0;
         if (s->token.val == '[' || s->token.val == '{') {
-            tok1 = js_parse_skip_parens_token(s, &skip_bits, FALSE);
+            tok1 = js_parse_skip_parens_token(s, &skip_bits, 0);
             if (tok1 == TOK_ERROR)
                 return -1;
         }
@@ -36733,7 +37534,7 @@ static __exception int js_parse_statement_or_decl1(JSParseState *s,
             bits = 0;
             is_async = FALSE;
             if (s->token.val == '(') {
-                if (js_parse_skip_parens_token(s, &bits, FALSE) == TOK_ERROR)
+                if (js_parse_skip_parens_token(s, &bits, SKIP_FOR_HEAD) == TOK_ERROR)
                     goto fail;
             } else if (s->token.val == TOK_AWAIT) {
                 if (!(s->cur_func->func_kind & JS_FUNC_ASYNC)) {
@@ -40999,6 +41800,54 @@ static int optimize_scope_make_ref(JSContext *ctx, JSFunctionDef *s,
     return pos_next;
 }
 
+/* Where the write of the reference of an OP_scope_make_ref is: the position of
+   its OP_put_ref_value, after the label and the opcode put_lvalue() puts
+   between them, or -1 when the code there is not that. */
+static int scope_make_ref_put_pos(const uint8_t *bc_buf, const LabelSlot *ls)
+{
+    int pos = ls->pos, op;
+
+    if (pos < 5 || bc_buf[pos - 5] != OP_label)
+        return -1;
+    op = bc_buf[pos];
+    if (op == OP_insert3 || op == OP_perm4 || op == OP_nop || op == OP_rot3l)
+        pos++;
+    return bc_buf[pos] == OP_put_ref_value ? pos : -1;
+}
+
+/* An OP_scope_make_ref, made because a with statement may hold the name, that
+   resolves to a const before any with object or var object can take it
+   (label_done == -1): the reference reads the const and only its write
+   throws, after the right side, and a logical assignment that does not write
+   returns the value, as in a scope without a with. Two undefined stand for the
+   object and the name of the reference, which the code after it keeps and
+   drops as it would theirs, the OP_get_ref_value after it reads the const
+   with get_op, and the throw takes the place of the label and the
+   OP_put_ref_value. Call it when scope_make_ref_put_pos() finds the write. */
+static int optimize_scope_make_ref_const(JSContext *ctx, DynBuf *bc,
+                                         uint8_t *bc_buf, LabelSlot *ls,
+                                         int pos_next, int get_op, int idx,
+                                         JSAtom var_name)
+{
+    int pos = ls->pos - 5, end_pos = scope_make_ref_put_pos(bc_buf, ls) + 1;
+
+    dbuf_putc(bc, OP_undefined);
+    dbuf_putc(bc, OP_undefined);
+    if (bc_buf[pos_next] == OP_get_ref_value) {
+        dbuf_putc(bc, get_op);
+        dbuf_put_u16(bc, idx);
+        pos_next++;
+    }
+    /* the label and the write take 6 or 7 bytes, the throw 6 */
+    bc_buf[pos] = OP_throw_error;
+    put_u32(bc_buf + pos + 1, JS_DupAtom(ctx, var_name));
+    bc_buf[pos + 5] = JS_THROW_VAR_RO;
+    pos += 6;
+    while (pos < end_pos)
+        bc_buf[pos++] = OP_nop;
+    return pos_next;
+}
+
 static int add_var_this(JSContext *ctx, JSFunctionDef *fd)
 {
     int idx;
@@ -41114,6 +41963,15 @@ static __exception int resolve_scope_var(JSContext *ctx, JSFunctionDef *s,
         var_index_scope_find(ctx, s, var_name, scope_level, &idx, &is_arg_scope)) {
         if (idx >= 0) {
             vd = &s->vars[idx];
+            /* as in the walk below */
+            if (vd->is_const && op == OP_scope_make_ref &&
+                label_done == -1 &&
+                scope_make_ref_put_pos(bc_buf, ls) >= 0) {
+                pos_next = optimize_scope_make_ref_const(ctx, bc, bc_buf, ls, pos_next,
+                                                         vd->is_lexical ? OP_get_loc_check : OP_get_loc,
+                                                         idx, var_name);
+                goto done;
+            }
             if ((op == OP_scope_put_var || op == OP_scope_make_ref) &&
                 vd->is_const) {
                 dbuf_putc(bc, OP_throw_error);
@@ -41130,6 +41988,14 @@ static __exception int resolve_scope_var(JSContext *ctx, JSFunctionDef *s,
         vd = &s->vars[idx];
         if (vd->var_name == var_name) {
             if (op == OP_scope_put_var || op == OP_scope_make_ref) {
+                if (vd->is_const && op == OP_scope_make_ref &&
+                    label_done == -1 &&
+                    scope_make_ref_put_pos(bc_buf, ls) >= 0) {
+                    pos_next = optimize_scope_make_ref_const(ctx, bc, bc_buf, ls, pos_next,
+                                                             vd->is_lexical ? OP_get_loc_check : OP_get_loc,
+                                                             idx, var_name);
+                    goto done;
+                }
                 if (vd->is_const) {
                     dbuf_putc(bc, OP_throw_error);
                     dbuf_put_u32(bc, JS_DupAtom(ctx, var_name));
@@ -41181,6 +42047,13 @@ static __exception int resolve_scope_var(JSContext *ctx, JSFunctionDef *s,
             s->vars[var_idx].is_const) {
             /* only happens when assigning a function expression name
                in strict mode */
+            if (op == OP_scope_make_ref && label_done == -1 &&
+                scope_make_ref_put_pos(bc_buf, ls) >= 0) {
+                pos_next = optimize_scope_make_ref_const(ctx, bc, bc_buf, ls, pos_next,
+                                                         s->vars[var_idx].is_lexical ? OP_get_loc_check : OP_get_loc,
+                                                         var_idx, var_name);
+                goto done;
+            }
             dbuf_putc(bc, OP_throw_error);
             dbuf_put_u32(bc, JS_DupAtom(ctx, var_name));
             dbuf_putc(bc, JS_THROW_VAR_RO);
@@ -41308,8 +42181,11 @@ static __exception int resolve_scope_var(JSContext *ctx, JSFunctionDef *s,
             var_index_scope_find(ctx, fd, var_name, scope_level, &idx, &is_arg_scope)) {
             if (idx >= 0) {
                 vd = &fd->vars[idx];
+                /* as in the walk below */
                 if ((op == OP_scope_put_var || op == OP_scope_make_ref) &&
-                    vd->is_const) {
+                    vd->is_const &&
+                    !(op == OP_scope_make_ref && label_done == -1 &&
+                      scope_make_ref_put_pos(bc_buf, ls) >= 0)) {
                     dbuf_putc(bc, OP_throw_error);
                     dbuf_put_u32(bc, JS_DupAtom(ctx, var_name));
                     dbuf_putc(bc, JS_THROW_VAR_RO);
@@ -41325,7 +42201,11 @@ static __exception int resolve_scope_var(JSContext *ctx, JSFunctionDef *s,
             vd = &fd->vars[idx];
             if (vd->var_name == var_name) {
                 if (op == OP_scope_put_var || op == OP_scope_make_ref) {
-                    if (vd->is_const) {
+                    /* a reference to a const that no with object can take
+                       goes on to the closure variable */
+                    if (vd->is_const &&
+                        !(op == OP_scope_make_ref && label_done == -1 &&
+                          scope_make_ref_put_pos(bc_buf, ls) >= 0)) {
                         dbuf_putc(bc, OP_throw_error);
                         dbuf_put_u32(bc, JS_DupAtom(ctx, var_name));
                         dbuf_putc(bc, JS_THROW_VAR_RO);
@@ -41549,6 +42429,14 @@ static __exception int resolve_scope_var(JSContext *ctx, JSFunctionDef *s,
         }
         if (idx >= 0) {
         has_idx:
+            if (op == OP_scope_make_ref && s->closure_var[idx].is_const &&
+                label_done == -1 && scope_make_ref_put_pos(bc_buf, ls) >= 0) {
+                pos_next = optimize_scope_make_ref_const(ctx, bc, bc_buf, ls, pos_next,
+                                                         s->closure_var[idx].is_lexical ?
+                                                         OP_get_var_ref_check : OP_get_var_ref,
+                                                         idx, var_name);
+                goto done;
+            }
             if ((op == OP_scope_put_var || op == OP_scope_make_ref) &&
                 s->closure_var[idx].is_const) {
                 dbuf_putc(bc, OP_throw_error);
@@ -47621,7 +48509,7 @@ static __exception int js_parse_function_decl21(JSParseState *s,
             int skip_bits;
             /* if there is an '=' inside the parameter list, we
                consider there is a parameter expression inside */
-            if (js_parse_skip_parens_token(s, &skip_bits, FALSE) == TOK_ERROR)
+            if (js_parse_skip_parens_token(s, &skip_bits, 0) == TOK_ERROR)
                 goto fail;
             if (skip_bits & SKIP_HAS_ASSIGNMENT)
                 fd->has_parameter_expressions = TRUE;
@@ -48239,6 +49127,11 @@ static JSValue __JS_EvalInternal(JSContext *ctx, JSValueConst this_obj,
     fd->body_scope = fd->scope_level;
 
     err = js_parse_program(s);
+#ifdef JS_SCAN_CHECK
+    if (!err)
+        err = js_scan_check_end(s);
+    js_scan_check_free(s);
+#endif
     js_parse_free_paren_cache(s);
     if (err) {
     fail:

@@ -36,7 +36,7 @@ For each commit:
 2. Apply its diff to the C tree: `git diff <commit>^ <commit> -- quickjs.c | git apply --directory=engine`. Where it meets a change of liustack/beastjs ([changes](changes/README.md) names the functions), that change stays and the upstream text is merged around it. Leave out hunks that edit things `engine/` does not have (the shell library, `fuzz/`, the Makefile).
 3. Write a test that fails without the commit and passes with it, in `engine/test/` (a script of `engine/test/compare/` with its output, or a check in `unit.c`, `unit-oom.c` or `unit-white.c`), as [testing.md](testing.md#the-c-tree-and-its-native-test-host) describes.
 4. Run `make check-fast`, make the generated engine again for both architectures (`make gen`, `make gen ARCH=arm64`, see [testing.md](testing.md#generate-and-check)) and commit the C, the test and the generated files together, with the upstream commit named in the message.
-5. At the end of a batch, run `make check-full`. The known test262 errors (33) must stay the same, line for line, unless the commit fixed some. Then update `engine/test/test262_errors.txt` and say so.
+5. At the end of a batch, run `make check-full`. The known test262 errors (32) must stay the same, line for line, unless the commit fixed some. Then update `engine/test/test262_errors.txt` and say so.
 6. Read the profile lines that `make check-full` prints. When a commit changed `JS_RegvmRun` or more than 30 functions, train the profile again ([releasing.md](releasing.md#the-profile)) and commit it with the generated files.
 7. Measure it as [performance.md](performance.md#how-the-numbers-were-measured) says, add a row to [changes/upstream-commits.md](changes/upstream-commits.md), and a line to both changelogs when users can see it.
 

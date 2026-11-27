@@ -1,0 +1,26 @@
+eval optional true
+eval plain true
+eval tagged true
+eval strict [true,true]
+eval function [true,true]
+eval arrow [true,true]
+eval in eval [true,true]
+function eval [true,true]
+eval class [true,true]
+eval no with [false,false]
+strict function [true,true]
+class static [true,true,true]
+class method [true,true]
+class arrow [true,true]
+class field [[true,true],[true,true]]
+class static block [true,true]
+class key [true,true]
+class extends [true,true]
+class expression [true,true]
+after class [true,true]
+class no with [false,false]
+with assign spec: [2,"undefined"]
+eval assign spec: [2,"undefined"]
+eval increment 8
+class assign ReferenceError
+class increment 8

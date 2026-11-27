@@ -18,7 +18,7 @@
 # only the tests there (-p again adds another), and the errors found are then
 # compared with the known errors under those paths only.
 #
-# The errors found are compared, line by line, with the 33 known errors in
+# The errors found are compared, line by line, with the 32 known errors in
 # engine/test/test262_errors.txt and the script exits 0 only when they are the
 # same lines, the runner exited with its own status, 0 or 1, and no sanitizer
 # reported a finding in the log. Wrap the script
