@@ -3373,6 +3373,25 @@ unsigned long white_skip_tokens_read(void)
     return white_skip_tokens;
 }
 
+/* the sum of the references of the atoms rt holds: a reference kept or
+   freed once too often changes it, even when the atom stays. It lets go of
+   the entries of the regexp cache first (js_regexp_cache_off): what the
+   cache keeps, strings that can be atoms, belongs to no compile. */
+int64_t white_atom_refs_sum(JSRuntime *rt)
+{
+    int64_t n = 0;
+    int i;
+
+    js_regexp_cache_off(rt);
+    for (i = 0; i < rt->atom_size; i++) {
+        JSAtomStruct *p = rt->atom_array[i];
+
+        if (!atom_is_free(p))
+            n += js_rc(p)->ref_count;
+    }
+    return n;
+}
+
 /* the requests of buffers of code kept since the last call
    (JS_BYTECODE_REALLOC), up to cap of them into out, and how many there
    were. From then on, request number fail_at that asks for bytes fails, 0

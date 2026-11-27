@@ -197,6 +197,7 @@ unsigned long white_skip_tokens_read(void);
 unsigned long white_ident_copies_read(void);
 int white_bc_requests_take(long *out, int cap, int fail_at);
 void white_pass_no_room_set(int on);
+int64_t white_atom_refs_sum(JSRuntime *rt);
 unsigned long white_paren_size_take(void);
 unsigned long white_paren_work_take(unsigned long *total);
 int white_paren_refused_take(void);
@@ -5345,13 +5346,49 @@ static void test_bytecode_pass_room(void)
     vm_free(&v);
 }
 
-/* the atoms a runtime holds */
-static int64_t vm_atoms(VM *v)
+/* the atoms a runtime holds: their number, and the sum of their references
+   (white_atom_refs_sum), which a reference kept or freed once too often changes
+   even when the atom stays. An error made text first takes the reference
+   the text of an error keeps (that of toString), so that the text of the
+   error of a compile changes nothing after it. */
+struct atoms_held {
+    int64_t count, refs;
+};
+
+static struct atoms_held vm_atoms(VM *v)
 {
+    struct atoms_held a;
     JSMemoryUsage u;
 
+    JS_ThrowOutOfMemory(v->ctx);
+    free(exception_text(v->ctx));
     JS_ComputeMemoryUsage(v->rt, &u);
-    return u.atom_count;
+    a.count = u.atom_count;
+    a.refs = white_atom_refs_sum(v->rt);
+    return a;
+}
+
+/* whether v holds the atoms it held at a: 1 when it does, else 0 with the
+   change in text (room cap) */
+static int atoms_kept(VM *v, struct atoms_held a, char *text, size_t cap)
+{
+    struct atoms_held b = vm_atoms(v);
+
+    snprintf(text, cap, "%lld atoms with %lld references after the compile, %lld with %lld before",
+             (long long)b.count, (long long)b.refs, (long long)a.count, (long long)a.refs);
+    return b.count == a.count && b.refs == a.refs;
+}
+
+/* whether the exception pending in v is the out of memory error, and not
+   an interrupt or another error. It takes the exception. */
+static int vm_take_oom(VM *v)
+{
+    int unc = JS_HasException(v->ctx) && JS_IsUncatchableException(v->ctx);
+    char *t = exception_text(v->ctx);
+    int oom = unc && t && strstr(t, "out of memory") != NULL;
+
+    free(t);
+    return oom;
 }
 
 /* A new buffer of code that is refused (that of the parse, or the room of
@@ -5371,7 +5408,8 @@ static void test_pass_room_refused(void)
 
     for (i = 0; i < countof(srcs); i++) {
         VM v = vm_new();
-        int64_t atoms = vm_atoms(&v);
+        struct atoms_held atoms = vm_atoms(&v);
+        char text[160];
         int n, k, refused = 0;
         JSValue r;
 
@@ -5380,8 +5418,7 @@ static void test_pass_room_refused(void)
         n = white_bc_requests_take(req, countof(req), 0);
         CHECK(!JS_IsException(r), "source %zu does not compile", i);
         JS_FreeValue(v.ctx, r);
-        CHECK(vm_atoms(&v) == atoms, "source %zu: %lld atoms after the compile, %lld before",
-              i, (long long)vm_atoms(&v), (long long)atoms);
+        CHECK(atoms_kept(&v, atoms, text, sizeof(text)), "source %zu: %s", i, text);
         CHECK(n < (int)countof(req), "source %zu: %d requests", i, n);
         vm_free(&v);
         for (k = 0; k < n && k < (int)countof(req); k++) {
@@ -5394,12 +5431,11 @@ static void test_pass_room_refused(void)
             white_bc_requests_take(NULL, 0, k + 1);
             r = JS_Eval(v.ctx, srcs[i], strlen(srcs[i]), "room.js", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
             white_bc_requests_take(NULL, 0, 0);
-            oom = JS_IsException(r) && JS_HasException(v.ctx) && JS_IsUncatchableException(v.ctx);
+            oom = JS_IsException(r) && vm_take_oom(&v);
             CHECK(oom, "source %zu, new buffer %d of %ld bytes refused: not the out of memory error", i, k + 1, -req[k]);
-            free(exception_text(v.ctx));
             JS_FreeValue(v.ctx, r);
-            CHECK(vm_atoms(&v) == atoms, "source %zu, new buffer %d of %ld bytes refused: %lld atoms after the compile, %lld before",
-                  i, k + 1, -req[k], (long long)vm_atoms(&v), (long long)atoms);
+            CHECK(atoms_kept(&v, atoms, text, sizeof(text)), "source %zu, new buffer %d of %ld bytes refused: %s",
+                  i, k + 1, -req[k], text);
             vm_free(&v);
             refused++;
         }
@@ -5432,7 +5468,8 @@ static void test_code_write_refused(void)
         white_pass_no_room_set(no_room);
         for (i = 0; i < countof(srcs); i++) {
             VM v = vm_new();
-            int64_t atoms = vm_atoms(&v);
+            struct atoms_held atoms;
+            char text[160];
             int n, k;
             JSValue r;
 
@@ -5453,13 +5490,12 @@ static void test_code_write_refused(void)
                 white_bc_requests_take(NULL, 0, k + 1);
                 r = JS_Eval(v.ctx, srcs[i], strlen(srcs[i]), "write.js", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
                 white_bc_requests_take(NULL, 0, 0);
-                oom = JS_IsException(r) && JS_HasException(v.ctx) && JS_IsUncatchableException(v.ctx);
+                oom = JS_IsException(r) && vm_take_oom(&v);
                 CHECK(oom, "source %zu%s, request %d of %ld bytes refused: not the out of memory error",
                       i, no_room ? " with no room" : "", k + 1, req[k]);
-                free(exception_text(v.ctx));
                 JS_FreeValue(v.ctx, r);
-                CHECK(vm_atoms(&v) == atoms, "source %zu%s, request %d of %ld bytes refused: %lld atoms after the compile, %lld before",
-                      i, no_room ? " with no room" : "", k + 1, req[k], (long long)vm_atoms(&v), (long long)atoms);
+                CHECK(atoms_kept(&v, atoms, text, sizeof(text)), "source %zu%s, request %d of %ld bytes refused: %s",
+                      i, no_room ? " with no room" : "", k + 1, req[k], text);
                 vm_free(&v);
                 cases++;
                 grown += req[k] > 0;
@@ -8979,24 +9015,24 @@ static void test_regexp_split_same(void)
    code as a string in result (room cap), or "exception" when it threw, and
    returns 1 when the compile failed, else 0. *n is the number of requests of
    the compile. A compile may only fail with the out of memory error, and
-   one that fails leaves the runtime the atoms it had. */
+   one that fails leaves the runtime the atoms it had, with the references
+   they had. */
 static int compile_failing(const char *what, const char *js, int fail, int mode, int *n, char *result, size_t cap)
 {
     VM v = vm_new();
-    JSMemoryUsage u;
-    int64_t atoms;
+    struct atoms_held atoms = vm_atoms(&v);
+    char text[160];
     JSValue c;
     int failed;
 
-    JS_ComputeMemoryUsage(v.rt, &u);
-    atoms = u.atom_count;
     c = white_compile_failing(v.ctx, js, fail, mode, n);
     failed = JS_IsException(c);
 
     result[0] = 0;
     if (failed) {
-        int oom = JS_HasException(v.ctx) && JS_IsUncatchableException(v.ctx);
+        int unc = JS_HasException(v.ctx) && JS_IsUncatchableException(v.ctx);
         char *t = exception_text(v.ctx);
+        int oom = unc && t && strstr(t, "out of memory") != NULL;
 
         CHECK(oom, "%s, request %d failing: the compile fails with %s, not the out of memory error", what, fail, t ? t : "no exception");
         free(t);
@@ -9014,9 +9050,7 @@ static int compile_failing(const char *what, const char *js, int fail, int mode,
     }
     if (failed) {
         JS_FreeValue(v.ctx, c);
-        JS_ComputeMemoryUsage(v.rt, &u);
-        CHECK(u.atom_count == atoms, "%s, request %d failing: %lld atoms after the compile, %lld before",
-              what, fail, (long long)u.atom_count, (long long)atoms);
+        CHECK(atoms_kept(&v, atoms, text, sizeof(text)), "%s, request %d failing: %s", what, fail, text);
     }
     CHECK(!JS_HasException(v.ctx), "%s, request %d failing: an exception is pending", what, fail);
     vm_free(&v);
