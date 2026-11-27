@@ -4,6 +4,8 @@ What changed in `github.com/liustack/beastjs` (its name from v0.33.0, `github.co
 
 ## [Unreleased]
 
+## [v0.33.3] - 2026-11-27
+
 ### Fixed
 
 - An arrow function whose parameter default divides a property named `of` or like a keyword, such as `(a = o.of / 2) => a` or `(a = o.default / 2) => a`, compiles, as in Node.
@@ -975,7 +977,8 @@ The first release of the fork, from modernc.org/quickjs v0.25.0 and libquickjs v
 - A VM that runs out of memory inside `JSON.parse`, or anything else that converts a string with non-ASCII characters to UTF-8, no longer leaks that string.
 - `VM.Call` and `VM.CallValue` report the exception thrown while evaluating the function expression instead of `cannot call a non-function`.
 
-[Unreleased]: https://github.com/liustack/beastjs/compare/v0.33.2...main
+[Unreleased]: https://github.com/liustack/beastjs/compare/v0.33.3...main
+[v0.33.3]: https://github.com/liustack/beastjs/compare/v0.33.2...v0.33.3
 [v0.33.2]: https://github.com/liustack/beastjs/compare/v0.33.1...v0.33.2
 [v0.33.1]: https://github.com/liustack/beastjs/compare/v0.33.0...v0.33.1
 [v0.33.0]: https://github.com/liustack/beastjs/compare/v0.32.0...v0.33.0
