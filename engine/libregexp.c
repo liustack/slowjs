@@ -972,16 +972,19 @@ static __maybe_unused void lre_dump_bytecode(const uint8_t *buf,
    uses buffers, must reach no function that reads the flag
    (engine/test/cycles.sh). So the compiler claims the room before each
    write, and the write finds it. -1 with the buffer in error, which then
-   takes no more bytes, when the flag is set or there is no memory. */
+   takes no more bytes, when the flag is set or there is no memory, and -1
+   for every claim once the buffer is in error, one it has room for too (0
+   bytes): a caller that reads the code back after its claim never finds
+   it in error, or with no block at all. */
 static int re_dbuf_claim(DynBuf *b, size_t len, size_t max_size)
 {
     size_t new_size, size;
     uint8_t *new_buf;
 
+    if (unlikely(b->error))
+        return -1;
     if (likely(b->allocated_size - b->size >= len))
         return 0;
-    if (b->error)
-        return -1;
     new_size = b->size + len;
     if (new_size < len)
         return -1; /* overflow case */
