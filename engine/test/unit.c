@@ -2813,6 +2813,7 @@ typedef struct {
 
 static JSClassID free_node_class;
 static char free_order[1024];
+static int free_nodes_made, free_nodes_freed;
 
 static void free_node_finalizer(JSRuntime *rt, JSValue val)
 {
@@ -2822,6 +2823,7 @@ static void free_node_finalizer(JSRuntime *rt, JSValue val)
     snprintf(free_order + len, sizeof(free_order) - len, "%d ", n->id);
     JS_FreeValueRT(rt, n->held);
     free(n);
+    free_nodes_freed++;
 }
 
 static void free_node_mark(JSRuntime *rt, JSValueConst val, JS_MarkFunc *mark_func)
@@ -2849,6 +2851,7 @@ static JSValue free_node_new(JSContext *ctx, JSValueConst this_val, int argc,
     n->id = id;
     n->held = argc > 1 ? JS_DupValue(ctx, argv[1]) : JS_UNDEFINED;
     JS_SetOpaque(obj, n);
+    free_nodes_made++;
     return obj;
 }
 
@@ -3015,6 +3018,202 @@ static void test_young_free_order(void)
         CHECK(strcmp(calls[0], graphs[i].calls) == 0, "graph %zu: the callbacks after the full collection: %s, not %s", i, calls[0], graphs[i].calls);
         CHECK(strcmp(calls[1], graphs[i].calls) == 0, "graph %zu: the callbacks after the young collection: %s, not %s", i, calls[1], graphs[i].calls);
     }
+}
+
+static int gc_node_finalized;
+
+/* The finalizer of a gc_node asks for collections and counts the memory
+   while the engine frees objects, which must start no collection and find
+   no object half freed. */
+static void gc_node_finalizer(JSRuntime *rt, JSValue val)
+{
+    size_t len = strlen(free_order);
+    JSMemoryUsage u;
+
+    (void)val;
+    snprintf(free_order + len, sizeof(free_order) - len, "g ");
+    JS_RunGC(rt);
+    JS_RunYoungGC(rt);
+    JS_ComputeMemoryUsage(rt, &u);
+    gc_node_finalized++;
+}
+
+static JSClassID gc_node_class;
+
+static JSValue gc_node_new(JSContext *ctx, JSValueConst this_val, int argc,
+                           JSValueConst *argv)
+{
+    (void)this_val;
+    (void)argc;
+    (void)argv;
+    return JS_NewObjectClass(ctx, gc_node_class);
+}
+
+/* The objects that die with an object whose properties held them, and the
+   other values its properties held: dropped at once, with a WeakRef and a
+   FinalizationRegistry on them, inside a cycle that a full and a young
+   collection free, held by an old object that only a young cycle held,
+   next to a finalizer of the host that asks for a collection, and after a
+   script ran out of memory. The orders were recorded on the engine before
+   free_object let go of the objects of its properties without the call of
+   __JS_FreeValueRT. Every runtime ends with no block in use (the host
+   checks it). */
+static void test_free_children(void)
+{
+    static const JSClassDef def = {
+        "FreeNode", .finalizer = free_node_finalizer, .gc_mark = free_node_mark,
+    };
+    static const JSClassDef gc_def = {
+        "GCNode", .finalizer = gc_node_finalizer,
+    };
+    static const struct {
+        const char *old;   /* run, then made old by a full collection */
+        const char *graph; /* run in a job of its own */
+        const char *drop;  /* run after the end of that job */
+        int collect;       /* then 0: nothing, 1: JS_RunGC, 2: JS_RunYoungGC */
+        const char *order; /* what was freed by the drop and the collection */
+        const char *calls; /* the callbacks of fr after the collection */
+    } graphs[] = {
+        /* every kind of value a property holds */
+        { "", "var n = 7, t = { a: node(1), s: 'x'.repeat(3) + n, i: 1, u: undefined, nl: null,"
+              " b: { c: node(2), d: [node(3), { e: node(4) }] }, f: node(5, node(6)), y: Symbol('k'),"
+              " g: 10n ** 30n, it: Symbol.iterator, get h() { return node(99) }, set h(v) {},"
+              " r: 'a'.repeat(300 + n) + 'b'.repeat(300), d2: 1.5 };"
+              " var kept = t.k = node(7); t.k2 = { m: node(8) }; t.fn = function () { return node(9) };"
+              " t.fn.prototype; t.cl = (() => { const c = node(10); return () => c })();",
+          "t = null;", 0, "10 8 5 6 4 3 2 1 ", "" },
+        /* a WeakRef in the object to a child of it, and one outside to another */
+        { "", "var t = { c: node(20), x: node(21), o: { p: node(22) } }; t.w = new WeakRef(t.c);"
+              " ws.push(new WeakRef(t.x), new WeakRef(t.o));",
+          "t = null;", 0, "22 21 20 ", "" },
+        /* children registered with a registry that lives on, and with one
+           that dies with them */
+        { "", "var t = { c: node(30), d: { e: node(31) } }; fr.register(t.c, 'c'); fr.register(t.d, 'd');"
+              " t.fr2 = new FinalizationRegistry(() => got.push('never')); t.fr2.register(t.d.e, 'e');"
+              " fr.register(t.fr2, 'fr2');",
+          "t = null;", 1, "31 30 ", "c,d,fr2" },
+        /* a cycle with children in it and out of it */
+        { "", "(() => { const t = { c: node(40), y: { z: node(41) }, out: { o: node(42, { q: node(43) }) } };"
+              " t.y.self = t.y; t.self = t; t.y.back = t; fr.register(t.out, 'out'); ws.push(new WeakRef(t.y)); })();",
+          "", 1, "41 43 42 40 ", "out" },
+        { "", "(() => { const t = { c: node(40), y: { z: node(41) }, out: { o: node(42, { q: node(43) }) } };"
+              " t.y.self = t.y; t.self = t; t.y.back = t; fr.register(t.out, 'out'); ws.push(new WeakRef(t.y)); })();",
+          "", 2, "41 43 42 40 ", "out" },
+        /* an old object that only a young cycle holds, freed after the cycle */
+        { "var old = { q: node(50), r: { s: node(51) } }; fr.register(old.r, 'r');",
+          "(() => { const yc = { o: old, n: node(52) }; yc.self = yc; old = null; })();",
+          "", 2, "52 51 50 ", "r" },
+        /* a finalizer of the host that asks for collections, among children */
+        { "", "var t = { a: node(60), g: gc_node(), b: { c: node(61), g: gc_node() }, d: node(62) };",
+          "t = null;", 0, "62 g 61 g 60 ", "" },
+        { "", "(() => { const t = { a: node(63), g: gc_node(), b: { c: node(64), g: gc_node() } }; t.self = t; })();",
+          "", 1, "64 g 63 g ", "" },
+    };
+    size_t i;
+
+    for (i = 0; i < countof(graphs); i++) {
+        JSRuntime *rt = host_new_runtime();
+        JSContext *ctx = JS_NewContext(rt);
+        JSValue global, v;
+        const char *s;
+        char setup[512];
+
+        JS_SetGCThreshold(rt, (size_t)-1);
+        JS_NewClassID(rt, &free_node_class);
+        CHECK(JS_NewClass(rt, free_node_class, &def) == 0, "the class");
+        JS_NewClassID(rt, &gc_node_class);
+        CHECK(JS_NewClass(rt, gc_node_class, &gc_def) == 0, "the gc class");
+        global = JS_GetGlobalObject(ctx);
+        CHECK(JS_SetPropertyStr(ctx, global, "node",
+                                JS_NewCFunction(ctx, free_node_new, "node", 2)) >= 0, "node");
+        CHECK(JS_SetPropertyStr(ctx, global, "gc_node",
+                                JS_NewCFunction(ctx, gc_node_new, "gc_node", 0)) >= 0, "gc_node");
+        JS_FreeValue(ctx, global);
+        snprintf(setup, sizeof(setup), "var got = [], fr = new FinalizationRegistry((h) => got.push(h)), ws = []; %s void 0", graphs[i].old);
+        CHECK(eval(ctx, setup), "graph %zu: the setup", i);
+        CHECK(run_jobs(rt), "graph %zu: the end of the job of the setup", i);
+        JS_RunGC(rt);
+        free_order[0] = '\0';
+        gc_node_finalized = 0;
+        CHECK(eval(ctx, graphs[i].graph), "graph %zu", i);
+        /* the job that made the WeakRefs ends, and with it their hold */
+        CHECK(run_jobs(rt), "graph %zu: the end of its job", i);
+        CHECK(free_order[0] == '\0', "graph %zu: freed before the drop: %s", i, free_order);
+        CHECK(eval(ctx, graphs[i].drop), "graph %zu: the drop", i);
+        if (graphs[i].collect == 1)
+            JS_RunGC(rt);
+        else if (graphs[i].collect == 2)
+            JS_RunYoungGC(rt);
+        CHECK(strcmp(free_order, graphs[i].order) == 0, "graph %zu: freed %s, not %s", i, free_order, graphs[i].order);
+        CHECK(eval_is(ctx, "String(ws.every((w) => w.deref() === undefined))", "true"),
+              "graph %zu: a WeakRef still holds its target", i);
+        CHECK(run_jobs(rt), "graph %zu: jobs", i);
+        v = JS_Eval(ctx, "got.join()", 10, "<calls>", 0);
+        s = JS_ToCString(ctx, v);
+        CHECK(s && strcmp(s, graphs[i].calls) == 0, "graph %zu: the callbacks: %s, not %s", i, s ? s : "?", graphs[i].calls);
+        JS_FreeCString(ctx, s);
+        JS_FreeValue(ctx, v);
+        JS_FreeContext(ctx);
+        host_free_runtime(rt);
+    }
+}
+
+/* Objects that hold others in their properties, made until the script runs
+   out of memory and then dropped, three times: every node made is freed, and
+   the memory after the second and the third round is the same. */
+static void test_free_children_oom(void)
+{
+    static const JSClassDef def = {
+        "FreeNode", .finalizer = free_node_finalizer, .gc_mark = free_node_mark,
+    };
+    static const char fill[] =
+        "var keep = [], k = 0;\n"
+        "for (;;) {\n"
+        "  const o = { a: node(k++), b: { c: node(k++), s: 'v' + k }, n: k };\n"
+        "  o.w = new WeakRef(o.b); fr.register(o.a, k);\n"
+        "  keep.push(o);\n"
+        "}\n";
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    JSValue global;
+    JSMemoryUsage m;
+    size_t after[3];
+    int round;
+
+    JS_NewClassID(rt, &free_node_class);
+    CHECK(JS_NewClass(rt, free_node_class, &def) == 0, "the class");
+    global = JS_GetGlobalObject(ctx);
+    CHECK(JS_SetPropertyStr(ctx, global, "node",
+                            JS_NewCFunction(ctx, free_node_new, "node", 2)) >= 0, "node");
+    JS_FreeValue(ctx, global);
+    CHECK(eval(ctx, "var fr = new FinalizationRegistry(() => {}); void 0"), "the registry");
+    CHECK(run_jobs(rt), "jobs");
+    for (round = 0; round < 3; round++) {
+        JS_RunGC(rt);
+        JS_ComputeMemoryUsage(rt, &m);
+        free_nodes_made = free_nodes_freed = 0;
+        JS_SetMemoryLimit(rt, m.malloc_size + 256 * 1024);
+        {
+            /* running out of memory is not caught by the script */
+            JSValue v = JS_Eval(ctx, fill, strlen(fill), "<fill>", JS_EVAL_TYPE_GLOBAL);
+            CHECK(JS_IsException(v), "round %d: the fill ended", round);
+            JS_FreeValue(ctx, JS_GetException(ctx));
+        }
+        JS_SetMemoryLimit(rt, (size_t)-1);
+        CHECK(free_nodes_made > 100, "round %d: %d nodes made", round, free_nodes_made);
+        CHECK(run_jobs(rt), "round %d: the end of the job", round);
+        CHECK(eval(ctx, "keep = null; void 0"), "round %d: the drop", round);
+        CHECK(free_nodes_freed == free_nodes_made, "round %d: %d of %d nodes freed at the drop",
+              round, free_nodes_freed, free_nodes_made);
+        JS_RunGC(rt);
+        CHECK(run_jobs(rt), "round %d: the jobs of the registry", round);
+        JS_RunGC(rt);
+        after[round] = JS_GetMemorySize(rt);
+    }
+    CHECK(after[2] == after[1], "%zu bytes after the third round, %zu after the second",
+          after[2], after[1]);
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
 }
 
 static uint64_t fnv_word(uint64_t h, uint32_t v)
@@ -5859,6 +6058,8 @@ int main(void)
     test_free_nesting();
     test_free_order();
     test_young_free_order();
+    test_free_children();
+    test_free_children_oom();
     test_finalizer_memory_usage();
     test_unicode_tables();
     test_class_strings();
