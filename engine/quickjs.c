@@ -43752,6 +43752,13 @@ static __exception int resolve_variables(JSContext *ctx, JSFunctionDef *s)
 
     line_num = 0; /* avoid warning */
     for (pos = 0; pos < bc_len; pos = pos_next) {
+        /* a write that failed ends the copy: the code not copied is freed
+           with its atoms, and the error is out of memory, not an error
+           the rest of the code would throw */
+        if (unlikely(dbuf_error(&bc_out))) {
+            pass_lost_code(ctx, bc_buf + pos, bc_len - pos);
+            break;
+        }
         /* the rest of the code is copied as it is */
         if (js_compile_poll(ctx, JS_CODE_WORK))
             goto fail;
@@ -44054,12 +44061,11 @@ static __exception int resolve_variables(JSContext *ctx, JSFunctionDef *s)
     }
     return 0;
  fail:
-    /* continue the copy to keep the atom refcounts consistent */
-    /* XXX: find a better solution ? */
-    /* in one copy, which reads no flag: the instructions are whole from
-       pos to the end. When it fails, their atoms are freed. */
+    /* the code from pos on is not copied, and its atoms are freed here,
+       with no memory asked for: the instructions are whole from pos to the
+       end */
     if (pos < bc_len)
-        pass_put_code(ctx, &bc_out, bc_buf + pos, bc_len - pos);
+        pass_lost_code(ctx, bc_buf + pos, bc_len - pos);
     dbuf_free(&s->byte_code);
     s->byte_code = bc_out;
     return -1;

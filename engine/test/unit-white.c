@@ -5507,6 +5507,64 @@ static void test_code_write_refused(void)
     printf("unit-white: test_code_write_refused: %d requests refused, %d of them to grow a buffer\n", cases, grown);
 }
 
+/* A pass that cannot write its new code stops there with the out of memory
+   error: no error the rest of the code would throw takes its place. The
+   source does not compile, for a private field its class does not have,
+   which resolve_variables finds at the end of a method. Each request of a
+   buffer of code fails in turn, also with the passes starting their new
+   code from nothing (JS_PASS_ROOM), and each failure ends the compile with
+   the out of memory error, the runtime holding the atoms it held. */
+static void test_pass_refused_before_error(void)
+{
+    static const char src[] =
+        "class zqA { #zqB = 1; m(o) { var a = o.zqC, b = o.zqD, c = o.zqE; a += b + c; b = a * c; c = a - b; return o.#zqF + a + b + c; } }";
+    static long req[4096];
+    int no_room, n, k, cases = 0;
+
+    for (no_room = 0; no_room < 2; no_room++) {
+        VM v = vm_new();
+        JSValue r;
+        char *t;
+
+        white_pass_no_room_set(no_room);
+        white_bc_requests_take(req, countof(req), 0);
+        r = JS_Eval(v.ctx, src, strlen(src), "error.js", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+        n = white_bc_requests_take(req, countof(req), 0);
+        t = exception_text(v.ctx);
+        CHECK(JS_IsException(r) && t && strstr(t, "SyntaxError: undefined private field"),
+              "the source compiles to %s, not the syntax error", t ? t : "no exception");
+        free(t);
+        CHECK(n < (int)countof(req), "%d requests", n);
+        vm_free(&v);
+        for (k = 0; k < n && k < (int)countof(req); k++) {
+            struct atoms_held atoms;
+            char text[160];
+            int unc;
+
+            if (req[k] == 0)
+                continue;
+            v = vm_new();
+            atoms = vm_atoms(&v);
+            white_bc_requests_take(NULL, 0, k + 1);
+            r = JS_Eval(v.ctx, src, strlen(src), "error.js", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+            white_bc_requests_take(NULL, 0, 0);
+            unc = JS_HasException(v.ctx) && JS_IsUncatchableException(v.ctx);
+            t = exception_text(v.ctx);
+            CHECK(JS_IsException(r) && unc && t && strstr(t, "out of memory"),
+                  "%s, request %d of %ld bytes refused: the compile fails with %s, not the out of memory error",
+                  no_room ? "no room" : "room", k + 1, req[k], t ? t : "no exception");
+            free(t);
+            JS_FreeValue(v.ctx, r);
+            CHECK(atoms_kept(&v, atoms, text, sizeof(text)), "%s, request %d of %ld bytes refused: %s",
+                  no_room ? "no room" : "room", k + 1, req[k], text);
+            vm_free(&v);
+            cases++;
+        }
+    }
+    white_pass_no_room_set(0);
+    printf("unit-white: test_pass_refused_before_error: %d requests refused\n", cases);
+}
+
 /* The table of the answers of the lookahead (JSParenCache) grows for a new
    bracket only: an answer kept again from a bracket, under the mode of the
    function the parse has gone into, takes the place of the one before. The
@@ -12927,6 +12985,7 @@ int main(int argc, char **argv)
     test_bytecode_pass_room();
     test_pass_room_refused();
     test_code_write_refused();
+    test_pass_refused_before_error();
     test_parens_table_replace();
     test_parens_work_gaps();
     test_parens_alloc_refused();
