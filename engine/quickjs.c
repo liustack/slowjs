@@ -3211,9 +3211,16 @@ static inline void js_dbuf_init(JSContext *ctx, DynBuf *s)
     dbuf_init2(s, ctx->rt, js_dbuf_realloc_rt);
 }
 
+/* JS_BYTECODE_REALLOC(ptr, size) is called for each request of a buffer of
+   code (js_dbuf_bytecode_init): white.c keeps them */
+#ifndef JS_BYTECODE_REALLOC
+#define JS_BYTECODE_REALLOC(ptr, size) ((void)0)
+#endif
+
 static void *js_realloc_bytecode_rt(void *opaque, void *ptr, size_t size)
 {
     JSRuntime *rt = opaque;
+    JS_BYTECODE_REALLOC(ptr, size);
     if (size > (INT32_MAX / 2)) {
         /* the bytecode cannot be larger than 2G. Leave some slack to 
            avoid some overflows. */
@@ -41185,6 +41192,11 @@ static JSFunctionDef *js_new_function_def(JSContext *ctx,
     fd->is_eval = is_eval;
     fd->is_func_expr = is_func_expr;
     js_dbuf_bytecode_init(ctx, &fd->byte_code);
+    /* grown from nothing by half each time, the buffer takes about a dozen
+       requests to hold 64 bytes: it starts with them. A failure leaves it in
+       error, which ends the compile with the out of memory error, as a
+       failed write does (next_token1, js_create_function1). */
+    dbuf_claim(&fd->byte_code, 64);
     js_dbuf_init(ctx, &fd->object_lits);
     fd->last_opcode_pos = -1;
     fd->func_name = JS_ATOM_NULL;
@@ -43618,6 +43630,10 @@ static __exception int resolve_variables(JSContext *ctx, JSFunctionDef *s)
     cc.bc_buf = bc_buf = s->byte_code.buf;
     cc.bc_len = bc_len = s->byte_code.size;
     js_dbuf_bytecode_init(ctx, &bc_out);
+    /* the new code is about as long as this one: room for it at once, not
+       grown from nothing. A failure leaves bc_out in error, as its first
+       write would. */
+    dbuf_claim(&bc_out, bc_len);
 
     /* first pass for runtime checks (must be done before the
        variables are created) */
@@ -44561,6 +44577,9 @@ static __exception int insert_polls(JSContext *ctx, JSFunctionDef *s, DynBuf *bc
         }
     } while (changed);
     js_dbuf_bytecode_init(ctx, &out);
+    /* the new code is npos[len] bytes: room for it at once. A failure
+       leaves out in error, as its first write would. */
+    dbuf_claim(&out, npos[len]);
     for (pos = 0; pos < len; pos += sz) {
         if (js_compile_poll(ctx, JS_CODE_WORK)) {
             dbuf_free(&out);
@@ -45659,6 +45678,10 @@ static __exception int resolve_labels(JSContext *ctx, JSFunctionDef *s)
         return -1;
     if (!ctx->rt->no_fused_ops && share_local_slots(ctx, s))
         return -1;
+    /* the new code is about as long as this one: room for it at once, not
+       grown from nothing, after the returns above, which leave bc_out
+       unused. A failure leaves bc_out in error, as its first write would. */
+    dbuf_claim(&bc_out, bc_len);
 
     /* initialize the 'home_object' variable if needed */
     if (s->home_object_var_idx >= 0) {

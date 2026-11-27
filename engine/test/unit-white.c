@@ -195,6 +195,7 @@ unsigned long white_work_longest(void);
 unsigned long white_work_sum(void);
 unsigned long white_skip_tokens_read(void);
 unsigned long white_ident_copies_read(void);
+int white_bc_requests_take(long *out, int cap);
 unsigned long white_paren_size_take(void);
 unsigned long white_paren_work_take(unsigned long *total);
 int white_paren_refused_take(void);
@@ -5268,6 +5269,67 @@ static void test_ident_one_pass(void)
                   "(0, eval)(src + 'Object.keys(o).length');"
                   "for (i = 0, k = 0; i < 20000; i++) k += o['p' + i] === i && globalThis['v' + i] === i && globalThis['w' + i] === i;"
                   "k", "20000"), "many new names");
+    vm_free(&v);
+}
+
+/* A pass that rewrites the code of a function (resolve_variables,
+   resolve_labels, insert_polls) starts its new code in a buffer with room
+   for the code it reads, so the buffer grows once at most, when the new
+   code is longer. Top-level statements and no function: the requests of
+   buffers of code are those of the parse, then those of each pass, each
+   starting with a new buffer. The parse starts its buffer at 64 bytes. */
+static void test_bytecode_pass_room(void)
+{
+    static const char *const bodies[] = {
+        "a = a + 1;",
+        "if (a) { b.c = d(e, f); }",
+        "for (;;) { a++; if (a > 3) break; }",
+        "var v = q ? r : s; w += v;",
+        "switch (a) { case 1: b(); break; default: c(); }",
+        "try { a(); } catch (e) { b(e); } finally { c(); }",
+        "{ let k = 1; { const m = k + 1; k = m; } }",
+    };
+    static const int counts[] = { 1, 10, 100, 1000, 10000 };
+    static long req[4096];
+    VM v = vm_new();
+    size_t i, j;
+
+    for (i = 0; i < countof(bodies); i++) {
+        for (j = 0; j < countof(counts); j++) {
+            size_t blen = strlen(bodies[i]), len = 0;
+            char *src = malloc(blen * counts[j] + 1);
+            int n, k, chain = -1, grows = 0, worst = 0;
+            JSValue r;
+
+            for (k = 0; k < counts[j]; k++) {
+                memcpy(src + len, bodies[i], blen);
+                len += blen;
+            }
+            src[len] = '\0';
+            white_bc_requests_take(req, countof(req));
+            r = JS_Eval(v.ctx, src, len, "room.js", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+            n = white_bc_requests_take(req, countof(req));
+            CHECK(!JS_IsException(r), "%d of %s: does not compile", counts[j], bodies[i]);
+            if (JS_IsException(r))
+                free(exception_text(v.ctx));
+            JS_FreeValue(v.ctx, r);
+            CHECK(n < (int)countof(req), "%d of %s: %d requests", counts[j], bodies[i], n);
+            CHECK(n > 0 && req[0] <= -64, "%d of %s: the parse starts with %ld bytes", counts[j], bodies[i], n > 0 ? -req[0] : 0);
+            for (k = 0; k < n && k < (int)countof(req); k++) {
+                if (req[k] < 0) {
+                    chain++;
+                    grows = 0;
+                } else if (req[k] > 0 && chain > 0) {
+                    grows++;
+                    if (grows > worst)
+                        worst = grows;
+                }
+            }
+            CHECK(chain >= 2, "%d of %s: %d buffers of code", counts[j], bodies[i], chain + 1);
+            CHECK(worst <= 1, "%d of %s: a pass grew its buffer %d times", counts[j], bodies[i], worst);
+            free(src);
+        }
+    }
     vm_free(&v);
 }
 
@@ -12661,6 +12723,7 @@ int main(int argc, char **argv)
     test_compile_count();
     test_parens_lookahead_linear();
     test_ident_one_pass();
+    test_bytecode_pass_room();
     test_parens_table_replace();
     test_parens_work_gaps();
     test_parens_alloc_refused();

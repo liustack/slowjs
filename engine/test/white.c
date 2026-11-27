@@ -175,6 +175,13 @@ static int white_line_col_first[2];
 static unsigned long white_ident_copies;
 #define JS_IDENT_COPY() (white_ident_copies++)
 
+/* JS_BYTECODE_REALLOC keeps the requests of buffers of code, up to 4096: the
+   size, negative for a new buffer, 0 for a free */
+static long white_bc_req[4096];
+static int white_bc_nreq;
+#define JS_BYTECODE_REALLOC(ptr, size) \
+    (white_bc_nreq < 4096 ? (void)(white_bc_req[white_bc_nreq++] = (ptr) ? (long)(size) : -(long)(size)) : (void)0)
+
 #define host_poll white_host_poll
 
 #include "../quickjs.c"
@@ -3351,6 +3358,19 @@ uint32_t white_string_fake_len(JSValueConst v, uint32_t len)
 unsigned long white_skip_tokens_read(void)
 {
     return white_skip_tokens;
+}
+
+/* the requests of buffers of code kept since the last call
+   (JS_BYTECODE_REALLOC), up to cap of them into out, and how many there
+   were */
+int white_bc_requests_take(long *out, int cap)
+{
+    int i, n = white_bc_nreq;
+
+    for (i = 0; i < n && i < cap; i++)
+        out[i] = white_bc_req[i];
+    white_bc_nreq = 0;
+    return n;
 }
 
 /* the characters of names parse_ident copied so far (JS_IDENT_COPY) */
