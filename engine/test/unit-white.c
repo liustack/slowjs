@@ -9343,11 +9343,14 @@ struct compile_script {
     int mode;
 };
 
-/* scripts for a failure that once lost or freed twice a reference: a
-   destructuring in a with statement that binds var names (the name freed
-   twice when the label of its reference could not be made) */
+/* scripts for a failure that once went wrong: a destructuring in a with
+   statement that binds var names (the name freed twice when the label of
+   its reference could not be made), and two groups of a regexp with the same
+   name (the name of the first kept without its scope, which the check of the
+   second read past the end of its block) */
 static const char *const compile_failure_scripts[] = {
     "var o = {}; with (o) { var { a: zqB } = { a: 1 }, { b: zqC } = { b: 2 }, { c: zqD } = { c: 3 }, { d: zqE } = { d: 4 }; } zqB + zqC + zqD + zqE",
+    "/(?<zqF>x)|(?<zqF>y)/.exec('y').groups.zqF",
 };
 
 #define COMPILE_SCRIPTS \
