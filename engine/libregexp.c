@@ -2940,6 +2940,10 @@ static int re_parse_term(REParseState *s, BOOL is_backward_dir)
             if (last_atom_start < 0) {
                 return re_parse_error(s, "nothing to repeat");
             }
+            /* the code of the atom is read back below: not once writing
+               it failed, when it may not even have a buffer */
+            if (dbuf_error(&s->byte_code))
+                return -1;
             {
                 BOOL need_capture_init, add_zero_advance_check;
                 int len, pos;

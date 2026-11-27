@@ -9347,10 +9347,13 @@ struct compile_script {
    statement that binds var names (the name freed twice when the label of
    its reference could not be made), and two groups of a regexp with the same
    name (the name of the first kept without its scope, which the check of the
-   second read past the end of its block) */
+   second read past the end of its block), and a regexp whose atom is
+   repeated (the code read back when its first write had failed, and it had
+   no buffer) */
 static const char *const compile_failure_scripts[] = {
     "var o = {}; with (o) { var { a: zqB } = { a: 1 }, { b: zqC } = { b: 2 }, { c: zqD } = { c: 3 }, { d: zqE } = { d: 4 }; } zqB + zqC + zqD + zqE",
     "/(?<zqF>x)|(?<zqF>y)/.exec('y').groups.zqF",
+    "/zqG+/.test('zqGG')",
 };
 
 #define COMPILE_SCRIPTS \
