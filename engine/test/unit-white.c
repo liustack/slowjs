@@ -640,6 +640,21 @@ static void test_concat3_too_long(void)
 
 static int regvm_op(const char *name);
 
+/* TRUE when the register code of f has an ADDL whose destination is its
+   left operand (d a b, a byte each), as t = t + b makes for a local t
+   and an argument b, or t = t + id(c) for two locals */
+static int regvm_addl_into_left(JSValueConst f)
+{
+    const uint8_t *code;
+    int i, len, addl = regvm_op("ADDL");
+
+    code = white_regvm_code(f, &len);
+    for (i = 0; code && i + 2 < len; i++)
+        if (code[i] == addl && code[i + 1] == code[i + 2])
+            return 1;
+    return 0;
+}
+
 /* The string longest(wide) gives, its length made to look as long as the
    longest string (white_string_fake_len), and the length it had. It holds no
    reference: the local of the script is the string's only holder. */
@@ -688,8 +703,7 @@ static void test_string_append_longest(void)
     };
     VM v = vm_new();
     JSValue g = JS_GetGlobalObject(v.ctx), grow;
-    const uint8_t *code;
-    int i, k, len, addl = regvm_op("ADDL"), found = 0;
+    int i, k;
     char src[128];
 
     CHECK(JS_SetPropertyStr(v.ctx, g, "longest", JS_NewCFunction(v.ctx, longest_new, "longest", 1)) >= 0 &&
@@ -710,12 +724,7 @@ static void test_string_append_longest(void)
         }
     }
     grow = JS_GetPropertyStr(v.ctx, g, "grow");
-    code = white_regvm_code(grow, &len);
-    CHECK(code != NULL, "grow has no register code");
-    for (i = 0; code && i + 2 < len; i++)
-        if (code[i] == addl && code[i + 1] == code[i + 2])
-            found = 1;
-    CHECK(found, "grow has no ADDL into its left operand");
+    CHECK(regvm_addl_into_left(grow), "grow has no ADDL into its left operand");
     JS_FreeValue(v.ctx, grow);
     JS_FreeValue(v.ctx, g);
     vm_free(&v);
@@ -7827,6 +7836,8 @@ static void test_string_add_empty_side(void)
     } forms[] = {
         { "ADD", "(a, b) => a + b", 1, 1 },
         { "ADDL", "(a, b) => { let t = 0; t = a + b; return t }", 1, 1 },
+        /* b is an argument: t = t + b is an ADDL into t, checked below.
+           Of two locals it would be ADDLOC (rv_addloc_slow) */
         { "ADDL into the left local", "(a, b) => { let t = a; t = t + b; return t }", 1, 1 },
         { "ADD into an argument", "(a, b) => { a = a + b; return a }", 1, 1 },
         { "ADDK of ''", "(a, b) => a + ''", 0, 1 },
@@ -7908,6 +7919,8 @@ static void test_string_add_empty_side(void)
                 JS_FreeValue(v.ctx, args[1]);
             }
         }
+        if (strcmp(forms[f].what, "ADDL into the left local") == 0)
+            CHECK(regvm_addl_into_left(add), "%s: no ADDL into its left operand", forms[f].what);
         JS_FreeValue(v.ctx, add);
         vm_free(&v);
     }
@@ -7933,6 +7946,8 @@ static void test_string_add_kinds(void)
     } forms[] = {
         { "ADD", "(a, b) => a + b", NULL, NULL },
         { "ADDL", "(a, b) => { let t = 0; t = a + b; return t }", NULL, NULL },
+        /* b is an argument: t = t + b is an ADDL into t, checked below.
+           Of two locals it would be ADDLOC (rv_addloc_slow) */
         { "ADDL into the left local", "(a, b) => { let t = a; t = t + b; return t }", NULL, NULL },
         { "ADD into an argument", "(a, b) => { a = a + b; return a }", NULL, NULL },
         { "ADDK", "(a, b) => a + '<k>'", NULL, "'<k>'" },
@@ -7982,6 +7997,8 @@ static void test_string_add_kinds(void)
                 }
             }
         }
+        if (strcmp(forms[f].what, "ADDL into the left local") == 0)
+            CHECK(regvm_addl_into_left(add), "%s: no ADDL into its left operand", forms[f].what);
         JS_FreeValue(v.ctx, add);
         vm_free(&v);
     }
