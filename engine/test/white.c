@@ -181,13 +181,21 @@ static unsigned long white_ident_copies;
    the last take, 0 for none). */
 static long white_bc_req[4096];
 static int white_bc_nreq, white_bc_fail_at;
+/* with white_bc_stop set, the request that fails also sets the interrupt
+   flag at the next reading of it (host_poll_stop_after of host.c) */
+static int white_bc_stop;
+void host_poll_stop_after(long n);
 
 static int white_bc_request(const void *ptr, size_t size)
 {
     if (white_bc_nreq < 4096)
         white_bc_req[white_bc_nreq] = ptr ? (long)size : -(long)size;
     white_bc_nreq++;
-    return size != 0 && white_bc_nreq == white_bc_fail_at;
+    if (size == 0 || white_bc_nreq != white_bc_fail_at)
+        return 0;
+    if (white_bc_stop)
+        host_poll_stop_after(1);
+    return 1;
 }
 #define JS_BYTECODE_REALLOC(ptr, size) white_bc_request(ptr, size)
 /* JS_PASS_ROOM: with white_pass_no_room set, a pass starts its new code with
@@ -3411,6 +3419,13 @@ int white_bc_requests_take(long *out, int cap, int fail_at)
 void white_pass_no_room_set(int on)
 {
     white_pass_no_room = on;
+}
+
+/* whether the request of code that fails also sets the interrupt flag at
+   the next reading (JS_BYTECODE_REALLOC) */
+void white_bc_stop_set(int on)
+{
+    white_bc_stop = on;
 }
 
 /* the characters of names parse_ident copied so far (JS_IDENT_COPY) */

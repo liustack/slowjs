@@ -44669,9 +44669,13 @@ static __exception int insert_polls(JSContext *ctx, JSFunctionDef *s, DynBuf *bc
         }
     } while (changed);
     js_dbuf_bytecode_init(ctx, &out);
-    /* the new code is npos[len] bytes: room for it at once. A failure
-       leaves out in error, as its first write would. */
-    dbuf_claim(&out, JS_PASS_ROOM(npos[len]));
+    /* the new code is npos[len] bytes: room for it at once. When the room
+       is refused, the pass ends there, bc as it was. */
+    if (dbuf_claim(&out, JS_PASS_ROOM(npos[len]))) {
+        dbuf_free(&out);
+        JS_ThrowOutOfMemory(ctx);
+        goto fail;
+    }
     for (pos = 0; pos < len; pos += sz) {
         if (js_compile_poll(ctx, JS_CODE_WORK)) {
             dbuf_free(&out);

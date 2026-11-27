@@ -197,6 +197,7 @@ unsigned long white_skip_tokens_read(void);
 unsigned long white_ident_copies_read(void);
 int white_bc_requests_take(long *out, int cap, int fail_at);
 void white_pass_no_room_set(int on);
+void white_bc_stop_set(int on);
 int64_t white_atom_refs_sum(JSRuntime *rt);
 unsigned long white_paren_size_take(void);
 unsigned long white_paren_work_take(unsigned long *total);
@@ -5563,6 +5564,62 @@ static void test_pass_refused_before_error(void)
     }
     white_pass_no_room_set(0);
     printf("unit-white: test_pass_refused_before_error: %d requests refused\n", cases);
+}
+
+/* A pass whose room is refused ends there with the out of memory error,
+   though the interrupt flag is set at the next reading of it: the pass
+   does not go on, to read the flag and stop for it. The source is one
+   function with a run of 200 statements, longer than a run may go without
+   a poll (POLL_RUN), whose new buffers of code are those of the parse, then
+   of resolve_variables, resolve_labels and insert_polls. Each of the
+   passes has its room refused in turn, the flag set at the reading after
+   (the parse goes on after a write that failed, and reads it). */
+static void test_pass_room_refused_stopped(void)
+{
+    static char src[4096];
+    static long req[4096];
+    int n, k, news = 0, refused = 0;
+    VM v = vm_new();
+    JSValue r;
+
+    strcpy(src, "var zqA = 0; ");
+    for (k = 0; k < 200; k++)
+        strcat(src, "zqA += 1; ");
+    strcat(src, "zqA");
+    white_bc_requests_take(req, countof(req), 0);
+    r = JS_Eval(v.ctx, src, strlen(src), "stop.js", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+    n = white_bc_requests_take(req, countof(req), 0);
+    CHECK(!JS_IsException(r), "the source does not compile");
+    JS_FreeValue(v.ctx, r);
+    CHECK(n < (int)countof(req), "%d requests", n);
+    vm_free(&v);
+    white_bc_stop_set(1);
+    for (k = 0; k < n && k < (int)countof(req); k++) {
+        struct atoms_held atoms;
+        char text[160], *t;
+        int unc;
+
+        if (req[k] >= 0 || news++ == 0)
+            continue;
+        v = vm_new();
+        atoms = vm_atoms(&v);
+        white_bc_requests_take(NULL, 0, k + 1);
+        r = JS_Eval(v.ctx, src, strlen(src), "stop.js", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+        white_bc_requests_take(NULL, 0, 0);
+        host_poll_stop_after(0);
+        unc = JS_HasException(v.ctx) && JS_IsUncatchableException(v.ctx);
+        t = exception_text(v.ctx);
+        CHECK(JS_IsException(r) && unc && t && strstr(t, "out of memory"),
+              "new buffer %d of %ld bytes refused: the compile fails with %s, not the out of memory error",
+              k + 1, -req[k], t ? t : "no exception");
+        free(t);
+        JS_FreeValue(v.ctx, r);
+        CHECK(atoms_kept(&v, atoms, text, sizeof(text)), "new buffer %d of %ld bytes refused: %s", k + 1, -req[k], text);
+        vm_free(&v);
+        refused++;
+    }
+    white_bc_stop_set(0);
+    CHECK(refused == 3, "%d rooms of passes refused", refused);
 }
 
 /* The table of the answers of the lookahead (JSParenCache) grows for a new
@@ -12986,6 +13043,7 @@ int main(int argc, char **argv)
     test_pass_room_refused();
     test_code_write_refused();
     test_pass_refused_before_error();
+    test_pass_room_refused_stopped();
     test_parens_table_replace();
     test_parens_work_gaps();
     test_parens_alloc_refused();
