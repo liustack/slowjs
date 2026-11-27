@@ -3225,12 +3225,15 @@ static inline void js_dbuf_init(JSContext *ctx, DynBuf *s)
 #define JS_PASS_ROOM(len) (len)
 #endif
 
+/* the most bytes a buffer of code takes */
+#define JS_BYTECODE_MAX (INT32_MAX / 2)
+
 static void *js_realloc_bytecode_rt(void *opaque, void *ptr, size_t size)
 {
     JSRuntime *rt = opaque;
     if (JS_BYTECODE_REALLOC(ptr, size))
         return NULL;
-    if (size > (INT32_MAX / 2)) {
+    if (size > JS_BYTECODE_MAX) {
         /* the bytecode cannot be larger than 2G. Leave some slack to 
            avoid some overflows. */
         return NULL;
@@ -44614,6 +44617,13 @@ static __exception int insert_polls(JSContext *ctx, JSFunctionDef *s, DynBuf *bc
             for (k = 0; k < sz; k++)
                 npos[pos + k] = cur + k;
             cur += wide[pos] ? 5 : sz;
+            /* the new code takes no more than a buffer of code, whose
+               request would be refused: cur, a step of a few bytes past
+               it at most, stays far from overflow */
+            if (cur > JS_BYTECODE_MAX) {
+                JS_ThrowOutOfMemory(ctx);
+                goto fail;
+            }
         }
         npos[len] = cur;
         changed = FALSE;
