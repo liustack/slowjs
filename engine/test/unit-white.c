@@ -199,6 +199,7 @@ int white_bc_requests_take(long *out, int cap, int fail_at);
 void white_pass_no_room_set(int on);
 void white_bc_stop_set(int on);
 int64_t white_atom_refs_sum(JSRuntime *rt);
+void white_regexp_cache_drop(JSRuntime *rt);
 unsigned long white_paren_size_take(void);
 unsigned long white_paren_work_take(unsigned long *total);
 int white_paren_refused_take(void);
@@ -5351,7 +5352,9 @@ static void test_bytecode_pass_room(void)
    (white_atom_refs_sum), which a reference kept or freed once too often changes
    even when the atom stays. An error made text first takes the reference
    the text of an error keeps (that of toString), so that the text of the
-   error of a compile changes nothing after it. */
+   error of a compile changes nothing after it, and the regexp cache lets go
+   of its entries, whose strings can be atoms: what it keeps belongs to no
+   compile. Both come before the two readings, which see the same atoms. */
 struct atoms_held {
     int64_t count, refs;
 };
@@ -5363,6 +5366,7 @@ static struct atoms_held vm_atoms(VM *v)
 
     JS_ThrowOutOfMemory(v->ctx);
     free(exception_text(v->ctx));
+    white_regexp_cache_drop(v->rt);
     JS_ComputeMemoryUsage(v->rt, &u);
     a.count = u.atom_count;
     a.refs = white_atom_refs_sum(v->rt);
