@@ -980,6 +980,7 @@ func js_murmur2(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 u
 func js_new_function_def(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr, a7 uintptr)
 func js_new_function_proto(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr)
 func js_new_host_function(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr)
+func js_new_ident_atom(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
 func js_new_long_string_atom(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
 func js_new_module_def(a0 uintptr, a1 uintptr, a2 uintptr)
 func js_new_promise_capability(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr)

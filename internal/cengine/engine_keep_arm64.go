@@ -940,6 +940,7 @@ var goasmKeep = []any{
 	js_new_function_def,
 	js_new_function_proto,
 	js_new_host_function,
+	js_new_ident_atom,
 	js_new_long_string_atom,
 	js_new_module_def,
 	js_new_promise_capability,

@@ -170,6 +170,10 @@ static int white_line_col_refused;
    to the first line: [1] to its first byte, [0] inside it */
 static int white_line_col_first[2];
 #define JS_LINE_COL_FIRST_LINE(at_start) (white_line_col_first[(at_start) ? 1 : 0]++)
+/* JS_IDENT_COPY counts the characters parse_ident copies of the names of
+   identifiers */
+static unsigned long white_ident_copies;
+#define JS_IDENT_COPY() (white_ident_copies++)
 
 #define host_poll white_host_poll
 
@@ -3347,6 +3351,12 @@ uint32_t white_string_fake_len(JSValueConst v, uint32_t len)
 unsigned long white_skip_tokens_read(void)
 {
     return white_skip_tokens;
+}
+
+/* the characters of names parse_ident copied so far (JS_IDENT_COPY) */
+unsigned long white_ident_copies_read(void)
+{
+    return white_ident_copies;
 }
 
 /* the size the table of the answers of the lookahead last grew to

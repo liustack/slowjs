@@ -194,6 +194,7 @@ int white_sb_putc16(struct StringBuffer *b, uint32_t c);
 unsigned long white_work_longest(void);
 unsigned long white_work_sum(void);
 unsigned long white_skip_tokens_read(void);
+unsigned long white_ident_copies_read(void);
 unsigned long white_paren_size_take(void);
 unsigned long white_paren_work_take(unsigned long *total);
 int white_paren_refused_take(void);
@@ -5170,6 +5171,104 @@ static void test_parens_lookahead_linear(void)
         free(src);
         vm_free(&v);
     }
+}
+
+/* A name of ASCII letters, digits, '_' and '$' with no escape, shorter than
+   4096 bytes, is read in one pass over the source and looked up where it is
+   (parse_ident_ascii): parse_ident copies none of its characters. A name
+   with an escape, a character past ASCII or of 4096 bytes or more goes the
+   long way, and each of its characters is copied. Both ways give the same
+   atom for the same name, a new name or one the table has, in a table that
+   grows on the way. */
+static void test_ident_one_pass(void)
+{
+    static const struct {
+        const char *src;
+        unsigned long copies;
+    } cases[] = {
+        { "var abc = 1, $_9 = abc; abc += $_9; L: for (;;) break L; ({ abc, get x() { return abc; } }).abc;", 0 },
+        { "class A { #abc = 1; static #s; m(o) { return this.#abc + (#abc in o) + A.#s; } }", 0 },
+        { "var x = { length: 1, prototype: 2, constructor: 3, __proto__: null }; x.length;", 0 },
+        { "var a\\u0062c = 1;", 3 },
+        { "var \\u0061bc = 1;", 3 },
+        { "var ab\\u{63} = 1;", 3 },
+        { "var caf\xc3\xa9 = 1;", 4 },
+        { "var x\xf0\x90\x90\x80 = 1;", 2 },
+        { "var a\xe2\x80\x8c" "b = 1;", 3 },
+        { "class B { #\\u0061b = 1; }", 2 },
+        { "class B { #\xc3\xa9t = 1; }", 2 },
+        { "class B { #t\xc3\xa9 = 1; }", 2 },
+        { "a\\x;", 1 },
+    };
+    VM v = vm_new();
+    char *src, *t;
+    unsigned long copies;
+    size_t i, len;
+    JSValue r;
+
+    for (i = 0; i < countof(cases); i++) {
+        copies = white_ident_copies_read();
+        r = JS_Eval(v.ctx, cases[i].src, strlen(cases[i].src), "ident.js",
+                    JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+        copies = white_ident_copies_read() - copies;
+        if (JS_IsException(r))
+            free(exception_text(v.ctx));
+        JS_FreeValue(v.ctx, r);
+        CHECK(copies == cases[i].copies, "%s: %lu characters of names copied, want %lu",
+              cases[i].src, copies, cases[i].copies);
+    }
+    /* 4095 bytes in one pass and 4096 the long way, the '#' of a private
+       name counted */
+    for (len = 4094; len <= 4097; len++) {
+        size_t n = len + 64;
+        int priv;
+
+        for (priv = 0; priv < 2; priv++) {
+            src = malloc(n + len);
+            if (priv)
+                sprintf(src, "class C { #q%0*d = 1; }", (int)len - 2, 0);
+            else
+                sprintf(src, "var q%0*d = 1;", (int)len - 1, 0);
+            copies = white_ident_copies_read();
+            r = JS_Eval(v.ctx, src, strlen(src), "ident.js", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+            copies = white_ident_copies_read() - copies;
+            CHECK(!JS_IsException(r), "a name of %zu bytes does not compile", len);
+            if (JS_IsException(r))
+                free(exception_text(v.ctx));
+            JS_FreeValue(v.ctx, r);
+            CHECK(copies == (len < 4096 ? 0 : len - priv), "a name of %zu bytes%s: %lu characters copied",
+                  len, priv ? " after #" : "", copies);
+            free(src);
+        }
+    }
+    vm_free(&v);
+
+    /* the same atom both ways: in a fresh runtime, so that the names are
+       new to the table when the parse meets them first */
+    v = vm_new();
+    CHECK(eval_is(v.ctx,
+                  "var abc = 1, caf\\u00e9 = 2, x\\u{10400} = 3; a\\u0062c += 10; caf\xc3\xa9 += 20; x\xf0\x90\x90\x80 += 30;"
+                  "var o = {}; o[String.fromCharCode(110, 101, 119, 49)] = 5; o.n\\u0065w1 += o.new1;"
+                  "class A { #k = 1; static has(o) { return #\\u006b in o; } }"
+                  "[abc, globalThis['ab' + 'c'], globalThis['caf\\u00e9'], globalThis['x\\ud801\\udc00'], o.new1, A.has(new A())].join()",
+                  "11,11,22,33,10,true"), "the names both ways");
+    CHECK(eval_is(v.ctx,
+                  "var r = [];"
+                  "for (var n of [4095, 4096, 70000]) {"
+                  "  var s = 'q'.repeat(n);"
+                  "  (0, eval)('var ' + s + ' = ' + n + '; ' + s.slice(1) + '\\\\u0071 += 1;');"
+                  "  r.push(globalThis[s]);"
+                  "}"
+                  "r.join()", "4096,4097,70001"), "long names both ways");
+    /* about 60,000 new names: the table of atoms and its hash grow while the
+       parse looks names up where they are */
+    CHECK(eval_is(v.ctx,
+                  "var src = 'var o = {};', i;"
+                  "for (i = 0; i < 20000; i++) src += 'o.p' + i + ' = v' + i + ' = w' + i + ' = ' + i + ';';"
+                  "(0, eval)(src + 'Object.keys(o).length');"
+                  "for (i = 0, k = 0; i < 20000; i++) k += o['p' + i] === i && globalThis['v' + i] === i && globalThis['w' + i] === i;"
+                  "k", "20000"), "many new names");
+    vm_free(&v);
 }
 
 /* The table of the answers of the lookahead (JSParenCache) grows for a new
@@ -12561,6 +12660,7 @@ int main(int argc, char **argv)
     test_function_properties_oom();
     test_compile_count();
     test_parens_lookahead_linear();
+    test_ident_one_pass();
     test_parens_table_replace();
     test_parens_work_gaps();
     test_parens_alloc_refused();

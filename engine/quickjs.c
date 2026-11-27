@@ -5186,17 +5186,16 @@ static JSAtom __JS_NewAtomInit(JSRuntime *rt, const char *str, int len,
     return __JS_NewAtom(rt, p, atom_type, NULL);
 }
 
-/* Warning: str must be ASCII only */
-static JSAtom __JS_FindAtom(JSRuntime *rt, const char *str, size_t len,
-                            int atom_type)
+/* __JS_FindAtom for a string atom whose hash, hash_string8 of str from
+   JS_ATOM_TYPE_STRING, the caller made: 'h' is that hash with
+   JS_ATOM_HASH_MASK applied. Warning: str must be ASCII only */
+static force_inline JSAtom js_find_atom8(JSRuntime *rt, const char *str,
+                                         size_t len, uint32_t h)
 {
-    uint32_t h, h1, i;
+    uint32_t i;
     JSAtomStruct *p;
 
-    h = hash_string8((const uint8_t *)str, len, JS_ATOM_TYPE_STRING);
-    h &= JS_ATOM_HASH_MASK;
-    h1 = h & (rt->atom_hash_size - 1);
-    i = rt->atom_hash[h1];
+    i = rt->atom_hash[h & (rt->atom_hash_size - 1)];
     while (i != 0) {
         p = rt->atom_array[i];
         if (p->hash == h &&
@@ -5211,6 +5210,16 @@ static JSAtom __JS_FindAtom(JSRuntime *rt, const char *str, size_t len,
         i = p->hash_next;
     }
     return JS_ATOM_NULL;
+}
+
+/* Warning: str must be ASCII only */
+static JSAtom __JS_FindAtom(JSRuntime *rt, const char *str, size_t len,
+                            int atom_type)
+{
+    uint32_t h;
+
+    h = hash_string8((const uint8_t *)str, len, JS_ATOM_TYPE_STRING);
+    return js_find_atom8(rt, str, len, h & JS_ATOM_HASH_MASK);
 }
 
 /* The string atom of the characters of p, with no reference taken, or
@@ -28767,6 +28776,80 @@ static void reparse_ident_token(JSParseState *s, int forced_func_kind)
     }
 }
 
+/* JS_IDENT_COPY() is called for each character parse_ident() copies of the
+   name of an identifier: white.c counts them */
+#ifndef JS_IDENT_COPY
+#define JS_IDENT_COPY() ((void)0)
+#endif
+
+/* The atom of the 'len' bytes of ASCII at str, a name that does not start
+   with a digit, that the table of atoms does not have as a string of 8 bits:
+   what JS_NewAtomLen does after __JS_FindAtom found nothing */
+static no_inline JSAtom js_new_ident_atom(JSContext *ctx, const char *str,
+                                          size_t len)
+{
+    JSValue val;
+
+    val = js_new_string8_len(ctx, str, len);
+    if (JS_IsException(val))
+        return JS_ATOM_NULL;
+    return JS_NewAtomStr(ctx, JS_VALUE_GET_STRING(val));
+}
+
+/* The atom of a name of ASCII letters, digits, '_' and '$' alone, with no
+   escape and of fewer than JS_POLL_SHORT_STEP bytes, in one pass over the
+   source: the hash is made as the bytes are read, and the name is looked up
+   where it is in the source, with no copy. 'start' is its first byte, the
+   '#' of a private name when is_private, and *pp is past its first
+   character. It finds the atom JS_NewAtomLen finds in parse_ident and makes
+   a new one as JS_NewAtomLen does, so the atoms, their numbers and the
+   table are those parse_ident gives, and it reads the interrupt flag where
+   parse_ident reads it: a name this short crosses a multiple of
+   JS_ROPE_STEP once at most. Returns FALSE with nothing done when the name
+   goes on with a backslash or a byte past ASCII, or is longer: parse_ident
+   reads it then. Otherwise TRUE, with *patom the atom, or JS_ATOM_NULL with
+   the exception thrown, and *pp past the name. */
+static force_inline BOOL parse_ident_ascii(JSParseState *s, const uint8_t **pp,
+                                           const uint8_t *start, BOOL is_private,
+                                           JSAtom *patom)
+{
+    const uint8_t *p = start;
+    uint32_t h = JS_ATOM_TYPE_STRING, n = JS_POLL_SHORT_STEP;
+    size_t len;
+    JSAtom atom;
+    int c;
+
+    if (is_private) {
+        h = h * 263 + '#';
+        p++;
+        n--;
+    }
+    /* the first character is one of these too */
+    for (;;) {
+        c = *p;
+        if (c >= 128 || !lre_is_id_continue_byte(c))
+            break;
+        h = h * 263 + c;
+        p++;
+        if (unlikely(--n == 0))
+            return FALSE;
+    }
+    if (unlikely(c == '\\' || c >= 128))
+        return FALSE;
+    if (js_poll_cross(*pp, p) && js_poll_interrupts(s->ctx)) {
+        atom = JS_ATOM_NULL;
+    } else {
+        len = p - start;
+        atom = js_find_atom8(s->ctx->rt, (const char *)start, len,
+                             h & JS_ATOM_HASH_MASK);
+        if (unlikely(atom == JS_ATOM_NULL))
+            atom = js_new_ident_atom(s->ctx, (const char *)start, len);
+    }
+    *pp = p;
+    *patom = atom;
+    return TRUE;
+}
+
 /* 'c' is the first character. Return JS_ATOM_NULL in case of error */
 static JSAtom parse_ident(JSParseState *s, const uint8_t **pp,
                           BOOL *pident_has_escape, int c, BOOL is_private)
@@ -28785,6 +28868,7 @@ static JSAtom parse_ident(JSParseState *s, const uint8_t **pp,
     for(;;) {
         p1 = p;
 
+        JS_IDENT_COPY();
         if (c < 128) {
             buf[ident_pos++] = c;
         } else {
@@ -28990,8 +29074,11 @@ static no_inline __exception int next_token1(JSParseState *s)
         /* identifier */
         p++;
         ident_has_escape = FALSE;
+        if (parse_ident_ascii(s, &p, p - 1, FALSE, &atom))
+            goto ident_atom;
     has_ident:
         atom = parse_ident(s, &p, &ident_has_escape, c, FALSE);
+    ident_atom:
         if (atom == JS_ATOM_NULL)
             goto fail;
         s->token.u.ident.atom = atom;
@@ -29003,7 +29090,7 @@ static no_inline __exception int next_token1(JSParseState *s)
     case '#':
         /* private name */
         {
-            const uint8_t *p1;
+            const uint8_t *p1, *p_hash = p;
             p++;
             p1 = p;
             c = *p1++;
@@ -29022,7 +29109,9 @@ static no_inline __exception int next_token1(JSParseState *s)
             }
             p = p1;
             ident_has_escape = FALSE; /* not used */
-            atom = parse_ident(s, &p, &ident_has_escape, c, TRUE);
+            /* a first character of one byte is ASCII with no escape */
+            if (p1 != p_hash + 2 || !parse_ident_ascii(s, &p, p_hash, TRUE, &atom))
+                atom = parse_ident(s, &p, &ident_has_escape, c, TRUE);
             if (atom == JS_ATOM_NULL)
                 goto fail;
             s->token.u.ident.atom = atom;
