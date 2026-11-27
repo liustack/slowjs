@@ -31209,14 +31209,14 @@ static int push_scope(JSParseState *s) {
             if (fd->scopes == fd->def_scope_array) {
                 new_buf = js_realloc2(s->ctx, NULL, new_size * sizeof(*fd->scopes), &slack);
                 if (!new_buf) {
-                    fd->byte_code.error = TRUE;
+                    dbuf_set_error(&fd->byte_code);
                     return -1;
                 }
                 memcpy(new_buf, fd->scopes, fd->scope_count * sizeof(*fd->scopes));
             } else {
                 new_buf = js_realloc2(s->ctx, fd->scopes, new_size * sizeof(*fd->scopes), &slack);
                 if (!new_buf) {
-                    fd->byte_code.error = TRUE;
+                    dbuf_set_error(&fd->byte_code);
                     return -1;
                 }
             }
@@ -34434,6 +34434,8 @@ static __exception int get_lvalue(JSParseState *s, int *popcode, int *pscope,
         fd->byte_code.size = fd->last_opcode_pos;
         fd->last_opcode_pos = -1;
     }
+    /* from here on, the reference of name is no longer the code's: a
+       failure frees it */
     
     if (keep) {
         /* get the value but keep the object/fields on the stack */
@@ -34441,8 +34443,10 @@ static __exception int get_lvalue(JSParseState *s, int *popcode, int *pscope,
         case OP_scope_get_var:
             if (depth != 0) {
                 label = new_label(s);
-                if (label < 0)
+                if (label < 0) {
+                    JS_FreeAtom(s->ctx, name);
                     return -1;
+                }
                 emit_op(s, OP_scope_make_ref);
                 emit_atom(s, name);
                 emit_u32(s, label);
@@ -34483,8 +34487,10 @@ static __exception int get_lvalue(JSParseState *s, int *popcode, int *pscope,
         case OP_scope_get_var:
             if (depth != 0) {
                 label = new_label(s);
-                if (label < 0)
+                if (label < 0) {
+                    JS_FreeAtom(s->ctx, name);
                     return -1;
+                }
                 emit_op(s, OP_scope_make_ref);
                 emit_atom(s, name);
                 emit_u32(s, label);

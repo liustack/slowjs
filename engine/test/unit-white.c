@@ -8978,12 +8978,20 @@ static void test_regexp_split_same(void)
    js_malloc_rt or js_realloc_rt (small blocks too). It puts the result of the
    code as a string in result (room cap), or "exception" when it threw, and
    returns 1 when the compile failed, else 0. *n is the number of requests of
-   the compile. A compile may only fail with the out of memory error. */
+   the compile. A compile may only fail with the out of memory error, and
+   one that fails leaves the runtime the atoms it had. */
 static int compile_failing(const char *what, const char *js, int fail, int mode, int *n, char *result, size_t cap)
 {
     VM v = vm_new();
-    JSValue c = white_compile_failing(v.ctx, js, fail, mode, n);
-    int failed = JS_IsException(c);
+    JSMemoryUsage u;
+    int64_t atoms;
+    JSValue c;
+    int failed;
+
+    JS_ComputeMemoryUsage(v.rt, &u);
+    atoms = u.atom_count;
+    c = white_compile_failing(v.ctx, js, fail, mode, n);
+    failed = JS_IsException(c);
 
     result[0] = 0;
     if (failed) {
@@ -9004,8 +9012,12 @@ static int compile_failing(const char *what, const char *js, int fail, int mode,
         free(exception_text(v.ctx));
         JS_FreeValue(v.ctx, r);
     }
-    if (failed)
+    if (failed) {
         JS_FreeValue(v.ctx, c);
+        JS_ComputeMemoryUsage(v.rt, &u);
+        CHECK(u.atom_count == atoms, "%s, request %d failing: %lld atoms after the compile, %lld before",
+              what, fail, (long long)u.atom_count, (long long)atoms);
+    }
     CHECK(!JS_HasException(v.ctx), "%s, request %d failing: an exception is pending", what, fail);
     vm_free(&v);
     return failed;
