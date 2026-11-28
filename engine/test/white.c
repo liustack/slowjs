@@ -158,6 +158,51 @@ static unsigned long white_paren_size, white_paren_work, white_paren_work_max, w
 static int white_paren_refused;
 #define JS_PAREN_REFUSED() (white_paren_refused++)
 
+/* JS_LINE_COL_SCAN counts the bytes the lookups of lines and columns walk
+   (get_line_col, get_line_col_cached): all of them, and the most between two
+   readings of the flag, as for JS_WORK. JS_LINE_COL_REFUSED counts the marks
+   of the lines and columns the allocator refused. */
+static unsigned long white_line_col, white_line_col_max, white_line_col_total;
+#define JS_LINE_COL_SCAN(n) (white_line_col += (n), white_line_col_total += (n))
+static int white_line_col_refused;
+#define JS_LINE_COL_REFUSED() (white_line_col_refused++)
+/* JS_LINE_COL_FIRST_LINE counts the lookups without the marks that went back
+   to the first line: [1] to its first byte, [0] inside it */
+static int white_line_col_first[2];
+#define JS_LINE_COL_FIRST_LINE(at_start) (white_line_col_first[(at_start) ? 1 : 0]++)
+/* JS_IDENT_COPY counts the characters parse_ident copies of the names of
+   identifiers */
+static unsigned long white_ident_copies;
+#define JS_IDENT_COPY() (white_ident_copies++)
+
+/* JS_BYTECODE_REALLOC keeps the requests of buffers of code, up to 4096: the
+   size, negative for a new buffer, 0 for a free. It counts them all, and
+   request number white_bc_fail_at that asks for bytes fails (from 1, since
+   the last take, 0 for none). */
+static long white_bc_req[4096];
+static int white_bc_nreq, white_bc_fail_at;
+/* with white_bc_stop set, the request that fails also sets the interrupt
+   flag at the next reading of it (host_poll_stop_after of host.c) */
+static int white_bc_stop;
+void host_poll_stop_after(long n);
+
+static int white_bc_request(const void *ptr, size_t size)
+{
+    if (white_bc_nreq < 4096)
+        white_bc_req[white_bc_nreq] = ptr ? (long)size : -(long)size;
+    white_bc_nreq++;
+    if (size == 0 || white_bc_nreq != white_bc_fail_at)
+        return 0;
+    if (white_bc_stop)
+        host_poll_stop_after(1);
+    return 1;
+}
+#define JS_BYTECODE_REALLOC(ptr, size) white_bc_request(ptr, size)
+/* JS_PASS_ROOM: with white_pass_no_room set, a pass starts its new code with
+   no room, and the code grows from nothing */
+static int white_pass_no_room;
+#define JS_PASS_ROOM(len) (white_pass_no_room ? 0 : (len))
+
 #define host_poll white_host_poll
 
 #include "../quickjs.c"
@@ -165,6 +210,9 @@ static int white_paren_refused;
 #undef host_poll
 int white_host_poll(const volatile int *flag)
 {
+    if (white_line_col > white_line_col_max)
+        white_line_col_max = white_line_col;
+    white_line_col = 0;
     if (white_paren_work > white_paren_work_max)
         white_paren_work_max = white_paren_work;
     white_paren_work = 0;
@@ -3333,6 +3381,63 @@ unsigned long white_skip_tokens_read(void)
     return white_skip_tokens;
 }
 
+/* the sum of the references of the atoms rt holds: a reference kept or
+   freed once too often changes it, even when the atom stays */
+int64_t white_atom_refs_sum(JSRuntime *rt)
+{
+    int64_t n = 0;
+    int i;
+
+    for (i = 0; i < rt->atom_size; i++) {
+        JSAtomStruct *p = rt->atom_array[i];
+
+        if (!atom_is_free(p))
+            n += js_rc(p)->ref_count;
+    }
+    return n;
+}
+
+/* lets go of the entries of the regexp cache of rt (js_regexp_cache_off),
+   whose strings can be atoms. Its limits stay. */
+void white_regexp_cache_drop(JSRuntime *rt)
+{
+    js_regexp_cache_off(rt);
+}
+
+/* the requests of buffers of code kept since the last call
+   (JS_BYTECODE_REALLOC), up to cap of them into out, and how many there
+   were. From then on, request number fail_at that asks for bytes fails, 0
+   for none. */
+int white_bc_requests_take(long *out, int cap, int fail_at)
+{
+    int i, n = white_bc_nreq;
+
+    for (i = 0; i < n && i < cap && i < (int)countof(white_bc_req); i++)
+        out[i] = white_bc_req[i];
+    white_bc_nreq = 0;
+    white_bc_fail_at = fail_at;
+    return n;
+}
+
+/* whether the passes start their new code with no room (JS_PASS_ROOM) */
+void white_pass_no_room_set(int on)
+{
+    white_pass_no_room = on;
+}
+
+/* whether the request of code that fails also sets the interrupt flag at
+   the next reading (JS_BYTECODE_REALLOC) */
+void white_bc_stop_set(int on)
+{
+    white_bc_stop = on;
+}
+
+/* the characters of names parse_ident copied so far (JS_IDENT_COPY) */
+unsigned long white_ident_copies_read(void)
+{
+    return white_ident_copies;
+}
+
 /* the size the table of the answers of the lookahead last grew to
    (JS_PAREN_GROW), and 0 again */
 unsigned long white_paren_size_take(void)
@@ -3340,6 +3445,45 @@ unsigned long white_paren_size_take(void)
     unsigned long n = white_paren_size;
 
     white_paren_size = 0;
+    return n;
+}
+
+/* the bytes the lookups of lines and columns walked since the last call
+   (JS_LINE_COL_SCAN), and in *longest the most of them between two readings
+   of the flag, the stretch going on included. The counts start again. */
+unsigned long white_line_col_take(unsigned long *longest)
+{
+    unsigned long n = white_line_col_total;
+
+    *longest = white_line_col > white_line_col_max ? white_line_col : white_line_col_max;
+    white_line_col = white_line_col_max = white_line_col_total = 0;
+    return n;
+}
+
+/* the lookups without the marks that went back to the first line
+   (JS_LINE_COL_FIRST_LINE), to its first byte when at_start is set, else
+   inside it, and 0 again */
+int white_line_col_first_line_take(int at_start)
+{
+    int n = white_line_col_first[at_start ? 1 : 0];
+
+    white_line_col_first[at_start ? 1 : 0] = 0;
+    return n;
+}
+
+/* get_line_col over buf[0..len): the lines, and the column in *col */
+int white_get_line_col(JSContext *ctx, const uint8_t *buf, size_t len, int *col)
+{
+    return get_line_col(ctx, col, buf, len);
+}
+
+/* the marks of the lines and columns the allocator refused
+   (JS_LINE_COL_REFUSED), and 0 again */
+int white_line_col_refused_take(void)
+{
+    int n = white_line_col_refused;
+
+    white_line_col_refused = 0;
     return n;
 }
 

@@ -194,9 +194,19 @@ int white_sb_putc16(struct StringBuffer *b, uint32_t c);
 unsigned long white_work_longest(void);
 unsigned long white_work_sum(void);
 unsigned long white_skip_tokens_read(void);
+unsigned long white_ident_copies_read(void);
+int white_bc_requests_take(long *out, int cap, int fail_at);
+void white_pass_no_room_set(int on);
+void white_bc_stop_set(int on);
+int64_t white_atom_refs_sum(JSRuntime *rt);
+void white_regexp_cache_drop(JSRuntime *rt);
 unsigned long white_paren_size_take(void);
 unsigned long white_paren_work_take(unsigned long *total);
 int white_paren_refused_take(void);
+unsigned long white_line_col_take(unsigned long *longest);
+int white_line_col_refused_take(void);
+int white_line_col_first_line_take(int at_start);
+int white_get_line_col(JSContext *ctx, const uint8_t *buf, size_t len, int *col);
 void white_work_add(unsigned long n);
 size_t white_sb_block_usable(const struct StringBuffer *b);
 void white_front_drain(JSContext *ctx);
@@ -632,6 +642,98 @@ static void test_concat3_too_long(void)
               wide ? "16 bits" : "8 bits", WIFSIGNALED(st) ? "stopped by signal" : "exit status",
               WIFSIGNALED(st) ? WTERMSIG(st) : WEXITSTATUS(st));
     }
+}
+
+static int regvm_op(const char *name);
+
+/* TRUE when the register code of f has an ADDL whose destination is its
+   left operand (d a b, a byte each), as t = t + b makes for a local t
+   and an argument b, or t = t + id(c) for two locals */
+static int regvm_addl_into_left(JSValueConst f)
+{
+    const uint8_t *code;
+    int i, len, addl = regvm_op("ADDL");
+
+    code = white_regvm_code(f, &len);
+    for (i = 0; code && i + 2 < len; i++)
+        if (code[i] == addl && code[i + 1] == code[i + 2])
+            return 1;
+    return 0;
+}
+
+/* The string longest(wide) gives, its length made to look as long as the
+   longest string (white_string_fake_len), and the length it had. It holds no
+   reference: the local of the script is the string's only holder. */
+static JSValue longest_str;
+static uint32_t longest_len;
+
+static JSValue longest_new(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+    (void)this_val;
+    (void)argc;
+    longest_str = JS_NewString(ctx, JS_ToBool(ctx, argv[0]) ? "\xe4\xb8\xad\xe6\x96\x87" : "abcdef");
+    longest_len = white_string_fake_len(longest_str, (uint32_t)white_string_len_max());
+    return longest_str;
+}
+
+/* puts the length of the string of longest back */
+static JSValue longest_back(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+    (void)ctx;
+    (void)this_val;
+    (void)argc;
+    (void)argv;
+    white_string_fake_len(longest_str, longest_len);
+    return JS_UNDEFINED;
+}
+
+/* t = t + c, with t a local that is the only holder of a string as long as
+   the longest one, takes the append in place (js_concat_string_in_place),
+   which must leave it to the copy that throws "string too long". For a wide
+   string it took the two lengths, 2^30 in an int, times 2: an overflow of a
+   signed int, which UndefinedBehaviorSanitizer stops at. The string only
+   looks that long, so no gigabyte is made, and its length is put back while
+   the local still holds it. t = t + id(c): t = t + c is ADDLOC, not ADDL. */
+static void test_string_append_longest(void)
+{
+    static const char setup[] =
+        "function id(x) { return x }\n"
+        "function grow(wide, c) {\n"
+        "  let t = longest(wide)\n"
+        "  try { t = t + id(c) } catch (e) { back(); return String(e) }\n"
+        "  back()\n"
+        "  return 'grew to ' + t.length\n"
+        "}\n";
+    static const struct { int wide; const char *c; } cases[] = {
+        { 1, "'x'" }, { 1, "'\\u4e2d'" }, { 1, "'x'.repeat(100)" }, { 0, "'x'" }, { 0, "'x'.repeat(100)" },
+    };
+    VM v = vm_new();
+    JSValue g = JS_GetGlobalObject(v.ctx), grow;
+    int i, k;
+    char src[128];
+
+    CHECK(JS_SetPropertyStr(v.ctx, g, "longest", JS_NewCFunction(v.ctx, longest_new, "longest", 1)) >= 0 &&
+          JS_SetPropertyStr(v.ctx, g, "back", JS_NewCFunction(v.ctx, longest_back, "back", 0)) >= 0,
+          "the functions of the host");
+    CHECK(eval_ok(v.ctx, setup), "the setup threw");
+    for (i = 0; i < (int)countof(cases); i++) {
+        /* twice: the first call converts grow to register code, the second
+           runs it there */
+        for (k = 0; k < 2; k++) {
+            char *t;
+
+            snprintf(src, sizeof(src), "grow(%d, %s)", cases[i].wide, cases[i].c);
+            t = eval_text(v.ctx, src);
+            CHECK(t && strcmp(t, "InternalError: string too long") == 0, "%s: %s, want InternalError: string too long",
+                  src, t ? t : "(exception)");
+            free(t);
+        }
+    }
+    grow = JS_GetPropertyStr(v.ctx, g, "grow");
+    CHECK(regvm_addl_into_left(grow), "grow has no ADDL into its left operand");
+    JS_FreeValue(v.ctx, grow);
+    JS_FreeValue(v.ctx, g);
+    vm_free(&v);
 }
 
 /* json_plain_run against a loop of one byte at a time: every length up to 40,
@@ -5076,6 +5178,454 @@ static void test_parens_lookahead_linear(void)
     }
 }
 
+/* A name of ASCII letters, digits, '_' and '$' with no escape, shorter than
+   4096 bytes, is read in one pass over the source and looked up where it is
+   (parse_ident_ascii): parse_ident copies none of its characters. A name
+   with an escape, a character past ASCII or of 4096 bytes or more goes the
+   long way, and each of its characters is copied. Both ways give the same
+   atom for the same name, a new name or one the table has, in a table that
+   grows on the way. */
+static void test_ident_one_pass(void)
+{
+    static const struct {
+        const char *src;
+        unsigned long copies;
+        int error; /* a syntax error */
+    } cases[] = {
+        { "var abc = 1, $_9 = abc; abc += $_9; L: for (;;) break L; ({ abc, get x() { return abc; } }).abc;", 0 },
+        { "class A { #abc = 1; static #s; m(o) { return this.#abc + (#abc in o) + A.#s; } }", 0 },
+        { "var x = { length: 1, prototype: 2, constructor: 3, __proto__: null }; x.length;", 0 },
+        { "var a\\u0062c = 1;", 3 },
+        { "var \\u0061bc = 1;", 3 },
+        { "var ab\\u{63} = 1;", 3 },
+        { "var caf\xc3\xa9 = 1;", 4 },
+        { "var x\xf0\x90\x90\x80 = 1;", 2 },
+        { "var a\xe2\x80\x8c" "b = 1;", 3 },
+        { "class B { #\\u0061b = 1; }", 2 },
+        { "class B { #\xc3\xa9t = 1; }", 2 },
+        { "class B { #t\xc3\xa9 = 1; }", 2 },
+        { "a\\x;", 1, 1 },
+    };
+    VM v = vm_new();
+    char *src, *t;
+    unsigned long copies;
+    size_t i, len;
+    JSValue r;
+
+    for (i = 0; i < countof(cases); i++) {
+        copies = white_ident_copies_read();
+        r = JS_Eval(v.ctx, cases[i].src, strlen(cases[i].src), "ident.js",
+                    JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+        copies = white_ident_copies_read() - copies;
+        CHECK(JS_IsException(r) == cases[i].error, "%s: %s", cases[i].src,
+              cases[i].error ? "compiles, not a syntax error" : "does not compile");
+        if (JS_IsException(r))
+            free(exception_text(v.ctx));
+        JS_FreeValue(v.ctx, r);
+        CHECK(copies == cases[i].copies, "%s: %lu characters of names copied, want %lu",
+              cases[i].src, copies, cases[i].copies);
+    }
+    /* 4095 bytes in one pass and 4096 the long way, the '#' of a private
+       name counted */
+    for (len = 4094; len <= 4097; len++) {
+        size_t n = len + 64;
+        int priv;
+
+        for (priv = 0; priv < 2; priv++) {
+            src = malloc(n + len);
+            if (!src) {
+                fprintf(stderr, "no memory\n");
+                exit(2);
+            }
+            if (priv)
+                sprintf(src, "class C { #q%0*d = 1; }", (int)len - 2, 0);
+            else
+                sprintf(src, "var q%0*d = 1;", (int)len - 1, 0);
+            copies = white_ident_copies_read();
+            r = JS_Eval(v.ctx, src, strlen(src), "ident.js", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+            copies = white_ident_copies_read() - copies;
+            CHECK(!JS_IsException(r), "a name of %zu bytes does not compile", len);
+            if (JS_IsException(r))
+                free(exception_text(v.ctx));
+            JS_FreeValue(v.ctx, r);
+            CHECK(copies == (len < 4096 ? 0 : len - priv), "a name of %zu bytes%s: %lu characters copied",
+                  len, priv ? " after #" : "", copies);
+            free(src);
+        }
+    }
+    vm_free(&v);
+
+    /* the same atom both ways: in a fresh runtime, so that the names are
+       new to the table when the parse meets them first */
+    v = vm_new();
+    CHECK(eval_is(v.ctx,
+                  "var abc = 1, caf\\u00e9 = 2, x\\u{10400} = 3; a\\u0062c += 10; caf\xc3\xa9 += 20; x\xf0\x90\x90\x80 += 30;"
+                  "var o = {}; o[String.fromCharCode(110, 101, 119, 49)] = 5; o.n\\u0065w1 += o.new1;"
+                  "class A { #k = 1; static has(o) { return #\\u006b in o; } }"
+                  "[abc, globalThis['ab' + 'c'], globalThis['caf\\u00e9'], globalThis['x\\ud801\\udc00'], o.new1, A.has(new A())].join()",
+                  "11,11,22,33,10,true"), "the names both ways");
+    CHECK(eval_is(v.ctx,
+                  "var r = [];"
+                  "for (var n of [4095, 4096, 70000]) {"
+                  "  var s = 'q'.repeat(n);"
+                  "  (0, eval)('var ' + s + ' = ' + n + '; ' + s.slice(1) + '\\\\u0071 += 1;');"
+                  "  r.push(globalThis[s]);"
+                  "}"
+                  "r.join()", "4096,4097,70001"), "long names both ways");
+    /* about 60,000 new names: the table of atoms and its hash grow while the
+       parse looks names up where they are */
+    CHECK(eval_is(v.ctx,
+                  "var src = 'var o = {};', i;"
+                  "for (i = 0; i < 20000; i++) src += 'o.p' + i + ' = v' + i + ' = w' + i + ' = ' + i + ';';"
+                  "(0, eval)(src + 'Object.keys(o).length');"
+                  "for (i = 0, k = 0; i < 20000; i++) k += o['p' + i] === i && globalThis['v' + i] === i && globalThis['w' + i] === i;"
+                  "k", "20000"), "many new names");
+    vm_free(&v);
+}
+
+/* A pass that rewrites the code of a function (resolve_variables,
+   resolve_labels, insert_polls) starts its new code in a buffer with room
+   for the code it reads, so the buffer grows once at most, when the new
+   code is longer. Top-level statements and no function: the requests of
+   buffers of code are those of the parse, then those of each pass, each
+   starting with a new buffer. The parse starts its buffer at 64 bytes. */
+static void test_bytecode_pass_room(void)
+{
+    static const char *const bodies[] = {
+        "a = a + 1;",
+        "if (a) { b.c = d(e, f); }",
+        "for (;;) { a++; if (a > 3) break; }",
+        "var v = q ? r : s; w += v;",
+        "switch (a) { case 1: b(); break; default: c(); }",
+        "try { a(); } catch (e) { b(e); } finally { c(); }",
+        "{ let k = 1; { const m = k + 1; k = m; } }",
+    };
+    static const int counts[] = { 1, 10, 100, 1000, 10000 };
+    static long req[4096];
+    VM v = vm_new();
+    size_t i, j;
+
+    for (i = 0; i < countof(bodies); i++) {
+        for (j = 0; j < countof(counts); j++) {
+            size_t blen = strlen(bodies[i]), len = 0;
+            char *src = malloc(blen * counts[j] + 1);
+            int n, k, chain = -1, grows = 0, worst = 0;
+            JSValue r;
+
+            if (!src) {
+                fprintf(stderr, "no memory\n");
+                exit(2);
+            }
+            for (k = 0; k < counts[j]; k++) {
+                memcpy(src + len, bodies[i], blen);
+                len += blen;
+            }
+            src[len] = '\0';
+            white_bc_requests_take(req, countof(req), 0);
+            r = JS_Eval(v.ctx, src, len, "room.js", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+            n = white_bc_requests_take(req, countof(req), 0);
+            CHECK(!JS_IsException(r), "%d of %s: does not compile", counts[j], bodies[i]);
+            if (JS_IsException(r))
+                free(exception_text(v.ctx));
+            JS_FreeValue(v.ctx, r);
+            CHECK(n < (int)countof(req), "%d of %s: %d requests", counts[j], bodies[i], n);
+            CHECK(n > 0 && req[0] <= -64, "%d of %s: the parse starts with %ld bytes", counts[j], bodies[i], n > 0 ? -req[0] : 0);
+            for (k = 0; k < n && k < (int)countof(req); k++) {
+                if (req[k] < 0) {
+                    chain++;
+                    grows = 0;
+                } else if (req[k] > 0 && chain > 0) {
+                    grows++;
+                    if (grows > worst)
+                        worst = grows;
+                }
+            }
+            CHECK(chain >= 2, "%d of %s: %d buffers of code", counts[j], bodies[i], chain + 1);
+            CHECK(worst <= 1, "%d of %s: a pass grew its buffer %d times", counts[j], bodies[i], worst);
+            free(src);
+        }
+    }
+    vm_free(&v);
+}
+
+/* the atoms a runtime holds: their number, and the sum of their references
+   (white_atom_refs_sum), which a reference kept or freed once too often changes
+   even when the atom stays. An error made text first takes the reference
+   the text of an error keeps (that of toString), so that the text of the
+   error of a compile changes nothing after it, and the regexp cache lets go
+   of its entries, whose strings can be atoms: what it keeps belongs to no
+   compile. Both come before the two readings, which see the same atoms. */
+struct atoms_held {
+    int64_t count, refs;
+};
+
+static struct atoms_held vm_atoms(VM *v)
+{
+    struct atoms_held a;
+    JSMemoryUsage u;
+
+    JS_ThrowOutOfMemory(v->ctx);
+    free(exception_text(v->ctx));
+    white_regexp_cache_drop(v->rt);
+    JS_ComputeMemoryUsage(v->rt, &u);
+    a.count = u.atom_count;
+    a.refs = white_atom_refs_sum(v->rt);
+    return a;
+}
+
+/* whether v holds the atoms it held at a: 1 when it does, else 0 with the
+   change in text (room cap) */
+static int atoms_kept(VM *v, struct atoms_held a, char *text, size_t cap)
+{
+    struct atoms_held b = vm_atoms(v);
+
+    snprintf(text, cap, "%lld atoms with %lld references after the compile, %lld with %lld before",
+             (long long)b.count, (long long)b.refs, (long long)a.count, (long long)a.refs);
+    return b.count == a.count && b.refs == a.refs;
+}
+
+/* whether the exception pending in v is the out of memory error, and not
+   an interrupt or another error. It takes the exception. */
+static int vm_take_oom(VM *v)
+{
+    int unc = JS_HasException(v->ctx) && JS_IsUncatchableException(v->ctx);
+    char *t = exception_text(v->ctx);
+    int oom = unc && t && strstr(t, "out of memory") != NULL;
+
+    free(t);
+    return oom;
+}
+
+/* A new buffer of code that is refused (that of the parse, or the room of
+   resolve_variables or resolve_labels, three to a function here) ends the
+   compile with the out of memory error, and the code of the function, in
+   whatever pass, is freed with its atoms: the runtime holds the atoms it
+   held before the compile. The sources have names new to the runtime in
+   fields, variables, a with statement and a function. */
+static void test_pass_room_refused(void)
+{
+    static const char *const srcs[] = {
+        "var o = {}; o.zqA = o.zqB; o.zqC(o.zqD); zqE = typeof zqF === 'zqG'; for (;;) if (o.zqN) break;",
+        "function zqF(o) { var zqH = o.zqI; with (o) { zqJ = zqK; } return zqH + o.zqL; } zqF({ zqM: 1 });",
+    };
+    static long req[4096];
+    size_t i;
+
+    for (i = 0; i < countof(srcs); i++) {
+        VM v = vm_new();
+        struct atoms_held atoms = vm_atoms(&v);
+        char text[160];
+        int n, k, refused = 0;
+        JSValue r;
+
+        white_bc_requests_take(req, countof(req), 0);
+        r = JS_Eval(v.ctx, srcs[i], strlen(srcs[i]), "room.js", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+        n = white_bc_requests_take(req, countof(req), 0);
+        CHECK(!JS_IsException(r), "source %zu does not compile", i);
+        JS_FreeValue(v.ctx, r);
+        CHECK(atoms_kept(&v, atoms, text, sizeof(text)), "source %zu: %s", i, text);
+        CHECK(n < (int)countof(req), "source %zu: %d requests", i, n);
+        vm_free(&v);
+        for (k = 0; k < n && k < (int)countof(req); k++) {
+            int oom;
+
+            if (req[k] >= 0)
+                continue;
+            v = vm_new();
+            atoms = vm_atoms(&v);
+            white_bc_requests_take(NULL, 0, k + 1);
+            r = JS_Eval(v.ctx, srcs[i], strlen(srcs[i]), "room.js", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+            white_bc_requests_take(NULL, 0, 0);
+            oom = JS_IsException(r) && vm_take_oom(&v);
+            CHECK(oom, "source %zu, new buffer %d of %ld bytes refused: not the out of memory error", i, k + 1, -req[k]);
+            JS_FreeValue(v.ctx, r);
+            CHECK(atoms_kept(&v, atoms, text, sizeof(text)), "source %zu, new buffer %d of %ld bytes refused: %s",
+                  i, k + 1, -req[k], text);
+            vm_free(&v);
+            refused++;
+        }
+        CHECK(refused == (i == 0 ? 3 : 6), "source %zu: %d new buffers refused", i, refused);
+    }
+}
+
+/* Each request of a buffer of code that a compile makes fails in turn, also
+   with the passes starting their new code from nothing (JS_PASS_ROOM), so
+   that the parse, resolve_variables and resolve_labels fail part way
+   through: the compile ends with the out of memory error, and the runtime
+   holds the atoms it held before. The sources have names new to the
+   runtime in the instructions the parse writes, each pass copies, takes
+   over or makes: fields, optional chains, with statements, a const
+   assigned, typeof against a string, a string added to a local, fields
+   counted down, a catch and destructuring. */
+static void test_code_write_refused(void)
+{
+    static const char *const srcs[] = {
+        "var o = {}; o.zqA = o?.zqB; o.zqC++; zqD = typeof o === 'zqE'; with (o) { zqF = zqG; } 'zqH'; for (;;) if (o.zqI) break;",
+        "function f(o) { var s = 'a'; s += 'zqJ'; o.zqK--; with (o) { zqL(); } return typeof s == 'zqM' ? o?.zqN : s; } f({});",
+        "class C { zqO = 1; #zqP = 2; m() { return this.#zqP + this.zqO; } static zqQ() { const k = 1; try { k = 2; } catch (e) { return e.zqR; } } }",
+        "var { zqS, zqT: { zqU } } = {}, o = {}; ({ zqV: o.zqW, zqX: zqY } = {}); [o.zqZ] = [];",
+    };
+    static long req[4096];
+    size_t i;
+    int no_room, grown = 0, cases = 0;
+
+    for (no_room = 0; no_room < 2; no_room++) {
+        white_pass_no_room_set(no_room);
+        for (i = 0; i < countof(srcs); i++) {
+            VM v = vm_new();
+            struct atoms_held atoms;
+            char text[160];
+            int n, k;
+            JSValue r;
+
+            white_bc_requests_take(req, countof(req), 0);
+            r = JS_Eval(v.ctx, srcs[i], strlen(srcs[i]), "write.js", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+            n = white_bc_requests_take(req, countof(req), 0);
+            CHECK(!JS_IsException(r), "source %zu does not compile", i);
+            JS_FreeValue(v.ctx, r);
+            CHECK(n < (int)countof(req), "source %zu: %d requests", i, n);
+            vm_free(&v);
+            for (k = 0; k < n && k < (int)countof(req); k++) {
+                int oom;
+
+                if (req[k] == 0)
+                    continue;
+                v = vm_new();
+                atoms = vm_atoms(&v);
+                white_bc_requests_take(NULL, 0, k + 1);
+                r = JS_Eval(v.ctx, srcs[i], strlen(srcs[i]), "write.js", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+                white_bc_requests_take(NULL, 0, 0);
+                oom = JS_IsException(r) && vm_take_oom(&v);
+                CHECK(oom, "source %zu%s, request %d of %ld bytes refused: not the out of memory error",
+                      i, no_room ? " with no room" : "", k + 1, req[k]);
+                JS_FreeValue(v.ctx, r);
+                CHECK(atoms_kept(&v, atoms, text, sizeof(text)), "source %zu%s, request %d of %ld bytes refused: %s",
+                      i, no_room ? " with no room" : "", k + 1, req[k], text);
+                vm_free(&v);
+                cases++;
+                grown += req[k] > 0;
+            }
+        }
+    }
+    white_pass_no_room_set(0);
+    CHECK(grown >= 100, "%d requests to grow a buffer of code refused", grown);
+    printf("unit-white: test_code_write_refused: %d requests refused, %d of them to grow a buffer\n", cases, grown);
+}
+
+/* A pass that cannot write its new code stops there with the out of memory
+   error: no error the rest of the code would throw takes its place. The
+   source does not compile, for a private field its class does not have,
+   which resolve_variables finds at the end of a method. Each request of a
+   buffer of code fails in turn, also with the passes starting their new
+   code from nothing (JS_PASS_ROOM), and each failure ends the compile with
+   the out of memory error, the runtime holding the atoms it held. */
+static void test_pass_refused_before_error(void)
+{
+    static const char src[] =
+        "class zqA { #zqB = 1; m(o) { var a = o.zqC, b = o.zqD, c = o.zqE; a += b + c; b = a * c; c = a - b; return o.#zqF + a + b + c; } }";
+    static long req[4096];
+    int no_room, n, k, cases = 0;
+
+    for (no_room = 0; no_room < 2; no_room++) {
+        VM v = vm_new();
+        JSValue r;
+        char *t;
+
+        white_pass_no_room_set(no_room);
+        white_bc_requests_take(req, countof(req), 0);
+        r = JS_Eval(v.ctx, src, strlen(src), "error.js", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+        n = white_bc_requests_take(req, countof(req), 0);
+        t = exception_text(v.ctx);
+        CHECK(JS_IsException(r) && t && strstr(t, "SyntaxError: undefined private field"),
+              "the source compiles to %s, not the syntax error", t ? t : "no exception");
+        free(t);
+        CHECK(n < (int)countof(req), "%d requests", n);
+        vm_free(&v);
+        for (k = 0; k < n && k < (int)countof(req); k++) {
+            struct atoms_held atoms;
+            char text[160];
+            int unc;
+
+            if (req[k] == 0)
+                continue;
+            v = vm_new();
+            atoms = vm_atoms(&v);
+            white_bc_requests_take(NULL, 0, k + 1);
+            r = JS_Eval(v.ctx, src, strlen(src), "error.js", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+            white_bc_requests_take(NULL, 0, 0);
+            unc = JS_HasException(v.ctx) && JS_IsUncatchableException(v.ctx);
+            t = exception_text(v.ctx);
+            CHECK(JS_IsException(r) && unc && t && strstr(t, "out of memory"),
+                  "%s, request %d of %ld bytes refused: the compile fails with %s, not the out of memory error",
+                  no_room ? "no room" : "room", k + 1, req[k], t ? t : "no exception");
+            free(t);
+            JS_FreeValue(v.ctx, r);
+            CHECK(atoms_kept(&v, atoms, text, sizeof(text)), "%s, request %d of %ld bytes refused: %s",
+                  no_room ? "no room" : "room", k + 1, req[k], text);
+            vm_free(&v);
+            cases++;
+        }
+    }
+    white_pass_no_room_set(0);
+    printf("unit-white: test_pass_refused_before_error: %d requests refused\n", cases);
+}
+
+/* A pass whose room is refused ends there with the out of memory error,
+   though the interrupt flag is set at the next reading of it: the pass
+   does not go on, to read the flag and stop for it. The source is one
+   function with a run of 200 statements, longer than a run may go without
+   a poll (POLL_RUN), whose new buffers of code are those of the parse, then
+   of resolve_variables, resolve_labels and insert_polls. Each of the
+   passes has its room refused in turn, the flag set at the reading after
+   (the parse goes on after a write that failed, and reads it). */
+static void test_pass_room_refused_stopped(void)
+{
+    static char src[4096];
+    static long req[4096];
+    int n, k, news = 0, refused = 0;
+    VM v = vm_new();
+    JSValue r;
+
+    strcpy(src, "var zqA = 0; ");
+    for (k = 0; k < 200; k++)
+        strcat(src, "zqA += 1; ");
+    strcat(src, "zqA");
+    white_bc_requests_take(req, countof(req), 0);
+    r = JS_Eval(v.ctx, src, strlen(src), "stop.js", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+    n = white_bc_requests_take(req, countof(req), 0);
+    CHECK(!JS_IsException(r), "the source does not compile");
+    JS_FreeValue(v.ctx, r);
+    CHECK(n < (int)countof(req), "%d requests", n);
+    vm_free(&v);
+    white_bc_stop_set(1);
+    for (k = 0; k < n && k < (int)countof(req); k++) {
+        struct atoms_held atoms;
+        char text[160], *t;
+        int unc;
+
+        if (req[k] >= 0 || news++ == 0)
+            continue;
+        v = vm_new();
+        atoms = vm_atoms(&v);
+        white_bc_requests_take(NULL, 0, k + 1);
+        r = JS_Eval(v.ctx, src, strlen(src), "stop.js", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+        white_bc_requests_take(NULL, 0, 0);
+        host_poll_stop_after(0);
+        unc = JS_HasException(v.ctx) && JS_IsUncatchableException(v.ctx);
+        t = exception_text(v.ctx);
+        CHECK(JS_IsException(r) && unc && t && strstr(t, "out of memory"),
+              "new buffer %d of %ld bytes refused: the compile fails with %s, not the out of memory error",
+              k + 1, -req[k], t ? t : "no exception");
+        free(t);
+        JS_FreeValue(v.ctx, r);
+        CHECK(atoms_kept(&v, atoms, text, sizeof(text)), "new buffer %d of %ld bytes refused: %s", k + 1, -req[k], text);
+        vm_free(&v);
+        refused++;
+    }
+    white_bc_stop_set(0);
+    CHECK(refused == 3, "%d rooms of passes refused", refused);
+}
+
 /* The table of the answers of the lookahead (JSParenCache) grows for a new
    bracket only: an answer kept again from a bracket, under the mode of the
    function the parse has gone into, takes the place of the one before. The
@@ -7724,6 +8274,112 @@ static void test_string_empty_left(void)
     }
 }
 
+/* An add of two flat strings with an empty side gives the other string
+   itself, as JS_ConcatString gives it, in each form of the register loop's
+   add, into a temp and into a local (rv_concat8 in regvm-ops-basic.h): the
+   left one, of any length and width, when the right is empty, and the right
+   one when the left is empty and the right has at most 512 characters
+   (JS_STRING_ROPE_SHORT_LEN). A longer right one gives what the generic
+   add gives (white_concat). The empty side is the atom's string, a constant
+   or a string made at run time. */
+static void test_string_add_empty_side(void)
+{
+    static const struct {
+        const char *what, *add;
+        int left, right; /* the form takes an empty left, an empty right */
+    } forms[] = {
+        { "ADD", "(a, b) => a + b", 1, 1 },
+        { "ADDL", "(a, b) => { let t = 0; t = a + b; return t }", 1, 1 },
+        /* b is an argument: t = t + b is an ADDL into t, checked below.
+           Of two locals it would be ADDLOC (rv_addloc_slow) */
+        { "ADDL into the left local", "(a, b) => { let t = a; t = t + b; return t }", 1, 1 },
+        { "ADD into an argument", "(a, b) => { a = a + b; return a }", 1, 1 },
+        { "ADDK of ''", "(a, b) => a + ''", 0, 1 },
+        { "ADDKL of ''", "(a, b) => { let t = 0; t = a + ''; return t }", 0, 1 },
+        { "KADD of ''", "(a, b) => '' + b", 1, 0 },
+        { "KADD of '' into a local", "(a, b) => { let t = 0; t = '' + b; return t }", 1, 0 },
+    };
+    static const struct { const char *src; int len; } strs[] = {
+        { "'a'", 1 }, { "'ab'.repeat(3)", 6 }, { "'\\u4e2d'.repeat(2)", 2 }, { "'\\u00e9' + 'x'", 2 },
+        { "'q'.repeat(63)", 63 }, { "'q'.repeat(64)", 64 }, { "'r'.repeat(511)", 511 },
+        { "'s'.repeat(512)", 512 }, { "'\\u4e2d'.repeat(512)", 512 }, { "'t'.repeat(513)", 513 },
+        { "'\\u4e2d'.repeat(513)", 513 }, { "'u'.repeat(9000)", 9000 }, { "Object.keys({ keyName: 1 })[0]", 7 },
+    };
+    static const char *const empties[] = { "''", "'abc'.slice(3)", "String.fromCharCode()", "'\\u4e2d'.slice(1)" };
+    size_t f, i, e, side;
+
+    for (f = 0; f < countof(forms); f++) {
+        VM v = vm_new();
+        JSValue add = JS_Eval(v.ctx, forms[f].add, strlen(forms[f].add), "<unit>", JS_EVAL_TYPE_GLOBAL);
+
+        for (side = 0; side < 2; side++) {
+            if (!(side ? forms[f].right : forms[f].left))
+                continue;
+            for (i = 0; i < countof(strs); i++) {
+                for (e = 0; e < countof(empties); e++) {
+                    int k;
+
+                    /* twice: the first call converts the function to
+                       register code, the second runs it there */
+                    for (k = 0; k < 2; k++) {
+                        JSValue s = JS_Eval(v.ctx, strs[i].src, strlen(strs[i].src), "<unit>", JS_EVAL_TYPE_GLOBAL);
+                        JSValue z = JS_Eval(v.ctx, empties[e], strlen(empties[e]), "<unit>", JS_EVAL_TYPE_GLOBAL);
+                        JSValue args[2], res, want;
+                        int shared;
+
+                        CHECK(JS_VALUE_GET_TAG(s) == JS_TAG_STRING && JS_VALUE_GET_TAG(z) == JS_TAG_STRING,
+                              "%s: %s or %s is no flat string", forms[f].what, strs[i].src, empties[e]);
+                        args[0] = side ? s : z;
+                        args[1] = side ? z : s;
+                        res = JS_Call(v.ctx, add, JS_UNDEFINED, 2, args);
+                        want = white_concat(v.ctx, args[0], args[1]);
+                        shared = side || strs[i].len <= 512;
+                        CHECK(JS_VALUE_GET_TAG(res) == JS_VALUE_GET_TAG(want),
+                              "%s of %s, %s on the %s: another tag than the generic add's", forms[f].what,
+                              strs[i].src, empties[e], side ? "right" : "left");
+                        if (shared)
+                            CHECK(JS_VALUE_GET_TAG(res) == JS_TAG_STRING && JS_VALUE_GET_PTR(res) == JS_VALUE_GET_PTR(s),
+                                  "%s of %s, %s on the %s: not the string itself", forms[f].what,
+                                  strs[i].src, empties[e], side ? "right" : "left");
+                        CHECK(white_string_wide(res) == white_string_wide(want) && JS_StrictEq(v.ctx, res, want),
+                              "%s of %s, %s on the %s: not the string of the generic add", forms[f].what,
+                              strs[i].src, empties[e], side ? "right" : "left");
+                        JS_FreeValue(v.ctx, res);
+                        JS_FreeValue(v.ctx, want);
+                        JS_FreeValue(v.ctx, s);
+                        JS_FreeValue(v.ctx, z);
+                    }
+                }
+            }
+        }
+        /* a string as long as the longest one with the empty string on its
+           right: the string itself, its characters not read */
+        if (forms[f].right) {
+            int k;
+
+            for (k = 0; k < 2; k++) {
+                JSValue args[2], res;
+                uint32_t old;
+
+                args[0] = JS_NewString(v.ctx, "a string made to look as long as the longest one");
+                args[1] = JS_Eval(v.ctx, "''", 2, "<unit>", JS_EVAL_TYPE_GLOBAL);
+                old = white_string_fake_len(args[0], (uint32_t)white_string_len_max());
+                res = JS_Call(v.ctx, add, JS_UNDEFINED, 2, args);
+                CHECK(JS_VALUE_GET_TAG(res) == JS_TAG_STRING && JS_VALUE_GET_PTR(res) == JS_VALUE_GET_PTR(args[0]),
+                      "%s of the longest string and '': not the string itself", forms[f].what);
+                white_string_fake_len(args[0], old);
+                JS_FreeValue(v.ctx, res);
+                JS_FreeValue(v.ctx, args[0]);
+                JS_FreeValue(v.ctx, args[1]);
+            }
+        }
+        if (strcmp(forms[f].what, "ADDL into the left local") == 0)
+            CHECK(regvm_addl_into_left(add), "%s: no ADDL into its left operand", forms[f].what);
+        JS_FreeValue(v.ctx, add);
+        vm_free(&v);
+    }
+}
+
 /* a + b of two strings in each form of the register loop's add (ADD, ADDL,
    ADDK, ADDKL, KADD, rv_add_str in regvm-ops-basic.h) gives the string the
    generic add gives, JS_ConcatString of the two (white_concat): a rope where
@@ -7744,6 +8400,10 @@ static void test_string_add_kinds(void)
     } forms[] = {
         { "ADD", "(a, b) => a + b", NULL, NULL },
         { "ADDL", "(a, b) => { let t = 0; t = a + b; return t }", NULL, NULL },
+        /* b is an argument: t = t + b is an ADDL into t, checked below.
+           Of two locals it would be ADDLOC (rv_addloc_slow) */
+        { "ADDL into the left local", "(a, b) => { let t = a; t = t + b; return t }", NULL, NULL },
+        { "ADD into an argument", "(a, b) => { a = a + b; return a }", NULL, NULL },
         { "ADDK", "(a, b) => a + '<k>'", NULL, "'<k>'" },
         { "ADDKL", "(a, b) => { let t = 0; t = a + '\\u4e2d'; return t }", NULL, "'\\u4e2d'" },
         { "KADD", "(a, b) => '<k>' + b", "'<k>'", NULL },
@@ -7791,6 +8451,8 @@ static void test_string_add_kinds(void)
                 }
             }
         }
+        if (strcmp(forms[f].what, "ADDL into the left local") == 0)
+            CHECK(regvm_addl_into_left(add), "%s: no ADDL into its left operand", forms[f].what);
         JS_FreeValue(v.ctx, add);
         vm_free(&v);
     }
@@ -8471,17 +9133,25 @@ static void test_regexp_split_same(void)
    js_malloc_rt or js_realloc_rt (small blocks too). It puts the result of the
    code as a string in result (room cap), or "exception" when it threw, and
    returns 1 when the compile failed, else 0. *n is the number of requests of
-   the compile. A compile may only fail with the out of memory error. */
+   the compile. A compile may only fail with the out of memory error, and
+   one that fails leaves the runtime the atoms it had, with the references
+   they had. */
 static int compile_failing(const char *what, const char *js, int fail, int mode, int *n, char *result, size_t cap)
 {
     VM v = vm_new();
-    JSValue c = white_compile_failing(v.ctx, js, fail, mode, n);
-    int failed = JS_IsException(c);
+    struct atoms_held atoms = vm_atoms(&v);
+    char text[160];
+    JSValue c;
+    int failed;
+
+    c = white_compile_failing(v.ctx, js, fail, mode, n);
+    failed = JS_IsException(c);
 
     result[0] = 0;
     if (failed) {
-        int oom = JS_HasException(v.ctx) && JS_IsUncatchableException(v.ctx);
+        int unc = JS_HasException(v.ctx) && JS_IsUncatchableException(v.ctx);
         char *t = exception_text(v.ctx);
+        int oom = unc && t && strstr(t, "out of memory") != NULL;
 
         CHECK(oom, "%s, request %d failing: the compile fails with %s, not the out of memory error", what, fail, t ? t : "no exception");
         free(t);
@@ -8497,8 +9167,10 @@ static int compile_failing(const char *what, const char *js, int fail, int mode,
         free(exception_text(v.ctx));
         JS_FreeValue(v.ctx, r);
     }
-    if (failed)
+    if (failed) {
         JS_FreeValue(v.ctx, c);
+        CHECK(atoms_kept(&v, atoms, text, sizeof(text)), "%s, request %d failing: %s", what, fail, text);
+    }
     CHECK(!JS_HasException(v.ctx), "%s, request %d failing: an exception is pending", what, fail);
     vm_free(&v);
     return failed;
@@ -8790,8 +9462,26 @@ struct compile_script {
     int mode;
 };
 
+/* scripts for a failure that once went wrong: a destructuring in a with
+   statement that binds var names (the name freed twice when the label of
+   its reference could not be made), and two groups of a regexp with the same
+   name (the name of the first kept without its scope, which the check of the
+   second read past the end of its block), and a regexp whose atom is
+   repeated (the code read back when its first write had failed, and it had
+   no buffer), and a function whose positions are read (the table of
+   positions cut short when a write of it failed, and the compile working), and
+   a regexp with a lookbehind (the code read back there when its first write
+   had failed) */
+static const char *const compile_failure_scripts[] = {
+    "var o = {}; with (o) { var { a: zqB } = { a: 1 }, { b: zqC } = { b: 2 }, { c: zqD } = { c: 3 }, { d: zqE } = { d: 4 }; } zqB + zqC + zqD + zqE",
+    "/(?<zqF>x)|(?<zqF>y)/.exec('y').groups.zqF",
+    "/zqG+/.test('zqGG')",
+    "function f(o) {\n  var a = o.zqH;\n  var b = a + 1;\n  return new Error('zqI').stack + b;\n}\nf({ zqH: 1 })",
+    "/(?<=zqJ)zqK/.test('zqJzqK')",
+};
+
 #define COMPILE_SCRIPTS \
-    (countof(compile_scripts) + countof(compile_fine_scripts) + countof(compile_alloc_scripts) + countof(compile_module_scripts) + 5)
+    (countof(compile_scripts) + countof(compile_fine_scripts) + countof(compile_alloc_scripts) + countof(compile_module_scripts) + countof(compile_failure_scripts) + 5)
 
 /* compile_sweep_scripts puts the scripts of the sweep in scripts (room for
    COMPILE_SCRIPTS), any call a request when calls is set, and gives their
@@ -8827,6 +9517,8 @@ static size_t compile_sweep_scripts(int calls, struct compile_script *scripts)
         scripts[k++].js = compile_fine_scripts[i];
     for (i = 0; i < countof(compile_alloc_scripts); i++)
         scripts[k++].js = compile_alloc_scripts[i];
+    for (i = 0; i < countof(compile_failure_scripts); i++)
+        scripts[k++].js = compile_failure_scripts[i];
     scripts[k++].js = big_scope;
     scripts[k++].js = deep_scope;
     scripts[k++].js = fields;
@@ -8903,6 +9595,227 @@ static void test_parens_alloc_refused(void)
         CHECK(refused >= (i == 2 ? 3 : 2), "%s: %d calls of the table refused", what, refused);
     }
     free(many);
+}
+
+/* get_line_col reads eight bytes at once when none of them is a line feed.
+   Over bytes of every kind (line feeds, ASCII, bytes that continue a
+   character, bytes that start one, and bytes one bit from a line feed),
+   with line feeds dense and sparse, at every length to 300 from 8 offsets,
+   it gives the lines and the column a loop over the bytes one at a time
+   gives. */
+static void test_line_col_bytes(void)
+{
+    static const uint8_t kinds[] = { 'a', ' ', '\r', 0x7f, 0x00, 0x80, 0xbf, 0x8a, 0xc0, 0xc3, 0xe4, 0xf0, 0xff, 0x0b, 0x08, 0x4a, 0x1a };
+    VM v = vm_new();
+    uint8_t buf[320];
+    unsigned seed = 7;
+    int fill, len, off, i, line, col, l, c, bad = 0;
+    long cases = 0;
+
+    for (fill = 0; fill < 60; fill++) {
+        for (i = 0; i < (int)sizeof(buf); i++) {
+            seed = seed * 1103515245 + 12345;
+            buf[i] = (seed >> 16) % (fill % 6 == 0 ? 4 : 40) == 0 ? '\n' : kinds[(seed >> 8) % countof(kinds)];
+        }
+        for (off = 0; off < 8; off++) {
+            for (len = 0; off + len <= 300; len++) {
+                line = col = 0;
+                for (i = off; i < off + len; i++) {
+                    if (buf[i] == '\n') {
+                        line++;
+                        col = 0;
+                    } else if ((buf[i] & 0xc0) != 0x80) {
+                        col++;
+                    }
+                }
+                l = white_get_line_col(v.ctx, buf + off, len, &c);
+                bad += l != line || c != col;
+                cases++;
+            }
+        }
+    }
+    CHECK(bad == 0, "get_line_col: %d of %ld spans differ from a loop over the bytes", bad, cases);
+    vm_free(&v);
+}
+
+/* The lines and columns of the code of a compile (compute_pc2line_info) are
+   counted from marks the compile makes every 128 bytes of the source, or
+   from the lookup before when it is nearer, so the lookups walk the source
+   about once, however deep the functions nest. Each function looks its
+   lines up after the functions in it, and before the marks it walked back
+   to its start and over the functions in it again: a byte was walked about
+   as many times as there are functions around it. For each shape, 20 copies
+   of functions nested 40 to 150 deep, with code after the function in
+   each, the lookups walk fewer than 3 times as many bytes as the source
+   has, and 512 for each function, whose lookups start from a mark a few
+   times. Before the marks, they walked 15 to 150 times as many. */
+static void test_line_col_linear(void)
+{
+    static const struct {
+        const char *what, *head, *open, *mid, *close, *tail;
+        int depth;
+    } shapes[] = {
+        { "functions", "", "function f() {\n  var a = 1;\n  ", "return a;\n", "  return f;\n}\n", "", 60 },
+        { "arrow functions on one line", "x = ", "(a) => { let b = a + 1; return [", "b", "].length + b; }", ";", 150 },
+        { "methods with CRLF and characters of several bytes", "x = ",
+          "{ m(a) {\r\n  const s = \"\xc3\xa9\xe4\xb8\xad\xf0\x9f\x98\x80\";\r\n  return [", "s", "].length + s.length; } }", ";\r\n", 60 },
+        { "templates across lines", "x = ", "function () { return `\n${", "1", "}\n` + 1; }", ";\n", 60 },
+        { "classes with comments", "x = ", "class { /* a\n b */ static m() { // c\n return [", "1", "].length + 1; } }", ";\n", 40 },
+    };
+    int i, k, d;
+
+    for (i = 0; i < (int)countof(shapes); i++) {
+        VM v = vm_new();
+        size_t len = 0, cap = 20 * (strlen(shapes[i].head) + strlen(shapes[i].mid) + strlen(shapes[i].tail) +
+                                    shapes[i].depth * (strlen(shapes[i].open) + strlen(shapes[i].close))) + 1;
+        char *src = malloc(cap);
+        unsigned long walked, longest, funcs = 20 * shapes[i].depth;
+        JSValue r;
+
+        for (k = 0; k < 20; k++) {
+            len += sprintf(src + len, "%s", shapes[i].head);
+            for (d = 0; d < shapes[i].depth; d++)
+                len += sprintf(src + len, "%s", shapes[i].open);
+            len += sprintf(src + len, "%s", shapes[i].mid);
+            for (d = 0; d < shapes[i].depth; d++)
+                len += sprintf(src + len, "%s", shapes[i].close);
+            len += sprintf(src + len, "%s", shapes[i].tail);
+        }
+        white_line_col_take(&longest);
+        r = JS_Eval(v.ctx, src, len, "linecol.js", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+        walked = white_line_col_take(&longest);
+        CHECK(!JS_IsException(r), "%s: does not compile", shapes[i].what);
+        if (JS_IsException(r))
+            free(exception_text(v.ctx));
+        JS_FreeValue(v.ctx, r);
+        CHECK(walked < 3 * len + 512 * funcs, "%s: the lookups walked %lu bytes for %zu bytes and %lu functions",
+              shapes[i].what, walked, len, funcs);
+        printf("unit-white: test_line_col_linear: %s: %lu bytes walked for %zu bytes and %lu functions\n",
+               shapes[i].what, walked, len, funcs);
+        free(src);
+        vm_free(&v);
+    }
+}
+
+/* A lookup of a line far into the source makes the marks up to it, and
+   reads the interrupt flag on the way as the walk before the marks did:
+   a function whose code is 2 MB of comment apart, or 2 MB apart on one
+   line, walks no more than 8192 bytes between two readings of the flag. */
+static void test_line_col_flag(void)
+{
+    static const char *const fills[] = { "/* a\n */", "/* a */" };
+    static const char *const names[] = { "comments over many lines", "comments on one line" };
+    size_t i;
+
+    for (i = 0; i < countof(fills); i++) {
+        VM v = vm_new();
+        size_t len = 0, n = strlen(fills[i]), cap = 2 * 1024 * 1024 + 256;
+        char *src = malloc(cap);
+        unsigned long walked, longest;
+        JSValue r;
+
+        len += sprintf(src + len, "function f() {\n  var a = 1;\n");
+        while (len + n < cap - 64)
+            len += sprintf(src + len, "%s", fills[i]);
+        len += sprintf(src + len, "\n  return a;\n}\nf()");
+        white_line_col_take(&longest);
+        r = JS_Eval(v.ctx, src, len, "linecol.js", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+        walked = white_line_col_take(&longest);
+        CHECK(!JS_IsException(r), "%s: does not compile", names[i]);
+        if (JS_IsException(r))
+            free(exception_text(v.ctx));
+        JS_FreeValue(v.ctx, r);
+        CHECK(walked >= len - 64, "%s: the lookups walked %lu bytes of %zu", names[i], walked, len);
+        CHECK(longest <= 8192, "%s: the lookups walked %lu bytes between two readings of the flag", names[i], longest);
+        printf("unit-white: test_line_col_flag: %s: %lu bytes walked, at most %lu between two readings\n",
+               names[i], walked, longest);
+        free(src);
+        vm_free(&v);
+    }
+}
+
+/* the code compile_line_col compiled, as JS_WriteObject writes it with its
+   lines and columns, in *out (malloc'd), or NULL when the compile failed */
+static uint8_t *compile_line_col(const char *js, int fail, int *n, size_t *len)
+{
+    VM v = vm_new();
+    JSValue c = white_compile_failing(v.ctx, js, fail, MODE_CALLS, n);
+    uint8_t *b, *out = NULL;
+
+    if (JS_IsException(c)) {
+        free(exception_text(v.ctx));
+    } else {
+        b = JS_WriteObject(v.ctx, len, c, JS_WRITE_OBJ_BYTECODE);
+        if (b) {
+            out = malloc(*len);
+            memcpy(out, b, *len);
+            js_free(v.ctx, b);
+        }
+        JS_FreeValue(v.ctx, c);
+    }
+    CHECK(!JS_HasException(v.ctx), "call %d failing: an exception is pending", fail);
+    vm_free(&v);
+    return out;
+}
+
+/* The marks of the lines and columns of a compile that the allocator
+   refuses change nothing the compile gives: the lookups walk from the one
+   before, as they did before the marks. Each call of the allocator of a
+   compile fails in turn, and when it was the marks (JS_LINE_COL_REFUSED),
+   the compile works and writes the same code, with the same lines and
+   columns, as with every call working. Without the marks a lookup goes
+   back over a line feed to the first line of the source, to its first byte
+   (the code of the script, after f on the second line) and inside it (g,
+   after the function in it on the second line): the walk to the start of
+   the line stops at the start of the source. */
+static void test_line_col_alloc_refused(void)
+{
+    char *deep = malloc(64 * 1024);
+    const char *srcs[5];
+    int first_at_start = 0, first_inside = 0;
+    size_t i, len = 0;
+    int k;
+
+    for (k = 0; k < 30; k++)
+        len += sprintf(deep + len, "function f%d(a) {\r\n  const s = \"\xc3\xa9\xf0\x9f\x98\x80 %d\"; /* \n */ var b = a + %d;\n", k, k, k);
+    len += sprintf(deep + len, "  return b;\n");
+    for (k = 0; k < 30; k++)
+        len += sprintf(deep + len, "  return f%d(b) + `\n${b}`;\n}\n", k);
+    srcs[0] = "function f() {\n  return 1;\n}\nf()";
+    srcs[1] = "var x = 1; function g() { var a = x + 1; return () => a + x + 2 + 3 + 4 + 5 + 6 + 7 + 8 + 9 + 10 + 11 + 12 + 13 + 14 + 15 + 16 + 17 + 18 + 19 + 20 + 21 + 22 + 23 + 24 + 25; }\ng()()";
+    srcs[2] = deep;
+    srcs[3] = "var a = 1;\nfunction f() { return a }\nf()";
+    srcs[4] = "x = 1; (function g() { return function () {\n  return 1;\n} })()";
+    for (i = 0; i < countof(srcs); i++) {
+        uint8_t *want, *got;
+        size_t want_len, got_len;
+        int n, m, fail, refused = 0;
+
+        want = compile_line_col(srcs[i], 0, &n, &want_len);
+        CHECK(want != NULL, "line col %zu does not compile", i);
+        for (fail = 1; want && fail <= n; fail++) {
+            white_line_col_refused_take();
+            white_line_col_first_line_take(1);
+            white_line_col_first_line_take(0);
+            got = compile_line_col(srcs[i], fail, &m, &got_len);
+            if (white_line_col_refused_take()) {
+                refused++;
+                first_at_start += white_line_col_first_line_take(1);
+                first_inside += white_line_col_first_line_take(0);
+                CHECK(got && got_len == want_len && memcmp(got, want, want_len) == 0,
+                      "line col %zu, call %d refused for the marks: %s", i, fail,
+                      got ? "the code differs" : "the compile failed");
+            }
+            free(got);
+        }
+        CHECK(refused == 1, "line col %zu: %d calls of the marks refused", i, refused);
+        free(want);
+    }
+    CHECK(first_at_start > 0 && first_inside > 0, "without the marks, %d lookups went back to the start of the source and %d inside the first line",
+          first_at_start, first_inside);
+    printf("unit-white: test_line_col_alloc_refused: without the marks, %d lookups back to the start of the source, %d inside the first line\n",
+           first_at_start, first_inside);
+    free(deep);
 }
 
 static void test_compile_one_failure(int calls)
@@ -12068,6 +12981,7 @@ int main(int argc, char **argv)
     test_sb_room_past_two_thirds();
     test_sb_widen_room();
     test_concat3_too_long();
+    test_string_append_longest();
     test_json_run_limit();
     test_json_plain_run();
     test_json_count_high_bytes();
@@ -12131,9 +13045,19 @@ int main(int argc, char **argv)
     test_function_properties_oom();
     test_compile_count();
     test_parens_lookahead_linear();
+    test_ident_one_pass();
+    test_bytecode_pass_room();
+    test_pass_room_refused();
+    test_code_write_refused();
+    test_pass_refused_before_error();
+    test_pass_room_refused_stopped();
     test_parens_table_replace();
     test_parens_work_gaps();
     test_parens_alloc_refused();
+    test_line_col_bytes();
+    test_line_col_linear();
+    test_line_col_flag();
+    test_line_col_alloc_refused();
     test_poll_scan();
     test_poll_insert();
     test_poll_compile();
@@ -12173,6 +13097,7 @@ int main(int argc, char **argv)
     test_string_append_flat();
     test_string_append_atom();
     test_string_empty_left();
+    test_string_add_empty_side();
     test_string_add_kinds();
     test_own_keys_flags();
     test_shared_debug_read();

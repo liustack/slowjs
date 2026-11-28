@@ -4,6 +4,16 @@ What changed in `github.com/liustack/beastjs` (its name from v0.33.0, `github.co
 
 ## [Unreleased]
 
+## [v0.33.4] - 2026-11-28
+
+### Changed
+
+- Compiling is faster: lines and columns are counted from marks in the source, a plain name is read once and looked up in place, and the buffers of code start with room for the code, so tifa's shop and mui bundles compile in about 13.5% less time, with the same bytecode.
+
+### Fixed
+
+- A compile that runs out of memory ends with the out of memory error, not with a syntax error found later or a function with wrong positions, and leaves the runtime the atoms it had.
+
 ## [v0.33.3] - 2026-11-27
 
 ### Fixed
@@ -977,7 +987,8 @@ The first release of the fork, from modernc.org/quickjs v0.25.0 and libquickjs v
 - A VM that runs out of memory inside `JSON.parse`, or anything else that converts a string with non-ASCII characters to UTF-8, no longer leaks that string.
 - `VM.Call` and `VM.CallValue` report the exception thrown while evaluating the function expression instead of `cannot call a non-function`.
 
-[Unreleased]: https://github.com/liustack/beastjs/compare/v0.33.3...main
+[Unreleased]: https://github.com/liustack/beastjs/compare/v0.33.4...main
+[v0.33.4]: https://github.com/liustack/beastjs/compare/v0.33.3...v0.33.4
 [v0.33.3]: https://github.com/liustack/beastjs/compare/v0.33.2...v0.33.3
 [v0.33.2]: https://github.com/liustack/beastjs/compare/v0.33.1...v0.33.2
 [v0.33.1]: https://github.com/liustack/beastjs/compare/v0.33.0...v0.33.1

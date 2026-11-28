@@ -2794,7 +2794,7 @@ static void test_string_append_oom(void)
    the out of memory error and frees each operand once, and the variable it
    was to go into keeps its string. A variable appended to is written
    t = t + id(b): t = t + b of two locals is add_loc (ADDLOC), not ADDL.
-   Three sweeps. run(): strings of 8 and 16 bits, short ones that are
+   Four sweeps. run(): strings of 8 and 16 bits, short ones that are
    copied, long ones that make ropes, and self, which appends to a string
    another variable holds too, which must not change. It keeps each string
    it makes, about 118 KiB at its peak, so it is swept every 64 bytes up to
@@ -2812,8 +2812,11 @@ static void test_string_append_oom(void)
    number, so that nothing else holds the string, and aGrow does it in an
    argument, which check() finds whole. Its answer is fixed, as the
    sweep's answer comes from the same engine: an append done wrong in
-   place gives "cut".
-   The strings are past 504 bytes, so that each new one is a large block
+   place gives "cut". runShort(): the empty string and short ones, of at
+   most 63 characters, in each form and into an argument, which the
+   register loop copies or gives back itself (rv_concat8): their blocks
+   are small, so they fail mostly in the rooms of a full heap.
+   The other strings are past 504 bytes, so that each new one is a large block
    the heap gives (docs/internals/allocator.md): a small one takes a free slot of an
    arena that is counted already, and would not fail. An add fails only
    when its block takes the count past the limit, so the runs free no large
@@ -2876,12 +2879,22 @@ static void test_string_add_oom(void)
         "  const g = grow(b, 600), h = grow(c, 600), a = aGrow('p'.repeat(600), b)\n"
         "  return was + ' ' + (grown(g, 600, b) && grown(h, 600, c) && grown(a, 600, b) ? 'whole' : 'cut')\n"
         "}\n"
+        "var shorts = ['', 'a', 'bc', 'def'.repeat(5), '\\u4e2d', 'g'.repeat(63)]\n"
+        "function runShort() {\n"
+        "  const was = check(), out = []\n"
+        "  for (const a of shorts) {\n"
+        "    for (const b of shorts) out.push(add(a, b), addl(a, b), self(a, b), aAddl('old', a, b))\n"
+        "    out.push(addk(a), addkl(a), kadd(a), kaddl(a))\n"
+        "  }\n"
+        "  return was + ' ' + hash(out.map(sum))\n"
+        "}\n"
         /* once before the sweeps, so that their register code is made */
-        "run(); runArgs(); runGrow()\n";
+        "run(); runArgs(); runGrow(); runShort()\n";
     static const struct { const char *what, *src, *answer; size_t step, max; } runs[] = {
         { "string add", "run()", NULL, 64, 131072 },
         { "string add into an argument", "runArgs()", NULL, 8, 32768 },
         { "string add grown in place", "runGrow()", "kept whole", 8, 32768 },
+        { "string add of short and empty strings", "runShort()", NULL, 8, 32768 },
     };
     size_t i;
 

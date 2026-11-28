@@ -1,0 +1,37 @@
+result depth 1: 76 8fa14043
+result    at <anonymous> (<input>:1:334) / at <eval> (<input>:2:37) / at eval (native) / at <eval> (<eval>:95:14) / 
+result    at <anonymous> (<input>:2:26) / at <eval> (<input>:2:37) / at eval (native) / at <eval> (<eval>:95:14) / 
+result    at <eval> (<input>:5:5) / at eval (native) / at <eval> (<eval>:95:14) / 
+result depth 2: 117 37fefdda
+result    at <eval> (<input>:3:7) / at eval (native) / at <eval> (<eval>:95:14) / 
+result    at <eval> (<input>:6:7) / at eval (native) / at <eval> (<eval>:95:14) / 
+result    at <eval> (<input>:14:19) / at eval (native) / at <eval> (<eval>:95:14) / 
+result depth 4: 132 c108cedd
+result    at <eval> (<input>:1:44) / at eval (native) / at <eval> (<eval>:95:14) / 
+result    at <eval> (<input>:1:71) / at eval (native) / at <eval> (<eval>:95:14) / 
+result    at <anonymous> (<input>:9:5) / at <eval> (<input>:23:16) / at eval (native) / at <eval> (<eval>:95:14) / 
+result depth 8: 172 dc19dd8d
+result    at <anonymous> (<input>:6:296) / at <eval> (<input>:30:19) / at eval (native) / at <eval> (<eval>:95:14) / 
+result    at <anonymous> (<input>:9:211) / at <anonymous> (<input>:29:16) / at <eval> (<input>:30:19) / at eval (native) / at <eval> (<eval>:95:14) / 
+result    at m (<input>:11:18) / at <anonymous> (<input>:28:27) / at <anonymous> (<input>:29:16) / at <eval> (<input>:30:19) / at eval (native) / at <eval> (<eval>:95:14) / 
+result depth 16: 192 269c949f
+result    at <eval> (<input>:2:15) / at eval (native) / at <eval> (<eval>:95:14) / 
+result    at <eval> (<input>:5:5) / at eval (native) / at <eval> (<eval>:95:14) / 
+result    at <anonymous> (<input>:10:6) / at <eval> (<input>:12:44) / at eval (native) / at <eval> (<eval>:95:14) / 
+result one line: 343 b810a0bb
+result    at f0 (<input>:1:29) / at <eval> (<input>:1:53) / at eval (native) / at <eval> (<eval>:111:11) / 
+result    at <anonymous> (<input>:1:45) / at f0 (<input>:1:48) / at <eval> (<input>:1:53) / at eval (native) / at <eval> (<eval>:111:11) / 
+result    at f1 (<input>:1:84) / at <eval> (<input>:1:93) / at eval (native) / at <eval> (<eval>:111:11) / 
+result nested: 121 34f6cab2
+result    at <anonymous> (<input>:1:20) / at <eval> (<input>:64:29) / at eval (native) / at <eval> (<eval>:120:11) / 
+result    at <anonymous> (<input>:2:28) / at <anonymous> (<input>:2:2) / at <eval> (<input>:64:29) / at eval (native) / at <eval> (<eval>:120:11) / 
+result    at <anonymous> (<input>:2:70) / at <anonymous> (<input>:2:44) / at <anonymous> (<input>:2:2) / at <eval> (<input>:64:29) / at eval (native) / at <eval> (<eval>:120:11) / 
+result thrown: 1 0dade981
+result    at g0 (<input>:2:18) at g1 (<input>:6:256) at g2 (<input>:7:16) at g3 (<input>:13:11) at g4 (<input>:15:1) at g5 (<input>:18:1) at g6 (<input>:22:10) at g7 (<input>:24:12) at g8 (<input>:25:16) at g9 (<input>:28:1) at g10 (<input>:32:118) at g11 (<input>:36:18) at g12 (<input>:38:4919) at g13 (<input>:42:17) at g14 (<input>:45:4) at g15 (<input>:47:1) at g16 (<input>:48:17) at g17 (<input>:49:17) at g18 (<input>:51:1) at g19 (<input>:54:1) at g20 (<input>:56:4551) at g21 (<input>:59:1) at g22 (<input>:60:17) at g23 (<input>:65:1) at g24 (<input>:68:17) at g25 (<input>:71:11) at g26 (<input>:76:11) at g27 (<input>:79:7) at g28 (<input>:81:1) at g29 (<input>:87:1) at g30 (<input>:89:17) at g31 (<input>:93:7) at g32 (<input>:95:27) at g33 (<input>:97:226) at g34 (<input>:100:17) at g35 (<input>:101:17) at g36 (<input>:103:17) at g37 (<input>:107:1) at g38 (<input>:108:18) at g39 (<input>:109:17) at <eval> (<input>:111:4) at eval (native) at <eval> (<eval>:128:16) 
+result syntax errors: 14 790fb084
+result   SyntaxError: invalid number literal  at <input>:3:7 at eval (native) at <eval> (<eval>:136:17) 
+result   SyntaxError: invalid number literal  at <input>:5:7 at Function (native) at <eval> (<eval>:137:20) 
+result   SyntaxError: unexpected token in expression: ')'  at <input>:4:1 at eval (native) at <eval> (<eval>:136:17) 
+mem-end obj=420 atom=755 shape=131 prop=1624 jsfunc=237 cfunc=138 array=7 fast_array=7 elements=64 binary=0
+mem-gc obj=255 atom=738 shape=128 prop=1239 jsfunc=51 cfunc=138 array=7 fast_array=7 elements=64 binary=0
+--- status exit 0

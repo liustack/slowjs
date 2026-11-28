@@ -88,3 +88,62 @@ func TestCloseReleasesFuncs(t *testing.T) {
 		t.Fatalf("%d Go functions held after Close", got)
 	}
 }
+
+// The Go functions that only the properties, the elements and the closures
+// of other objects hold are let go of when those objects are freed: at the
+// drop of the last reference, with a WeakRef on one of them, in a cycle that
+// a full or a young collection frees, and after a script ran out of memory
+// with them held.
+func TestFuncsReleasedWithTheirHolders(t *testing.T) {
+	m := newTestVM(t)
+	n := heldFuncs(m)
+	names := []string{"f0", "f1", "f2", "f3", "f4", "f5", "f6", "f7"}
+	for i, name := range names {
+		if err := m.RegisterFunc(name, func() int { return i }, false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	held := func(want int, when string) {
+		t.Helper()
+		if got := heldFuncs(m) - n; got != want {
+			t.Fatalf("%s: %d Go functions held, want %d", when, got, want)
+		}
+	}
+	held(len(names), "registered")
+	if _, err := m.Eval(`
+globalThis.t = { a: f0, b: { c: f1, d: [f2, { e: f2 }] }, s: 'x' + f0(), i: 1,
+	cl: (() => { const g = f3; return () => g })() };
+globalThis.u = { k: f4, o: { p: f4 } };
+globalThis.w = new WeakRef(f4);
+globalThis.cy = { h: f5, q: { r: f5 } }; cy.self = cy; cy.q.back = cy;
+globalThis.keep6 = { f6 };
+globalThis.big = { k: f7 };
+for (const name of ['f0', 'f1', 'f2', 'f3', 'f4', 'f5', 'f6', 'f7']) delete globalThis[name];
+`, EvalGlobal); err != nil {
+		t.Fatal(err)
+	}
+	held(len(names), "held by objects")
+	wantEval(t, m, "t = null; 0", 0)
+	held(4, "the holder dropped")
+	// the job of the WeakRef ended with the last call
+	wantEval(t, m, "u = null; String(w.deref())", "undefined")
+	held(3, "the holder of a WeakRef target dropped")
+	wantEval(t, m, "cy = null; 0", 0)
+	held(3, "a cycle dropped")
+	m.RunGC()
+	held(2, "the cycle collected")
+	// a young cycle that holds the function, which only an old object held before
+	wantEval(t, m, "globalThis.ycy = { h: keep6.f6 }; ycy.self = [ycy, { x: keep6.f6 }]; keep6 = ycy = null; 0", 0)
+	held(2, "a young cycle dropped")
+	m.RunYoungGC()
+	held(1, "the young cycle collected")
+	m.SetMemoryLimit(m.MemorySize() + 256<<10)
+	if _, err := m.Eval("globalThis.fill = []; for (;;) fill.push({ k: big.k, s: 'v' + fill.length })", EvalGlobal); err == nil {
+		t.Fatal("the fill did not run out of memory")
+	}
+	m.SetMemoryLimit(^uintptr(0))
+	wantEval(t, m, "big = null; 0", 0)
+	held(1, "the holder dropped after running out of memory")
+	wantEval(t, m, "fill = null; 0", 0)
+	held(0, "the objects of the fill dropped")
+}

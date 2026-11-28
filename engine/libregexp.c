@@ -972,16 +972,19 @@ static __maybe_unused void lre_dump_bytecode(const uint8_t *buf,
    uses buffers, must reach no function that reads the flag
    (engine/test/cycles.sh). So the compiler claims the room before each
    write, and the write finds it. -1 with the buffer in error, which then
-   takes no more bytes, when the flag is set or there is no memory. */
+   takes no more bytes, when the flag is set or there is no memory, and -1
+   for every claim once the buffer is in error, one it has room for too (0
+   bytes): a caller that reads the code back after its claim never finds
+   it in error, or with no block at all. */
 static int re_dbuf_claim(DynBuf *b, size_t len, size_t max_size)
 {
     size_t new_size, size;
     uint8_t *new_buf;
 
+    if (unlikely(b->error))
+        return -1;
     if (likely(b->allocated_size - b->size >= len))
         return 0;
-    if (b->error)
-        return -1;
     new_size = b->size + len;
     if (new_size < len)
         return -1; /* overflow case */
@@ -2635,6 +2638,7 @@ static int re_parse_term(REParseState *s, BOOL is_backward_dir)
                 put_u32(s->byte_code.buf + pos, s->byte_code.size - (pos + 4));
             } else if (p[2] == '<') {
                 int ret;
+                size_t len;
 
                 p += 3;
                 ret = re_parse_group_name(s, s->u.tmp_buf, sizeof(s->u.tmp_buf),
@@ -2649,9 +2653,13 @@ static int re_parse_term(REParseState *s, BOOL is_backward_dir)
                 if (is_duplicate_group_name(s, s->u.tmp_buf, s->group_name_scope)) {
                     return re_parse_error(s, "duplicate group name");
                 }
-                /* group name with a trailing zero */
-                dbuf_put(&s->group_names, (uint8_t *)s->u.tmp_buf,
-                         strlen(s->u.tmp_buf) + 1);
+                /* group name with a trailing zero, then its scope: room for
+                   both at once, so that no name is ever kept without its
+                   scope, which is_duplicate_group_name reads after it */
+                len = strlen(s->u.tmp_buf);
+                if (dbuf_claim(&s->group_names, len + LRE_GROUP_NAME_TRAILER_LEN))
+                    return -1;
+                dbuf_put(&s->group_names, (uint8_t *)s->u.tmp_buf, len + 1);
                 dbuf_put_u32(&s->group_names, s->group_name_scope);
                 s->has_named_captures = 1;
                 goto parse_capture;
@@ -2661,7 +2669,9 @@ static int re_parse_term(REParseState *s, BOOL is_backward_dir)
         } else {
             int capture_index;
             p++;
-            /* capture without group name */
+            /* capture without group name, its record whole too */
+            if (dbuf_claim(&s->group_names, LRE_GROUP_NAME_TRAILER_LEN))
+                return -1;
             dbuf_putc(&s->group_names, 0);
             dbuf_put_u32(&s->group_names, 0);
         parse_capture:
@@ -2933,6 +2943,10 @@ static int re_parse_term(REParseState *s, BOOL is_backward_dir)
             if (last_atom_start < 0) {
                 return re_parse_error(s, "nothing to repeat");
             }
+            /* the code of the atom is read back below: not once writing
+               it failed, when it may not even have a buffer */
+            if (dbuf_error(&s->byte_code))
+                return -1;
             {
                 BOOL need_capture_init, add_zero_advance_check;
                 int len, pos;

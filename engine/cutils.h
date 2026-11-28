@@ -321,9 +321,12 @@ void dbuf_free(DynBuf *s);
 static inline BOOL dbuf_error(DynBuf *s) {
     return s->error;
 }
+/* the buffer in error takes no more bytes, as after a claim that failed
+   (dbuf_claim): what it holds stays as it was */
 static inline void dbuf_set_error(DynBuf *s)
 {
     s->error = TRUE;
+    s->allocated_size = s->size;
 }
 
 #define UTF8_CHAR_LEN_MAX 6
