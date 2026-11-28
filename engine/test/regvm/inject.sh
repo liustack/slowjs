@@ -264,7 +264,7 @@ if [ -n "$single" ]; then
 	# writes no golden line, the old line of its place stays
 	keep_line() {
 		[ -z "$update" ] || [ -z "$place" ] ||
-			grep "^$place " "$golden/$base.txt" > "$work/$name.gline" 2>/dev/null || true
+			grep "^$place " "$golden/$base.txt" > "$work/$base.glines/$n" 2>/dev/null || true
 	}
 	one_run "$work/$name" "$key" "$var=$val"
 	grep "^hit " "$key" >> "$work/$base.hits" 2>/dev/null || true
@@ -287,7 +287,7 @@ if [ -n "$single" ]; then
 	# as a script does
 	if [ -n "$update" ] && [ -n "$place" ] && [ -s "$key" ]; then
 		if grep -q '^--- status exit [01]$' "$g"; then
-			echo "$place $n $got" > "$work/$name.gline"
+			echo "$place $n $got" > "$work/$base.glines/$n"
 		else
 			keep_line
 		fi
@@ -391,15 +391,19 @@ for sc in $scripts; do
 	hits=$work/$base.hits
 	rm -f "$hits" "$work/$base.reached"
 	out=$work/$base.diffs
-	find "$work" -maxdepth 1 -name "$base-*.gline" -exec rm -f {} +
+	# the golden lines of the runs, for -update, in a folder of the script's
+	# own: a find over $work would meet the folders of the runs of the other
+	# scripts that an inject.sh beside this one makes and deletes, and stop
+	rm -rf "$work/$base.glines"
+	[ -z "$update" ] || mkdir -p "$work/$base.glines"
 	# shellcheck disable=SC2086
 	printf '%s\n' $ns | xargs -P "$jobs" -I{} "$self" -golden "$golden" ${update:+-update} -one "$dir" {} "$sc" > "$out" || true
 	# for -update, one line a place: two runs can throw at one place when the
 	# places of a script moved
 	if [ -n "$update" ]; then
-		find "$work" -maxdepth 1 -name "$base-*.gline" -exec cat {} + 2>/dev/null | LC_ALL=C sort |
+		find "$work/$base.glines" -type f -exec cat {} + | LC_ALL=C sort |
 			LC_ALL=C sort -u -k1,1 > "$work/$base.new"
-		find "$work" -maxdepth 1 -name "$base-*.gline" -exec rm -f {} +
+		rm -rf "$work/$base.glines"
 		if [ -f "$golden/$base.txt" ]; then
 			changes "$golden/$base.txt" "$work/$base.new" "$work/$base.keys" | LC_ALL=C sort
 			what=$(changes_line "$work/$base.keys")
