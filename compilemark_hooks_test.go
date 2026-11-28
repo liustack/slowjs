@@ -225,13 +225,21 @@ func importsModule(n int) string {
 // stopped, a call that compiles the same source, at the polls two, five and
 // nine tenths into it, with no grace: each stop ends the call interrupted
 // after at most compileStopPolls polls counted toward the kill, and the VM
-// goes on.
+// goes on. The engine runs no collection by itself, and one runs before each
+// call, so that each call does the same work and a stop lands in the
+// compile. A collection the threshold starts in the middle of the compile
+// reads no flag and frees nothing the compile made, so its polls count
+// toward the kill as those of any script do: with the module of 8,000
+// imports one took 300 of the 740 polls of a call, and the call after the
+// one that ran it took 300 fewer.
 func wantStopsNotKilled(t *testing.T, m *VM, whole, stopped string, flags int) {
 	t.Helper()
 	h := m.h
+	m.SetGCThreshold(^uintptr(0))
 	if _, err := m.Eval(whole, flags); err != nil {
 		t.Fatal(err)
 	}
+	m.RunGC()
 	before := h.Polls()
 	if _, err := m.Eval(whole, flags); err != nil {
 		t.Fatal(err)
@@ -240,6 +248,7 @@ func wantStopsNotKilled(t *testing.T, m *VM, whole, stopped string, flags int) {
 	h.SetKillGrace(0)
 	for _, part := range []int64{2, 5, 9} {
 		at := span * part / 10
+		m.RunGC()
 		before := h.Polls()
 		h.InterruptAtPoll(before + at)
 		_, err := m.Eval(stopped, flags)
