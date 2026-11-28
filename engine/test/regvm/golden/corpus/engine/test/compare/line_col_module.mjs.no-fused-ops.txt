@@ -1,0 +1,11 @@
+result  at outer (line_col_module.mjs:12:30) / at <anonymous> (line_col_module.mjs:21:16) / 
+result  at inner (line_col_module.mjs:14:14) / at outer (line_col_module.mjs:19:14) / at <anonymous> (line_col_module.mjs:21:16) / 
+result  at inner (line_col_module.mjs:15:7) / at outer (line_col_module.mjs:19:14) / at <anonymous> (line_col_module.mjs:21:16) / 
+result  at <anonymous> (line_col_module.mjs:18:7) / at map (native) / at m (line_col_module.mjs:17:25) / at outer (line_col_module.mjs:19:22) / at <anonymous> (line_col_module.mjs:21:16) / 
+result  at <anonymous> (line_col_module.mjs:18:7) / at map (native) / at m (line_col_module.mjs:17:25) / at outer (line_col_module.mjs:19:22) / at <anonymous> (line_col_module.mjs:21:16) / 
+result  at <anonymous> (line_col_module.mjs:21:25) / 
+result  at <anonymous> (line_col_module.mjs:22:62) / at <anonymous> (line_col_module.mjs:22:65) / at n (line_col_module.mjs:22:37) / at <anonymous> (line_col_module.mjs:24:4) / 
+result  at <anonymous> (line_col_module.mjs:25:26) / at <anonymous> (line_col_module.mjs:25:31) / 
+mem-end obj=206 atom=562 shape=125 prop=976 jsfunc=13 cfunc=130 array=2 fast_array=2 elements=8 binary=0
+mem-gc obj=203 atom=562 shape=124 prop=969 jsfunc=13 cfunc=130 array=2 fast_array=2 elements=8 binary=0
+--- status exit 0
