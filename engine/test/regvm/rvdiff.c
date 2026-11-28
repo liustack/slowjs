@@ -550,6 +550,12 @@ static int child_run(void *p)
         v = JS_GetPropertyStr(ctx, global, "result");
         JS_FreeValue(ctx, global);
     }
+    /* The script and its jobs have ended. A stop that stopAfterPolls asked
+       for and that has not come is dropped here, so that it lands in the
+       script or nowhere: the compile and the run of the format read the
+       interrupt flag, as many times as the engine of the day does, and a
+       stop there would give an exception the script never threw. */
+    host_poll_stop_after(0);
     if (opt_raw)
         format = JS_Eval(ctx, format_src_raw, sizeof(format_src_raw) - 1, "<eval>", JS_EVAL_TYPE_GLOBAL);
     else
